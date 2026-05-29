@@ -1,70 +1,86 @@
-# 深色面板 & Chat 专用 Token
+# 深色面板与微控件 Token
 
-> 扩展 `01-颜色系统.md`，为 Chat UI 的深色面板、状态色和组件专用色提供补充 Token。所有值使用 OKLCH。
+> 扩展 `01-颜色系统.md`。用于 Chat、进度卡、状态面板和数据可视化中的深色区域。
 
 ---
 
-## 深色面板底色
-
-用于 Progress Card、Result Card、Sidebar（generating 阶段）的深色渐变面板。
+## 深色面板
 
 | Token | 值 | 用途 |
-|-------|-----|------|
-| `--dark-surface` | `oklch(22% 0.02 210)` | 深色面板底色（渐变起始） |
-| `--dark-surface-2` | `oklch(25% 0.02 210)` | 深色面板渐变中间色 |
-| `--dark-surface-3` | `oklch(28% 0.02 210)` | 深色面板渐变终止色 |
-| `--dark-divider` | `oklch(100% 0 0 / 0.06)` | 深色面板内行分隔线 |
+| --- | --- | --- |
+| `--dark-surface` | `oklch(16% 0.035 235)` | 深色面板底色 |
+| `--dark-surface-raised` | `oklch(20% 0.04 235)` | 抬升深色卡片 |
+| `--dark-surface-inset` | `oklch(12% 0.035 235)` | 进度条槽、滑块槽 |
+| `--dark-border` | `oklch(92% 0.02 75 / 0.12)` | 深色面板边线 |
+| `--dark-highlight` | `oklch(92% 0.02 75 / 0.08)` | hover / active 洗层 |
 
 ---
 
-## 深色面板文字
-
-替代 Tailwind `text-white/70` 等原始 opacity 工具类。
+## 深色文字
 
 | Token | 值 | 用途 |
-|-------|-----|------|
-| `--dark-text-secondary` | `oklch(100% 0 0 / 0.7)` | 深色面板次要文字（文件名、标签） |
-| `--dark-text-tertiary` | `oklch(100% 0 0 / 0.35)` | 深色面板辅助文字（进度百分比） |
-| `--dark-text-badge` | `oklch(100% 0 0 / 0.5)` | 深色面板 Badge 数字 |
+| --- | --- | --- |
+| `--dark-text-primary` | `oklch(92% 0.025 75)` | 深色面板主文字 |
+| `--dark-text-secondary` | `oklch(80% 0.025 75)` | 次要文字 |
+| `--dark-text-muted` | `oklch(64% 0.02 235)` | 辅助文字、说明 |
 
 ---
 
-## 深色面板交互
+## 实心状态色
 
-| Token | 值 | 用途 |
-|-------|-----|------|
-| `--dark-highlight` | `oklch(100% 0 0 / 0.04)` | 行 hover / active agent 高亮 |
-| `--dark-highlight-hover` | `oklch(100% 0 0 / 0.1)` | Count badge 背景 |
-| `--dark-track-bg` | `oklch(100% 0 0 / 0.05)` | 进度条 Track 背景 |
+深色背景上的状态色必须 100% 不透明。不要用半透明填充做状态点或滑块拇指。
 
----
-
-## 状态色（实心不透明，深色背景专用）
-
-**关键规则**：深色背景上的状态色必须是 100% 不透明实心色，禁止 `rgba(x,x,x,0.2)` 半透明填充。
-
-| Token | 值 | 状态 | 形状 |
-|-------|-----|------|------|
-| `--sage` | `oklch(78% 0.08 145)` | Running | ● 实心圆 |
-| `--soft-peach` | `oklch(85% 0.08 60)` | Waiting | ○ 空心圆 |
-| `--lavender` | `oklch(75% 0.06 290)` | Neutral | ◆ 实心菱形 |
-
-来源：`docs/session-desgin.md` "Physical Toys" 指令——Active Sage Green、Idle Soft Peach、Neutral Muted Lavender。
+| Token | 值 | 状态 | 用途 |
+| --- | --- | --- | --- |
+| `--status-running` | `oklch(78% 0.08 145)` | Running | 运行中、成功 |
+| `--status-waiting` | `oklch(85% 0.08 60)` | Waiting | 等待、排队 |
+| `--status-neutral` | `oklch(75% 0.06 292)` | Neutral | 中性、未开始 |
+| `--status-error` | `oklch(72% 0.13 28)` | Error | 错误、失败 |
 
 ---
 
-## Chat 组件专用色
+## Pill-in-Pill Progress
 
-| Token | 值 | 用途 |
-|-------|-----|------|
-| `--color-user-bubble` | `oklch(92% 0.03 290 / 0.3)` | 用户消息气泡底色（淡紫 mist） |
-| `--color-cursive-accent` | `oklch(72% 0.14 45)` | Caveat 手写情感词颜色（暖桃） |
-| `--color-card-overlay` | `oklch(96% 0.01 80 / 0.5)` | 结构化选择卡外层叠加底色 |
+进度条必须厚、圆、内嵌。禁止细线进度条。
+
+```css
+.progress-track {
+  block-size: var(--space-40);
+  padding: var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--dark-surface-inset);
+  box-shadow: var(--shadow-inset);
+}
+
+.progress-fill {
+  block-size: 100%;
+  border-radius: var(--radius-full);
+  background: var(--status-running);
+  transition: transform var(--duration-lazy-hover) var(--ease-lazy);
+  transform-origin: left center;
+}
+```
 
 ---
 
-## 暗色模式
+## Groove & Pebble Slider
 
-深色面板 Token（`--dark-surface`、`--sage`、`--soft-peach`、`--lavender`）在暗色模式下保持不变——它们已经是深色系。
+滑块要像在凹槽里移动的实心圆石。拇指使用实色，不使用毛玻璃。
 
-Chat 组件专用色的暗色映射见 `superpowers/specs/2026-05-28-multi-agent-chat-ui-design.md` Section 15。
+```css
+.slider-track {
+  block-size: var(--space-24);
+  border-radius: var(--radius-full);
+  background: var(--dark-surface-inset);
+  box-shadow: var(--shadow-inset);
+}
+
+.slider-thumb {
+  inline-size: var(--space-32);
+  block-size: var(--space-32);
+  border-radius: var(--radius-full);
+  background: var(--dark-surface-raised);
+  border: 1px solid var(--dark-border);
+  box-shadow: var(--shadow-sm);
+}
+```

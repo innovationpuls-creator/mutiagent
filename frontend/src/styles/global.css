@@ -1,0 +1,75 @@
+@font-face {
+  font-family: 'LXGW WenKai';
+  src: url('/fonts/lxgw-wenkai-light.ttf') format('truetype');
+  font-weight: 300;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'LXGW WenKai';
+  src: url('/fonts/lxgw-wenkai-regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'LXGW WenKai';
+  src: url('/fonts/lxgw-wenkai-medium.ttf') format('truetype');
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'LXGW WenKai Mono';
+  src: url('/fonts/lxgw-wenkai-mono-regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-block-size: 100%;
+  background: var(--color-background);
+}
+
+body {
+  min-block-size: 100%;
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: var(--font-weight-regular);
+  line-height: 2;
+  color: var(--color-text-primary);
+  background: var(--color-background);
+  text-rendering: geometricPrecision;
+  font-synthesis: none;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  border: 0;
+}
+
+#root {
+  min-block-size: 100svh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: opacity var(--duration-instant) ease !important;
+    transform: none !important;
+    scroll-behavior: auto !important;
+  }
+}

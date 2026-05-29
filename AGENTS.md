@@ -58,9 +58,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 前端 (frontend)
 - **核心框架**：React 18 + TypeScript
 - **构建工具**：Vite + Node.js 包管理 (npm/pnpm)
+- **路由系统**：`react-router-dom`（用于多页/多视图 3D 翻页及页面级切换）
 - **样式方案**：Tailwind CSS (通过 PostCSS) + 原生 CSS Variables (存放 Token)
-- **动画引擎**：Framer Motion (承接所有的页面交互和复杂转场，严格遵循慢节奏、无生硬弹簧的设计原则)
-- **字体**：LXGW WenKai 系统字体（`brew install font-lxgw-wenkai`），不使用 Google Fonts
+- **图标基建**：`lucide-react`（必须极度克制，优先使用如 *、//、+ 等几何形态符号，禁止使用廉价彩色图标）
+- **动画引擎**：Framer Motion (`framer-motion`)，承接所有的页面交互和复杂转场，严格遵循慢节奏、无生硬弹簧的设计原则
+- **字体**：已安装 npm 包 `@fontsource/lxgw-wenkai` 以确保各端完全一致，禁止使用 Google Fonts
 - **开发与预览**：本地 Node.js 环境下运行 `npm run dev` 或 `yarn dev`
 
 ### 后端 (backend)
