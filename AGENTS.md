@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-前端设计系统项目，风格参考 Headspace 冥想应用——温暖、柔和、有呼吸感。所有界面使用中文，面向中文用户。
+这是一个全栈单体仓库 (Monorepo) 项目。
+- **frontend/**: 前端设计系统项目，风格参考 Headspace 冥想应用——温暖、柔和、有呼吸感。所有界面使用中文，面向中文用户。
+- **backend/**: AI 驱动的后端服务，基于 FastAPI、LangGraph 和 Dify 架构。
 
 ## Mandatory: Design System Docs
 
@@ -21,6 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - `docs/05-暗色模式.md` — 完整暗色 token 对照、`color-scheme` 声明
    - `docs/06-materials-effects.md` — 毛玻璃、品牌渐变、发光弥散
    - `docs/07-motion-physics.md` — 弹性缓动、Haptics、骨架屏动画
+   - `docs/session-desgin.md` -所有session开发的规范
 
 ### Hard Rules from Docs
 
@@ -52,18 +55,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Tech Stack
 
-- **单文件 HTML**：React 18 + Tailwind CSS + Babel Standalone，通过 CDN 引入，无构建步骤
+### 前端 (frontend)
+- **核心框架**：React 18 + TypeScript
+- **构建工具**：Vite + Node.js 包管理 (npm/pnpm)
+- **样式方案**：Tailwind CSS (通过 PostCSS) + 原生 CSS Variables (存放 Token)
+- **动画引擎**：Framer Motion (承接所有的页面交互和复杂转场，严格遵循慢节奏、无生硬弹簧的设计原则)
 - **字体**：LXGW WenKai 系统字体（`brew install font-lxgw-wenkai`），不使用 Google Fonts
-- **设计 Token**：CSS Custom Properties，定义在各 HTML 文件的 `<style>` 中
-- **预览**：直接浏览器打开 HTML 文件，或使用 Claude Preview MCP server
+- **开发与预览**：本地 Node.js 环境下运行 `npm run dev` 或 `yarn dev`
+
+### 后端 (backend)
+- **核心框架**：FastAPI + Python
+- **智能体中枢**：LangGraph (负责意图识别与工作流路由)
+- **智能体执行层**：Dify (具体的 Agent 业务工作流开发)
+- **数据库与 ORM**：SQLite + SQLModel
 
 ## Code Style
 
+### 前端规范
+- **强类型化**：所有组件和钩子必须提供完整的 TypeScript 接口/类型定义 (Interface/Type)，坚决避免 `any`。
 - 组件 PascalCase，hooks `use` 前缀，CSS class kebab-case
 - 函数 < 50 行，文件 < 800 行
 - 禁止深层嵌套（> 4 层），用 early return
 - 禁止硬编码魔法数字，用 token 或常量
 - 不可变数据模式，不修改已有对象
+
+### 后端规范
+- **强类型化**：必须使用 Python Type Hints（Pydantic/SQLModel）保证类型安全。
+- **路由拆分**：FastAPI 的接口必须基于功能模块通过 `APIRouter` 拆分，禁止在 main.py 中堆砌逻辑。
+- **节点解耦**：LangGraph 的 State 与 Node 必须解耦，保持中枢路由的轻量化。只负责控制走向，繁重的 AI 工作流交给 Dify 处理。
 
 ## Git
 
