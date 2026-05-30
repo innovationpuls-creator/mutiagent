@@ -30,8 +30,14 @@
   --color-background: var(--color-canvas-base);
   --color-background-warm: var(--color-canvas-surface);
   --color-surface: var(--color-canvas-surface);
+  --color-surface-raised: oklch(99% 0.01 80);
   --color-text-secondary: var(--color-text-whisper);
+  --color-text-muted: var(--color-text-whisper);
   --color-text-inverse: var(--color-canvas-base);
+
+  /* Interaction States (交互态) */
+  --color-hover-wash: oklch(99% 0.01 80 / 0.68);
+  --color-focus-ring: oklch(76% 0.12 55 / 0.42);
 
   /* =========================================
      2. Semantic Tokens (语义变量)
@@ -39,6 +45,11 @@
 
   /* Action Gradients */
   --gradient-action-send: linear-gradient(135deg, oklch(78% 0.06 60), oklch(85% 0.05 60));
+
+  /* Brand Gradients (品牌渐变 — from docs/06) */
+  --gradient-paper: linear-gradient(135deg, oklch(94% 0.04 73), oklch(97% 0.02 75));
+  --gradient-coral: linear-gradient(135deg, oklch(78% 0.12 55), oklch(72% 0.13 28));
+  --gradient-night: linear-gradient(135deg, oklch(16% 0.035 235), oklch(22% 0.04 235));
 
   /* =========================================
      3. Component Tokens & Material Physics
@@ -67,6 +78,14 @@
   --shadow-sm: 0 1px 2px oklch(50% 0.05 55 / 0.08), 0 8px 24px oklch(76% 0.12 55 / 0.10);
   --shadow-md: 0 2px 6px oklch(50% 0.05 55 / 0.08), 0 18px 48px oklch(76% 0.12 55 / 0.16);
   --shadow-lg: 0 4px 12px oklch(50% 0.05 55 / 0.10), 0 32px 80px oklch(76% 0.12 55 / 0.22), 0 64px 120px oklch(84% 0.12 63 / 0.14);
+  --shadow-glow: 0 0 48px oklch(76% 0.12 55 / 0.24), 0 0 96px oklch(84% 0.12 63 / 0.16);
+
+  /* Ambient Effects (晨光与弥散 — from docs/06) */
+  --effect-sun-glow: radial-gradient(circle, oklch(84% 0.12 63 / 0.72), oklch(84% 0.12 63 / 0) 68%);
+  --effect-peach-glow: radial-gradient(circle, oklch(76% 0.12 55 / 0.34), oklch(76% 0.12 55 / 0) 70%);
+  --effect-sage-glow: radial-gradient(circle, oklch(75% 0.09 135 / 0.28), oklch(75% 0.09 135 / 0) 70%);
+  --effect-blur-soft: blur(32px);
+  --effect-blur-sun: blur(120px);
 
   /* =========================================
      4. Micro-Geometry & Optical Spacing
@@ -90,6 +109,8 @@
   --space-48: 48px;
   --space-64: 64px;
   --space-80: 80px;
+  --space-96: 96px;
+  --space-120: 120px;
 
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -123,9 +144,13 @@
 
   --ease-editorial: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-lazy: cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-flip: cubic-bezier(0.64, 0, 0.35, 1);
   --ease-breathe: ease-in-out;
   --duration-instant: 120ms;
   --duration-lazy-hover: 420ms;
+  --duration-reveal: 760ms;
+  --duration-route: 980ms;
+  --duration-flip: 1200ms;
   --duration-breathe: 4200ms;
 }
 

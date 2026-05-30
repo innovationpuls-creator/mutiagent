@@ -9,7 +9,6 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from app.core.security import hash_password
 from app.models import User
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATABASE_URL = f"sqlite:///{BACKEND_ROOT / 'mutiagent.db'}"
 
@@ -19,8 +18,8 @@ def build_engine(database_url: str = DEFAULT_DATABASE_URL) -> Engine:
     return create_engine(database_url, connect_args=connect_args)
 
 
-def create_session_dependency(engine: Engine) -> Callable[[], Generator[Session]]:
-    def get_session() -> Generator[Session]:
+def create_session_dependency(engine: Engine) -> Callable[[], Generator[Session, None, None]]:
+    def get_session() -> Generator[Session, None, None]:
         with Session(engine) as session:
             yield session
 
@@ -39,6 +38,7 @@ def init_db(engine: Engine) -> None:
 
         session.add(
             User(
+                uid="00000000-0000-0000-0000-000000000001",
                 username="体验同学",
                 identifier="demo@mutiagent.local",
                 provider="password",

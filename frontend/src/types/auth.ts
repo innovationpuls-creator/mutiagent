@@ -3,14 +3,18 @@ export type OAuthProvider = 'qq' | 'xuexitong';
 export type AuthType = 'password' | 'oauth';
 
 export interface AuthUser {
-  id: number;
+  uid: string;
   username: string;
   identifier: string;
   provider: string;
+  is_active: boolean;
+  created_at: string;
+  last_login_at: string | null;
 }
 
 export interface AuthResponse {
-  token: string;
+  access_token: string;
+  token_type: string;
   authType: AuthType;
   user: AuthUser;
 }

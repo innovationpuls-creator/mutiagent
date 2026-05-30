@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { authApi as defaultAuthApi } from '../../api/auth';
+import { useAuth } from '../../contexts/AuthContext';
 import type { AuthApi, AuthMode, AuthResponse, OAuthProvider, RegisterPayload } from '../../types/auth';
 import { AuthPanel } from './AuthPanel';
 import { MultiAgentHero } from './MultiAgentHero';
@@ -16,6 +17,7 @@ const oauthDelayMs = 620;
 
 export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
   const navigate = useNavigate();
+  const auth = useAuth();
   const reduceMotion = useReducedMotion();
   const [mode, setMode] = useState<AuthMode>('login');
   const [busy, setBusy] = useState(false);
@@ -29,7 +31,7 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
     try {
       const authResult = await action();
       setResult(authResult);
-      // Wait to show the success message, then transition with exit animation
+      auth.login(authResult);
       setTimeout(() => {
         navigate('/home');
       }, 1500);

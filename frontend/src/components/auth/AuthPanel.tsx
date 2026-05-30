@@ -136,7 +136,7 @@ function AuthForm({ busy, error, mode, onLogin, onRegister }: Omit<AuthPanelProp
 
         <motion.div key="identifier" layout {...fieldReveal}>
           <TextField
-            label={mode === 'login' ? '账号' : '邮箱或手机号'}
+            label={mode === 'login' ? '账号' : '账号（邮箱或手机号）'}
             name={mode === 'login' ? 'account' : 'identifier'}
             autoComplete={mode === 'login' ? 'username' : 'email'}
             value={mode === 'login' ? fields.account : fields.identifier}

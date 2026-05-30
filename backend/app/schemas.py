@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -22,8 +23,8 @@ class RegisterRequest(BaseModel):
 
     @field_validator("confirm_password")
     @classmethod
-    def passwords_match(cls, confirm_password: str, values: object) -> str:
-        data = getattr(values, "data", {})
+    def passwords_match(cls, confirm_password: str, info: object) -> str:
+        data = getattr(info, "data", {})
         if data.get("password") != confirm_password:
             raise ValueError("两次输入的密码不一致")
 
@@ -36,14 +37,18 @@ class OAuthRequest(BaseModel):
 
 
 class UserRead(BaseModel):
-    id: int
+    uid: str
     username: str
     identifier: str
     provider: str
+    is_active: bool
+    created_at: datetime
+    last_login_at: datetime | None
 
 
 class AuthResponse(BaseModel):
-    token: str
+    access_token: str
+    token_type: str = "bearer"
     auth_type: AuthType
     user: UserRead
 

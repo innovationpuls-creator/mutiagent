@@ -112,6 +112,8 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
     const run = async () => {
       const ed: [number, number, number, number] = [0.4, 0, 0.2, 1];
 
+      await wait(2600);
+
       while (alive) {
         /* ════════════ RESET ════════════ */
         animate('.node-el', { opacity: 0, filter: 'blur(10px)', scale: 0.88 }, { duration: 0 });
@@ -136,38 +138,44 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         await wait(600);
         if (!alive) break;
 
-        /* ════════════ 0.95s: PLANNER — 任务拆解清单 ════════════ */
+        /* ════════════ PLANNER — 任务拆解清单 ════════════ */
         setStageIndex(0);
-        animate('#line-0', { pathLength: 1 }, { duration: 0.6, ease: 'easeInOut' });
-        await wait(300);
-        animate('#planner-node', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0.8, ease: ed });
-        await wait(450);
 
-        // 任务项依次滑入
-        animate('.task-item', { opacity: 1, x: 0 }, { duration: 0.3, delay: stagger(0.16), ease: 'easeOut' });
-        await wait(650);
-
-        // 打勾 ✓ 依次弹出
-        animate('.check-icon', { opacity: 1, scale: 1 }, { duration: 0.2, delay: stagger(0.2), ease: 'easeOut' });
-
-        // 终端 Line 1: 极速逐字流淌
+        // 终端 Line 1: 极速逐字流淌 (与标题 AnimatePresence 同步触发)
         animate('#term-1', { opacity: 1 }, { duration: 0.01 });
         animate('.term-char-term-1', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
         animate('.terminal-cursor', { opacity: 1 }, { duration: 0.01 });
-        await wait(650);
+
+        animate('#line-0', { pathLength: 1 }, { duration: 0.6, ease: 'easeInOut' });
+        await wait(600);
+        animate('#planner-node', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0.8, ease: ed });
+        await wait(860);
+
+        // 任务项依次滑入
+        animate('.task-item', { opacity: 1, x: 0 }, { duration: 0.3, delay: stagger(0.16), ease: 'easeOut' });
+        await wait(1250);
+
+        // 打勾 ✓ 依次弹出
+        animate('.check-icon', { opacity: 1, scale: 1 }, { duration: 0.2, delay: stagger(0.2), ease: 'easeOut' });
+        await wait(1350);
 
         // 终端 Line 2
         animate('#term-2', { opacity: 1 }, { duration: 0.01 });
         animate('.term-char-term-2', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
-        await wait(500);
+        await wait(940);
         if (!alive) break;
 
-        /* ════════════ 3.5s: RESEARCHER — 集群分裂 ════════════ */
+        /* ════════════ RESEARCHER — 集群分裂 ════════════ */
         setStageIndex(1);
+
+        // 终端 Line 3: 并行唤醒 (与标题 AnimatePresence 同步触发)
+        animate('#term-3', { opacity: 1 }, { duration: 0.01 });
+        animate('.term-char-term-3', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
+
         animate('#line-1', { pathLength: 1 }, { duration: 0.6, ease: 'easeInOut' });
-        await wait(300);
+        await wait(600);
         animate('#researcher-node', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0.8, ease: ed });
-        await wait(350);
+        await wait(700);
 
         // Sub-agents 从中心弹射 (近临界阻尼 spring — 丝滑落位, 零过冲)
         for (const s of SUBS) {
@@ -181,44 +189,45 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         // 虚线连线淡入
         animate('.sub-line-path', { opacity: 0.45 }, { duration: 0.4, delay: stagger(0.08), ease: 'easeOut' });
 
-        // 终端 Line 3: 并行唤醒
-        animate('#term-3', { opacity: 1 }, { duration: 0.01 });
-        animate('.term-char-term-3', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
-        await wait(700);
-
         // 终端 Line 4: 降维清洗 (具体数字)
         animate('#term-4', { opacity: 1 }, { duration: 0.01 });
         animate('.term-char-term-4', { opacity: 1 }, { duration: 0.01, delay: stagger(0.016) });
-        await wait(750);
+        await wait(1555);
+        await wait(1640);
         if (!alive) break;
 
-        /* ════════════ 6.1s: PATH ENGINE — 拓扑爆炸 ════════════ */
+        /* ════════════ PATH ENGINE — 拓扑爆炸 ════════════ */
         setStageIndex(2);
+
+        // 终端 Line 5: 路径收敛 (与标题 AnimatePresence 同步触发)
+        animate('#term-5', { opacity: 1 }, { duration: 0.01 });
+        animate('.term-char-term-5', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
+
+        // 标题先出，视觉动画 0.5s 后启动
+        await wait(500);
+
         animate('#line-2', { pathLength: 1 }, { duration: 0.6, ease: 'easeInOut' });
-        await wait(300);
+        await wait(600);
         animate('#path-node', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0.8, ease: ed });
-        await wait(350);
+        await wait(700);
 
         // 主干生长
         animate('#tree-trunk', { pathLength: 1 }, { duration: 0.45, ease: 'easeOut' });
-        await wait(250);
+        await wait(500);
 
         // 三根分支藤蔓展开
         animate('.tree-branch', { pathLength: 1 }, { duration: 0.35, delay: stagger(0.1), ease: 'easeOut' });
-        await wait(250);
+        await wait(500);
 
         // 叶子节点弹射 (近临界阻尼 — 舒展丝滑, 零过冲)
         for (const b of BRANCHES) {
           animate(`#${b.id}`, { x: b.dx, y: b.dy, scale: 1, opacity: 1 }, {
             type: 'spring', stiffness: 190, damping: 25,
           });
-          await wait(75);
+          await wait(120);
         }
 
-        // 终端 Line 5: 路径收敛
-        animate('#term-5', { opacity: 1 }, { duration: 0.01 });
-        animate('.term-char-term-5', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
-        await wait(900);
+        await wait(1840);
         if (!alive) break;
 
         /* ════════════ 8.5s: 认知流光脉冲 ════════════ */
@@ -528,7 +537,7 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
             <span className="agent-sandtable__traffic-light agent-sandtable__traffic-light--green" />
           </div>
           <span className="agent-sandtable__terminal-title">
-            Agent Runtime
+            运行日志
           </span>
         </div>
         {/* Terminal 输出区 */}

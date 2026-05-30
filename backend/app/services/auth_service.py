@@ -1,22 +1,25 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from uuid import uuid4
+
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
-from app.core.security import create_mock_token, hash_password, verify_password
+from app.core.security import create_access_token, hash_password, verify_password
 from app.models import User
 from app.schemas import AuthResponse, AuthType, LoginRequest, OAuthRequest, RegisterRequest, UserRead
 
 
 def to_user_read(user: User) -> UserRead:
-    if user.id is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
     return UserRead(
-        id=user.id,
+        uid=user.uid,
         username=user.username,
         identifier=user.identifier,
         provider=user.provider,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        last_login_at=user.last_login_at,
     )
 
 
@@ -25,8 +28,10 @@ def find_user(session: Session, identifier: str) -> User | None:
 
 
 def create_auth_response(user: User, auth_type: AuthType) -> AuthResponse:
+    token = create_access_token(data={"sub": user.uid})
     return AuthResponse(
-        token=create_mock_token(),
+        access_token=token,
+        token_type="bearer",
         auth_type=auth_type,
         user=to_user_read(user),
     )
@@ -40,6 +45,7 @@ def register_user(session: Session, payload: RegisterRequest) -> AuthResponse:
         )
 
     user = User(
+        uid=str(uuid4()),
         username=payload.username,
         identifier=payload.identifier,
         provider="password",
@@ -59,6 +65,10 @@ def login_user(session: Session, payload: LoginRequest) -> AuthResponse:
             detail="账号或密码不正确",
         )
 
+    user.last_login_at = datetime.now(timezone.utc)
+    session.add(user)
+    session.commit()
+    session.refresh(user)
     return create_auth_response(user, "password")
 
 
@@ -66,9 +76,14 @@ def login_with_oauth(session: Session, payload: OAuthRequest) -> AuthResponse:
     identifier = f"{payload.provider}-learner@mock.local"
     user = find_user(session, identifier)
     if user:
+        user.last_login_at = datetime.now(timezone.utc)
+        session.add(user)
+        session.commit()
+        session.refresh(user)
         return create_auth_response(user, "oauth")
 
     user = User(
+        uid=str(uuid4()),
         username="学习伙伴" if payload.provider == "xuexitong" else "QQ 同学",
         identifier=identifier,
         provider=payload.provider,

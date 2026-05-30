@@ -1,6 +1,7 @@
 import type {
   AuthApi,
   AuthResponse,
+  AuthUser,
   LoginPayload,
   OAuthPayload,
   RegisterPayload,
@@ -9,33 +10,49 @@ import type {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
 
 interface ApiAuthResponse {
-  token: string;
+  access_token: string;
+  token_type: string;
   auth_type: AuthResponse['authType'];
-  user: AuthResponse['user'];
-}
-
-interface ApiValidationDetail {
-  msg?: string;
+  user: {
+    uid: string;
+    username: string;
+    identifier: string;
+    provider: string;
+    is_active: boolean;
+    created_at: string;
+    last_login_at: string | null;
+  };
 }
 
 interface ApiErrorResponse {
-  detail?: string | ApiValidationDetail[];
+  detail?: string | { msg?: string }[];
+}
+
+function toAuthUser(raw: ApiAuthResponse['user']): AuthUser {
+  return {
+    uid: raw.uid,
+    username: raw.username,
+    identifier: raw.identifier,
+    provider: raw.provider,
+    is_active: raw.is_active,
+    created_at: raw.created_at,
+    last_login_at: raw.last_login_at,
+  };
 }
 
 function toAuthResponse(payload: ApiAuthResponse): AuthResponse {
   return {
-    token: payload.token,
+    access_token: payload.access_token,
+    token_type: payload.token_type,
     authType: payload.auth_type,
-    user: payload.user,
+    user: toAuthUser(payload.user),
   };
 }
 
 async function requestAuth<TBody>(path: string, body: TBody): Promise<AuthResponse> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 

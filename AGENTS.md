@@ -35,23 +35,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 字体只用 LXGW WenKai（3 字重：Light/Regular/Medium），无 Bold
 - 暗色模式不用纯黑纯白，背景 `oklch(16% ...)`，文字 `oklch(92% ...)`
 
-## Mandatory: Playwright Verification After Frontend Changes
 
-**任何前端任务改动完成后，必须调用独立的 subagent 使用 Playwright 进行验收。** 不可跳过。
-
-执行流程：
-
-```
-1. 完成前端代码改动
-2. 启动预览服务器（如有）或直接打开 HTML 文件
-3. 调用 code-reviewer subagent 做代码审查
-4. 调用 e2e-runner subagent 用 Playwright 验收：
-   - 截图关键断点（375px / 768px / 1280px）
-   - 验证是否达到开发计划要求
-   - 检查 console 无报错
-   - 验证 reduced-motion 行为
-5. 验收通过后才算任务完成
-```
 
 ## Tech Stack
 

@@ -28,7 +28,7 @@ test('mock oauth flow shows authorization panel then success', async ({ page }) 
   await page.goto('/');
   await page.getByRole('button', { name: /学习通登录/ }).click();
   await expect(page.getByRole('dialog', { name: '模拟授权' })).toBeVisible();
-  await expect(page.getByText('已进入系统')).toBeVisible();
+  await expect(page.getByText('思绪已对齐')).toBeVisible();
 });
 
 test('reduced motion disables active animations', async ({ page }) => {

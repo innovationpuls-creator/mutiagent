@@ -6,7 +6,7 @@
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: var(--space-16);
+  gap: var(--space-4);
   width: 100%;
   min-height: 0;
   overflow: visible;
@@ -15,15 +15,14 @@
 .agent-sandtable__stage {
   position: relative;
   isolation: isolate;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  height: 150px;
   min-height: 0;
   overflow: visible;
 }
 
 .agent-sandtable__terminal {
   flex: 0 0 auto;
-  height: 140px;
-  max-height: 140px;
   overflow: hidden;
   background: oklch(96% 0.01 60 / 0.55);
   border: 1px solid var(--color-border-subtle);
@@ -79,16 +78,13 @@
   flex-direction: column;
   gap: 2px;
   padding: var(--space-16) var(--space-20);
+  overflow-y: auto;
 }
 
 .agent-sandtable__terminal-logs {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 52px;
-  overflow-y: hidden;
-  mask-image: linear-gradient(to bottom, black 0%, black 72%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 72%, transparent 100%);
 }
 
 @media (max-width: 920px) {
