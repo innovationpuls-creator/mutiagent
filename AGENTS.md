@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Mandatory: Design System Docs
 
-**开始任何前端任务前，必须先调用 `/web-design-engineer` skill，然后阅读 `docs/` 目录下的设计规范文档。** 这些文档定义了项目的全部视觉 token、组件规范和动效规则，是唯一的设计真相来源。
+**开始任何前端任务前，必须先调用 `/web-design-engineer` skill的Headspace meditation 风格，然后阅读 `docs/` 目录下的设计规范文档。** 这些文档定义了项目的全部视觉 token、组件规范和动效规则，是唯一的设计真相来源。
 
 执行顺序：
 

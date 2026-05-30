@@ -42,10 +42,10 @@ function TermLine({ id, prefix, text }: { id: string; prefix: string; text: stri
  * 这样 SVG 坐标严格对齐 CSS 百分比
  */
 const NODES = {
-  user:     { left: '8%',  top: '30%', sx: 80,  sy: 300 },
-  planner:  { left: '27%', top: '30%', sx: 270, sy: 300 },
-  research: { left: '56%', top: '30%', sx: 560, sy: 300 },
-  path:     { left: '80%', top: '30%', sx: 800, sy: 300 },
+  user:     { left: '8%',  top: '27%', sx: 80,  sy: 270 },
+  planner:  { left: '27%', top: '27%', sx: 270, sy: 270 },
+  research: { left: '56%', top: '27%', sx: 560, sy: 270 },
+  path:     { left: '80%', top: '27%', sx: 800, sy: 270 },
 } as const;
 
 // Sub-agent 弹射 (从 Researcher 中心出发的像素偏移)
@@ -257,17 +257,8 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
   const TRUNK_DX = 28;
 
   return (
-    <div
-      ref={scope}
-      style={{
-        position: 'relative',
-        width: '100%',
-        flex: '1 1 auto',
-        minHeight: 0,
-        marginTop: 'var(--space-8)',
-        overflow: 'visible',
-      }}
-    >
+    <div ref={scope} className="agent-sandtable">
+      <div className="agent-sandtable__stage">
       {/* ═══════════ SVG 底层 ═══════════ */}
       <svg
         viewBox="0 0 1000 1000"
@@ -525,43 +516,31 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
           </div>
         </motion.div>
       ))}
+      </div>
 
       {/* ═══════════ 沙色终端 (Soft Terminal) ═══════════ */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: '3%',
-          left: '3%',
-          right: '3%',
-          background: 'oklch(96% 0.01 60 / 0.55)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderRadius: 'var(--radius-md)',
-          border: '1px solid var(--color-border-subtle)',
-          boxShadow: 'var(--shadow-sm)',
-          overflow: 'hidden',
-          zIndex: 15,
-        }}
-      >
+      <div className="agent-sandtable__terminal">
         {/* Terminal 标题栏 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderBottom: '1px solid var(--color-border-subtle)' }}>
-          <div style={{ display: 'flex', gap: 4 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'oklch(75% 0.12 25)', display: 'block' }} />
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'oklch(82% 0.12 95)', display: 'block' }} />
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'oklch(80% 0.1 145)', display: 'block' }} />
+        <div className="agent-sandtable__terminal-header">
+          <div className="agent-sandtable__traffic-lights">
+            <span className="agent-sandtable__traffic-light agent-sandtable__traffic-light--red" />
+            <span className="agent-sandtable__traffic-light agent-sandtable__traffic-light--yellow" />
+            <span className="agent-sandtable__traffic-light agent-sandtable__traffic-light--green" />
           </div>
-          <span style={{ fontSize: '9px', color: 'var(--color-text-whisper)', letterSpacing: '0.5px', fontFamily: 'var(--font-mono, monospace)' }}>
+          <span className="agent-sandtable__terminal-title">
             Agent Runtime
           </span>
         </div>
         {/* Terminal 输出区 */}
-        <div style={{ padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <TermLine id="term-1" prefix="[Planner] " text="解析目标: 构建前端架构地图..." />
-          <TermLine id="term-2" prefix="[Planner] " text="拆解为 3 个子任务 ✓" />
-          <TermLine id="term-3" prefix="[Swarm]   " text="并行唤醒 3 个知识寻源体..." />
-          <TermLine id="term-4" prefix="[Swarm]   " text="正在降维清洗 1204 个图谱节点..." />
-          <TermLine id="term-5" prefix="[Path]    " text="收敛最优拓扑 · 路径已生成 ✓" />
-          <div className="terminal-cursor hide-on-reset" style={{ opacity: 0, marginTop: 2 }} />
+        <div className="agent-sandtable__terminal-body">
+          <div className="agent-sandtable__terminal-logs">
+            <TermLine id="term-1" prefix="[Planner] " text="解析目标: 构建前端架构地图..." />
+            <TermLine id="term-2" prefix="[Planner] " text="拆解为 3 个子任务 ✓" />
+            <TermLine id="term-3" prefix="[Swarm]   " text="并行唤醒 3 个知识寻源体..." />
+            <TermLine id="term-4" prefix="[Swarm]   " text="正在降维清洗 1204 个图谱节点..." />
+            <TermLine id="term-5" prefix="[Path]    " text="收敛最优拓扑 · 路径已生成 ✓" />
+          </div>
+          <div className="terminal-cursor hide-on-reset" style={{ opacity: 0 }} />
         </div>
       </div>
     </div>

@@ -44,7 +44,7 @@ export function MultiAgentHero() {
               display: 'flex',
               alignItems: 'center',
               gap: 'var(--space-12)',
-              marginBottom: 'var(--space-24)'
+              marginBottom: 'var(--hero-brand-gap, var(--space-24))'
             }}
           >
             <div className="logo-pebble">
@@ -88,12 +88,12 @@ export function MultiAgentHero() {
 
         {/* Bottom Area: Dynamic Choreography for Multi-Agent Features */}
         <motion.div
-          style={{ paddingTop: 'var(--space-32)', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+          style={{ paddingTop: 'var(--hero-sandtable-gap, var(--space-24))', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 'var(--hero-stage-gap, var(--space-24))' }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 1, delay: 2.6 }}
         >
-          <div style={{ height: 'var(--space-80)', flexShrink: 0 }}>
+          <div style={{ minHeight: 'var(--hero-stage-header-height, var(--space-64))', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={stageIndex}

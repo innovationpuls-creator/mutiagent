@@ -31,7 +31,7 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
       setResult(authResult);
       // Wait to show the success message, then transition with exit animation
       setTimeout(() => {
-        navigate('/onboarding');
+        navigate('/home');
       }, 1500);
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : '登录失败');
