@@ -1,6 +1,7 @@
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { AuthMode, AuthResponse, RegisterPayload } from '../../types/auth';
 import { Button } from '../ui/Button';
 import { TextField } from '../ui/TextField';
@@ -23,41 +24,63 @@ const initialFields = {
   confirmPassword: '',
 };
 
+const tabs: { value: AuthMode; label: string }[] = [
+  { value: 'login', label: '登录' },
+  { value: 'register', label: '注册' },
+];
+
 export function AuthPanel(props: AuthPanelProps) {
+  const reduceMotion = useReducedMotion();
+
   if (props.result) {
     return <SuccessPanel result={props.result} />;
   }
 
+  const isLogin = props.mode === 'login';
+  const pillTransition = reduceMotion
+    ? { duration: 0 }
+    : { duration: 0.42, ease: [0.33, 1, 0.68, 1] as const };
+
   return (
-    <div className="auth-panel-dark" aria-label="登录注册">
+    <div className="auth-glass-panel" aria-label="登录注册">
+      <p className="auth-overline">A QUIET SPACE TO LEARN</p>
       <h2>
-        {props.mode === 'login' ? 'Welcome back to your space.' : 'A blank canvas for your mind.'}
+        {isLogin ? (
+          <>
+            <em>欢迎回来</em>，<br />回到你的栖息地。
+          </>
+        ) : (
+          <>
+            一张<em>空白画布</em>，<br />写给你的心绪。
+          </>
+        )}
       </h2>
-      <div className="auth-copy-stack">
-        <p>
-          {props.mode === 'login' ? '外界再喧嚣，这里的思绪依然澄澈。请重新连接。' : '给自己留出一段专注的时间，创建全新的栖息地。'}
-        </p>
-      </div>
-      
-      <div className="auth-tabs-dark" role="tablist" aria-label="账号入口">
-        <button
-          className="auth-tab-dark"
-          type="button"
-          role="tab"
-          aria-selected={props.mode === 'login'}
-          onClick={() => props.onModeChange('login')}
-        >
-          登录
-        </button>
-        <button
-          className="auth-tab-dark"
-          type="button"
-          role="tab"
-          aria-selected={props.mode === 'register'}
-          onClick={() => props.onModeChange('register')}
-        >
-          注册
-        </button>
+      {isLogin ? (
+        <div className="auth-copy-stack">
+          <p>外界再喧嚣，这里的思绪依然澄澈。请重新连接。</p>
+        </div>
+      ) : null}
+
+      <div className="auth-pill-tabs" role="tablist" aria-label="账号入口">
+        {tabs.map((tab) => (
+          <button
+            key={tab.value}
+            className="auth-pill-tab"
+            type="button"
+            role="tab"
+            aria-selected={props.mode === tab.value}
+            onClick={() => props.onModeChange(tab.value)}
+          >
+            {props.mode === tab.value ? (
+              <motion.span
+                className="auth-pill-active"
+                layoutId="auth-pill-active"
+                transition={pillTransition}
+              />
+            ) : null}
+            <span className="auth-pill-label">{tab.label}</span>
+          </button>
+        ))}
       </div>
 
       <AuthForm {...props} />
@@ -67,6 +90,7 @@ export function AuthPanel(props: AuthPanelProps) {
 
 function AuthForm({ busy, error, mode, onLogin, onRegister }: Omit<AuthPanelProps, 'result' | 'onModeChange'>) {
   const [fields, setFields] = useState(initialFields);
+  const reduceMotion = useReducedMotion();
   const setField = (key: keyof typeof initialFields, value: string) => {
     setFields((current) => ({ ...current, [key]: value }));
   };
@@ -84,57 +108,75 @@ function AuthForm({ busy, error, mode, onLogin, onRegister }: Omit<AuthPanelProp
     });
   };
 
+  const fieldReveal = reduceMotion
+    ? undefined
+    : {
+        initial: { opacity: 0, y: 12 },
+        animate: { opacity: 1, y: 0 },
+        exit: { opacity: 0, y: -8 },
+        transition: { duration: 0.42, ease: [0.25, 1, 0.5, 1] as const },
+      };
+
   return (
-    <form className="auth-form-dark" onSubmit={submit}>
-      {mode === 'register' ? (
-        <TextField
-          label="用户名"
-          name="username"
-          autoComplete="name"
-          value={fields.username}
-          onChange={(event) => setField('username', event.target.value)}
-          minLength={1}
-          required
-        />
-      ) : null}
-      
-      <TextField
-        label={mode === 'login' ? '账号' : '邮箱或手机号'}
-        name={mode === 'login' ? 'account' : 'identifier'}
-        autoComplete={mode === 'login' ? 'username' : 'email'}
-        value={mode === 'login' ? fields.account : fields.identifier}
-        onChange={(event) => setField(mode === 'login' ? 'account' : 'identifier', event.target.value)}
-        helperText={mode === 'login' ? '可使用 demo@mutiagent.local' : undefined}
-        minLength={3}
-        required
-      />
-      
-      <TextField
-        label={mode === 'login' ? '密码' : '设置密码'}
-        name="password"
-        type="password"
-        autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-        value={fields.password}
-        onChange={(event) => setField('password', event.target.value)}
-        minLength={6}
-        required
-      />
-      
-      {mode === 'register' ? (
-        <TextField
-          label="确认密码"
-          name="confirmPassword"
-          type="password"
-          autoComplete="new-password"
-          value={fields.confirmPassword}
-          onChange={(event) => setField('confirmPassword', event.target.value)}
-          minLength={6}
-          required
-        />
-      ) : null}
-      
+    <form className="auth-form-glass" onSubmit={submit}>
+      <AnimatePresence mode="popLayout" initial={false}>
+        {mode === 'register' ? (
+          <motion.div key="username" layout {...fieldReveal}>
+            <TextField
+              label="用户名"
+              name="username"
+              autoComplete="name"
+              value={fields.username}
+              onChange={(event) => setField('username', event.target.value)}
+              minLength={1}
+              required
+            />
+          </motion.div>
+        ) : null}
+
+        <motion.div key="identifier" layout {...fieldReveal}>
+          <TextField
+            label={mode === 'login' ? '账号' : '邮箱或手机号'}
+            name={mode === 'login' ? 'account' : 'identifier'}
+            autoComplete={mode === 'login' ? 'username' : 'email'}
+            value={mode === 'login' ? fields.account : fields.identifier}
+            onChange={(event) => setField(mode === 'login' ? 'account' : 'identifier', event.target.value)}
+            minLength={3}
+            required
+          />
+        </motion.div>
+
+        <motion.div key="password" layout {...fieldReveal}>
+          <TextField
+            label={mode === 'login' ? '密码' : '设置密码'}
+            name="password"
+            type="password"
+            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            value={fields.password}
+            onChange={(event) => setField('password', event.target.value)}
+            minLength={6}
+            required
+          />
+        </motion.div>
+
+        {mode === 'register' ? (
+          <motion.div key="confirmPassword" layout {...fieldReveal}>
+            <TextField
+              label="确认密码"
+              name="confirmPassword"
+              type="password"
+              autoComplete="new-password"
+              value={fields.confirmPassword}
+              onChange={(event) => setField('confirmPassword', event.target.value)}
+              minLength={6}
+              required
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
       {error ? <p className="auth-error">{error}</p> : null}
-      
+
       <Button type="submit" loading={busy} icon={<ArrowRight aria-hidden="true" />}>
         {mode === 'login' ? '进入系统' : '完成注册'}
       </Button>
@@ -143,11 +185,18 @@ function AuthForm({ busy, error, mode, onLogin, onRegister }: Omit<AuthPanelProp
 }
 
 function SuccessPanel({ result }: { result: AuthResponse }) {
+  const reduceMotion = useReducedMotion();
   return (
-    <div className="auth-panel-dark auth-success" aria-label="登录成功">
+    <motion.div
+      className="auth-glass-panel auth-success"
+      aria-label="登录成功"
+      initial={reduceMotion ? false : { opacity: 0, scale: 0.96 }}
+      animate={reduceMotion ? undefined : { opacity: 1, scale: 1 }}
+      transition={reduceMotion ? undefined : { duration: 0.6, ease: [0.25, 1, 0.5, 1] }}
+    >
       <CheckCircle2 aria-hidden="true" className="success-icon" />
       <h2>思绪已对齐</h2>
       <p>{result.user.username}，你专属的无边界学习空间已准备就绪。</p>
-    </div>
+    </motion.div>
   );
 }

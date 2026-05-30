@@ -1,0 +1,117 @@
+/* Pebble Slider Micro-Interaction */
+.pebble-slider-track {
+  position: relative;
+  width: 100%;
+  height: 48px;
+  background: var(--color-canvas-surface);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-groove-deep);
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  touch-action: none; /* Prevent scroll while dragging */
+  cursor: grab;
+}
+
+.pebble-slider-track:active {
+  cursor: grabbing;
+}
+
+.pebble-slider-handle {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  height: 36px;
+  width: 100px;
+  background: var(--glass-pebble-bg);
+  backdrop-filter: var(--glass-pebble-blur);
+  -webkit-backdrop-filter: var(--glass-pebble-blur);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-pebble-float);
+  border: var(--glass-pebble-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  user-select: none;
+}
+
+.pebble-slider-label {
+  font-family: var(--font-body);
+  font-size: var(--text-body-sm);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.5px;
+}
+
+/* Background labels arrayed inside the track */
+.pebble-slider-bg-labels {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 32px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.pebble-bg-label {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--color-text-whisper);
+  opacity: 0.6;
+  text-transform: var(--font-whisper-caps);
+  letter-spacing: var(--font-whisper-spacing);
+}
+
+/* Icebreaker Flow Container */
+.icebreaker-flow-root {
+  width: 100vw;
+  height: 100vh;
+  background: var(--color-background-warm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: var(--space-xl) var(--space-md);
+}
+
+.icebreaker-chat-container {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.icebreaker-agent-bubble {
+  align-self: flex-start;
+  max-width: 85%;
+}
+
+.icebreaker-agent-text {
+  font-family: var(--font-body);
+  font-size: var(--text-h3);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  text-wrap: balance;
+  margin-bottom: var(--space-sm);
+}
+
+.icebreaker-user-bubble {
+  align-self: flex-end;
+  width: 100%;
+  max-width: 400px;
+  margin-top: var(--space-md);
+}
+
+.icebreaker-action-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-xl);
+}

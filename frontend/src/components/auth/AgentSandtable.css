@@ -1,0 +1,55 @@
+/* ═══════════════════════════════════════════
+   AgentSandtable — 纯 CSS GPU 动效层
+   ═══════════════════════════════════════════ */
+
+/* Sub-agent 环绕呼吸浮动 (纯 CSS, 零 JS 开销) */
+@keyframes sub-float-1 {
+  0%, 100% { transform: translateY(-3px); }
+  50% { transform: translateY(3px); }
+}
+@keyframes sub-float-2 {
+  0%, 100% { transform: translateY(-4px); }
+  50% { transform: translateY(4px); }
+}
+@keyframes sub-float-3 {
+  0%, 100% { transform: translateY(-2px); }
+  50% { transform: translateY(2px); }
+}
+
+.sub-float-1 { animation: sub-float-1 3s ease-in-out infinite; }
+.sub-float-2 { animation: sub-float-2 3.5s ease-in-out infinite; }
+.sub-float-3 { animation: sub-float-3 2.8s ease-in-out infinite; }
+
+/* Tree leaf 微弱浮动 */
+@keyframes leaf-float {
+  0%, 100% { transform: translateY(-2px); }
+  50% { transform: translateY(2px); }
+}
+.leaf-float { animation: leaf-float 4s ease-in-out infinite; }
+
+/* Terminal 光标闪烁 */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 0; }
+}
+.terminal-cursor {
+  display: inline-block;
+  width: 5px;
+  height: 11px;
+  background: var(--color-intent-active);
+  border-radius: 1px;
+  animation: cursor-blink 1s step-end infinite;
+  vertical-align: middle;
+  margin-left: 1px;
+}
+
+/* prefers-reduced-motion 降级 */
+@media (prefers-reduced-motion: reduce) {
+  .sub-float-1, .sub-float-2, .sub-float-3, .leaf-float {
+    animation: none !important;
+  }
+  .terminal-cursor {
+    animation: none !important;
+    opacity: 0.8 !important;
+  }
+}

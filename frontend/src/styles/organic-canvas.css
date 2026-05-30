@@ -1,0 +1,66 @@
+.organic-canvas-root {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: auto;
+  background: var(--color-canvas-base);
+}
+
+.organic-svg-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.organic-nodes-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+}
+
+/* Nodes Wrapper */
+.node-wrapper {
+  position: absolute;
+  pointer-events: auto; /* Re-enable for NodeCards */
+}
+
+/* Edges */
+.edge-group {
+  transition: all 0.3s var(--ease-editorial);
+}
+
+.bezier-path {
+  stroke-width: var(--line-medium);
+}
+
+.edge-future .bezier-path {
+  stroke: var(--color-text-whisper);
+  stroke-dasharray: 4 6;
+  opacity: 0.4;
+}
+
+.edge-completed .bezier-path {
+  stroke: var(--color-intent-feedback);
+  opacity: 0.6;
+}
+
+.edge-active .bezier-path {
+  stroke: var(--color-intent-active);
+  filter: url(#glow);
+}
+
+.bezier-pulse {
+  stroke: white;
+  stroke-width: 3px;
+  stroke-dasharray: 10 90;
+  stroke-linecap: round;
+  opacity: 0.9;
+  filter: url(#glow);
+}

@@ -1,0 +1,84 @@
+/* Editorial Markdown Styles */
+:root {
+  --glass-dark-bg: rgba(33, 33, 33, 0.78);
+}
+
+.editorial-canvas {
+  width: 100%;
+  max-width: 65ch;
+  margin: 0 auto;
+  font-family: var(--font-body);
+  color: var(--color-text-primary);
+  line-height: 1.8;
+}
+
+.editorial-h1,
+.editorial-h2,
+.editorial-h3 {
+  font-family: var(--font-heading);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  text-wrap: balance;
+  margin-top: var(--space-xl);
+  margin-bottom: var(--space-md);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.editorial-h1 { font-size: var(--text-h1); }
+.editorial-h2 { font-size: var(--text-h2); }
+.editorial-h3 { font-size: var(--text-h3); }
+
+.editorial-p {
+  margin-bottom: var(--space-lg);
+  font-size: var(--text-body);
+}
+
+/* Editorial Quote */
+.editorial-quote {
+  background-color: var(--color-canvas-surface);
+  border-left: 2px solid var(--color-intent-planner);
+  padding: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-lg);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.editorial-quote p {
+  color: var(--color-text-whisper);
+  margin-bottom: 0;
+  font-size: var(--text-body-sm);
+}
+
+/* Code Block Amber Pebble */
+.editorial-code-block {
+  background: var(--glass-dark-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  margin-bottom: var(--space-lg);
+  box-shadow: var(--shadow-groove-deep);
+  backdrop-filter: var(--glass-pebble-blur);
+  -webkit-backdrop-filter: var(--glass-pebble-blur);
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.editorial-code-block code {
+  color: #E8CDB0; /* Warm muted sand color for code */
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+  line-height: 1.6;
+}
+
+/* Inline Code Whisper */
+.editorial-code-inline {
+  background-color: transparent;
+  color: var(--color-text-whisper);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  text-transform: var(--font-whisper-caps);
+  letter-spacing: var(--font-whisper-spacing);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-xs);
+  border: 1px solid rgba(58, 56, 54, 0.05); /* whisper thin border */
+  border-radius: var(--space-xs);
+}
