@@ -42,10 +42,10 @@ function TermLine({ id, prefix, text }: { id: string; prefix: string; text: stri
  * 这样 SVG 坐标严格对齐 CSS 百分比
  */
 const NODES = {
-  user:     { left: '8%',  top: '34%', sx: 80,  sy: 340 },
-  planner:  { left: '27%', top: '34%', sx: 270, sy: 340 },
-  research: { left: '56%', top: '34%', sx: 560, sy: 340 },
-  path:     { left: '80%', top: '34%', sx: 800, sy: 340 },
+  user:     { left: '8%',  top: '30%', sx: 80,  sy: 300 },
+  planner:  { left: '27%', top: '30%', sx: 270, sy: 300 },
+  research: { left: '56%', top: '30%', sx: 560, sy: 300 },
+  path:     { left: '80%', top: '30%', sx: 800, sy: 300 },
 } as const;
 
 // Sub-agent 弹射 (从 Researcher 中心出发的像素偏移)
@@ -169,22 +169,27 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         animate('#researcher-node', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0.8, ease: ed });
         await wait(350);
 
-        // Sub-agents 从中心弹射 (spring 物理)
+        // Sub-agents 从中心弹射 (近临界阻尼 spring — 丝滑落位, 零过冲)
         for (const s of SUBS) {
           animate(`#${s.id}`, { x: s.dx, y: s.dy, scale: 1, opacity: 1 }, {
-            type: 'spring', stiffness: 220, damping: 16,
+            type: 'spring', stiffness: 170, damping: 24,
           });
-          await wait(90);
+          await wait(95);
         }
-        await wait(200);
+        await wait(220);
 
         // 虚线连线淡入
-        animate('.sub-line-path', { opacity: 0.4 }, { duration: 0.4, delay: stagger(0.08), ease: 'easeOut' });
+        animate('.sub-line-path', { opacity: 0.45 }, { duration: 0.4, delay: stagger(0.08), ease: 'easeOut' });
 
-        // 终端 Line 3
+        // 终端 Line 3: 并行唤醒
         animate('#term-3', { opacity: 1 }, { duration: 0.01 });
         animate('.term-char-term-3', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
-        await wait(1300);
+        await wait(700);
+
+        // 终端 Line 4: 降维清洗 (具体数字)
+        animate('#term-4', { opacity: 1 }, { duration: 0.01 });
+        animate('.term-char-term-4', { opacity: 1 }, { duration: 0.01, delay: stagger(0.016) });
+        await wait(750);
         if (!alive) break;
 
         /* ════════════ 6.1s: PATH ENGINE — 拓扑爆炸 ════════════ */
@@ -202,17 +207,17 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         animate('.tree-branch', { pathLength: 1 }, { duration: 0.35, delay: stagger(0.1), ease: 'easeOut' });
         await wait(250);
 
-        // 叶子节点弹射
+        // 叶子节点弹射 (近临界阻尼 — 舒展丝滑, 零过冲)
         for (const b of BRANCHES) {
           animate(`#${b.id}`, { x: b.dx, y: b.dy, scale: 1, opacity: 1 }, {
-            type: 'spring', stiffness: 260, damping: 17,
+            type: 'spring', stiffness: 190, damping: 25,
           });
-          await wait(70);
+          await wait(75);
         }
 
-        // 终端 Line 4
-        animate('#term-4', { opacity: 1 }, { duration: 0.01 });
-        animate('.term-char-term-4', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
+        // 终端 Line 5: 路径收敛
+        animate('#term-5', { opacity: 1 }, { duration: 0.01 });
+        animate('.term-char-term-5', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
         await wait(900);
         if (!alive) break;
 
@@ -225,8 +230,8 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         await wait(2800);
         if (!alive) break;
 
-        /* ════════════ 11.3s: 退场 ════════════ */
-        await animate('.hide-on-reset', { opacity: 0, filter: 'blur(8px)' }, {
+        /* ════════════ 退场 (仅 opacity — 合规 docs/07) ════════════ */
+        await animate('.hide-on-reset', { opacity: 0 }, {
           duration: 1, ease: 'easeInOut', delay: stagger(0.02),
         });
         await wait(350);
@@ -248,21 +253,8 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
     `C ${r.sx + 80} ${r.sy}, ${pe.sx - 80} ${pe.sy}, ${pe.sx} ${pe.sy}`,
   ].join(' ');
 
-  // Sub-agent 虚线 SVG (从 Researcher 中心射出)
-  // 近似坐标: 像素偏移 / 预估容器尺寸 × 1000 + 节点 SVG 坐标
-  const subSvgEnd = [
-    { x: 560 - 89, y: 340 - 158 },  // Google  (-48px, -60px at ~540×380)
-    { x: 560,       y: 340 - 197 },  // arXiv   (0, -75px)
-    { x: 560 + 89,  y: 340 - 158 },  // GitHub  (48px, -60px)
-  ];
-
-  // Tree 主干 & 分支
-  const trunkEnd = { x: pe.sx + 90, y: pe.sy };
-  const branchSvgEnd = [
-    { x: pe.sx + 102, y: pe.sy - 132 },  // 单元一 (55px, -50px)
-    { x: pe.sx + 130, y: pe.sy },         // 单元二 (70px, 0)
-    { x: pe.sx + 102, y: pe.sy + 132 },   // 单元三 (55px, 50px)
-  ];
+  // Tree 主干像素长度 (分支从主干末端扇出)
+  const TRUNK_DX = 28;
 
   return (
     <div
@@ -270,7 +262,8 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
       style={{
         position: 'relative',
         width: '100%',
-        height: '380px',
+        flex: '1 1 auto',
+        minHeight: 0,
         marginTop: 'var(--space-8)',
         overflow: 'visible',
       }}
@@ -292,41 +285,6 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         <motion.path id="line-0" className="sandtable-line hide-on-reset" d={line0} fill="none" stroke="var(--color-border-subtle)" strokeWidth={2} />
         <motion.path id="line-1" className="sandtable-line hide-on-reset" d={line1} fill="none" stroke="var(--color-border-subtle)" strokeWidth={2} />
         <motion.path id="line-2" className="sandtable-line hide-on-reset" d={line2} fill="none" stroke="var(--color-border-subtle)" strokeWidth={2} />
-
-        {/* Sub-agent 虚线 (从 Researcher 射向子节点) */}
-        {subSvgEnd.map((e, i) => (
-          <path
-            key={`sl-${i}`}
-            className="sub-line-path hide-on-reset"
-            d={`M ${r.sx} ${r.sy} L ${e.x} ${e.y}`}
-            fill="none"
-            stroke="var(--color-intent-success)"
-            strokeWidth={1}
-            strokeDasharray="8 5"
-            opacity={0}
-          />
-        ))}
-
-        {/* Tree 主干 */}
-        <motion.path
-          id="tree-trunk"
-          className="tree-line hide-on-reset"
-          d={`M ${pe.sx} ${pe.sy} L ${trunkEnd.x} ${trunkEnd.y}`}
-          fill="none"
-          stroke="var(--color-intent-warning)"
-          strokeWidth={2.5}
-        />
-        {/* Tree 分支 */}
-        {branchSvgEnd.map((e, i) => (
-          <motion.path
-            key={`tb-${i}`}
-            className="tree-line tree-branch hide-on-reset"
-            d={`M ${trunkEnd.x} ${trunkEnd.y} L ${e.x} ${e.y}`}
-            fill="none"
-            stroke="var(--color-intent-warning)"
-            strokeWidth={1.8}
-          />
-        ))}
 
         {/* 认知流光脉冲 */}
         <motion.path
@@ -434,6 +392,24 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         </motion.div>
       </div>
 
+      {/* ═══════════ SUB-AGENT 连线 (像素空间, 锚定 Researcher 中心 — 与圆点同源同偏移, 任意视口都贴合) ═══════════ */}
+      <svg
+        className="sub-connectors"
+        style={{ position: 'absolute', left: r.left, top: r.top, width: 0, height: 0, overflow: 'visible', zIndex: 8, pointerEvents: 'none' }}
+      >
+        {SUBS.map((s, i) => (
+          <line
+            key={`sl-${i}`}
+            className="sub-line-path hide-on-reset"
+            x1={0} y1={0} x2={s.dx} y2={s.dy}
+            stroke="var(--color-intent-success)"
+            strokeWidth={1}
+            strokeDasharray="5 4"
+            opacity={0}
+          />
+        ))}
+      </svg>
+
       {/* ═══════════ SUB-AGENTS (从 Researcher 弹射) ═══════════ */}
       {SUBS.map((s) => (
         <motion.div
@@ -456,11 +432,12 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
               padding: '3px 8px',
               borderRadius: '12px',
               backgroundColor: 'var(--color-surface-elevated)',
-              border: '1px solid oklch(78% 0.08 145 / 0.6)',
+              border: '1px solid var(--color-intent-success)',
               fontSize: '8px',
               color: 'var(--color-text-secondary)',
               whiteSpace: 'nowrap',
-              boxShadow: '0 0 8px oklch(75% 0.1 145 / 0.25)',
+              boxShadow: '0 0 8px oklch(72% 0.09 145 / 0.25)',
+              backdropFilter: 'blur(8px)',
               display: 'flex',
               alignItems: 'center',
               gap: 4,
@@ -489,6 +466,31 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         </motion.div>
       </div>
 
+      {/* ═══════════ TREE 连线 (像素空间, 锚定 Path 中心 — 主干 + 分支与叶子同源同偏移) ═══════════ */}
+      <svg
+        className="tree-connectors"
+        style={{ position: 'absolute', left: pe.left, top: pe.top, width: 0, height: 0, overflow: 'visible', zIndex: 8, pointerEvents: 'none' }}
+      >
+        <motion.path
+          id="tree-trunk"
+          className="tree-line hide-on-reset"
+          d={`M 0 0 L ${TRUNK_DX} 0`}
+          fill="none"
+          stroke="var(--color-intent-warning)"
+          strokeWidth={2}
+        />
+        {BRANCHES.map((b, i) => (
+          <motion.path
+            key={`tb-${i}`}
+            className="tree-line tree-branch hide-on-reset"
+            d={`M ${TRUNK_DX} 0 L ${b.dx} ${b.dy}`}
+            fill="none"
+            stroke="var(--color-intent-warning)"
+            strokeWidth={1.5}
+          />
+        ))}
+      </svg>
+
       {/* ═══════════ TREE LEAVES (从 Path Engine 弹射) ═══════════ */}
       {BRANCHES.map((b) => (
         <motion.div
@@ -511,11 +513,12 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
               padding: '3px 8px',
               borderRadius: '10px',
               backgroundColor: 'var(--color-surface-elevated)',
-              border: '1px solid oklch(78% 0.1 60 / 0.5)',
+              border: '1px solid var(--color-intent-warning)',
               fontSize: '8px',
               color: 'var(--color-text-secondary)',
               whiteSpace: 'nowrap',
-              boxShadow: '0 0 5px oklch(78% 0.1 60 / 0.2)',
+              boxShadow: '0 0 5px oklch(76% 0.10 70 / 0.22)',
+              backdropFilter: 'blur(8px)',
             }}
           >
             {b.label}
@@ -556,7 +559,8 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
           <TermLine id="term-1" prefix="[Planner] " text="解析目标: 构建前端架构地图..." />
           <TermLine id="term-2" prefix="[Planner] " text="拆解为 3 个子任务 ✓" />
           <TermLine id="term-3" prefix="[Swarm]   " text="并行唤醒 3 个知识寻源体..." />
-          <TermLine id="term-4" prefix="[Path]    " text="收敛最优拓扑 · 路径已生成 ✓" />
+          <TermLine id="term-4" prefix="[Swarm]   " text="正在降维清洗 1204 个图谱节点..." />
+          <TermLine id="term-5" prefix="[Path]    " text="收敛最优拓扑 · 路径已生成 ✓" />
           <div className="terminal-cursor hide-on-reset" style={{ opacity: 0, marginTop: 2 }} />
         </div>
       </div>

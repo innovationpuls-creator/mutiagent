@@ -16,6 +16,15 @@
   --color-intent-feedback: oklch(80% 0.06 140); /* 鼠尾草绿 */
   --color-intent-active: oklch(82% 0.08 60); /* 蜜桃沙色 */
 
+  /* Sandtable semantic actors (沙盘语义色 — 暖场内的冷色锚点对比) */
+  --color-intent-success: oklch(72% 0.09 145); /* 寻源绿 — Researcher / 集群 */
+  --color-intent-warning: oklch(76% 0.10 70); /* 路径琥珀 — Path / 拓扑 */
+  --color-intent-info: oklch(72% 0.07 250); /* 意图蓝 — User / Planner 冷锚点 */
+
+  /* Elevated glass surface & hairline border (沙盘卡片) */
+  --color-surface-elevated: oklch(98% 0.004 80 / 0.72);
+  --color-border-subtle: oklch(78% 0.012 80 / 0.55);
+
   /* Legacy Colors (To be refactored out over time) */
   --color-primary: oklch(78% 0.06 60); 
   --color-background: var(--color-canvas-base);

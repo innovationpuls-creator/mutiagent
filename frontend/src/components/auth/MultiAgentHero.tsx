@@ -29,7 +29,7 @@ export function MultiAgentHero() {
       
       {/* 几何化符号点缀 (Removed * symbol as requested) */}
 
-      <div className="canvas-hero" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', width: '100%', maxWidth: 'none' }}>
+      <div className="canvas-hero" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', width: '100%', maxWidth: 'none', flex: 1, minHeight: 0 }}>
         
         {/* Top Area: Prelude and Branding */}
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', width: '100%', maxWidth: 'none' }}>
@@ -87,13 +87,13 @@ export function MultiAgentHero() {
         </div>
 
         {/* Bottom Area: Dynamic Choreography for Multi-Agent Features */}
-        <motion.div 
-          style={{ paddingTop: 'var(--space-64)' }}
+        <motion.div
+          style={{ paddingTop: 'var(--space-32)', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 1, delay: 2.6 }}
         >
-          <div style={{ height: 'var(--space-80)' }}>
+          <div style={{ height: 'var(--space-80)', flexShrink: 0 }}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={stageIndex}
