@@ -350,6 +350,21 @@
   color: var(--auth-dark-text-muted);
 }
 
+.auth-field-error {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-caption);
+  color: oklch(88% 0.08 28);
+}
+
+.auth-form-glass .text-field input[aria-invalid="true"] {
+  border-color: oklch(72% 0.13 28 / 0.6);
+}
+
+.auth-form-glass .text-field input[aria-invalid="true"]:focus {
+  border-color: oklch(72% 0.13 28 / 0.8);
+  box-shadow: 0 0 0 2px oklch(72% 0.13 28 / 0.2);
+}
+
 .auth-form-glass .button {
   margin-top: var(--space-8);
   background: var(--auth-gradient-coral);
@@ -510,10 +525,11 @@
   text-wrap: balance !important;
   width: 100% !important;
   max-width: 900px !important;
-  margin-left: 0 !important;
+  margin-left: -2px !important;
+  margin-bottom: var(--space-40) !important;
   padding-left: 0 !important;
   font-size: 38px !important;
-  line-height: 1.28 !important;
+  line-height: 1.38 !important;
   color: oklch(28% 0.01 60) !important;
 }
 

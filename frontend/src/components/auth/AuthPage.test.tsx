@@ -48,8 +48,8 @@ describe('AuthPage', () => {
     expect(screen.getByRole('tab', { name: '注册' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /QQ 登录/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /学习通登录/ })).toBeTruthy();
-    expect(screen.getByLabelText('多智能体处理动画')).toBeTruthy();
-    expect(screen.getByText('把混乱目标安静整理成学习地图。')).toBeTruthy();
+    expect(screen.getByText('Planner Agent 倾听你的原始需求')).toBeTruthy();
+    expect(screen.getByText('动态更新的多Agent协同学习系统')).toBeTruthy();
   });
 
   it('submits login and shows in-page success state', async () => {

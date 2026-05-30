@@ -50,8 +50,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback((authResponse: AuthResponse) => {
     setUser(authResponse.user);
-    setToken(authResponse.token);
-    saveAuth(authResponse.user, authResponse.token);
+    setToken(authResponse.access_token);
+    saveAuth(authResponse.user, authResponse.access_token);
   }, []);
 
   const logout = useCallback(() => {

@@ -16,7 +16,7 @@
   position: relative;
   isolation: isolate;
   flex: 0 0 auto;
-  height: 150px;
+  height: 135px;
   min-height: 0;
   overflow: visible;
 }

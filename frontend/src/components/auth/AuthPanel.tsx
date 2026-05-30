@@ -1,10 +1,21 @@
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { FormEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { AuthMode, AuthResponse, RegisterPayload } from '../../types/auth';
 import { Button } from '../ui/Button';
 import { TextField } from '../ui/TextField';
+
+const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+const PHONE_RE = /^1[3-9]\d[\s]?\d{4}[\s]?\d{4}$/;
+const IDENTIFIER_HINT = '请输入有效的邮箱或手机号（11 位中国大陆手机号）';
+
+function validateIdentifier(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (EMAIL_RE.test(trimmed) || PHONE_RE.test(trimmed)) return null;
+  return IDENTIFIER_HINT;
+}
 
 interface AuthPanelProps {
   busy: boolean;
@@ -90,12 +101,31 @@ export function AuthPanel(props: AuthPanelProps) {
 
 function AuthForm({ busy, error, mode, onLogin, onRegister }: Omit<AuthPanelProps, 'result' | 'onModeChange'>) {
   const [fields, setFields] = useState(initialFields);
+  const [identifierError, setIdentifierError] = useState<string | null>(null);
   const reduceMotion = useReducedMotion();
+
+  const fieldKey = mode === 'login' ? 'account' : 'identifier' as const;
+  const fieldValue = fields[fieldKey];
+
   const setField = (key: keyof typeof initialFields, value: string) => {
     setFields((current) => ({ ...current, [key]: value }));
   };
+
+  const validateAndSetError = useCallback((value: string) => {
+    const err = validateIdentifier(value);
+    setIdentifierError(err);
+    return err;
+  }, []);
+
+  const handleBlur = useCallback(() => {
+    validateAndSetError(fieldValue);
+  }, [validateAndSetError, fieldValue]);
+
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const err = validateAndSetError(fieldValue);
+    if (err) return;
+
     if (mode === 'login') {
       void onLogin(fields.account, fields.password);
       return;
@@ -139,11 +169,14 @@ function AuthForm({ busy, error, mode, onLogin, onRegister }: Omit<AuthPanelProp
             label={mode === 'login' ? '账号' : '账号（邮箱或手机号）'}
             name={mode === 'login' ? 'account' : 'identifier'}
             autoComplete={mode === 'login' ? 'username' : 'email'}
-            value={mode === 'login' ? fields.account : fields.identifier}
-            onChange={(event) => setField(mode === 'login' ? 'account' : 'identifier', event.target.value)}
+            value={fieldValue}
+            onChange={(event) => setField(fieldKey, event.target.value)}
+            onBlur={handleBlur}
             minLength={3}
             required
+            aria-invalid={identifierError ? 'true' : undefined}
           />
+          {identifierError ? <p className="auth-field-error">{identifierError}</p> : null}
         </motion.div>
 
         <motion.div key="password" layout {...fieldReveal}>
