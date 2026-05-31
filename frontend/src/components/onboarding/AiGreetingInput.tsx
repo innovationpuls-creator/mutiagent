@@ -1,245 +1,246 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import styled from 'styled-components';
 import { AiEyes } from './AiEyes';
 import { useAiWidget } from '../../context/AiWidgetContext';
+import { ChatCard } from './ChatCard';
+import type { SessionMessage } from '../../types/chat';
+
+const mockMessages: SessionMessage[] = [
+  {
+    type: "collecting",
+    stage: "basic_info",
+    question_mode: "question_md",
+    confirmed_info: {} as any,
+    defaulted_fields: [],
+    question_md: "✅ 已确认信息：\n- 当前年级：暂未确认\n- 所学专业：暂未确认\n\n❓ 接下来需要了解：\n- 你目前是几年级？\n- 你所学的专业是什么？",
+    question_box: { question: "", options: [] },
+    text: "✅ 已确认信息：\n- 当前年级：暂未确认\n- 所学专业：暂未确认\n\n❓ 接下来需要了解：\n- 你目前是几年级？\n- 你所学的专业是什么？"
+  },
+  {
+    type: "collecting",
+    stage: "basic_info",
+    question_mode: "question_box",
+    confirmed_info: {} as any,
+    defaulted_fields: [],
+    question_md: "",
+    question_box: { question: "你更倾向于以下哪种长期目标？", options: ["前端工程化", "后端微服务架构", "AI 应用开发", "暂不确定，先打基础"] },
+    text: "简要说明：关于学习方向，我们需要做一个选择。"
+  },
+  {
+    type: "basic_profile",
+    stage: "generated",
+    question_mode: "none",
+    confirmed_info: {} as any,
+    defaulted_fields: [],
+    question_md: "",
+    question_box: { question: "", options: [] },
+    text: "【用户基础信息】\n用户当前为大二软件工程相关专业学生，处于课程学习与项目实践并行阶段，已有一定学习方向，但仍需要进一步细化目标。\n\n【学习方式偏好】\n用户更适合案例驱动和实践驱动的学习方式，适合按照阶段目标逐步推进，并通过反馈不断修正学习路径。\n\n【学习内容偏好】\n用户适合结合视频、文档、练习题、代码实践和项目案例进行学习，其中项目案例和代码实践可以作为主要学习载体。\n\n【当前能力基础】\n用户具备一定编程基础和软件工程课程基础，擅长项目理解、需求拆解和页面设计表达，薄弱点主要在系统化知识梳理、长期学习节奏和部分底层原理。\n\n【学习目标】\n近期目标是完善课程学习和项目实践能力，长期目标是提升软件开发与 AI 应用项目能力。\n\n【学习约束】\n用户每周预计可投入 6-10 小时学习，主要困难是时间较分散、目标容易变化，需要更清晰的学习路径和阶段性反馈。\n\n【后续规划建议】\n后续可以先围绕当前专业课程和项目方向建立学习路径，将知识点拆分为基础概念、核心技能、实践任务和阶段评估四类内容，并结合练习题、代码实践和项目案例进行动态更新。"
+  }
+];
 
 export function AiGreetingInput() {
   const { widgetState, setWidgetState } = useAiWidget();
+  const cardRef = useRef<HTMLDivElement>(null);
+  
+  // Global mouse tracking for 3D parallax effect
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const mouseXSpring = useSpring(x, { stiffness: 150, damping: 20 });
   const mouseYSpring = useSpring(y, { stiffness: 150, damping: 20 });
+  
+  // Transform percentage to degrees
   const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ['15deg', '-15deg']);
   const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ['-15deg', '15deg']);
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (widgetState !== 'CENTER_INPUT' && widgetState !== 'WIDGET') return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    const xPct = mouseX / width - 0.5;
-    const yPct = mouseY / height - 0.5;
-    x.set(xPct);
-    y.set(yPct);
-  };
+  useEffect(() => {
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      // Only tilt in 3D when it's floating as a card or widget
+      if (widgetState !== 'CENTER_INPUT' && widgetState !== 'WIDGET') return;
+      if (!cardRef.current) return;
+      
+      const rect = cardRef.current.getBoundingClientRect();
+      const cardCenterX = rect.left + rect.width / 2;
+      const cardCenterY = rect.top + rect.height / 2;
+      
+      const diffX = e.clientX - cardCenterX;
+      const diffY = e.clientY - cardCenterY;
+      
+      // Normalize to a percentage of screen width to give a consistent parallax depth
+      const xPct = Math.max(-0.5, Math.min(0.5, diffX / window.innerWidth));
+      const yPct = Math.max(-0.5, Math.min(0.5, diffY / window.innerHeight));
+      
+      x.set(xPct);
+      y.set(yPct);
+    };
 
-  const handleMouseLeave = () => {
-    x.set(0);
-    y.set(0);
+    const handleGlobalMouseLeave = () => {
+      x.set(0);
+      y.set(0);
+    };
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    document.addEventListener('mouseleave', handleGlobalMouseLeave);
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      document.removeEventListener('mouseleave', handleGlobalMouseLeave);
+    };
+  }, [widgetState, x, y]);
+
+  const handleCardClick = () => {
+    if (widgetState === 'CENTER_INPUT' || widgetState === 'WIDGET') {
+      // Reset tilt so the expanded modal lays perfectly flat against the screen
+      x.set(0);
+      y.set(0);
+      setWidgetState('EXPANDED');
+    }
   };
 
   return (
-    <StyledWrapper onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
-      <div className="container-ai-input">
-        <label className="container-wrap">
-          <input type="checkbox" />
-          <motion.div 
-            layout
-            className="card" 
-            variants={{
-              initial: { width: 260, height: 160, borderRadius: 48 },
-              expanded: { width: '85vw', height: '85vh', borderRadius: 32 }
-            }}
-            initial="initial"
-            animate={widgetState === 'EXPANDED' ? 'expanded' : 'initial'}
-            style={{ 
-              rotateX: widgetState === 'EXPANDED' ? 0 : rotateX, 
-              rotateY: widgetState === 'EXPANDED' ? 0 : rotateY,
-              overflow: 'hidden',
-              backgroundColor: widgetState === 'EXPANDED' ? 'var(--color-bg-surface, #ffffff)' : 'transparent'
-            }}
-          >
-            {widgetState === 'EXPANDED' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', padding: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <AiEyes layoutId="eyes" isHappy />
-                  <button onClick={() => setWidgetState('WIDGET')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px' }}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 15l-6-6-6 6"/></svg>
+    <StyledWrapper>
+      <motion.div 
+        ref={cardRef}
+        layout
+        onClick={handleCardClick}
+        className={`card ${widgetState === 'CENTER_INPUT' ? 'initial' : widgetState}`} 
+        variants={{
+          initial: { width: 260, height: 160 },
+          expanded: { width: '85vw', height: '85vh' },
+          widget: { width: 100, height: 100 }
+        }}
+        initial="initial"
+        animate={
+          widgetState === 'EXPANDED' ? 'expanded' : 
+          widgetState === 'WIDGET' ? 'widget' : 'initial'
+        }
+        transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
+        style={{ 
+          rotateX: widgetState === 'EXPANDED' ? 0 : rotateX, 
+          rotateY: widgetState === 'EXPANDED' ? 0 : rotateY,
+          backgroundColor: widgetState === 'EXPANDED' ? 'var(--color-bg-surface, #ffffff)' : 'transparent',
+          cursor: widgetState === 'EXPANDED' ? 'default' : 'pointer'
+        }}
+      >
+        {widgetState === 'EXPANDED' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', padding: '24px', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <AiEyes layoutId="eyes" isHappy />
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setWidgetState('WIDGET');
+                }} 
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', color: 'var(--color-text-primary, #333)' }}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 15l-6-6-6 6"/></svg>
+              </button>
+            </div>
+            <div className="ChatFlow" style={{ flex: 1, padding: '0 var(--space-16, 16px)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-24, 24px)' }}>
+              {mockMessages.map((msg, idx) => (
+                <ChatCard key={idx} message={msg} />
+              ))}
+            </div>
+            <div className="chat" style={{ marginTop: 'auto', background: 'var(--color-bg-subtle, #f5f5f5)', borderRadius: '16px', padding: '12px' }}>
+              <div className="chat-bot" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <textarea placeholder="Imagine Something...✦˚" name="chat_bot" id="chat_bot" defaultValue={""} style={{ width: '100%', minHeight: '60px', padding: '8px', border: 'none', background: 'transparent', outline: 'none', resize: 'none', fontFamily: 'var(--font-body), sans-serif', color: 'var(--color-text-primary, #333)' }} />
+                <div className="options" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                  <div className="btns-add" style={{ display: 'flex', gap: '8px' }}>
+                    <button className="icon-btn">
+                      <svg viewBox="0 0 24 24" height={20} width={20} xmlns="http://www.w3.org/2000/svg">
+                        <path d="M7 8v8a5 5 0 1 0 10 0V6.5a3.5 3.5 0 1 0-7 0V15a2 2 0 0 0 4 0V8" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" stroke="currentColor" fill="none" />
+                      </svg>
+                    </button>
+                    <button className="icon-btn">
+                      <svg xmlns="http://www.w3.org/2000/svg" width={20} height={20} viewBox="0 0 24 24">
+                        <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm0 10a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm10 0a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1zm0-8h6m-3-3v6" />
+                      </svg>
+                    </button>
+                  </div>
+                  <button className="btn-submit">
+                    <i>
+                      <svg viewBox="0 0 512 512" height={20} width={20}>
+                        <path d="M473 39.05a24 24 0 0 0-25.5-5.46L47.47 185h-.08a24 24 0 0 0 1 45.16l.41.13l137.3 58.63a16 16 0 0 0 15.54-3.59L422 80a7.07 7.07 0 0 1 10 10L226.66 310.26a16 16 0 0 0-3.59 15.54l58.65 137.38c.06.2.12.38.19.57c3.2 9.27 11.3 15.81 21.09 16.25h1a24.63 24.63 0 0 0 23-15.46L478.39 64.62A24 24 0 0 0 473 39.05" fill="currentColor" />
+                      </svg>
+                    </i>
                   </button>
                 </div>
-                <div className="ChatFlow" style={{ flex: 1, padding: '0 var(--space-16, 16px)' }} />
-                <div className="chat" style={{ marginTop: 'auto', background: 'var(--color-bg-subtle, #f5f5f5)', borderRadius: '16px', padding: '8px' }}>
-                  <div className="chat-bot">
-                    <textarea placeholder="Imagine Something...✦˚" name="chat_bot" id="chat_bot" defaultValue={""} style={{ width: '100%', minHeight: '60px', padding: '8px', border: 'none', background: 'transparent', outline: 'none' }} />
-                  </div>
-                </div>
               </div>
-            ) : (
-              <>
-                <div className="background-blur-balls">
-                  <div className="balls">
-                    <span className="ball rosa" />
-                    <span className="ball violet" />
-                    <span className="ball green" />
-                    <span className="ball cyan" />
-                  </div>
-                </div>
-                <div className="content-card">
-                  <div className="background-blur-card">
-                    <AiEyes layoutId="eyes" />
-                    <AiEyes isHappy />
-                  </div>
-                </div>
-                <div className="container-ai-chat">
-                  <div className="chat">
-                    <div className="chat-bot">
-                      <textarea placeholder="Imagine Something...✦˚" name="chat_bot" id="chat_bot" defaultValue={""} />
-                    </div>
-                    <div className="options">
-                      <div className="btns-add">
-                        <button>
-                          <svg viewBox="0 0 24 24" height={20} width={20} xmlns="http://www.w3.org/2000/svg">
-                            <path d="M7 8v8a5 5 0 1 0 10 0V6.5a3.5 3.5 0 1 0-7 0V15a2 2 0 0 0 4 0V8" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" stroke="currentColor" fill="none" />
-                          </svg>
-                        </button>
-                        <button>
-                          <svg xmlns="http://www.w3.org/2000/svg" width={20} height={20} viewBox="0 0 24 24">
-                            <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm0 10a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm10 0a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1zm0-8h6m-3-3v6" />
-                          </svg>
-                        </button>
-                        <button>
-                          <svg xmlns="http://www.w3.org/2000/svg" width={20} height={20} viewBox="0 0 24 24">
-                            <path fill="currentColor" d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10s-4.477 10-10 10m-2.29-2.333A17.9 17.9 0 0 1 8.027 13H4.062a8.01 8.01 0 0 0 5.648 6.667M10.03 13c.151 2.439.848 4.73 1.97 6.752A15.9 15.9 0 0 0 13.97 13zm9.908 0h-3.965a17.9 17.9 0 0 1-1.683 6.667A8.01 8.01 0 0 0 19.938 13M4.062 11h3.965A17.9 17.9 0 0 1 9.71 4.333A8.01 8.01 0 0 0 4.062 11m5.969 0h3.938A15.9 15.9 0 0 0 12 4.248A15.9 15.9 0 0 0 10.03 11m4.259-6.667A17.9 17.9 0 0 1 15.973 11h3.965a8.01 8.01 0 0 0-5.648-6.667" />
-                          </svg>
-                        </button>
-                      </div>
-                      <button className="btn-submit">
-                        <i>
-                          <svg viewBox="0 0 512 512">
-                            <path d="M473 39.05a24 24 0 0 0-25.5-5.46L47.47 185h-.08a24 24 0 0 0 1 45.16l.41.13l137.3 58.63a16 16 0 0 0 15.54-3.59L422 80a7.07 7.07 0 0 1 10 10L226.66 310.26a16 16 0 0 0-3.59 15.54l58.65 137.38c.06.2.12.38.19.57c3.2 9.27 11.3 15.81 21.09 16.25h1a24.63 24.63 0 0 0 23-15.46L478.39 64.62A24 24 0 0 0 473 39.05" fill="currentColor" />
-                          </svg>
-                        </i>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-          </motion.div>
-        </label>
-      </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="background-blur-balls">
+              <div className="balls">
+                <span className="ball rosa" />
+                <span className="ball violet" />
+                <span className="ball green" />
+                <span className="ball cyan" />
+              </div>
+            </div>
+            <div className="content-card">
+              <div className="background-blur-card">
+                <AiEyes layoutId="eyes" />
+                <AiEyes isHappy />
+              </div>
+            </div>
+          </>
+        )}
+      </motion.div>
     </StyledWrapper>
   );
 }
 
 const StyledWrapper = styled.div`
-  /* Include all CSS exactly as provided in the design spec input, mapping background-color to var(--color-bg-surface) where appropriate to blend properly. */
-  .container-ai-input {
-    --perspective: 1000px;
-    --translateY: 45px;
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: -2.5rem;
-    bottom: -2.5rem;
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    transform-style: preserve-3d;
+  perspective: 1000px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  /* Explicit border radius mapping to beat the 3D overflow bug in WebKit */
+  .card.initial,
+  .card.initial .background-blur-balls,
+  .card.initial .content-card {
+    border-radius: 48px;
+    transition: border-radius 0.6s ease;
   }
   
-  .container-wrap {
-    display: flex;
-    align-items: center;
-    justify-items: center;
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translateX(-50%) translateY(-50%);
-    z-index: 9;
-    transform-style: preserve-3d;
-    cursor: pointer;
-    padding: 4px;
-    transition: all 0.3s ease;
-  }
-
-  .container-wrap:hover {
-    padding: 0;
-  }
-
-  .container-wrap:active {
-    transform: translateX(-50%) translateY(-50%) scale(0.95);
-  }
-
-  .container-wrap:after {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translateX(-50%) translateY(-55%);
-    width: 12rem;
-    height: 11rem;
-    background-color: var(--color-bg-subtle, #dedfe0);
-    border-radius: 3.2rem;
-    transition: all 0.3s ease;
-  }
-
-  .container-wrap:hover:after {
-    transform: translateX(-50%) translateY(-50%);
-    height: 12rem;
-  }
-
-  .container-wrap input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-    position: absolute;
-  }
-
-  .container-wrap input:checked + .card .eyes {
-    opacity: 0;
-  }
-
-  .container-wrap input:checked + .card .content-card {
-    width: 260px;
-    height: 160px;
-  }
-
-  .container-wrap input:checked + .card .background-blur-balls {
-    border-radius: 20px;
-  }
-
-  .container-wrap input:checked + .card .container-ai-chat {
-    opacity: 1;
-    visibility: visible;
-    z-index: 99999;
-    pointer-events: visible;
+  .card.EXPANDED, .card.WIDGET,
+  .card.EXPANDED .background-blur-balls, .card.WIDGET .background-blur-balls,
+  .card.EXPANDED .content-card, .card.WIDGET .content-card {
+    border-radius: 32px;
+    transition: border-radius 0.6s ease;
   }
 
   .card {
-    width: 100%;
-    height: 100%;
     transform-style: preserve-3d;
-    will-change: transform;
-    transition: all 0.6s ease;
-    border-radius: 3rem;
+    will-change: transform, width, height;
     display: flex;
     align-items: center;
-    transform: translateZ(50px);
     justify-content: center;
+    box-shadow: 0 10px 40px rgba(0, 0, 60, 0.1);
+    transition: box-shadow 0.3s ease;
   }
 
-  .card:hover {
+  /* 3D Hover Effect Only for Normal/Widget State */
+  .card.initial:hover,
+  .card.WIDGET:hover {
     box-shadow:
-      0 10px 40px rgba(0, 0, 60, 0.25),
+      0 15px 45px rgba(0, 0, 60, 0.15),
       inset 0 0 10px rgba(255, 255, 255, 0.5);
   }
 
   .background-blur-balls {
     position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translateX(-50%) translateY(-50%);
+    left: 0;
+    top: 0;
     width: 100%;
     height: 100%;
     z-index: -10;
-    border-radius: 3rem;
-    transition: all 0.3s ease;
-    background-color: var(--color-bg-glass, rgba(255, 255, 255, 0.1));
+    background-color: rgba(255, 255, 255, 0.8);
     overflow: hidden;
   }
+  
   .balls {
     position: absolute;
     left: 50%;
@@ -248,7 +249,8 @@ const StyledWrapper = styled.div`
     animation: rotate-background-balls 10s linear infinite;
   }
 
-  .container-wrap:hover .balls {
+  /* Pause background rotation on hover */
+  .card:hover .balls {
     animation-play-state: paused;
   }
 
@@ -289,161 +291,54 @@ const StyledWrapper = styled.div`
   }
 
   .content-card {
-    width: 12rem;
-    height: 12rem;
+    width: 100%;
+    height: 100%;
     display: flex;
-    border-radius: 3rem;
-    transition: all 0.3s ease;
     overflow: hidden;
+    transform: translateZ(50px);
+    transform-style: preserve-3d;
   }
 
   .background-blur-card {
     width: 100%;
     height: 100%;
     backdrop-filter: blur(50px);
-  }
-
-  .eyes {
-    position: absolute;
-    left: 50%;
-    bottom: 50%;
-    transform: translateX(-50%);
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 52px;
-    gap: 2rem;
-    transition: all 0.3s ease;
-
-    & .eye {
-      width: 26px;
-      height: 52px;
-      background-color: var(--color-text-primary, #fff);
-      border-radius: 16px;
-      animation: animate-eyes 10s infinite linear;
-      transition: all 0.3s ease;
-    }
+    transform-style: preserve-3d;
   }
 
-  .eyes.happy {
-    display: none;
-    color: var(--color-text-primary, #fff);
-    gap: 0;
-
-    & svg {
-      width: 60px;
-    }
-  }
-
-  .container-wrap:hover .eyes .eye {
+  /* Hide happy eyes by default inside the normal content card */
+  .content-card .eyes.happy {
     display: none;
   }
-
-  .container-wrap:hover .eyes.happy {
+  
+  /* Handle Eye Hover State natively */
+  .card:hover .content-card .eyes:not(.happy) {
+    display: none;
+  }
+  .card:hover .content-card .eyes.happy {
     display: flex;
   }
 
-  .container-ai-chat {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    padding: 6px;
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .container-wrap .card .chat {
+  .icon-btn {
     display: flex;
-    justify-content: space-between;
-    flex-direction: column;
-    border-radius: 15px;
-    width: 100%;
-    height: 100%;
-    padding: 4px;
-    overflow: hidden;
-    background-color: var(--color-bg-surface, #ffffff);
-  }
-
-  .container-wrap .card .chat .chat-bot {
-    position: relative;
-    display: flex;
-    height: 100%;
-    transition: all 0.3s ease;
-  }
-
-  .card .chat .chat-bot textarea {
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-whisper, rgba(0, 0, 0, 0.2));
     background-color: transparent;
-    border-radius: 16px;
     border: none;
-    width: 100%;
-    height: 100%;
-    color: var(--color-text-secondary, #8b8b8b);
-    font-family: var(--font-body), sans-serif;
-    font-size: 14px;
-    font-weight: 400;
-    padding: 10px;
-    resize: none;
-    outline: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
 
-    &::-webkit-scrollbar {
-      width: 6px;
-      height: 10px;
-    }
-
-    &::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    &::-webkit-scrollbar-thumb {
-      background: var(--color-border-subtle, #dedfe0);
-      border-radius: 5px;
-    }
-
-    &::-webkit-scrollbar-thumb:hover {
-      background: var(--color-text-secondary, #8b8b8b);
-      cursor: pointer;
-    }
-
-    &::placeholder {
-      color: var(--color-text-whisper, #dedfe0);
-      transition: all 0.3s ease;
-    }
-    &:focus::placeholder {
+    &:hover {
+      transform: translateY(-2px);
       color: var(--color-text-secondary, #8b8b8b);
     }
   }
 
-  .card .chat .options {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    padding: 10px;
-
-    & button {
-      transition: all 0.3s ease;
-    }
-  }
-
-  .card .chat .options .btns-add {
-    display: flex;
-    gap: 8px;
-
-    & button {
-      display: flex;
-      color: var(--color-text-whisper, rgba(0, 0, 0, 0.1));
-      background-color: transparent;
-      border: none;
-      cursor: pointer;
-      transition: all 0.3s ease;
-
-      &:hover {
-        transform: translateY(-5px);
-        color: var(--color-text-secondary, #8b8b8b);
-      }
-    }
-  }
-
-  .card .chat .options .btn-submit {
+  .btn-submit {
     display: flex;
     padding: 2px;
     background-image: linear-gradient(to top, #ff4141, #9147ff, #3b82f6);
@@ -452,40 +347,41 @@ const StyledWrapper = styled.div`
     cursor: pointer;
     border: none;
     outline: none;
-    opacity: 0.7;
-    transition: all 0.15s ease;
+    opacity: 0.8;
+    transition: all 0.2s ease;
 
     & i {
-      width: 30px;
-      height: 30px;
-      padding: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
       background: rgba(0, 0, 0, 0.1);
-      border-radius: 10px;
+      border-radius: 8px;
       backdrop-filter: blur(3px);
-      color: #cfcfcf;
+      color: #fff;
     }
+    
     & svg {
       transition: all 0.3s ease;
     }
+    
     &:hover {
       opacity: 1;
       & svg {
-        color: #f3f6fd;
         filter: drop-shadow(0 0 5px #ffffff);
       }
     }
 
     &:focus svg {
-      color: #f3f6fd;
       filter: drop-shadow(0 0 5px #ffffff);
-      transform: scale(1.2) rotate(45deg) translateX(-2px) translateY(1px);
+      transform: scale(1.1) rotate(45deg);
     }
 
     &:active {
-      transform: scale(0.92);
+      transform: scale(0.95);
     }
   }
-
 
   @keyframes rotate-background-balls {
     from {
@@ -494,14 +390,5 @@ const StyledWrapper = styled.div`
     to {
       transform: translateX(-50%) translateY(-50%) rotate(0);
     }
-  }
-
-  @keyframes animate-eyes {
-    46% { height: 52px; }
-    48% { height: 20px; }
-    50% { height: 52px; }
-    96% { height: 52px; }
-    98% { height: 20px; }
-    100% { height: 52px; }
   }
 `;
