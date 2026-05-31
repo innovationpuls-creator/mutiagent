@@ -19,7 +19,7 @@ test('provides default state and allows state updates', () => {
       <TestComponent />
     </AiWidgetProvider>
   );
-  expect(screen.getByTestId('state').textContent).toBe('CENTER_INPUT');
+  expect(screen.getByTestId('state').textContent).toBe('HIDDEN');
   fireEvent.click(screen.getByText('Expand'));
   expect(screen.getByTestId('state').textContent).toBe('EXPANDED');
 });

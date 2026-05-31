@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 
-export type WidgetState = 'CENTER_INPUT' | 'PROCESSING' | 'EXPANDED' | 'WIDGET';
+export type WidgetState = 'HIDDEN' | 'CENTER_INPUT' | 'PROCESSING' | 'EXPANDED' | 'WIDGET';
 
 interface AiWidgetContextType {
   widgetState: WidgetState;
@@ -10,7 +10,7 @@ interface AiWidgetContextType {
 const AiWidgetContext = createContext<AiWidgetContextType | undefined>(undefined);
 
 export function AiWidgetProvider({ children }: { children: ReactNode }) {
-  const [widgetState, setWidgetState] = useState<WidgetState>('CENTER_INPUT');
+  const [widgetState, setWidgetState] = useState<WidgetState>('HIDDEN');
   return (
     <AiWidgetContext.Provider value={{ widgetState, setWidgetState }}>
       {children}
