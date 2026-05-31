@@ -136,7 +136,7 @@ export function AiGreetingInput() {
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 15l-6-6-6 6"/></svg>
               </button>
             </div>
-            <div className="ChatFlow" style={{ flex: 1, padding: '0 var(--space-16, 16px)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-24, 24px)' }}>
+            <div className="ChatFlow" style={{ flex: 1, padding: '0 var(--space-16, 16px) var(--space-24, 24px)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-24, 24px)' }}>
               {mockMessages.map((msg, idx) => (
                 <ChatCard key={idx} message={msg} />
               ))}

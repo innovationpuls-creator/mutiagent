@@ -75,12 +75,17 @@ export function ChatCard({ message, onSendReply }: ChatCardProps) {
 
 const CardWrapper = styled.div`
   background: var(--material-dark-panel, oklch(18% 0.035 235));
-  border-radius: var(--radius-xl, 40px);
-  padding: var(--space-40, 40px);
-  box-shadow: 0 2px 6px oklch(8% 0.03 235 / 0.48), 0 18px 48px oklch(8% 0.03 235 / 0.36);
-  width: 100%;
+  /* Chat bubble style: slightly asymmetrical border radius */
+  border-radius: 24px 24px 24px 8px;
+  padding: var(--space-24, 24px) var(--space-32, 32px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  
+  /* Layout constraints */
+  max-width: 85%;
+  width: fit-content;
+  align-self: flex-start;
+  
   color: var(--color-text-inverse, oklch(96% 0.025 75));
-  margin-bottom: var(--space-24, 24px);
 
   .md-content {
     font-size: var(--text-body, 1rem);
