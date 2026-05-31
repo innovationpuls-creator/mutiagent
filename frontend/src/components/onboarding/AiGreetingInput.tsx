@@ -1,17 +1,49 @@
-import React from 'react';
+import React, { useRef } from 'react';
+import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import styled from 'styled-components';
 import { AiEyes } from './AiEyes';
+import { useAiWidget } from '../../context/AiWidgetContext';
 
 export function AiGreetingInput() {
+  const { widgetState, setWidgetState } = useAiWidget();
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const mouseXSpring = useSpring(x, { stiffness: 150, damping: 20 });
+  const mouseYSpring = useSpring(y, { stiffness: 150, damping: 20 });
+  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ['15deg', '-15deg']);
+  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ['-15deg', '15deg']);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (widgetState !== 'CENTER_INPUT' && widgetState !== 'WIDGET') return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const xPct = mouseX / width - 0.5;
+    const yPct = mouseY / height - 0.5;
+    x.set(xPct);
+    y.set(yPct);
+  };
+
+  const handleMouseLeave = () => {
+    x.set(0);
+    y.set(0);
+  };
+
   return (
-    <StyledWrapper>
+    <StyledWrapper onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
       <div className="container-ai-input">
-        {[...Array(15)].map((_, i) => (
-          <div key={i} className="area" />
-        ))}
         <label className="container-wrap">
           <input type="checkbox" />
-          <div className="card">
+          <motion.div 
+            layout
+            className="card" 
+            style={{ 
+              rotateX: widgetState === 'EXPANDED' ? 0 : rotateX, 
+              rotateY: widgetState === 'EXPANDED' ? 0 : rotateY 
+            }}
+          >
             <div className="background-blur-balls">
               <div className="balls">
                 <span className="ball rosa" />
@@ -59,7 +91,7 @@ export function AiGreetingInput() {
                 </div>
               </div>
             </div>
-          </div>
+          </motion.div>
         </label>
       </div>
     </StyledWrapper>
@@ -427,158 +459,6 @@ const StyledWrapper = styled.div`
     }
   }
 
-  .area:nth-child(15):hover ~ .container-wrap .card,
-  .area:nth-child(15):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(-15deg) rotateY(15deg)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-  .area:nth-child(14):hover ~ .container-wrap .card,
-  .area:nth-child(14):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(-15deg) rotateY(7deg)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-  .area:nth-child(13):hover ~ .container-wrap .card,
-  .area:nth-child(13):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(-15deg) rotateY(0)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-  .area:nth-child(12):hover ~ .container-wrap .card,
-  .area:nth-child(12):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(-15deg) rotateY(-7deg)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-  .area:nth-child(11):hover ~ .container-wrap .card,
-  .area:nth-child(11):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(-15deg) rotateY(-15deg)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(10):hover ~ .container-wrap .card,
-  .area:nth-child(10):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(0) rotateY(15deg)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-  .area:nth-child(9):hover ~ .container-wrap .card,
-  .area:nth-child(9):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(0) rotateY(7deg)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-  .area:nth-child(8):hover ~ .container-wrap .card,
-  .area:nth-child(8):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(0) rotateY(0)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-  .area:nth-child(7):hover ~ .container-wrap .card,
-  .area:nth-child(7):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(0) rotateY(-7deg)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-  .area:nth-child(6):hover ~ .container-wrap .card,
-  .area:nth-child(6):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(0) rotateY(-15deg)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(5):hover ~ .container-wrap .card,
-  .area:nth-child(5):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(15deg) rotateY(15deg)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-  .area:nth-child(4):hover ~ .container-wrap .card,
-  .area:nth-child(4):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(15deg) rotateY(7deg)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-  .area:nth-child(3):hover ~ .container-wrap .card,
-  .area:nth-child(3):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(15deg) rotateY(0)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-  .area:nth-child(2):hover ~ .container-wrap .card,
-  .area:nth-child(2):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(15deg) rotateY(-7deg)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-  .area:nth-child(1):hover ~ .container-wrap .card,
-  .area:nth-child(1):hover ~ .container-wrap .eyes .eye {
-    transform: perspective(var(--perspective)) rotateX(15deg) rotateY(-15deg)
-      translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(15):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(15):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(-10deg) rotateY(8deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(14):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(14):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(-10deg) rotateY(4deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(13):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(13):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(-10deg) rotateY(0deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(12):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(12):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(-10deg) rotateY(-4deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(11):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(11):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(-10deg) rotateY(-8deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(10):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(10):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(0deg) rotateY(8deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(9):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(9):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(0deg) rotateY(4deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(8):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(8):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(0deg) rotateY(0deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(7):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(7):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(0deg) rotateY(-4deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(6):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(6):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(0deg) rotateY(-8deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(5):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(5):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(10deg) rotateY(8deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(4):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(4):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(10deg) rotateY(4deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(3):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(3):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(10deg) rotateY(0deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(2):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(2):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(10deg) rotateY(-4deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
-
-  .area:nth-child(1):hover ~ .container-wrap .card .container-ai-chat .chat .options button,
-  .area:nth-child(1):hover ~ .container-wrap .card .container-ai-chat .chat .chat-bot {
-    transform: perspective(var(--perspective)) rotateX(10deg) rotateY(-8deg) translateZ(var(--translateY)) scale3d(1, 1, 1);
-  }
 
   @keyframes rotate-background-balls {
     from {
