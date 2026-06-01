@@ -57,8 +57,11 @@ def make_state(query: str = "我想规划学习") -> OrchestrationState:
         "main_result": {},
         "agent_results": {},
         "answer": {},
+        "agent_trace": [],
+        "user_profile": {},
         "profile": None,
         "learning_path": None,
+        "awaiting_profile": False,
         "completed": False,
         "error": "",
     }
@@ -123,5 +126,73 @@ def test_graph_executes_agent_calls_and_returns_final_main_agent_answer() -> Non
     assert result["profile"] == profile
     assert result["completed"] is True
     assert main.calls[1]["query"] == "请基于 agent 结果生成最终回复"
-    assert main.calls[1]["inputs"] == {"agent_results": {"profile": profile}}
+    assert main.calls[1]["inputs"] == {"agent_results": {"profile": profile}, "user_profile": {}}
     assert executor.calls[0].agent_key == "profile_agent"
+
+
+def test_graph_supplies_current_query_when_agent_call_query_is_missing() -> None:
+    main = FakeDifyClient(
+        [
+            (
+                '{"response":{"user_message":"我先调用画像智能体。","question_box":null},'
+                '"control":{"action":"call_agents","calls":[{'
+                '"call_id":"profile",'
+                '"agent_key":"profile_agent",'
+                '"label":"基础画像智能体",'
+                '"depends_on":[],'
+                '"parallel_group":null,'
+                '"agent_input":{}'
+                '}]}}'
+            ),
+        ]
+    )
+    executor = FakeExecutor({"profile": {"type": "collecting", "stage": "basic_info", "text": "继续"}})
+    graph = create_orchestration_graph(main_client=main, executor_factory=lambda _state: executor)
+
+    result = asyncio.run(
+        graph.ainvoke(make_state("我想完善基础画像"), {"configurable": {"thread_id": "graph-main-4"}})
+    )
+
+    assert result["answer"]["user_message"] == "继续"
+    assert executor.calls[0].agent_input == {"query": "我想完善基础画像"}
+    assert len(main.calls) == 1
+
+
+def test_graph_returns_collecting_profile_without_main_final_summary() -> None:
+    main = FakeDifyClient(
+        [
+            (
+                '{"response":{"user_message":"我先调用画像智能体。","question_box":null},'
+                '"control":{"action":"call_agents","calls":[{'
+                '"call_id":"profile",'
+                '"agent_key":"profile_agent",'
+                '"label":"基础画像智能体",'
+                '"depends_on":[],'
+                '"parallel_group":null,'
+                '"agent_input":{"query":"完善画像"}'
+                '}]}}'
+            )
+        ]
+    )
+    profile = {
+        "type": "collecting",
+        "stage": "basic_info",
+        "question_mode": "question_md",
+        "confirmed_info": {},
+        "defaulted_fields": [],
+        "question_md": "请继续介绍你的技术基础。",
+        "question_box": {"question": "你熟悉哪些技术？", "options": ["Java", "Python"]},
+        "text": "请继续介绍你的技术基础。",
+    }
+    executor = FakeExecutor({"profile": profile})
+    graph = create_orchestration_graph(main_client=main, executor_factory=lambda _state: executor)
+
+    result = asyncio.run(
+        graph.ainvoke(make_state("完善画像"), {"configurable": {"thread_id": "graph-main-5"}})
+    )
+
+    assert result["completed"] is False
+    assert result["profile"] == profile
+    assert result["answer"]["user_message"] == "请继续介绍你的技术基础。"
+    assert result["answer"]["question_box"] == {"question": "你熟悉哪些技术？", "options": ["Java", "Python"]}
+    assert len(main.calls) == 1

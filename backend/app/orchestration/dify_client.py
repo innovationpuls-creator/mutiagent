@@ -60,7 +60,10 @@ class DifyClient:
                     "Content-Type": "application/json",
                 },
             )
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise RuntimeError(f"Dify chat request failed: {resp.status_code} {resp.text}") from exc
             data = resp.json()
 
         return DifyResponse(
@@ -100,7 +103,13 @@ class DifyClient:
                     "Content-Type": "application/json",
                 },
             ) as resp:
-                resp.raise_for_status()
+                try:
+                    resp.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    body = await resp.aread()
+                    raise RuntimeError(
+                        f"Dify streaming request failed: {resp.status_code} {body.decode(errors='replace')}"
+                    ) from exc
                 async for line in resp.aiter_lines():
                     if line.startswith("data: "):
                         yield line[6:]

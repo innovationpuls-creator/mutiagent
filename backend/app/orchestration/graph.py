@@ -71,6 +71,19 @@ def _main_conversation_key(state: OrchestrationState) -> str:
     return f"{state['user_id']}:{MAIN_AGENT_KEY}"
 
 
+def _query_with_profile_context(state: OrchestrationState, query: str) -> str:
+    user_profile = state.get("user_profile", {})
+    if not isinstance(user_profile, dict) or not user_profile:
+        return query
+    return (
+        "【后端上下文】当前用户基础画像已完成。"
+        "如果用户请求学习路径，不要再次调用 profile_agent；"
+        "请基于这份画像判断是否应调用 learning_path_agent。"
+        f"\n当前用户基础画像 JSON：{user_profile}"
+        f"\n【用户请求】{query}"
+    )
+
+
 async def _call_main_agent(
     *,
     state: OrchestrationState,
@@ -81,10 +94,10 @@ async def _call_main_agent(
 ) -> tuple[dict, MainAgentResult]:
     conversation_key = _main_conversation_key(state)
     response = await client.chat_blocking(
-        query=query,
+        query=_query_with_profile_context(state, query),
         user_id=state["user_id"],
         conversation_id=conversation_ids.get(conversation_key, ""),
-        inputs=inputs or {},
+        inputs={**(inputs or {}), "user_profile": state.get("user_profile", {})},
     )
     conversation_ids[conversation_key] = response.conversation_id
     return response.raw, _parse_main_response(response.raw)
@@ -138,8 +151,26 @@ def _completed_profile(calls: list[AgentCall], results: dict[str, dict]) -> dict
     return None
 
 
+def _profile_result(calls: list[AgentCall], results: dict[str, dict]) -> dict | None:
+    return _result_for_agent(calls, results, "profile_agent")
+
+
 def _learning_path(calls: list[AgentCall], results: dict[str, dict]) -> dict | None:
     return _result_for_agent(calls, results, "learning_path_agent")
+
+
+def _calls_with_default_query(calls: list[AgentCall], query: str) -> list[AgentCall]:
+    enriched: list[AgentCall] = []
+    for call in calls:
+        if call.agent_key not in {"intent_recognition_agent", "profile_agent"}:
+            enriched.append(call)
+            continue
+        raw_query = call.agent_input.get("query")
+        if isinstance(raw_query, str) and raw_query.strip():
+            enriched.append(call)
+            continue
+        enriched.append(call.model_copy(update={"agent_input": {**call.agent_input, "query": query}}))
+    return enriched
 
 
 def _route_after_main(state: OrchestrationState) -> str:
@@ -155,6 +186,8 @@ def _route_after_main(state: OrchestrationState) -> str:
 
 def _route_after_agent_execution(state: OrchestrationState) -> str:
     if state.get("error"):
+        return "end"
+    if state.get("awaiting_profile"):
         return "end"
     return "call_main_final"
 
@@ -191,6 +224,23 @@ async def stream_orchestration_events(
             "state": result,
         }
         return
+
+    for step in result.get("agent_trace", []):
+        if not isinstance(step, dict):
+            continue
+        if step.get("step_id") == MAIN_AGENT_KEY:
+            continue
+        yield {
+            "event": "agent_completed" if step.get("status") == "completed" else "agent_failed",
+            "step_id": step.get("step_id", ""),
+            "agent_key": step.get("agent_key", ""),
+            "agent": step.get("agent_key", ""),
+            "label": step.get("label", ""),
+            "message": step.get("message", ""),
+            "phase": step.get("phase", ""),
+            "depends_on": step.get("depends_on", []),
+            "parallel_group": step.get("parallel_group"),
+        }
 
     yield {
         "event": "completed",
@@ -246,7 +296,7 @@ def create_orchestration_graph(
 
     async def execute_agent_calls(state: OrchestrationState) -> dict:
         result = MainAgentResult.model_validate(state["main_result"])
-        calls = result.control.calls
+        calls = _calls_with_default_query(result.control.calls, state["query"])
         trace = state.get("agent_trace", [])
         if not isinstance(trace, list):
             trace = []
@@ -265,10 +315,30 @@ def create_orchestration_graph(
                 ],
             }
 
+        profile_result = _profile_result(calls, agent_results)
+        completed_profile = _completed_profile(calls, agent_results)
+        if profile_result is not None and completed_profile is None:
+            return {
+                "agent_results": agent_results,
+                "answer": {
+                    "user_message": str(profile_result.get("question_md") or profile_result.get("text") or ""),
+                    "question_box": profile_result.get("question_box"),
+                },
+                "profile": profile_result,
+                "learning_path": None,
+                "completed": False,
+                "awaiting_profile": True,
+                "agent_trace": [
+                    *trace,
+                    *[_call_trace(call, "completed", f"{call.label}已完成。") for call in calls],
+                ],
+            }
+
         return {
             "agent_results": agent_results,
-            "profile": _completed_profile(calls, agent_results),
+            "profile": completed_profile,
             "learning_path": _learning_path(calls, agent_results),
+            "awaiting_profile": False,
             "agent_trace": [
                 *trace,
                 *[_call_trace(call, "completed", f"{call.label}已完成。") for call in calls],
