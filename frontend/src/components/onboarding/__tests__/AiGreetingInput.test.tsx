@@ -44,10 +44,8 @@ test('shows the Codex-style progress panel beside the chat flow when expanded', 
 
   expect(await screen.findByLabelText('多智能体调用状态')).toBeTruthy();
   expect(screen.getByText('进度')).toBeTruthy();
-  expect(screen.getByText('步骤')).toBeTruthy();
-  expect(screen.getByText('完整调用记录')).toBeTruthy();
-  expect(screen.getByText('读取上下文')).toBeTruthy();
-  expect(screen.getByText('意图识别智能体')).toBeTruthy();
-  expect(screen.getByText('基础画像智能体')).toBeTruthy();
+  expect(screen.getByText('Agent 步骤')).toBeTruthy();
+  expect(screen.getByText('等待本轮调用开始...')).toBeTruthy();
   expect(screen.getByLabelText('对话内容')).toBeTruthy();
+  expect(screen.getByLabelText('AI 基础画像对话')).toBeTruthy();
 });

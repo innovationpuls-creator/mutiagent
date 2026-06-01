@@ -404,13 +404,14 @@ const CardWrapper = styled.article`
     background: var(--color-surface-inset);
     box-shadow: var(--shadow-inset);
     border-radius: var(--radius-full);
-    padding: var(--space-8);
+    padding: var(--space-4);
     margin-block-start: var(--space-16);
   }
 
   .input-pebble {
     min-inline-size: 0;
     flex: 1;
+    min-block-size: 0;
     background: transparent;
     border: none;
     font-family: var(--font-body);
@@ -421,8 +422,10 @@ const CardWrapper = styled.article`
   }
 
   .input-groove button {
-    inline-size: 44px;
-    block-size: 44px;
+    inline-size: var(--space-32);
+    block-size: var(--space-32);
+    min-inline-size: var(--space-32);
+    min-block-size: var(--space-32);
     font-size: var(--text-h4);
     line-height: 1;
   }

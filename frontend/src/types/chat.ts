@@ -35,3 +35,35 @@ export interface SessionMessage {
   question_box: QuestionBox;
   text: string;
 }
+
+export type MessageRole = 'user' | 'assistant' | 'system';
+
+export type MessageStatus = 'pending' | 'streaming' | 'completed' | 'error';
+
+export type AgentRunStepKind = 'agent' | 'route' | 'answer';
+
+export type AgentRunStepStatus = 'running' | 'success' | 'error' | 'skipped';
+
+export interface AgentRunStep {
+  stepId: string;
+  kind: AgentRunStepKind;
+  status: AgentRunStepStatus;
+  title: string;
+  summary?: string;
+  agent?: string | null;
+  durationMs?: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: MessageRole;
+  content: string;
+  status: MessageStatus;
+  timestamp: number;
+  sessionMessage?: SessionMessage | null;
+  runTrace?: AgentRunStep[];
+  activeStepId?: string | null;
+  error?: string;
+}
+
+export type ChatState = 'idle' | 'connecting' | 'streaming' | 'error';

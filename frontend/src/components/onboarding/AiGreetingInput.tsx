@@ -1,80 +1,70 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import styled from 'styled-components';
-import { streamChatflow, type AgentEventName, type ChatflowAgentEvent } from '../../api/orchestration';
+import { streamChatflow, type ChatflowAgentEvent } from '../../api/orchestration';
 import { useAiWidget } from '../../context/AiWidgetContext';
 import { useAuth } from '../../contexts/AuthContext';
-import type { SessionMessage } from '../../types/chat';
+import type { AgentRunStep, ChatMessage, SessionMessage } from '../../types/chat';
+import { chatReducer, initialChatStore, nextMessageId } from '../../onboarding/chatReducer';
+import { useChatSession } from '../../onboarding/hooks/useChatSession';
 import { AiEyes } from './AiEyes';
+import { AgentRunTimeline } from './AgentRunTimeline';
 import { ChatCard } from './ChatCard';
+import { MessageBubble } from './MessageBubble';
+import { AssistantMessage } from './AssistantMessage';
+import { SystemMessage } from './AssistantMessage';
 
-type AgentStepStatus = 'pending' | 'running' | 'completed' | 'routed' | 'error';
+const AGENT_LABELS: Record<string, string> = {
+  intent_recognition_agent: '意图识别智能体',
+  profile_agent: '基础画像智能体',
+  learning_path_agent: '学习路径智能体',
+  course_knowledge_agent: '课程知识智能体',
+  learning_resource_agent: '资源推荐智能体',
+  dynamic_update_agent: '动态更新智能体',
+  chat: '日常对话智能体',
+};
 
-interface AgentStep {
+function isStructuredMessage(answer: unknown): answer is SessionMessage {
+  if (!answer || typeof answer !== 'object') return false;
+  const a = answer as Record<string, unknown>;
+  return a.type === 'collecting' || a.type === 'basic_profile';
+}
+
+function findStepId(trace: AgentRunStep[], kind: string): string | undefined {
+  const match = [...trace].reverse().find((s) => s.kind === kind && s.status === 'running');
+  return match?.stepId;
+}
+
+interface AgentStepStatus {
   id: string;
   title: string;
-  status: AgentStepStatus;
   detail: string;
+  status: 'pending' | 'running' | 'completed' | 'routed' | 'error';
+  agentType?: 'scan' | 'pulse' | 'spin' | 'write';
 }
 
-const DEFAULT_AGENT_STEPS: AgentStep[] = [
-  {
-    id: 'context',
-    title: '读取上下文',
-    status: 'pending',
-    detail: '等待接收你的学习线索',
-  },
-  {
-    id: 'intent',
-    title: '意图识别智能体',
-    status: 'pending',
-    detail: '判断该由哪个智能体处理',
-  },
-  {
-    id: 'route',
-    title: '路由决策',
-    status: 'pending',
-    detail: '等待意图识别结果',
-  },
-  {
-    id: 'profile',
-    title: '基础画像智能体',
-    status: 'pending',
-    detail: '等待路由转交',
-  },
-  {
-    id: 'update',
-    title: '更新画像 / 生成问题',
-    status: 'pending',
-    detail: '等待智能体返回内容',
-  },
+const DEFAULT_AGENT_STEPS: AgentStepStatus[] = [
+  { id: 'context', title: '读取上下文', status: 'pending', detail: '等待接收你的学习线索', agentType: 'scan' },
+  { id: 'intent', title: '意图识别智能体', status: 'pending', detail: '判断该由哪个智能体处理', agentType: 'scan' },
+  { id: 'route', title: '路由决策', status: 'pending', detail: '等待意图识别结果', agentType: 'pulse' },
+  { id: 'profile', title: '基础画像智能体', status: 'pending', detail: '等待路由转交', agentType: 'spin' },
+  { id: 'update', title: '更新画像 / 生成问题', status: 'pending', detail: '等待智能体返回内容', agentType: 'write' },
 ];
 
-function statusLabel(status: AgentStepStatus): string {
-  if (status === 'running') return '运行中';
-  if (status === 'completed') return '已完成';
-  if (status === 'routed') return '已转交';
-  if (status === 'error') return '异常';
-  if (status === 'pending') return '等待中';
-  return '待命';
+function statusLabel(status: 'pending' | 'running' | 'completed' | 'routed' | 'error'): string {
+  const map: Record<string, string> = { running: '运行中', completed: '已完成', routed: '已转交', error: '异常', pending: '等待中' };
+  return map[status] || '待命';
 }
 
-function updateStep(
-  steps: AgentStep[],
-  id: string,
-  status: AgentStepStatus,
-  detail: string,
-): AgentStep[] {
+function updateStep(steps: AgentStepStatus[], id: string, status: AgentStepStatus['status'], detail: string): AgentStepStatus[] {
   return steps.map((step) => (step.id === id ? { ...step, status, detail } : step));
 }
 
-function mergeAgentStep(current: AgentStep[], event: ChatflowAgentEvent): AgentStep[] {
+function mergeAgentStep(current: AgentStepStatus[], event: ChatflowAgentEvent): AgentStepStatus[] {
   if (event.event === 'agent_started' && event.agent === 'intent_recognition_agent') {
     return updateStep(
       updateStep(current, 'context', 'completed', '已读取本轮输入与历史对话'),
-      'intent',
-      'running',
-      event.message || '正在判断这次对话应该交给哪个智能体',
+      'intent', 'running', event.message || '正在判断这次对话应该交给哪个智能体',
     );
   }
   if (event.event === 'agent_completed' && event.agent === 'intent_recognition_agent') {
@@ -84,14 +74,17 @@ function mergeAgentStep(current: AgentStep[], event: ChatflowAgentEvent): AgentS
     return updateStep(current, 'route', 'routed', event.message || `转交给${event.label || '具体智能体'}`);
   }
   if (event.event === 'agent_started' && event.agent === 'profile_agent') {
-    return updateStep(current, 'profile', 'running', event.message || '正在整理基础画像信息');
+    return updateStep(
+      updateStep(current, 'route', 'completed', '已转交至基础画像智能体'),
+      'profile',
+      'running',
+      event.message || '正在整理基础画像信息',
+    );
   }
   if (event.event === 'agent_completed' && event.agent === 'profile_agent') {
     return updateStep(
       updateStep(current, 'profile', 'completed', '基础画像智能体已返回结果'),
-      'update',
-      'running',
-      '正在生成问题或更新画像卡片',
+      'update', 'running', '正在生成问题或更新画像卡片',
     );
   }
   if (event.event === 'completed') {
@@ -100,14 +93,14 @@ function mergeAgentStep(current: AgentStep[], event: ChatflowAgentEvent): AgentS
   if (event.event === 'error') {
     return current.map((step) =>
       step.status === 'running' || step.status === 'routed'
-        ? { ...step, status: 'error', detail: event.message || '这一步没有正常完成' }
+        ? { ...step, status: 'error' as const, detail: event.message || '这一步没有正常完成' }
         : step,
     );
   }
   return current;
 }
 
-function currentProgressLabel(steps: AgentStep[]): string {
+function currentProgressLabel(steps: AgentStepStatus[]): string {
   const active = steps.find((step) => step.status === 'running' || step.status === 'routed');
   if (active) return `${active.title}：${active.detail}`;
   const completedCount = steps.filter((step) => step.status === 'completed').length;
@@ -119,16 +112,29 @@ export function AiGreetingInput() {
   const { widgetState, setWidgetState } = useAiWidget();
   const { token } = useAuth();
   const cardRef = useRef<HTMLDivElement>(null);
-  const [messages, setMessages] = useState<SessionMessage[]>([]);
-  const [executionId, setExecutionId] = useState<string | null>(null);
+  const [store, dispatch] = useReducer(chatReducer, initialChatStore);
   const [inputValue, setInputValue] = useState('');
-  const [isPending, setIsPending] = useState(false);
-  const [isCompleted, setIsCompleted] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [agentSteps, setAgentSteps] = useState<AgentStep[]>(DEFAULT_AGENT_STEPS);
+  const [agentSteps, setAgentSteps] = useState<AgentStepStatus[]>(DEFAULT_AGENT_STEPS);
   const [agentEvents, setAgentEvents] = useState<ChatflowAgentEvent[]>([]);
   const [showEventLog, setShowEventLog] = useState(false);
-  const aiMood = error ? 'error' : isPending ? 'thinking' : isCompleted ? 'happy' : 'idle';
+  const [globalError, setGlobalError] = useState<string | null>(null);
+
+  const runIdRef = useRef(0);
+  const startTimeRef = useRef<Record<string, number>>({});
+  const executionIdRef = useRef<string | null>(null);
+  const isCompletedRef = useRef(false);
+
+  const isPending = store.state === 'connecting' || store.state === 'streaming';
+  const aiMood = store.state === 'error' ? 'error' : isPending ? 'thinking' : store.messages.some((m) => m.role === 'assistant' && m.status === 'completed') ? 'happy' : 'idle';
+
+  const { persistSession } = useChatSession(store.currentSessionId, (messages, sessionId) => {
+    dispatch({ type: 'LOAD_SESSION', messages, sessionId });
+    executionIdRef.current = sessionId;
+    isCompletedRef.current = messages.some(
+      (m) => m.role === 'assistant' && m.sessionMessage?.stage === 'generated',
+    );
+    window.dispatchEvent(new CustomEvent('mutiagent-profile-updated'));
+  });
 
   const x = useMotionValue(0);
   const y = useMotionValue(0);
@@ -141,79 +147,186 @@ export function AiGreetingInput() {
     const handleGlobalMouseMove = (event: MouseEvent) => {
       if (widgetState !== 'CENTER_INPUT' && widgetState !== 'WIDGET') return;
       if (!cardRef.current) return;
-
       const rect = cardRef.current.getBoundingClientRect();
       const cardCenterX = rect.left + rect.width / 2;
       const cardCenterY = rect.top + rect.height / 2;
       const xPct = Math.max(-0.5, Math.min(0.5, (event.clientX - cardCenterX) / window.innerWidth));
       const yPct = Math.max(-0.5, Math.min(0.5, (event.clientY - cardCenterY) / window.innerHeight));
-
       x.set(xPct);
       y.set(yPct);
     };
-
-    const handleGlobalMouseLeave = () => {
-      x.set(0);
-      y.set(0);
-    };
-
+    const handleGlobalMouseLeave = () => { x.set(0); y.set(0); };
     window.addEventListener('mousemove', handleGlobalMouseMove);
     document.addEventListener('mouseleave', handleGlobalMouseLeave);
-
     return () => {
       window.removeEventListener('mousemove', handleGlobalMouseMove);
       document.removeEventListener('mouseleave', handleGlobalMouseLeave);
     };
   }, [widgetState, x, y]);
 
+  const eventToStep = useCallback((event: ChatflowAgentEvent, now: number): { step: AgentRunStep | null } => {
+    const label = AGENT_LABELS[event.agent ?? ''] || event.agent || event.event;
+
+    if (event.event === 'agent_started') {
+      const stepId = `step-${event.agent}-${now}`;
+      startTimeRef.current[stepId] = now;
+      return {
+        step: {
+          stepId,
+          kind: 'agent',
+          status: 'running',
+          title: label,
+          summary: event.message || '正在执行...',
+          agent: event.agent || null,
+        },
+      };
+    }
+
+    if (event.event === 'agent_completed') {
+      const stepId = event.agent
+        ? Object.keys(startTimeRef.current).find((k) => k.includes(event.agent!)) ?? `step-${event.agent}-${now}`
+        : `step-completed-${now}`;
+      const startTime = startTimeRef.current[stepId] ?? now;
+      return {
+        step: {
+          stepId,
+          kind: 'agent',
+          status: 'success',
+          title: label,
+          summary: event.message || '完成',
+          agent: event.agent || null,
+          durationMs: now - startTime,
+        },
+      };
+    }
+
+    if (event.event === 'route_decided') {
+      const stepId = `step-route-${now}`;
+      startTimeRef.current[stepId] = now;
+      return {
+        step: {
+          stepId,
+          kind: 'route',
+          status: 'success',
+          title: `路由: ${event.label || event.intent || '—'}`,
+          summary: event.message || '路由完成',
+          agent: event.agent || null,
+          durationMs: 0,
+        },
+      };
+    }
+
+    return { step: null };
+  }, []);
+
   const sendMessage = useCallback(
     async (text: string) => {
       const query = text.trim();
       if (!query || isPending) return;
       if (!token) {
-        setError('请先登录后再开始基础画像对话。');
+        setGlobalError('请先登录后再开始基础画像对话。');
         return;
       }
 
-      setIsPending(true);
-      setError(null);
+      const userMsgId = nextMessageId();
+      dispatch({ type: 'ADD_USER_MESSAGE', id: userMsgId, content: query });
+
+      const assistantMsgId = nextMessageId();
+      dispatch({ type: 'ADD_ASSISTANT_MESSAGE', id: assistantMsgId });
+      dispatch({ type: 'CONNECTING' });
+
       setAgentSteps(DEFAULT_AGENT_STEPS);
       setAgentEvents([]);
       setShowEventLog(false);
+      setGlobalError(null);
+
+      const runId = runIdRef.current + 1;
+      runIdRef.current = runId;
+      startTimeRef.current = {};
 
       try {
-        const turn = await streamChatflow(
+        let finalSessionId: string | undefined;
+
+        await streamChatflow(
           token,
           query,
-          executionId && !isCompleted ? executionId : null,
+          executionIdRef.current && !isCompletedRef.current ? executionIdRef.current : null,
           (event) => {
+            if (runIdRef.current !== runId) return;
             setAgentSteps((current) => mergeAgentStep(current, event));
             setAgentEvents((current) => [...current, event]);
+
+            const now = Date.now();
+
+            if (event.event === 'agent_started' || event.event === 'agent_completed' || event.event === 'route_decided') {
+              if (event.event === 'agent_started') {
+                dispatch({ type: 'STREAMING_STARTED' });
+              }
+              const { step } = eventToStep(event, now);
+              if (step) {
+                dispatch({ type: 'STEP', step });
+              }
+            }
+
+            if (event.event === 'completed') {
+              const answer = event.answer ?? {};
+              const text = (answer as Record<string, unknown>).text as string || '';
+              executionIdRef.current = event.execution_id ?? null;
+              isCompletedRef.current = event.completed ?? false;
+              finalSessionId = event.conversation_id ?? undefined;
+
+              if (event.error) {
+                dispatch({ type: 'RUN_ERROR', message: event.error });
+                setGlobalError(event.error);
+                return;
+              }
+
+              dispatch({
+                type: 'RUN_DONE',
+                content: text,
+                sessionMessage: answer as ChatMessage['sessionMessage'],
+                sessionId: event.conversation_id ?? undefined,
+              });
+            }
+
+            if (event.event === 'error') {
+              dispatch({ type: 'RUN_ERROR', message: event.message || '对话请求失败' });
+              setGlobalError(event.message || '对话请求失败，请稍后重试');
+            }
           },
         );
 
-        setExecutionId(turn.completed ? null : turn.executionId);
-        setMessages((current) => [...current, turn.answer]);
-        setIsCompleted(turn.completed);
-        setInputValue('');
-        if (turn.completed) {
+        if (runIdRef.current !== runId) return;
+
+        if (finalSessionId) {
+          executionIdRef.current = finalSessionId;
+        }
+
+        if (isCompletedRef.current) {
           window.dispatchEvent(new CustomEvent('mutiagent-profile-updated'));
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : '对话请求失败，请稍后重试');
+        if (runIdRef.current !== runId) return;
+        const message = err instanceof Error ? err.message : '对话请求失败，请稍后重试';
+        dispatch({ type: 'RUN_ERROR', message });
+        setGlobalError(message);
         setAgentSteps((current) =>
           current.map((step) =>
             step.status === 'running' || step.status === 'routed'
-              ? { ...step, status: 'error', detail: '这一步没有正常完成' }
+              ? { ...step, status: 'error' as const, detail: '这一步没有正常完成' }
               : step,
           ),
         );
-      } finally {
-        setIsPending(false);
       }
     },
-    [executionId, isCompleted, isPending, token],
+    [isPending, token, eventToStep],
   );
+
+  useEffect(() => {
+    if (store.state === 'idle' && store.currentSessionId && store.messages.length > 0) {
+      persistSession(store.currentSessionId, store.messages);
+    }
+  }, [store.state, store.currentSessionId, store.messages, persistSession]);
 
   const handleCardClick = () => {
     if (widgetState === 'CENTER_INPUT' || widgetState === 'WIDGET') {
@@ -226,6 +339,40 @@ export function AiGreetingInput() {
   const handleSubmit = () => {
     void sendMessage(inputValue);
   };
+
+  function renderMessage(message: ChatMessage) {
+    if (message.role === 'user') {
+      return <MessageBubble key={message.id} content={message.content} />;
+    }
+
+    if (message.role === 'system') {
+      return <SystemMessage key={message.id} message={message} />;
+    }
+
+    if (message.role === 'assistant') {
+      if (message.sessionMessage && isStructuredMessage(message.sessionMessage)) {
+        return (
+          <ChatCard
+            key={message.id}
+            message={message.sessionMessage}
+            onSendReply={sendMessage}
+            disabled={isPending}
+          />
+        );
+      }
+
+      return (
+        <AssistantMessage
+          key={message.id}
+          message={message}
+          onSendReply={sendMessage}
+          disabled={isPending}
+        />
+      );
+    }
+
+    return null;
+  }
 
   return (
     <StyledWrapper>
@@ -280,115 +427,136 @@ export function AiGreetingInput() {
               </button>
             </header>
 
+            {globalError && (
+              <div className="global-error">
+                <span>{globalError}</span>
+                <button type="button" onClick={() => setGlobalError(null)} aria-label="关闭">×</button>
+              </div>
+            )}
+
             <div className="session-workbench">
               <main className="chat-column" aria-label="对话内容">
                 <div className="chat-flow">
-                  {messages.length === 0 && (
+                  {store.messages.length === 0 && (
                     <div className="chat-empty-state">
                       告诉我你的年级、专业、学习偏好或近期目标，我会先判断意图，再进入基础画像对话。
                     </div>
                   )}
-                  {messages.map((message, index) => (
-                    <ChatCard
-                      key={`${message.stage}-${index}`}
-                      message={message}
-                      onSendReply={sendMessage}
-                      disabled={isPending}
-                    />
-                  ))}
-                  {isPending && <div className="chat-status">正在思考下一步问题...</div>}
-                  {error && <div className="chat-error">{error}</div>}
+
+                  {store.messages.map(renderMessage)}
                 </div>
+
+                <form
+                  className="chat-composer"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    handleSubmit();
+                  }}
+                >
+                  <textarea
+                    rows={1}
+                    placeholder={isCompletedRef.current ? '画像已生成，可以继续补充或追问...' : '输入你的学习情况...'}
+                    value={inputValue}
+                    disabled={isPending}
+                    onChange={(event) => setInputValue(event.target.value)}
+                    onKeyDown={(event) => {
+                      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                        handleSubmit();
+                      }
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    className="submit-button"
+                    disabled={isPending || !inputValue.trim()}
+                    aria-label="发送消息"
+                  >
+                    <span aria-hidden="true">+</span>
+                  </button>
+                </form>
               </main>
 
               <aside className="codex-agent-panel" aria-label="多智能体调用状态">
                 <section className="agent-panel-section agent-panel-progress">
-                  <button
-                    type="button"
-                    className="agent-panel-heading"
-                    onClick={() => setShowEventLog((value) => !value)}
-                    aria-expanded={showEventLog}
-                  >
-                    <span>进度</span>
-                    <span aria-hidden="true">›</span>
-                  </button>
+                  {agentEvents.length > 0 ? (
+                    <button
+                      type="button"
+                      className="agent-panel-heading"
+                      onClick={() => setShowEventLog((value) => !value)}
+                      aria-expanded={showEventLog}
+                    >
+                      <span>进度</span>
+                      <span aria-hidden="true">{showEventLog ? '⌃' : '⌄'}</span>
+                    </button>
+                  ) : (
+                    <div className="agent-panel-heading static">
+                      <span>进度</span>
+                    </div>
+                  )}
                   <p>{currentProgressLabel(agentSteps)}</p>
                 </section>
 
                 <section className="agent-panel-section">
                   <div className="agent-panel-heading static">
-                    <span>步骤</span>
-                    <strong>{isPending ? '运行中' : '待命'}</strong>
+                    <span>Agent 步骤</span>
+                    {agentSteps.some(s => s.status !== 'pending') && (
+                      <strong>{isPending ? '运行中' : '待命'}</strong>
+                    )}
                   </div>
                   <div className="agent-step-list">
-                    {agentSteps.map((step) => (
-                      <div className="agent-step-row" data-status={step.status} key={step.id}>
-                        <span className="agent-step-dot" aria-hidden="true" />
-                        <div>
-                          <strong>{step.title}</strong>
-                          <p>{step.detail}</p>
-                        </div>
-                        <span>{statusLabel(step.status)}</span>
-                      </div>
-                    ))}
+                    {(() => {
+                      const activeSteps = agentSteps.filter(
+                        s => s.status === 'running' || s.status === 'routed' || s.status === 'error'
+                      );
+                      if (activeSteps.length === 0) {
+                        const label = isPending
+                          ? '等待调用...'
+                          : agentSteps.some(s => s.status === 'completed')
+                            ? '本轮调用已完成'
+                            : '等待本轮调用开始...';
+                        return <p className="agent-step-placeholder">{label}</p>;
+                      }
+                      return (
+                        <AnimatePresence mode="popLayout">
+                          {activeSteps.map((step) => (
+                            <motion.div
+                              className="agent-step-row"
+                              data-status={step.status}
+                              data-agent-type={step.agentType || 'default'}
+                              key={step.id}
+                              initial={{ opacity: 0, x: -16, scale: 0.96 }}
+                              animate={{ opacity: 1, x: 0, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.94, y: -4 }}
+                              transition={{ duration: 0.42, ease: [0.25, 1, 0.5, 1] }}
+                            >
+                              <span className="agent-step-dot" aria-hidden="true" />
+                              <div>
+                                <strong>{step.title}</strong>
+                                <p>{step.detail}</p>
+                              </div>
+                              <span>{statusLabel(step.status)}</span>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
+                      );
+                    })()}
                   </div>
                 </section>
 
-                <section className="agent-panel-section">
-                  <button
-                    type="button"
-                    className="agent-panel-heading"
-                    onClick={() => setShowEventLog((value) => !value)}
-                    aria-expanded={showEventLog}
-                  >
-                    <span>完整调用记录</span>
-                    <span aria-hidden="true">{showEventLog ? '⌃' : '⌄'}</span>
-                  </button>
-                  {showEventLog && (
+                {agentEvents.length > 0 && showEventLog && (
+                  <section className="agent-panel-section">
                     <div className="agent-event-log">
-                      {agentEvents.length === 0 ? (
-                        <p>本轮还没有实时事件。</p>
-                      ) : (
-                        agentEvents.map((event, index) => (
-                          <p key={`${event.event}-${index}`}>
-                            <strong>{event.label || event.agent || event.event}</strong>
-                            <span>{event.message || event.intent || event.phase || event.event}</span>
-                          </p>
-                        ))
-                      )}
+                      {agentEvents.map((event, index) => (
+                        <p key={`${event.event}-${index}`}>
+                          <strong>{event.label || event.agent || event.event}</strong>
+                          <span>{event.message || event.intent || event.phase || event.event}</span>
+                        </p>
+                      ))}
                     </div>
-                  )}
-                </section>
+                  </section>
+                )}
               </aside>
             </div>
-
-            <form
-              className="chat-composer"
-              onSubmit={(event) => {
-                event.preventDefault();
-                handleSubmit();
-              }}
-            >
-              <textarea
-                placeholder={isCompleted ? '画像已生成，可以继续补充或追问...' : '输入你的学习情况...'}
-                value={inputValue}
-                disabled={isPending}
-                onChange={(event) => setInputValue(event.target.value)}
-                onKeyDown={(event) => {
-                  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                    handleSubmit();
-                  }
-                }}
-              />
-              <button
-                type="submit"
-                className="submit-button"
-                disabled={isPending || !inputValue.trim()}
-                aria-label="发送消息"
-              >
-                <span aria-hidden="true">+</span>
-              </button>
-            </form>
           </section>
         ) : (
           <div className="widget-shell">
@@ -443,25 +611,18 @@ const StyledWrapper = styled.div`
     transform: translateZ(var(--space-40));
   }
 
-  .widget-shell .eyes.happy {
-    display: none;
-  }
+  .widget-shell .eyes.happy { display: none; }
 
-  .card:hover .widget-shell .eyes:not(.happy) {
-    display: none;
-  }
-
-  .card:hover .widget-shell .eyes.happy {
-    display: flex;
-  }
+  .card:hover .widget-shell .eyes:not(.happy) { display: none; }
+  .card:hover .widget-shell .eyes.happy { display: flex; }
 
   .session-panel {
     inline-size: 100%;
     block-size: 100%;
     display: flex;
     flex-direction: column;
-    padding: var(--space-24);
-    gap: var(--gap-sm);
+    padding: var(--space-16);
+    gap: var(--space-12);
     background:
       radial-gradient(circle at 12% 0%, oklch(84% 0.12 63 / 0.16), transparent 32%),
       var(--color-surface-raised);
@@ -472,9 +633,10 @@ const StyledWrapper = styled.div`
     align-items: center;
     justify-content: space-between;
     gap: var(--gap-sm);
-    min-block-size: var(--space-64);
+    min-block-size: var(--space-48);
     border-block-end: 1px solid var(--color-border);
     padding-block-end: var(--space-12);
+    flex-shrink: 0;
   }
 
   .session-title-cluster {
@@ -488,9 +650,9 @@ const StyledWrapper = styled.div`
     position: relative;
     display: grid;
     place-items: center;
-    inline-size: var(--space-64);
-    min-inline-size: var(--space-64);
-    block-size: var(--space-64);
+    inline-size: var(--space-48);
+    min-inline-size: var(--space-48);
+    block-size: var(--space-48);
     border-radius: var(--radius-md);
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
@@ -500,7 +662,7 @@ const StyledWrapper = styled.div`
 
   .agent-face-glow {
     position: absolute;
-    inset: calc(var(--space-16) * -1);
+    inset: calc(var(--space-12) * -1);
     border-radius: var(--radius-full);
     background: var(--effect-peach-glow);
     filter: var(--effect-blur-soft);
@@ -534,6 +696,39 @@ const StyledWrapper = styled.div`
     text-wrap: pretty;
   }
 
+  .global-error {
+    display: flex;
+    align-items: center;
+    gap: var(--space-12);
+    padding: var(--space-8) var(--space-16);
+    border-radius: var(--radius-md);
+    background: var(--color-error-bg);
+    color: var(--color-error);
+    font-size: var(--text-caption);
+    flex-shrink: 0;
+    animation: globalErrorShake 0.4s ease both;
+
+    button {
+      margin-left: auto;
+      background: none;
+      border: none;
+      color: var(--color-error);
+      font-size: var(--text-h4);
+      cursor: pointer;
+      padding: 0 var(--space-4);
+      line-height: 1;
+    }
+  }
+
+  @keyframes globalErrorShake {
+    0% { transform: translateX(0); }
+    20% { transform: translateX(-4px); }
+    40% { transform: translateX(4px); }
+    60% { transform: translateX(-4px); }
+    80% { transform: translateX(4px); }
+    100% { transform: translateX(0); }
+  }
+
   .session-workbench {
     position: relative;
     flex: 1;
@@ -542,12 +737,15 @@ const StyledWrapper = styled.div`
     grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
     gap: var(--gap-md);
     align-items: stretch;
+    overflow: hidden;
   }
 
   .chat-column {
     min-inline-size: 0;
     min-block-size: 0;
     display: flex;
+    flex-direction: column;
+    position: relative;
   }
 
   .codex-agent-panel {
@@ -569,14 +767,8 @@ const StyledWrapper = styled.div`
     border-block-end: 1px solid oklch(92% 0.025 75 / 0.10);
   }
 
-  .agent-panel-section:first-child {
-    padding-block-start: 0;
-  }
-
-  .agent-panel-section:last-child {
-    border-block-end: none;
-    padding-block-end: 0;
-  }
+  .agent-panel-section:first-child { padding-block-start: 0; }
+  .agent-panel-section:last-child { border-block-end: none; padding-block-end: 0; }
 
   .agent-panel-heading {
     inline-size: 100%;
@@ -595,9 +787,7 @@ const StyledWrapper = styled.div`
     cursor: pointer;
   }
 
-  .agent-panel-heading.static {
-    cursor: default;
-  }
+  .agent-panel-heading.static { cursor: default; }
 
   .agent-panel-heading strong {
     border-radius: var(--radius-full);
@@ -623,6 +813,7 @@ const StyledWrapper = styled.div`
   }
 
   .agent-step-row {
+    position: relative;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
@@ -630,20 +821,28 @@ const StyledWrapper = styled.div`
     border-radius: var(--radius-md);
     padding: var(--space-12);
     background: oklch(92% 0.025 75 / 0.08);
-    animation: step-reveal var(--duration-reveal) var(--ease-editorial) both;
+    overflow: hidden;
   }
 
-  .agent-step-row[data-status='running'],
-  .agent-step-row[data-status='routed'] {
-    background: oklch(80% 0.13 55 / 0.22);
+  .agent-step-row::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-md);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.5s var(--ease-editorial);
   }
 
-  .agent-step-row[data-status='completed'] {
-    background: oklch(82% 0.10 135 / 0.16);
+  .agent-step-row[data-status='running']::before,
+  .agent-step-row[data-status='routed']::before {
+    opacity: 1;
+    background: linear-gradient(90deg, oklch(78% 0.06 75 / 0.12) 0%, transparent 80%);
   }
 
-  .agent-step-row[data-status='error'] {
-    background: oklch(80% 0.14 28 / 0.18);
+  .agent-step-row[data-status='error']::before {
+    opacity: 1;
+    background: linear-gradient(90deg, oklch(72% 0.08 28 / 0.12) 0%, transparent 80%);
   }
 
   .agent-step-dot {
@@ -651,21 +850,45 @@ const StyledWrapper = styled.div`
     block-size: var(--space-12);
     border-radius: var(--radius-full);
     background: oklch(92% 0.025 75 / 0.28);
+    transition: background 0.4s var(--ease-editorial);
   }
 
   .agent-step-row[data-status='running'] .agent-step-dot,
   .agent-step-row[data-status='routed'] .agent-step-dot {
     background: var(--color-primary);
-    box-shadow: var(--shadow-glow);
-    animation: agent-breathe var(--duration-breathe) var(--ease-breathe) infinite alternate;
-  }
-
-  .agent-step-row[data-status='completed'] .agent-step-dot {
-    background: var(--color-success);
   }
 
   .agent-step-row[data-status='error'] .agent-step-dot {
     background: var(--color-error);
+  }
+
+  .agent-step-row[data-agent-type='scan'][data-status='running'] .agent-step-dot {
+    animation: dot-scan 1.8s var(--ease-editorial) infinite;
+  }
+
+  .agent-step-row[data-agent-type='pulse'][data-status='running'] .agent-step-dot,
+  .agent-step-row[data-agent-type='pulse'][data-status='routed'] .agent-step-dot {
+    animation: dot-pulse 1.2s var(--ease-editorial) infinite;
+  }
+
+  .agent-step-row[data-agent-type='spin'][data-status='running'] .agent-step-dot {
+    animation: dot-spin 2.4s linear infinite;
+  }
+
+  .agent-step-row[data-agent-type='write'][data-status='running'] .agent-step-dot {
+    animation: dot-write 0.8s ease-in-out infinite;
+  }
+
+  .agent-step-row[data-status='error'] .agent-step-dot {
+    animation: dot-shake 0.5s var(--ease-editorial);
+  }
+
+  .agent-step-placeholder {
+    margin: 0;
+    color: oklch(92% 0.025 75 / 0.48);
+    font-size: var(--text-caption);
+    line-height: 1.6;
+    padding: var(--space-12);
   }
 
   .agent-step-row strong,
@@ -752,50 +975,45 @@ const StyledWrapper = styled.div`
     flex: 1;
     min-block-size: 0;
     inline-size: 100%;
-    padding: var(--space-8) var(--space-8) var(--space-24);
+    padding: var(--space-8) var(--space-8) var(--space-96);
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);
   }
 
-  .chat-empty-state,
-  .chat-status,
-  .chat-error {
+  .chat-empty-state {
     width: fit-content;
     max-inline-size: min(100%, var(--container-narrow));
     border-radius: var(--radius-md);
     padding: var(--space-16) var(--space-24);
     font-family: var(--font-body);
     line-height: 1.8;
-  }
-
-  .chat-empty-state,
-  .chat-status {
     background: var(--color-surface-inset);
     color: var(--color-text-secondary);
   }
 
-  .chat-error {
-    background: var(--color-error-bg);
-    color: var(--color-text-primary);
-  }
-
   .chat-composer {
+    position: absolute;
+    bottom: var(--space-8);
+    left: var(--space-8);
+    right: var(--space-8);
+    z-index: 10;
     display: flex;
     align-items: flex-end;
-    gap: var(--gap-sm);
-    min-block-size: var(--space-64);
+    gap: var(--space-8);
     border-radius: var(--radius-full);
-    padding: var(--space-12);
-    background: var(--color-surface-inset);
-    box-shadow: var(--shadow-inset);
+    padding: var(--space-4);
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: var(--shadow-sm), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+    flex-shrink: 0;
   }
 
   .chat-composer textarea {
     flex: 1;
-    min-block-size: var(--space-40);
-    max-block-size: var(--space-120);
+    min-block-size: 0;
+    max-block-size: var(--space-64);
     border: none;
     outline: none;
     resize: vertical;
@@ -804,6 +1022,11 @@ const StyledWrapper = styled.div`
     font-family: var(--font-body);
     font-size: var(--text-body);
     line-height: 1.6;
+  }
+
+  .chat-composer .submit-button {
+    min-inline-size: var(--space-32);
+    min-block-size: var(--space-32);
   }
 
   .chat-composer textarea:disabled,
@@ -823,15 +1046,18 @@ const StyledWrapper = styled.div`
     .agent-face-glow,
     .agent-step-dot,
     .agent-event-log,
-    .agent-step-row {
+    .agent-step-row,
+    .global-error {
       animation: none;
+    }
+
+    .agent-step-row::before {
+      transition: none;
     }
   }
 
   @media (max-width: 767px) {
-    .session-header {
-      align-items: flex-start;
-    }
+    .session-header { align-items: flex-start; }
 
     .session-workbench {
       grid-template-columns: 1fr;
@@ -852,14 +1078,35 @@ const StyledWrapper = styled.div`
     }
   }
 
-  @keyframes agent-breathe {
-    from { transform: scale(0.94); opacity: 0.42; }
-    to { transform: scale(1.04); opacity: 0.72; }
+  @keyframes dot-scan {
+    0% { box-shadow: -8px 0 0 0 oklch(92% 0.025 75 / 0); }
+    40% { box-shadow: 0 0 8px 3px var(--color-primary); }
+    100% { box-shadow: 8px 0 0 0 oklch(92% 0.025 75 / 0); }
   }
 
-  @keyframes step-reveal {
-    from { transform: translateY(var(--space-8)); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
+  @keyframes dot-pulse {
+    0% { box-shadow: 0 0 0 0 oklch(98% 0.03 75 / 0.4); }
+    70% { box-shadow: 0 0 0 10px oklch(98% 0.03 75 / 0); }
+    100% { box-shadow: 0 0 0 0 oklch(98% 0.03 75 / 0); }
+  }
+
+  @keyframes dot-spin {
+    0% { filter: hue-rotate(0deg); }
+    100% { filter: hue-rotate(360deg); }
+  }
+
+  @keyframes dot-write {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.3; transform: scale(1.16); }
+  }
+
+  @keyframes dot-shake {
+    0%, 100% { transform: translateX(0); }
+    15% { transform: translateX(-5px); }
+    30% { transform: translateX(5px); }
+    45% { transform: translateX(-4px); }
+    60% { transform: translateX(4px); }
+    75% { transform: translateX(-2px); }
   }
 
   @keyframes event-log-reveal {

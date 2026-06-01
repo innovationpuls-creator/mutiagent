@@ -2,9 +2,11 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AiGreetingInput } from './AiGreetingInput';
 import { useAiWidget } from '../../context/AiWidgetContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 export function GlobalAiWidget() {
   const { widgetState } = useAiWidget();
+  const { token } = useAuth();
 
   return (
     <>
@@ -27,7 +29,7 @@ export function GlobalAiWidget() {
       </AnimatePresence>
       
       <AnimatePresence>
-        {widgetState !== 'HIDDEN' && (
+        {widgetState !== 'HIDDEN' && token && (
           <motion.div
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
