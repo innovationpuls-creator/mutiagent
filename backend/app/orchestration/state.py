@@ -6,12 +6,13 @@ from typing import TypedDict
 class OrchestrationState(TypedDict):
     query: str
     user_id: str
-    conversation_id: str
-    intent_conversation_id: str
-    intent_raw: dict
-    intent: str
-    route_status: str
-    dify_raw: dict
-    answer_json: dict
-    phase: str
+    session_id: str
+    mode: str
+    main_raw: dict
+    main_result: dict
+    agent_results: dict
+    answer: dict
+    profile: dict | None
+    learning_path: dict | None
+    completed: bool
     error: str
