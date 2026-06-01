@@ -103,3 +103,47 @@ class ChatflowContinueResponse(BaseModel):
     completed: bool
     conversation_id: str
     final_result: dict | None = None
+
+
+class SessionStartRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=4000)
+
+
+class SessionContinueRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=80)
+    query: str = Field(min_length=1, max_length=4000)
+
+
+class AgentQuestionBox(BaseModel):
+    question: str
+    options: list[str]
+
+
+class AgentUserAnswer(BaseModel):
+    user_message: str
+    question_box: AgentQuestionBox | None = None
+
+
+class AgentTraceStep(BaseModel):
+    step_id: str
+    agent_key: str
+    label: str
+    phase: str
+    status: str
+    message: str
+    depends_on: list[str] = Field(default_factory=list)
+    parallel_group: str | None = None
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+    answer: AgentUserAnswer
+    agent_trace: list[AgentTraceStep] = Field(default_factory=list)
+    completed: bool
+    profile: dict | None = None
+    learning_path: dict | None = None
+
+
+class LearningPathReadResponse(BaseModel):
+    learning_path: dict
+    updated_at: datetime

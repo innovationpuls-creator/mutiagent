@@ -12,7 +12,15 @@ from app.models import User
 from app.orchestration.execution_registry import ExecutionState, registry
 from app.orchestration.graph import create_orchestration_graph, stream_orchestration_events
 from app.orchestration.state import OrchestrationState
-from app.schemas import ChatflowContinueRequest, ChatflowContinueResponse, ChatflowResponse, ChatflowStartRequest
+from app.schemas import (
+    ChatflowContinueRequest,
+    ChatflowContinueResponse,
+    ChatflowResponse,
+    ChatflowStartRequest,
+    SessionContinueRequest,
+    SessionResponse,
+    SessionStartRequest,
+)
 from app.services.dify_conversation_service import get_user_dify_conversation, upsert_user_dify_conversation
 from app.services.profile_service import upsert_user_profile
 
@@ -24,12 +32,23 @@ graph = create_orchestration_graph()
 def _initial_state(
     query: str,
     user_id: str,
+    session_id: str = "",
     conversation_id: str = "",
     intent_conversation_id: str = "",
 ) -> OrchestrationState:
     return {
         "query": query,
         "user_id": user_id,
+        "session_id": session_id,
+        "mode": "session",
+        "main_raw": {},
+        "main_result": {},
+        "agent_results": {},
+        "answer": {},
+        "agent_trace": [],
+        "profile": None,
+        "learning_path": None,
+        "completed": False,
         "conversation_id": conversation_id,
         "intent_conversation_id": intent_conversation_id,
         "intent_raw": {},
@@ -83,6 +102,71 @@ def _sse(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _session_answer_from_state(state: dict) -> dict:
+    answer = state.get("answer", {})
+    if isinstance(answer, dict) and isinstance(answer.get("user_message"), str):
+        return answer
+
+    answer_json = state.get("answer_json", {})
+    if isinstance(answer_json, dict):
+        return {
+            "user_message": str(answer_json.get("text", "")),
+            "question_box": answer_json.get("question_box"),
+        }
+
+    return {"user_message": "", "question_box": None}
+
+
+def _session_response_from_state(execution: ExecutionState, state: dict) -> SessionResponse:
+    session_id = str(state.get("session_id") or execution.execution_id)
+    execution.execution_id = session_id
+    execution.completed = bool(state.get("completed", False))
+    registry.save(execution)
+
+    return SessionResponse(
+        session_id=session_id,
+        answer=_session_answer_from_state(state),
+        agent_trace=state.get("agent_trace", []),
+        completed=bool(state.get("completed", False)),
+        profile=state.get("profile"),
+        learning_path=state.get("learning_path"),
+    )
+
+
+def _session_event_name(event_name: str) -> str:
+    if event_name == "agent_started":
+        return "agent_step_started"
+    if event_name == "agent_completed":
+        return "agent_step_completed"
+    if event_name == "agent_failed":
+        return "agent_step_failed"
+    if event_name == "completed":
+        return "orchestration_completed"
+    if event_name == "error":
+        return "orchestration_failed"
+    return event_name
+
+
+async def _stream_session_turn(
+    execution: ExecutionState,
+    state: OrchestrationState,
+    session: Session,
+) -> AsyncGenerator[str, None]:
+    try:
+        async for event in stream_orchestration_events(state):
+            event_name = _session_event_name(str(event.get("event", "agent_step_completed")))
+            payload = {key: value for key, value in event.items() if key != "state"}
+
+            if event_name in {"orchestration_completed", "orchestration_failed"}:
+                final_state = event.get("state", state)
+                session_response = _session_response_from_state(execution, final_state)
+                payload.update(session_response.model_dump())
+
+            yield _sse(event_name, payload)
+    except Exception as exc:
+        yield _sse("orchestration_failed", {"message": str(exc) or "对话请求失败，请稍后重试"})
+
+
 async def _stream_chatflow_turn(
     execution: ExecutionState,
     state: OrchestrationState,
@@ -119,6 +203,72 @@ async def _stream_chatflow_turn(
 def create_orchestration_router(session_dependency: SessionDependency) -> APIRouter:
     router = APIRouter(prefix="/api/orchestration", tags=["orchestration"])
     get_current_user = create_get_current_user(session_dependency)
+
+    @router.post("/sessions/start", response_model=SessionResponse)
+    async def start_session(
+        payload: SessionStartRequest,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(session_dependency),
+    ) -> SessionResponse:
+        execution = registry.create(current_user.uid)
+        state = await graph.ainvoke(
+            _initial_state(payload.query, current_user.uid, execution.execution_id),
+            _graph_config(execution),
+        )
+        if state.get("error"):
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=state["error"])
+        return _session_response_from_state(execution, state)
+
+    @router.post("/sessions/continue", response_model=SessionResponse)
+    async def continue_session(
+        payload: SessionContinueRequest,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(session_dependency),
+    ) -> SessionResponse:
+        execution = registry.get(payload.session_id)
+        if execution is None or execution.user_id != current_user.uid:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="对话不存在")
+
+        state = await graph.ainvoke(
+            _initial_state(payload.query, current_user.uid, execution.execution_id),
+            _graph_config(execution),
+        )
+        if state.get("error"):
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=state["error"])
+        return _session_response_from_state(execution, state)
+
+    @router.post("/sessions/start/stream")
+    async def start_session_stream(
+        payload: SessionStartRequest,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(session_dependency),
+    ) -> StreamingResponse:
+        execution = registry.create(current_user.uid)
+        state = _initial_state(payload.query, current_user.uid, execution.execution_id)
+
+        return StreamingResponse(
+            _stream_session_turn(execution, state, session),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @router.post("/sessions/continue/stream")
+    async def continue_session_stream(
+        payload: SessionContinueRequest,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(session_dependency),
+    ) -> StreamingResponse:
+        execution = registry.get(payload.session_id)
+        if execution is None or execution.user_id != current_user.uid:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="对话不存在")
+
+        state = _initial_state(payload.query, current_user.uid, execution.execution_id)
+
+        return StreamingResponse(
+            _stream_session_turn(execution, state, session),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @router.post("/chatflow/start", response_model=ChatflowResponse)
     async def start_chatflow(
