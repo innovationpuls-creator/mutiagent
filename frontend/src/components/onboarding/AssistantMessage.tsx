@@ -1,4 +1,5 @@
 import React from 'react';
+import styled from 'styled-components';
 import type { ChatMessage } from '../../types/chat';
 import { AgentRunTimeline } from './AgentRunTimeline';
 import { StreamingText } from './StreamingText';
@@ -68,6 +69,24 @@ export function AssistantMessage({ message, onSendReply, disabled }: AssistantMe
         <StreamingText content={message.content} status={message.status} />
       ) : null}
 
+      {message.agentAnswer?.questionBox && (
+        <QuestionBoxPanel>
+          <p>{message.agentAnswer.questionBox.question}</p>
+          <div>
+            {message.agentAnswer.questionBox.options.map((option) => (
+              <button
+                key={option}
+                type="button"
+                disabled={disabled || !onSendReply}
+                onClick={() => onSendReply?.(option)}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </QuestionBoxPanel>
+      )}
+
       {message.status === 'error' && message.error && (
         <div
           style={{
@@ -86,3 +105,63 @@ export function AssistantMessage({ message, onSendReply, disabled }: AssistantMe
     </div>
   );
 }
+
+const QuestionBoxPanel = styled.div`
+  display: grid;
+  gap: var(--space-12);
+  inline-size: fit-content;
+  max-inline-size: min(100%, var(--container-narrow));
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  padding: var(--space-16);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-body);
+
+  p {
+    margin: 0;
+    color: var(--color-text-primary);
+    font-size: var(--text-body-sm);
+    line-height: 1.8;
+    text-wrap: pretty;
+  }
+
+  div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-8);
+  }
+
+  button {
+    min-block-size: calc(var(--space-40) + var(--space-4));
+    border: none;
+    border-radius: var(--radius-full);
+    background: var(--color-surface-raised);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-size: var(--text-button);
+    font-weight: var(--font-weight-medium);
+    line-height: 1;
+    padding: var(--space-12) var(--space-16);
+    box-shadow: var(--shadow-sm);
+    transition:
+      transform var(--duration-lazy-hover) var(--ease-lazy),
+      opacity var(--duration-lazy-hover) var(--ease-lazy);
+  }
+
+  button:hover:not(:disabled) {
+    transform: translateY(calc(var(--space-4) * -1));
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.64;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    button {
+      transition: opacity var(--duration-instant) ease;
+      transform: none;
+    }
+  }
+`;

@@ -18,7 +18,14 @@ export type ChatAction =
   | { type: 'ADD_USER_MESSAGE'; id: string; content: string }
   | { type: 'ADD_ASSISTANT_MESSAGE'; id: string }
   | { type: 'STEP'; step: AgentRunStep }
-  | { type: 'RUN_DONE'; content: string; sessionMessage: ChatMessage['sessionMessage']; sessionId?: string }
+  | {
+    type: 'RUN_DONE';
+    content: string;
+    sessionMessage: ChatMessage['sessionMessage'];
+    sessionId?: string;
+    agentAnswer?: ChatMessage['agentAnswer'];
+    learningPath?: ChatMessage['learningPath'];
+  }
   | { type: 'RUN_ERROR'; message: string }
   | { type: 'CONNECTING' }
   | { type: 'STREAMING_STARTED' }
@@ -111,6 +118,8 @@ export function chatReducer(state: ChatStore, action: ChatAction): ChatStore {
           ...msg,
           content: action.content,
           sessionMessage: action.sessionMessage,
+          agentAnswer: action.agentAnswer ?? null,
+          learningPath: action.learningPath ?? null,
           status: 'completed',
           activeStepId: null,
         })),
