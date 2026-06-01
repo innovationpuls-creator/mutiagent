@@ -1,26 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { streamChatflow, type ChatflowAgentEvent } from './orchestration';
+import { streamSession, type SessionAgentEvent } from './orchestration';
 
-describe('streamChatflow', () => {
+describe('streamSession', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('emits agent events and returns the completed chatflow turn', async () => {
+  it('emits session events and returns the completed session turn', async () => {
     const encoder = new TextEncoder();
     const body = new ReadableStream({
       start(controller) {
         controller.enqueue(
           encoder.encode(
             [
-              'event: agent_started',
-              'data: {"agent":"intent_recognition_agent","label":"意图识别智能体","message":"正在判断"}',
+              'event: agent_step_started',
+              'data: {"step_id":"intent","agent_key":"intent_recognition_agent","label":"意图识别智能体","phase":"intent","status":"running","message":"正在判断"}',
               '',
-              'event: route_decided',
-              'data: {"agent":"profile_agent","label":"基础画像智能体","message":"准备进入具体智能体"}',
+              'event: agent_step_completed',
+              'data: {"step_id":"profile","agent_key":"profile_agent","label":"基础画像智能体","phase":"profile","status":"completed","message":"画像智能体已完成"}',
               '',
-              'event: completed',
-              'data: {"execution_id":"exec-1","conversation_id":"conv-1","completed":false,"answer":{"type":"collecting","stage":"basic_info","question_mode":"question_md","confirmed_info":{},"defaulted_fields":[],"question_md":"请介绍","question_box":{"question":"","options":[]},"text":"请介绍"},"final_result":null}',
+              'event: orchestration_completed',
+              'data: {"session_id":"session-1","answer":{"user_message":"请介绍","question_box":{"question":"请介绍","options":["基础情况","学习目标"]}},"agent_trace":[{"step_id":"profile","agent_key":"profile_agent","label":"基础画像智能体","phase":"profile","status":"completed","message":"画像智能体已完成","depends_on":["intent"],"parallel_group":null}],"completed":false,"profile":null,"learning_path":null}',
               '',
             ].join('\n'),
           ),
@@ -30,21 +30,33 @@ describe('streamChatflow', () => {
     });
     const fetchMock = vi.fn().mockResolvedValue(new Response(body, { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
-    const events: ChatflowAgentEvent[] = [];
+    const events: SessionAgentEvent[] = [];
 
-    const turn = await streamChatflow('token-1', '我想完善画像', null, (event) => events.push(event));
+    const turn = await streamSession('token-1', '我想完善画像', null, (event) => events.push(event));
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://127.0.0.1:8000/api/orchestration/chatflow/start/stream',
+      'http://127.0.0.1:8000/api/orchestration/sessions/start/stream',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({ Accept: 'text/event-stream' }),
+        body: JSON.stringify({ query: '我想完善画像' }),
       }),
     );
-    expect(events.map((event) => event.event)).toEqual(['agent_started', 'route_decided', 'completed']);
+    expect(events.map((event) => event.event)).toEqual([
+      'agent_step_started',
+      'agent_step_completed',
+      'orchestration_completed',
+    ]);
     expect(events[0].label).toBe('意图识别智能体');
     expect(events[1].label).toBe('基础画像智能体');
-    expect(turn.executionId).toBe('exec-1');
-    expect(turn.answer.text).toBe('请介绍');
+    expect(turn.sessionId).toBe('session-1');
+    expect(turn.answer.userMessage).toBe('请介绍');
+    expect(turn.answer.questionBox?.options).toEqual(['基础情况', '学习目标']);
+    expect(turn.agentTrace[0]).toMatchObject({
+      stepId: 'profile',
+      agentKey: 'profile_agent',
+      dependsOn: ['intent'],
+      parallelGroup: null,
+    });
   });
 });
