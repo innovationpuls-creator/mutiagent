@@ -1,0 +1,541 @@
+/* ==========================================================
+   SproutHero — Headspace-inspired Hero Dashboard
+   复刻 Headspace 的版式节奏、留白和信息层级
+   ========================================================== */
+
+/* ── Hero 容器 ── */
+.sprout-hero {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-block-start: var(--space-80);
+  padding-block-end: var(--space-64);
+  padding-inline: var(--space-40);
+}
+
+/* ── 问候区 ── */
+.hero-greeting-zone {
+  text-align: center;
+  margin-block-end: var(--space-48);
+  max-inline-size: var(--container-default, 960px);
+}
+
+.hero-whisper {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: var(--text-caption);
+  color: var(--color-text-whisper);
+  font-weight: var(--font-weight-regular);
+  margin-block-end: var(--space-16);
+}
+
+.hero-whisper-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: var(--color-intent-active);
+  margin-inline-end: var(--space-8);
+  vertical-align: middle;
+}
+
+.hero-title {
+  font-family: var(--font-heading);
+  font-size: var(--text-h1);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  line-height: 1.3;
+  margin: 0;
+  letter-spacing: 0;
+  text-wrap: pretty;
+}
+
+.hero-title-accent {
+  font-family: 'Caveat', cursive;
+  font-style: italic;
+  color: oklch(70% 0.13 50);
+  font-size: 1.15em;
+  margin-inline: var(--space-4);
+  display: inline-block;
+  transform: translateY(2px);
+}
+
+/* ── 辅助信息条 ── */
+.hero-meta-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-16);
+  margin-block-start: var(--space-16);
+  font-size: var(--text-caption);
+  color: var(--color-text-whisper);
+  letter-spacing: 0.03em;
+}
+
+.hero-meta-separator {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background-color: var(--color-text-whisper);
+  opacity: 0.5;
+}
+
+.hero-meta-highlight {
+  color: var(--color-intent-active);
+}
+
+/* ── 双卡区域 ── */
+.hero-cards-row {
+  display: grid;
+  grid-template-columns: 1.8fr 1fr;
+  gap: var(--space-24);
+  inline-size: 100%;
+  max-inline-size: var(--container-wide, 1120px);
+  margin-block-end: var(--space-24);
+}
+
+/* ── 主卡片（左大卡：用户画像） ── */
+.profile-card {
+  background: var(--color-surface-elevated, oklch(98% 0.004 80 / 0.72));
+  border: 1px solid var(--color-border-subtle, oklch(78% 0.012 80 / 0.55));
+  border-radius: var(--radius-lg);
+  padding: var(--space-40);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: var(--glass-pebble-blur);
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-32);
+  align-items: start;
+}
+
+.profile-card-whisper {
+  grid-column: 1 / -1;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: var(--text-caption);
+  color: var(--color-text-whisper);
+  font-weight: var(--font-weight-regular);
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+/* ── 装饰性球体 ── */
+.profile-sphere-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-block-start: var(--space-8);
+}
+
+.profile-sphere {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 35%,
+    oklch(95% 0.05 75),
+    oklch(82% 0.10 60),
+    oklch(72% 0.12 50)
+  );
+  box-shadow:
+    0 0 60px oklch(82% 0.10 60 / 0.3),
+    inset -15px -15px 30px oklch(65% 0.14 45 / 0.15);
+  animation: sphere-breathe var(--duration-breathe) var(--ease-breathe) infinite alternate;
+  flex-shrink: 0;
+}
+
+@keyframes sphere-breathe {
+  from {
+    transform: scale(0.97);
+    opacity: 0.88;
+  }
+  to {
+    transform: scale(1.03);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-sphere {
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* ── 画像摘要文字区 ── */
+.profile-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.profile-summary-title {
+  font-family: var(--font-heading);
+  font-size: var(--text-h3);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.profile-summary-subtitle {
+  font-family: var(--font-heading);
+  font-size: var(--text-h3);
+  font-weight: var(--font-weight-light);
+  color: oklch(70% 0.13 50);
+  font-style: italic;
+  line-height: 1.4;
+  margin: 0;
+  margin-block-start: calc(-1 * var(--space-12));
+}
+
+.profile-summary-text {
+  font-size: var(--text-body);
+  color: var(--color-text-secondary);
+  line-height: 1.8;
+  margin: 0;
+}
+
+/* ── 标签 pills ── */
+.profile-tags {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  flex-wrap: wrap;
+  margin-block-start: var(--space-8);
+}
+
+.profile-tag-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--gradient-coral);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-caption);
+  color: var(--color-text-inverse);
+  flex-shrink: 0;
+}
+
+.profile-tag-name {
+  font-size: var(--text-body-sm);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.profile-tag-role {
+  font-size: var(--text-caption);
+  color: var(--color-text-whisper);
+  margin-inline-start: var(--space-4);
+}
+
+.profile-tag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-4) var(--space-12);
+  border-radius: var(--radius-full);
+  background-color: oklch(82% 0.08 60 / 0.18);
+  font-size: var(--text-caption);
+  color: oklch(55% 0.08 60);
+  letter-spacing: 0.02em;
+  font-weight: var(--font-weight-medium);
+}
+
+/* ── 呼吸指示条（画像完成度） ── */
+.profile-breathe-strip {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  margin-block-start: var(--space-8);
+}
+
+.breathe-indicator-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--gradient-coral);
+  flex-shrink: 0;
+  animation: dot-pulse var(--duration-breathe) var(--ease-breathe) infinite alternate;
+}
+
+@keyframes dot-pulse {
+  from { opacity: 0.5; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .breathe-indicator-dot {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.breathe-label {
+  font-size: var(--text-caption);
+  color: oklch(65% 0.06 50);
+  letter-spacing: 0.02em;
+}
+
+.breathe-track {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background-color: oklch(92% 0.02 75);
+  overflow: hidden;
+}
+
+.breathe-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, oklch(82% 0.10 60), oklch(76% 0.12 55));
+  transition: width 1.2s var(--ease-editorial);
+}
+
+/* ── 副卡片（右侧深色：今日学习建议） ── */
+.today-card {
+  background: var(--gradient-night);
+  border-radius: var(--radius-lg);
+  padding: var(--space-32);
+  box-shadow: var(--shadow-md);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-24);
+  min-height: 280px;
+}
+
+.today-card-whisper {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: var(--text-caption);
+  color: oklch(70% 0.04 235);
+  font-weight: var(--font-weight-regular);
+}
+
+.today-card-title {
+  font-family: var(--font-heading);
+  font-size: var(--text-h3);
+  font-weight: var(--font-weight-medium);
+  color: oklch(92% 0.025 75);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.today-card-desc {
+  font-size: var(--text-body-sm);
+  color: oklch(70% 0.03 235);
+  line-height: 1.7;
+  margin: 0;
+}
+
+.today-card-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+}
+
+.today-play-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: oklch(92% 0.025 75);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform var(--duration-lazy-hover) var(--ease-lazy),
+              box-shadow var(--duration-lazy-hover) var(--ease-lazy);
+  box-shadow: 0 2px 12px oklch(16% 0.035 235 / 0.3);
+}
+
+.today-play-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 4px 20px oklch(16% 0.035 235 / 0.4);
+}
+
+.today-play-btn:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 3px;
+}
+
+.today-play-icon {
+  width: 14px;
+  height: 14px;
+  /* CSS 三角形播放图标 */
+  border: none;
+  background: transparent;
+  display: block;
+  border-left: 12px solid oklch(25% 0.04 235);
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  margin-inline-start: 3px;
+}
+
+.today-source-label {
+  font-size: var(--text-caption);
+  color: oklch(60% 0.03 235);
+  letter-spacing: 0.03em;
+}
+
+/* 深色卡片上的装饰光点 */
+.today-card-glow {
+  position: absolute;
+  bottom: var(--space-32);
+  right: var(--space-32);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: oklch(75% 0.08 140);
+  opacity: 0.7;
+  filter: blur(1px);
+  pointer-events: none;
+}
+
+/* ── 底部推荐行 ── */
+.hero-recs-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-24);
+  inline-size: 100%;
+  max-inline-size: var(--container-wide, 1120px);
+}
+
+/* ── 推荐卡片 ── */
+.rec-card {
+  border-radius: var(--radius-md);
+  padding: var(--space-24);
+  position: relative;
+  cursor: pointer;
+  transition: transform var(--duration-lazy-hover) var(--ease-lazy),
+              box-shadow var(--duration-lazy-hover) var(--ease-lazy);
+  box-shadow: none;
+}
+
+.rec-card:hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: var(--shadow-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rec-card:hover {
+    transform: none;
+  }
+}
+
+.rec-card:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 3px;
+}
+
+/* 柔色背景 */
+.rec-card--lavender {
+  background-color: oklch(92% 0.035 285 / 0.5);
+}
+.rec-card--sage {
+  background-color: oklch(93% 0.035 140 / 0.5);
+}
+.rec-card--peach {
+  background-color: oklch(94% 0.035 60 / 0.5);
+}
+
+.rec-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-block-end: var(--space-12);
+}
+
+.rec-dot--lavender {
+  background-color: oklch(72% 0.06 285);
+}
+.rec-dot--sage {
+  background-color: oklch(72% 0.06 140);
+}
+.rec-dot--peach {
+  background-color: oklch(72% 0.08 60);
+}
+
+.rec-title {
+  font-family: var(--font-heading);
+  font-size: var(--text-body);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  margin: 0;
+  margin-block-end: var(--space-4);
+}
+
+.rec-meta {
+  font-size: var(--text-caption);
+  color: var(--color-text-whisper);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── 响应式 ── */
+@media (max-width: 768px) {
+  .sprout-hero {
+    padding-block-start: var(--space-48);
+    padding-block-end: var(--space-40);
+    padding-inline: var(--space-24);
+  }
+
+  .hero-title {
+    font-size: 2rem;
+  }
+
+  .hero-cards-row {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-card {
+    grid-template-columns: 1fr;
+    padding: var(--space-24);
+  }
+
+  .profile-sphere-wrap {
+    justify-content: center;
+  }
+
+  .profile-sphere {
+    width: 80px;
+    height: 80px;
+  }
+
+  .today-card {
+    padding: var(--space-24);
+    min-height: auto;
+  }
+
+  .hero-recs-row {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-meta-strip {
+    flex-wrap: wrap;
+    gap: var(--space-8);
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .hero-cards-row {
+    grid-template-columns: 1.4fr 1fr;
+  }
+
+  .profile-sphere {
+    width: 100px;
+    height: 100px;
+  }
+}

@@ -148,7 +148,7 @@ export function Navbar() {
           animate={hasEntered ? 'visible' : 'hidden'}
         >
           <motion.div variants={reduceMotion ? undefined : navItemVariants}>
-            <Link className={styles.logoArea} to="/home" aria-label="回到主页">
+            <Link className={styles.logoArea} to="/sprout" aria-label="回到主页">
               <span className={styles.logoPebble} aria-hidden="true">
                 <img src="/logo.png" alt="" className={styles.logoImg} />
               </span>

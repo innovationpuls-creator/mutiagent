@@ -1,75 +1,153 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import styled from 'styled-components';
-import { AiEyes } from './AiEyes';
+import { streamChatflow, type AgentEventName, type ChatflowAgentEvent } from '../../api/orchestration';
 import { useAiWidget } from '../../context/AiWidgetContext';
-import { ChatCard } from './ChatCard';
+import { useAuth } from '../../contexts/AuthContext';
 import type { SessionMessage } from '../../types/chat';
+import { AiEyes } from './AiEyes';
+import { ChatCard } from './ChatCard';
 
-const mockMessages: SessionMessage[] = [
+type AgentStepStatus = 'pending' | 'running' | 'completed' | 'routed' | 'error';
+
+interface AgentStep {
+  id: string;
+  title: string;
+  status: AgentStepStatus;
+  detail: string;
+}
+
+const DEFAULT_AGENT_STEPS: AgentStep[] = [
   {
-    type: "collecting",
-    stage: "basic_info",
-    question_mode: "question_md",
-    confirmed_info: {} as any,
-    defaulted_fields: [],
-    question_md: "✅ 已确认信息：\n- 当前年级：暂未确认\n- 所学专业：暂未确认\n\n❓ 接下来需要了解：\n- 你目前是几年级？\n- 你所学的专业是什么？",
-    question_box: { question: "", options: [] },
-    text: "✅ 已确认信息：\n- 当前年级：暂未确认\n- 所学专业：暂未确认\n\n❓ 接下来需要了解：\n- 你目前是几年级？\n- 你所学的专业是什么？"
+    id: 'context',
+    title: '读取上下文',
+    status: 'pending',
+    detail: '等待接收你的学习线索',
   },
   {
-    type: "collecting",
-    stage: "basic_info",
-    question_mode: "question_box",
-    confirmed_info: {} as any,
-    defaulted_fields: [],
-    question_md: "",
-    question_box: { question: "你更倾向于以下哪种长期目标？", options: ["前端工程化", "后端微服务架构", "AI 应用开发", "暂不确定，先打基础"] },
-    text: "简要说明：关于学习方向，我们需要做一个选择。"
+    id: 'intent',
+    title: '意图识别智能体',
+    status: 'pending',
+    detail: '判断该由哪个智能体处理',
   },
   {
-    type: "basic_profile",
-    stage: "generated",
-    question_mode: "none",
-    confirmed_info: {} as any,
-    defaulted_fields: [],
-    question_md: "",
-    question_box: { question: "", options: [] },
-    text: "【用户基础信息】\n用户当前为大二软件工程相关专业学生，处于课程学习与项目实践并行阶段，已有一定学习方向，但仍需要进一步细化目标。\n\n【学习方式偏好】\n用户更适合案例驱动和实践驱动的学习方式，适合按照阶段目标逐步推进，并通过反馈不断修正学习路径。\n\n【学习内容偏好】\n用户适合结合视频、文档、练习题、代码实践和项目案例进行学习，其中项目案例和代码实践可以作为主要学习载体。\n\n【当前能力基础】\n用户具备一定编程基础和软件工程课程基础，擅长项目理解、需求拆解和页面设计表达，薄弱点主要在系统化知识梳理、长期学习节奏和部分底层原理。\n\n【学习目标】\n近期目标是完善课程学习和项目实践能力，长期目标是提升软件开发与 AI 应用项目能力。\n\n【学习约束】\n用户每周预计可投入 6-10 小时学习，主要困难是时间较分散、目标容易变化，需要更清晰的学习路径和阶段性反馈。\n\n【后续规划建议】\n后续可以先围绕当前专业课程和项目方向建立学习路径，将知识点拆分为基础概念、核心技能、实践任务和阶段评估四类内容，并结合练习题、代码实践和项目案例进行动态更新。"
-  }
+    id: 'route',
+    title: '路由决策',
+    status: 'pending',
+    detail: '等待意图识别结果',
+  },
+  {
+    id: 'profile',
+    title: '基础画像智能体',
+    status: 'pending',
+    detail: '等待路由转交',
+  },
+  {
+    id: 'update',
+    title: '更新画像 / 生成问题',
+    status: 'pending',
+    detail: '等待智能体返回内容',
+  },
 ];
+
+function statusLabel(status: AgentStepStatus): string {
+  if (status === 'running') return '运行中';
+  if (status === 'completed') return '已完成';
+  if (status === 'routed') return '已转交';
+  if (status === 'error') return '异常';
+  if (status === 'pending') return '等待中';
+  return '待命';
+}
+
+function updateStep(
+  steps: AgentStep[],
+  id: string,
+  status: AgentStepStatus,
+  detail: string,
+): AgentStep[] {
+  return steps.map((step) => (step.id === id ? { ...step, status, detail } : step));
+}
+
+function mergeAgentStep(current: AgentStep[], event: ChatflowAgentEvent): AgentStep[] {
+  if (event.event === 'agent_started' && event.agent === 'intent_recognition_agent') {
+    return updateStep(
+      updateStep(current, 'context', 'completed', '已读取本轮输入与历史对话'),
+      'intent',
+      'running',
+      event.message || '正在判断这次对话应该交给哪个智能体',
+    );
+  }
+  if (event.event === 'agent_completed' && event.agent === 'intent_recognition_agent') {
+    return updateStep(current, 'intent', 'completed', '意图识别完成');
+  }
+  if (event.event === 'route_decided') {
+    return updateStep(current, 'route', 'routed', event.message || `转交给${event.label || '具体智能体'}`);
+  }
+  if (event.event === 'agent_started' && event.agent === 'profile_agent') {
+    return updateStep(current, 'profile', 'running', event.message || '正在整理基础画像信息');
+  }
+  if (event.event === 'agent_completed' && event.agent === 'profile_agent') {
+    return updateStep(
+      updateStep(current, 'profile', 'completed', '基础画像智能体已返回结果'),
+      'update',
+      'running',
+      '正在生成问题或更新画像卡片',
+    );
+  }
+  if (event.event === 'completed') {
+    return updateStep(current, 'update', 'completed', '本轮内容已生成');
+  }
+  if (event.event === 'error') {
+    return current.map((step) =>
+      step.status === 'running' || step.status === 'routed'
+        ? { ...step, status: 'error', detail: event.message || '这一步没有正常完成' }
+        : step,
+    );
+  }
+  return current;
+}
+
+function currentProgressLabel(steps: AgentStep[]): string {
+  const active = steps.find((step) => step.status === 'running' || step.status === 'routed');
+  if (active) return `${active.title}：${active.detail}`;
+  const completedCount = steps.filter((step) => step.status === 'completed').length;
+  if (completedCount > 0) return '本轮智能体调用已完成';
+  return '等待你输入学习线索';
+}
 
 export function AiGreetingInput() {
   const { widgetState, setWidgetState } = useAiWidget();
+  const { token } = useAuth();
   const cardRef = useRef<HTMLDivElement>(null);
-  
-  // Global mouse tracking for 3D parallax effect
+  const [messages, setMessages] = useState<SessionMessage[]>([]);
+  const [executionId, setExecutionId] = useState<string | null>(null);
+  const [inputValue, setInputValue] = useState('');
+  const [isPending, setIsPending] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [agentSteps, setAgentSteps] = useState<AgentStep[]>(DEFAULT_AGENT_STEPS);
+  const [agentEvents, setAgentEvents] = useState<ChatflowAgentEvent[]>([]);
+  const [showEventLog, setShowEventLog] = useState(false);
+  const aiMood = error ? 'error' : isPending ? 'thinking' : isCompleted ? 'happy' : 'idle';
+
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const mouseXSpring = useSpring(x, { stiffness: 150, damping: 20 });
   const mouseYSpring = useSpring(y, { stiffness: 150, damping: 20 });
-  
-  // Transform percentage to degrees
   const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ['15deg', '-15deg']);
   const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ['-15deg', '15deg']);
 
   useEffect(() => {
-    const handleGlobalMouseMove = (e: MouseEvent) => {
-      // Only tilt in 3D when it's floating as a card or widget
+    const handleGlobalMouseMove = (event: MouseEvent) => {
       if (widgetState !== 'CENTER_INPUT' && widgetState !== 'WIDGET') return;
       if (!cardRef.current) return;
-      
+
       const rect = cardRef.current.getBoundingClientRect();
       const cardCenterX = rect.left + rect.width / 2;
       const cardCenterY = rect.top + rect.height / 2;
-      
-      const diffX = e.clientX - cardCenterX;
-      const diffY = e.clientY - cardCenterY;
-      
-      // Normalize to a percentage of screen width to give a consistent parallax depth
-      const xPct = Math.max(-0.5, Math.min(0.5, diffX / window.innerWidth));
-      const yPct = Math.max(-0.5, Math.min(0.5, diffY / window.innerHeight));
-      
+      const xPct = Math.max(-0.5, Math.min(0.5, (event.clientX - cardCenterX) / window.innerWidth));
+      const yPct = Math.max(-0.5, Math.min(0.5, (event.clientY - cardCenterY) / window.innerHeight));
+
       x.set(xPct);
       y.set(yPct);
     };
@@ -88,103 +166,235 @@ export function AiGreetingInput() {
     };
   }, [widgetState, x, y]);
 
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const query = text.trim();
+      if (!query || isPending) return;
+      if (!token) {
+        setError('请先登录后再开始基础画像对话。');
+        return;
+      }
+
+      setIsPending(true);
+      setError(null);
+      setAgentSteps(DEFAULT_AGENT_STEPS);
+      setAgentEvents([]);
+      setShowEventLog(false);
+
+      try {
+        const turn = await streamChatflow(
+          token,
+          query,
+          executionId && !isCompleted ? executionId : null,
+          (event) => {
+            setAgentSteps((current) => mergeAgentStep(current, event));
+            setAgentEvents((current) => [...current, event]);
+          },
+        );
+
+        setExecutionId(turn.completed ? null : turn.executionId);
+        setMessages((current) => [...current, turn.answer]);
+        setIsCompleted(turn.completed);
+        setInputValue('');
+        if (turn.completed) {
+          window.dispatchEvent(new CustomEvent('mutiagent-profile-updated'));
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '对话请求失败，请稍后重试');
+        setAgentSteps((current) =>
+          current.map((step) =>
+            step.status === 'running' || step.status === 'routed'
+              ? { ...step, status: 'error', detail: '这一步没有正常完成' }
+              : step,
+          ),
+        );
+      } finally {
+        setIsPending(false);
+      }
+    },
+    [executionId, isCompleted, isPending, token],
+  );
+
   const handleCardClick = () => {
     if (widgetState === 'CENTER_INPUT' || widgetState === 'WIDGET') {
-      // Reset tilt so the expanded modal lays perfectly flat against the screen
       x.set(0);
       y.set(0);
       setWidgetState('EXPANDED');
     }
   };
 
+  const handleSubmit = () => {
+    void sendMessage(inputValue);
+  };
+
   return (
     <StyledWrapper>
-      <motion.div 
+      <motion.div
         ref={cardRef}
         layout
         onClick={handleCardClick}
-        className={`card ${widgetState === 'CENTER_INPUT' ? 'initial' : widgetState}`} 
+        className={`card ${widgetState === 'CENTER_INPUT' ? 'initial' : widgetState}`}
         variants={{
           initial: { width: 260, height: 160 },
           expanded: { width: '85vw', height: '85vh' },
-          widget: { width: 100, height: 100 }
+          widget: { width: 100, height: 100 },
         }}
         initial="initial"
         animate={
-          widgetState === 'EXPANDED' ? 'expanded' : 
-          widgetState === 'WIDGET' ? 'widget' : 'initial'
+          widgetState === 'EXPANDED'
+            ? 'expanded'
+            : widgetState === 'WIDGET'
+              ? 'widget'
+              : 'initial'
         }
         transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-        style={{ 
-          rotateX: widgetState === 'EXPANDED' ? 0 : rotateX, 
+        style={{
+          rotateX: widgetState === 'EXPANDED' ? 0 : rotateX,
           rotateY: widgetState === 'EXPANDED' ? 0 : rotateY,
-          backgroundColor: widgetState === 'EXPANDED' ? 'var(--color-bg-surface, #ffffff)' : 'transparent',
-          cursor: widgetState === 'EXPANDED' ? 'default' : 'pointer'
+          cursor: widgetState === 'EXPANDED' ? 'default' : 'pointer',
         }}
       >
         {widgetState === 'EXPANDED' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', padding: '24px', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <AiEyes layoutId="eyes" isHappy />
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setWidgetState('WIDGET');
-                }} 
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', color: 'var(--color-text-primary, #333)' }}
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 15l-6-6-6 6"/></svg>
-              </button>
-            </div>
-            <div className="ChatFlow" style={{ flex: 1, padding: '0 var(--space-16, 16px) var(--space-24, 24px)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-24, 24px)' }}>
-              {mockMessages.map((msg, idx) => (
-                <ChatCard key={idx} message={msg} />
-              ))}
-            </div>
-            <div className="chat" style={{ marginTop: 'auto', background: 'var(--color-bg-subtle, #f5f5f5)', borderRadius: '16px', padding: '12px' }}>
-              <div className="chat-bot" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <textarea placeholder="Imagine Something...✦˚" name="chat_bot" id="chat_bot" defaultValue={""} style={{ width: '100%', minHeight: '60px', padding: '8px', border: 'none', background: 'transparent', outline: 'none', resize: 'none', fontFamily: 'var(--font-body), sans-serif', color: 'var(--color-text-primary, #333)' }} />
-                <div className="options" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
-                  <div className="btns-add" style={{ display: 'flex', gap: '8px' }}>
-                    <button className="icon-btn">
-                      <svg viewBox="0 0 24 24" height={20} width={20} xmlns="http://www.w3.org/2000/svg">
-                        <path d="M7 8v8a5 5 0 1 0 10 0V6.5a3.5 3.5 0 1 0-7 0V15a2 2 0 0 0 4 0V8" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" stroke="currentColor" fill="none" />
-                      </svg>
-                    </button>
-                    <button className="icon-btn">
-                      <svg xmlns="http://www.w3.org/2000/svg" width={20} height={20} viewBox="0 0 24 24">
-                        <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm0 10a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm10 0a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1zm0-8h6m-3-3v6" />
-                      </svg>
-                    </button>
-                  </div>
-                  <button className="btn-submit">
-                    <i>
-                      <svg viewBox="0 0 512 512" height={20} width={20}>
-                        <path d="M473 39.05a24 24 0 0 0-25.5-5.46L47.47 185h-.08a24 24 0 0 0 1 45.16l.41.13l137.3 58.63a16 16 0 0 0 15.54-3.59L422 80a7.07 7.07 0 0 1 10 10L226.66 310.26a16 16 0 0 0-3.59 15.54l58.65 137.38c.06.2.12.38.19.57c3.2 9.27 11.3 15.81 21.09 16.25h1a24.63 24.63 0 0 0 23-15.46L478.39 64.62A24 24 0 0 0 473 39.05" fill="currentColor" />
-                      </svg>
-                    </i>
-                  </button>
+          <section className="session-panel" aria-label="AI 基础画像对话">
+            <header className="session-header">
+              <div className="session-title-cluster">
+                <div className="agent-face" data-ai-state={aiMood}>
+                  <span className="agent-face-glow" aria-hidden="true" />
+                  <AiEyes layoutId="eyes" isHappy={aiMood === 'happy'} />
+                </div>
+                <div className="session-title-copy">
+                  <span>基础画像对话</span>
+                  <strong>{currentProgressLabel(agentSteps)}</strong>
                 </div>
               </div>
+              <button
+                type="button"
+                className="collapse-button"
+                aria-label="收起 AI 对话"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setWidgetState('WIDGET');
+                }}
+              >
+                <span aria-hidden="true">//</span>
+              </button>
+            </header>
+
+            <div className="session-workbench">
+              <main className="chat-column" aria-label="对话内容">
+                <div className="chat-flow">
+                  {messages.length === 0 && (
+                    <div className="chat-empty-state">
+                      告诉我你的年级、专业、学习偏好或近期目标，我会先判断意图，再进入基础画像对话。
+                    </div>
+                  )}
+                  {messages.map((message, index) => (
+                    <ChatCard
+                      key={`${message.stage}-${index}`}
+                      message={message}
+                      onSendReply={sendMessage}
+                      disabled={isPending}
+                    />
+                  ))}
+                  {isPending && <div className="chat-status">正在思考下一步问题...</div>}
+                  {error && <div className="chat-error">{error}</div>}
+                </div>
+              </main>
+
+              <aside className="codex-agent-panel" aria-label="多智能体调用状态">
+                <section className="agent-panel-section agent-panel-progress">
+                  <button
+                    type="button"
+                    className="agent-panel-heading"
+                    onClick={() => setShowEventLog((value) => !value)}
+                    aria-expanded={showEventLog}
+                  >
+                    <span>进度</span>
+                    <span aria-hidden="true">›</span>
+                  </button>
+                  <p>{currentProgressLabel(agentSteps)}</p>
+                </section>
+
+                <section className="agent-panel-section">
+                  <div className="agent-panel-heading static">
+                    <span>步骤</span>
+                    <strong>{isPending ? '运行中' : '待命'}</strong>
+                  </div>
+                  <div className="agent-step-list">
+                    {agentSteps.map((step) => (
+                      <div className="agent-step-row" data-status={step.status} key={step.id}>
+                        <span className="agent-step-dot" aria-hidden="true" />
+                        <div>
+                          <strong>{step.title}</strong>
+                          <p>{step.detail}</p>
+                        </div>
+                        <span>{statusLabel(step.status)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="agent-panel-section">
+                  <button
+                    type="button"
+                    className="agent-panel-heading"
+                    onClick={() => setShowEventLog((value) => !value)}
+                    aria-expanded={showEventLog}
+                  >
+                    <span>完整调用记录</span>
+                    <span aria-hidden="true">{showEventLog ? '⌃' : '⌄'}</span>
+                  </button>
+                  {showEventLog && (
+                    <div className="agent-event-log">
+                      {agentEvents.length === 0 ? (
+                        <p>本轮还没有实时事件。</p>
+                      ) : (
+                        agentEvents.map((event, index) => (
+                          <p key={`${event.event}-${index}`}>
+                            <strong>{event.label || event.agent || event.event}</strong>
+                            <span>{event.message || event.intent || event.phase || event.event}</span>
+                          </p>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </section>
+              </aside>
             </div>
-          </div>
+
+            <form
+              className="chat-composer"
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleSubmit();
+              }}
+            >
+              <textarea
+                placeholder={isCompleted ? '画像已生成，可以继续补充或追问...' : '输入你的学习情况...'}
+                value={inputValue}
+                disabled={isPending}
+                onChange={(event) => setInputValue(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                    handleSubmit();
+                  }
+                }}
+              />
+              <button
+                type="submit"
+                className="submit-button"
+                disabled={isPending || !inputValue.trim()}
+                aria-label="发送消息"
+              >
+                <span aria-hidden="true">+</span>
+              </button>
+            </form>
+          </section>
         ) : (
-          <>
-            <div className="background-blur-balls">
-              <div className="balls">
-                <span className="ball rosa" />
-                <span className="ball violet" />
-                <span className="ball green" />
-                <span className="ball cyan" />
-              </div>
-            </div>
-            <div className="content-card">
-              <div className="background-blur-card">
-                <AiEyes layoutId="eyes" />
-                <AiEyes isHappy />
-              </div>
-            </div>
-          </>
+          <div className="widget-shell">
+            <AiEyes layoutId="eyes" />
+            <AiEyes isHappy />
+          </div>
         )}
       </motion.div>
     </StyledWrapper>
@@ -197,198 +407,463 @@ const StyledWrapper = styled.div`
   align-items: center;
   justify-content: center;
 
-  /* Explicit border radius mapping to beat the 3D overflow bug in WebKit */
-  .card.initial,
-  .card.initial .background-blur-balls,
-  .card.initial .content-card {
-    border-radius: 48px;
-    transition: border-radius 0.6s ease;
-  }
-  
-  .card.EXPANDED, .card.WIDGET,
-  .card.EXPANDED .background-blur-balls, .card.WIDGET .background-blur-balls,
-  .card.EXPANDED .content-card, .card.WIDGET .content-card {
-    border-radius: 32px;
-    transition: border-radius 0.6s ease;
-  }
-
   .card {
     transform-style: preserve-3d;
     will-change: transform, width, height;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 10px 40px rgba(0, 0, 60, 0.1);
-    transition: box-shadow 0.3s ease;
+    border-radius: var(--radius-lg);
+    background: var(--color-surface-raised);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
   }
 
-  /* 3D Hover Effect Only for Normal/Widget State */
+  .card.initial,
+  .card.WIDGET {
+    background:
+      radial-gradient(circle at 24% 24%, oklch(84% 0.12 63 / 0.36), transparent 36%),
+      radial-gradient(circle at 78% 70%, oklch(75% 0.09 135 / 0.24), transparent 34%),
+      var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+  }
+
   .card.initial:hover,
   .card.WIDGET:hover {
-    box-shadow:
-      0 15px 45px rgba(0, 0, 60, 0.15),
-      inset 0 0 10px rgba(255, 255, 255, 0.5);
+    transform: translateY(calc(var(--space-4) * -1)) scale(1.01);
+    box-shadow: var(--shadow-lg);
   }
 
-  .background-blur-balls {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    z-index: -10;
-    background-color: rgba(255, 255, 255, 0.8);
-    overflow: hidden;
-  }
-  
-  .balls {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translateX(-50%) translateY(-50%);
-    animation: rotate-background-balls 10s linear infinite;
-  }
-
-  /* Pause background rotation on hover */
-  .card:hover .balls {
-    animation-play-state: paused;
-  }
-
-  .background-blur-balls .ball {
-    width: 6rem;
-    height: 6rem;
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(30px);
-  }
-
-  .background-blur-balls .ball.violet {
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: #9147ff;
-  }
-
-  .background-blur-balls .ball.green {
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: #34d399;
-  }
-
-  .background-blur-balls .ball.rosa {
-    top: 50%;
-    left: 0;
-    transform: translateY(-50%);
-    background-color: #ec4899;
-  }
-
-  .background-blur-balls .ball.cyan {
-    top: 50%;
-    right: 0;
-    transform: translateY(-50%);
-    background-color: #05e0f5;
-  }
-
-  .content-card {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    overflow: hidden;
-    transform: translateZ(50px);
-    transform-style: preserve-3d;
-  }
-
-  .background-blur-card {
-    width: 100%;
-    height: 100%;
-    backdrop-filter: blur(50px);
+  .widget-shell {
+    inline-size: 100%;
+    block-size: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    transform-style: preserve-3d;
+    transform: translateZ(var(--space-40));
   }
 
-  /* Hide happy eyes by default inside the normal content card */
-  .content-card .eyes.happy {
+  .widget-shell .eyes.happy {
     display: none;
   }
-  
-  /* Handle Eye Hover State natively */
-  .card:hover .content-card .eyes:not(.happy) {
+
+  .card:hover .widget-shell .eyes:not(.happy) {
     display: none;
   }
-  .card:hover .content-card .eyes.happy {
+
+  .card:hover .widget-shell .eyes.happy {
     display: flex;
   }
 
-  .icon-btn {
+  .session-panel {
+    inline-size: 100%;
+    block-size: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-24);
+    gap: var(--gap-sm);
+    background:
+      radial-gradient(circle at 12% 0%, oklch(84% 0.12 63 / 0.16), transparent 32%),
+      var(--color-surface-raised);
+  }
+
+  .session-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    color: var(--color-text-whisper, rgba(0, 0, 0, 0.2));
-    background-color: transparent;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+    min-block-size: var(--space-64);
+    border-block-end: 1px solid var(--color-border);
+    padding-block-end: var(--space-12);
+  }
+
+  .session-title-cluster {
+    min-inline-size: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+  }
+
+  .agent-face {
+    position: relative;
+    display: grid;
+    place-items: center;
+    inline-size: var(--space-64);
+    min-inline-size: var(--space-64);
+    block-size: var(--space-64);
+    border-radius: var(--radius-md);
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+
+  .agent-face-glow {
+    position: absolute;
+    inset: calc(var(--space-16) * -1);
+    border-radius: var(--radius-full);
+    background: var(--effect-peach-glow);
+    filter: var(--effect-blur-soft);
+    opacity: 0.5;
+    animation: agent-breathe var(--duration-breathe) var(--ease-breathe) infinite alternate;
+  }
+
+  .agent-face[data-ai-state='thinking'] .agent-face-glow,
+  .agent-face[data-ai-state='running'] .agent-face-glow {
+    background: var(--effect-sage-glow);
+    opacity: 0.66;
+  }
+
+  .session-title-copy {
+    min-inline-size: 0;
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .session-title-copy span {
+    color: var(--color-text-muted);
+    font-size: var(--text-caption);
+    line-height: 1.4;
+  }
+
+  .session-title-copy strong {
+    color: var(--color-text-primary);
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.45;
+    text-wrap: pretty;
+  }
+
+  .session-workbench {
+    position: relative;
+    flex: 1;
+    min-block-size: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+    gap: var(--gap-md);
+    align-items: stretch;
+  }
+
+  .chat-column {
+    min-inline-size: 0;
+    min-block-size: 0;
+    display: flex;
+  }
+
+  .codex-agent-panel {
+    align-self: start;
+    max-block-size: 100%;
+    overflow: auto;
+    border: 1px solid oklch(92% 0.025 75 / 0.12);
+    border-radius: var(--radius-lg);
+    padding: var(--space-16);
+    background: var(--gradient-night);
+    color: var(--color-text-inverse);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .agent-panel-section {
+    display: grid;
+    gap: var(--space-12);
+    padding-block: var(--space-16);
+    border-block-end: 1px solid oklch(92% 0.025 75 / 0.10);
+  }
+
+  .agent-panel-section:first-child {
+    padding-block-start: 0;
+  }
+
+  .agent-panel-section:last-child {
+    border-block-end: none;
+    padding-block-end: 0;
+  }
+
+  .agent-panel-heading {
+    inline-size: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
     border: none;
+    background: transparent;
+    color: oklch(92% 0.025 75 / 0.72);
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.4;
+    padding: 0;
     cursor: pointer;
-    transition: all 0.3s ease;
-
-    &:hover {
-      transform: translateY(-2px);
-      color: var(--color-text-secondary, #8b8b8b);
-    }
   }
 
-  .btn-submit {
-    display: flex;
-    padding: 2px;
-    background-image: linear-gradient(to top, #ff4141, #9147ff, #3b82f6);
-    border-radius: 10px;
-    box-shadow: inset 0 6px 2px -4px rgba(255, 255, 255, 0.5);
+  .agent-panel-heading.static {
+    cursor: default;
+  }
+
+  .agent-panel-heading strong {
+    border-radius: var(--radius-full);
+    padding: var(--space-4) var(--space-8);
+    background: oklch(92% 0.025 75 / 0.12);
+    color: var(--color-text-inverse);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-medium);
+  }
+
+  .agent-panel-progress p {
+    margin: 0;
+    color: var(--color-text-inverse);
+    font-size: var(--text-h6);
+    line-height: 1.6;
+    text-wrap: pretty;
+  }
+
+  .agent-step-list,
+  .agent-event-log {
+    display: grid;
+    gap: var(--space-8);
+  }
+
+  .agent-step-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-12);
+    border-radius: var(--radius-md);
+    padding: var(--space-12);
+    background: oklch(92% 0.025 75 / 0.08);
+    animation: step-reveal var(--duration-reveal) var(--ease-editorial) both;
+  }
+
+  .agent-step-row[data-status='running'],
+  .agent-step-row[data-status='routed'] {
+    background: oklch(80% 0.13 55 / 0.22);
+  }
+
+  .agent-step-row[data-status='completed'] {
+    background: oklch(82% 0.10 135 / 0.16);
+  }
+
+  .agent-step-row[data-status='error'] {
+    background: oklch(80% 0.14 28 / 0.18);
+  }
+
+  .agent-step-dot {
+    inline-size: var(--space-12);
+    block-size: var(--space-12);
+    border-radius: var(--radius-full);
+    background: oklch(92% 0.025 75 / 0.28);
+  }
+
+  .agent-step-row[data-status='running'] .agent-step-dot,
+  .agent-step-row[data-status='routed'] .agent-step-dot {
+    background: var(--color-primary);
+    box-shadow: var(--shadow-glow);
+    animation: agent-breathe var(--duration-breathe) var(--ease-breathe) infinite alternate;
+  }
+
+  .agent-step-row[data-status='completed'] .agent-step-dot {
+    background: var(--color-success);
+  }
+
+  .agent-step-row[data-status='error'] .agent-step-dot {
+    background: var(--color-error);
+  }
+
+  .agent-step-row strong,
+  .agent-step-row p,
+  .agent-step-row span {
+    margin: 0;
+    line-height: 1.45;
+  }
+
+  .agent-step-row strong {
+    display: block;
+    color: var(--color-text-inverse);
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-weight-medium);
+  }
+
+  .agent-step-row p,
+  .agent-event-log span {
+    color: oklch(92% 0.025 75 / 0.68);
+    font-size: var(--text-caption);
+  }
+
+  .agent-step-row > span:last-child {
+    border-radius: var(--radius-full);
+    padding: var(--space-4) var(--space-8);
+    background: oklch(92% 0.025 75 / 0.10);
+    color: var(--color-text-inverse);
+    font-size: var(--text-caption);
+    white-space: nowrap;
+  }
+
+  .agent-event-log {
+    overflow: hidden;
+    animation: event-log-reveal var(--duration-reveal) var(--ease-editorial) both;
+  }
+
+  .agent-event-log p {
+    display: grid;
+    gap: var(--space-4);
+    margin: 0;
+    border-radius: var(--radius-sm);
+    padding: var(--space-8) var(--space-12);
+    background: oklch(92% 0.025 75 / 0.08);
+  }
+
+  .agent-event-log strong {
+    color: var(--color-text-inverse);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-medium);
+  }
+
+  .collapse-button,
+  .submit-button {
+    min-inline-size: 44px;
+    min-block-size: 44px;
+    border: none;
+    border-radius: var(--radius-full);
+    font-family: var(--font-body);
+    font-size: var(--text-button);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
+    transition:
+      transform var(--duration-lazy-hover) var(--ease-lazy),
+      opacity var(--duration-lazy-hover) var(--ease-lazy);
+  }
+
+  .collapse-button {
+    background: var(--color-surface-inset);
+    color: var(--color-text-secondary);
+  }
+
+  .submit-button {
+    background: var(--gradient-coral);
+    color: var(--color-text-inverse);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .collapse-button:hover,
+  .submit-button:hover {
+    transform: translateY(calc(var(--space-4) * -1));
+  }
+
+  .chat-flow {
+    flex: 1;
+    min-block-size: 0;
+    inline-size: 100%;
+    padding: var(--space-8) var(--space-8) var(--space-24);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+  }
+
+  .chat-empty-state,
+  .chat-status,
+  .chat-error {
+    width: fit-content;
+    max-inline-size: min(100%, var(--container-narrow));
+    border-radius: var(--radius-md);
+    padding: var(--space-16) var(--space-24);
+    font-family: var(--font-body);
+    line-height: 1.8;
+  }
+
+  .chat-empty-state,
+  .chat-status {
+    background: var(--color-surface-inset);
+    color: var(--color-text-secondary);
+  }
+
+  .chat-error {
+    background: var(--color-error-bg);
+    color: var(--color-text-primary);
+  }
+
+  .chat-composer {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--gap-sm);
+    min-block-size: var(--space-64);
+    border-radius: var(--radius-full);
+    padding: var(--space-12);
+    background: var(--color-surface-inset);
+    box-shadow: var(--shadow-inset);
+  }
+
+  .chat-composer textarea {
+    flex: 1;
+    min-block-size: var(--space-40);
+    max-block-size: var(--space-120);
     border: none;
     outline: none;
-    opacity: 0.8;
-    transition: all 0.2s ease;
+    resize: vertical;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    line-height: 1.6;
+  }
 
-    & i {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 32px;
-      height: 32px;
-      background: rgba(0, 0, 0, 0.1);
-      border-radius: 8px;
-      backdrop-filter: blur(3px);
-      color: #fff;
-    }
-    
-    & svg {
-      transition: all 0.3s ease;
-    }
-    
-    &:hover {
-      opacity: 1;
-      & svg {
-        filter: drop-shadow(0 0 5px #ffffff);
-      }
+  .chat-composer textarea:disabled,
+  .submit-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.64;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card,
+    .collapse-button,
+    .submit-button {
+      transition: opacity var(--duration-instant) ease;
+      transform: none;
     }
 
-    &:focus svg {
-      filter: drop-shadow(0 0 5px #ffffff);
-      transform: scale(1.1) rotate(45deg);
-    }
-
-    &:active {
-      transform: scale(0.95);
+    .agent-face-glow,
+    .agent-step-dot,
+    .agent-event-log,
+    .agent-step-row {
+      animation: none;
     }
   }
 
-  @keyframes rotate-background-balls {
-    from {
-      transform: translateX(-50%) translateY(-50%) rotate(360deg);
+  @media (max-width: 767px) {
+    .session-header {
+      align-items: flex-start;
     }
-    to {
-      transform: translateX(-50%) translateY(-50%) rotate(0);
+
+    .session-workbench {
+      grid-template-columns: 1fr;
     }
+
+    .codex-agent-panel {
+      order: -1;
+      max-block-size: 38vh;
+    }
+
+    .agent-step-row {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .agent-step-row > span:last-child {
+      grid-column: 2;
+      inline-size: fit-content;
+    }
+  }
+
+  @keyframes agent-breathe {
+    from { transform: scale(0.94); opacity: 0.42; }
+    to { transform: scale(1.04); opacity: 0.72; }
+  }
+
+  @keyframes step-reveal {
+    from { transform: translateY(var(--space-8)); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  @keyframes event-log-reveal {
+    from { transform: translateY(calc(var(--space-8) * -1)); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
   }
 `;

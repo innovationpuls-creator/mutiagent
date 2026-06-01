@@ -74,7 +74,7 @@ export function MultiAgentHero() {
             className="hero-prelude"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1.2, delay: 0.3, ease: "var(--ease-editorial)" }}
+            transition={{ duration: 1.2, delay: 0.3, ease: "easeOut" }}
             style={{ fontFamily: 'var(--font-heading)', margin: 0 }}
           >
             从一句轻声的提问，到一张<motion.span 
@@ -100,7 +100,7 @@ export function MultiAgentHero() {
                 initial={{ opacity: 0, y: 15, filter: "blur(4px)" }}
                 animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                 exit={{ opacity: 0, y: -15, filter: "blur(4px)" }}
-                transition={{ duration: 0.8, ease: "var(--ease-lazy)" }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
                 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-16)' }}
               >
                 <div style={{ 

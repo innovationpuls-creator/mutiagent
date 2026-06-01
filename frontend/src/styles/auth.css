@@ -51,7 +51,7 @@
 /* 几何点缀 */
 .canvas-ornament {
   position: absolute;
-  font-family: var(--font-family-mono, monospace);
+  font-family: var(--font-mono, monospace);
   font-size: 40px;
   color: var(--color-primary-soft);
   opacity: 0.6;
@@ -76,7 +76,7 @@
 }
 
 .canvas-hero-subtitle {
-  font-family: var(--font-family-serif, serif);
+  font-family: var(--font-heading);
   font-weight: 500;
   font-size: var(--text-caption);
   color: var(--color-text-secondary);
@@ -140,7 +140,11 @@
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  background: var(--auth-gradient-night);
+  background-image:
+    linear-gradient(oklch(92% 0.02 75 / 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(92% 0.02 75 / 0.07) 1px, transparent 1px),
+    var(--auth-gradient-night);
+  background-size: 40px 40px, 40px 40px, auto;
   padding: var(--space-12) var(--space-40);
   overflow: hidden;
   isolation: isolate;

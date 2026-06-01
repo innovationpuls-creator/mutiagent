@@ -6,6 +6,9 @@ requires-python = ">=3.11"
 dependencies = [
   "bcrypt>=5.0.0",
   "fastapi>=0.115.0",
+  "httpx>=0.28.1",
+  "langgraph>=1.2.2",
+  "python-dotenv>=1.2.2",
   "python-jose[cryptography]>=3.5.0",
   "sqlmodel>=0.0.22",
   "uvicorn[standard]>=0.30.0",

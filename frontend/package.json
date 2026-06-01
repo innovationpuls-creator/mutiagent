@@ -20,6 +20,7 @@
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^6.28.0",
+    "styled-components": "^6.4.2",
     "vite": "^6.0.0"
   },
   "devDependencies": {
@@ -29,6 +30,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
+    "@types/styled-components": "^5.1.36",
     "jsdom": "^25.0.1",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

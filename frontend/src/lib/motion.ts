@@ -1,6 +1,6 @@
-import type { Variants } from 'framer-motion';
+import type { Variants, Transition } from 'framer-motion';
 
-export const whisperTransition = {
+export const whisperTransition: Transition = {
   duration: 0.4,
   ease: [0.4, 0, 0.2, 1], // Elegant cubic-bezier as requested
 };

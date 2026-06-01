@@ -1,6 +1,8 @@
 .agent
 .env
 CLAUDE.md
+.superpowers
+docs/superpowers
 
 backend/.venv/
 backend/.pytest_cache/

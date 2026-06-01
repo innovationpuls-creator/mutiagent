@@ -27,13 +27,24 @@
 
   /* Legacy Colors (To be refactored out over time) */
   --color-primary: oklch(78% 0.06 60); 
+  --color-primary-soft: oklch(91% 0.05 55);
+  --color-secondary: oklch(49% 0.05 235);
+  --color-secondary-soft: oklch(88% 0.03 220);
   --color-background: var(--color-canvas-base);
   --color-background-warm: var(--color-canvas-surface);
   --color-surface: var(--color-canvas-surface);
   --color-surface-raised: oklch(99% 0.01 80);
+  --color-surface-inset: oklch(90% 0.03 73);
+  --color-border: oklch(84% 0.03 73);
   --color-text-secondary: var(--color-text-whisper);
   --color-text-muted: var(--color-text-whisper);
   --color-text-inverse: var(--color-canvas-base);
+  --color-success: var(--color-intent-success);
+  --color-warning: var(--color-intent-warning);
+  --color-error: oklch(72% 0.13 28);
+  --color-error-bg: oklch(93% 0.04 28);
+  --color-info: var(--color-secondary);
+  --color-info-bg: var(--color-secondary-soft);
 
   /* Interaction States (交互态) */
   --color-hover-wash: oklch(99% 0.01 80 / 0.68);
@@ -78,6 +89,7 @@
   --shadow-sm: 0 1px 2px oklch(50% 0.05 55 / 0.08), 0 8px 24px oklch(76% 0.12 55 / 0.10);
   --shadow-md: 0 2px 6px oklch(50% 0.05 55 / 0.08), 0 18px 48px oklch(76% 0.12 55 / 0.16);
   --shadow-lg: 0 4px 12px oklch(50% 0.05 55 / 0.10), 0 32px 80px oklch(76% 0.12 55 / 0.22), 0 64px 120px oklch(84% 0.12 63 / 0.14);
+  --shadow-inset: inset 0 1px 2px oklch(20% 0.04 235 / 0.18), inset 0 -1px 1px oklch(100% 0 0 / 0.18);
   --shadow-glow: 0 0 48px oklch(76% 0.12 55 / 0.24), 0 0 96px oklch(84% 0.12 63 / 0.16);
 
   /* Ambient Effects (晨光与弥散 — from docs/06) */
@@ -111,6 +123,14 @@
   --space-80: 80px;
   --space-96: 96px;
   --space-120: 120px;
+  --gap-xs: var(--space-8);
+  --gap-sm: var(--space-16);
+  --gap-md: var(--space-24);
+  --gap-lg: var(--space-40);
+  --gap-xl: var(--space-64);
+  --container-narrow: 640px;
+  --container-default: 960px;
+  --container-wide: 1120px;
 
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -138,6 +158,9 @@
   --text-h1: 2.5rem;
   --text-h2: 2rem;
   --text-h3: 1.5rem;
+  --text-h4: 1.25rem;
+  --text-h5: 1.0625rem;
+  --text-h6: 0.9375rem;
   --text-body: 1rem;
   --text-body-sm: 0.9rem;
   --text-caption: 0.8125rem;

@@ -33,7 +33,7 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
       setResult(authResult);
       auth.login(authResult);
       setTimeout(() => {
-        navigate('/home');
+        navigate('/sprout', { state: { isFirstLogin: true } });
       }, 1500);
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : '登录失败');

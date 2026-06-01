@@ -3,10 +3,11 @@ import { motion, HTMLMotionProps } from 'framer-motion';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
 
-export interface ButtonProps extends Omit<HTMLMotionProps<"button">, "disabled"> {
+export interface ButtonProps extends HTMLMotionProps<"button"> {
   variant?: ButtonVariant;
   loading?: boolean;
   icon?: ReactNode;
+  children?: ReactNode;
 }
 
 export function Button({

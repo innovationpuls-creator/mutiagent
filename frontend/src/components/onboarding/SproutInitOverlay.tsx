@@ -11,18 +11,18 @@ export function SproutInitOverlay({ onComplete }: Props) {
   const { widgetState, setWidgetState } = useAiWidget();
 
   useEffect(() => {
-    // Exact timeline pacing mapped from design spec
+    // Compressed timeline pacing for a snappier intro (Total ~7.5s)
     const schedule = [
-      { delay: 800, phase: 1 },  // Blur in
-      { delay: 2300, phase: 2 }, // "你好" in
-      { delay: 4300, phase: 3 }, // "你好" out
-      { delay: 5300, phase: 4 }, // "Hello" in
-      { delay: 7300, phase: 5 }, // "Hello" out
-      { delay: 8300, phase: 6 }, // "欢迎来到 one-tree" in
-      { delay: 10800, phase: 7 }, // "欢迎来到 one-tree" out
-      { delay: 12300, phase: 8 }, // 正文 in
-      { delay: 13300, phase: 9 }, // 附注 in
-      { delay: 14300, phase: 10 } // Input in
+      { delay: 400, phase: 1 },   // Blur in
+      { delay: 1000, phase: 2 },  // "你好" in
+      { delay: 2200, phase: 3 },  // "你好" out (Stay 1.2s)
+      { delay: 2600, phase: 4 },  // "Hello" in (Interval 0.4s)
+      { delay: 3800, phase: 5 },  // "Hello" out (Stay 1.2s)
+      { delay: 4200, phase: 6 },  // "欢迎来到 one-tree" in (Interval 0.4s)
+      { delay: 5700, phase: 7 },  // "欢迎来到 one-tree" out (Stay 1.5s)
+      { delay: 6300, phase: 8 },  // 正文 in (Interval 0.6s)
+      { delay: 6900, phase: 9 },  // 附注 in
+      { delay: 7500, phase: 10 }  // Input in
     ];
 
     const timeouts = schedule.map(({ delay, phase: p }) => 
@@ -37,15 +37,18 @@ export function SproutInitOverlay({ onComplete }: Props) {
     return () => timeouts.forEach(clearTimeout);
   }, [setWidgetState]);
 
-  // Hide the overlay completely when widget minimizes or expands if desired,
-  // or keep the blur while in CENTER_INPUT.
-  if (widgetState === 'WIDGET' || widgetState === 'EXPANDED') return null;
+  useEffect(() => {
+    if (widgetState === 'WIDGET' || widgetState === 'EXPANDED') {
+      onComplete?.();
+    }
+  }, [widgetState, onComplete]);
 
   return (
     <motion.div
       initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
       animate={{ opacity: 1, backdropFilter: 'blur(80px)' }}
-      transition={{ delay: 0.8, duration: 1.5, ease: 'easeInOut' }}
+      exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
+      transition={{ delay: 0.4, duration: 1.2, ease: 'easeInOut' }}
       style={{
         position: 'fixed',
         inset: 0,
@@ -64,8 +67,8 @@ export function SproutInitOverlay({ onComplete }: Props) {
               key="t1"
               initial={{ opacity: 0, filter: 'blur(4px)' }}
               animate={{ opacity: 1, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, filter: 'blur(4px)', transition: { duration: 1.5 } }}
-              transition={{ duration: 1, ease: 'easeInOut' }}
+              exit={{ opacity: 0, filter: 'blur(4px)', transition: { duration: 0.5 } }}
+              transition={{ duration: 0.6, ease: 'easeInOut' }}
               style={{ fontFamily: 'var(--font-heading)', fontSize: '38px', fontWeight: 400, color: 'oklch(28% 0.01 60)', letterSpacing: '0.02em', margin: 0 }}
             >
               你好
@@ -76,8 +79,8 @@ export function SproutInitOverlay({ onComplete }: Props) {
               key="t2"
               initial={{ opacity: 0, filter: 'blur(4px)' }}
               animate={{ opacity: 1, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, filter: 'blur(4px)', transition: { duration: 1.5 } }}
-              transition={{ duration: 1, ease: 'easeInOut' }}
+              exit={{ opacity: 0, filter: 'blur(4px)', transition: { duration: 0.5 } }}
+              transition={{ duration: 0.6, ease: 'easeInOut' }}
               style={{ fontFamily: 'var(--font-heading)', fontSize: '38px', fontWeight: 400, color: 'oklch(28% 0.01 60)', letterSpacing: '0.02em', margin: 0 }}
             >
               Hello
@@ -88,8 +91,8 @@ export function SproutInitOverlay({ onComplete }: Props) {
               key="t3"
               initial={{ opacity: 0, filter: 'blur(4px)' }}
               animate={{ opacity: 1, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, filter: 'blur(4px)', transition: { duration: 1.5 } }}
-              transition={{ duration: 1, ease: 'easeInOut' }}
+              exit={{ opacity: 0, filter: 'blur(4px)', transition: { duration: 0.5 } }}
+              transition={{ duration: 0.6, ease: 'easeInOut' }}
               style={{ fontFamily: 'var(--font-heading)', fontSize: '38px', fontWeight: 400, color: 'oklch(28% 0.01 60)', letterSpacing: '0.02em', margin: 0 }}
             >
               欢迎来到 <span style={{ fontFamily: 'Caveat, cursive', fontWeight: 600, color: 'oklch(70% 0.12 45)', marginLeft: '8px', fontSize: '42px', transform: 'translateY(2px)', display: 'inline-block' }}>one-tree</span>
@@ -99,24 +102,31 @@ export function SproutInitOverlay({ onComplete }: Props) {
 
         {phase >= 8 && (
           <motion.div
+            layout // smoothly transition height changes
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, ease: 'easeInOut' }}
+            transition={{ duration: 0.8, ease: 'easeOut' }}
             style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-20)' }}
           >
-            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '38px', color: 'oklch(28% 0.01 60)', margin: 0, fontWeight: 400, letterSpacing: '0.02em', lineHeight: 1.38 }}>
+            <motion.h2 
+              layout 
+              style={{ fontFamily: 'var(--font-heading)', fontSize: '38px', color: 'oklch(28% 0.01 60)', margin: 0, fontWeight: 400, letterSpacing: '0.02em', lineHeight: 1.38 }}
+            >
               在开启旅程之前，想先听听你的声音。
-            </h2>
-            {phase >= 9 && (
-              <motion.p
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 1.5, ease: 'easeInOut' }}
-                style={{ fontFamily: 'var(--font-body)', fontSize: '18px', color: 'oklch(55% 0.02 60)', margin: 0, letterSpacing: '0.04em' }}
-              >
-                关于你的专业、现在的状态，或是当下的困惑……随便聊聊。
-              </motion.p>
-            )}
+            </motion.h2>
+            <AnimatePresence>
+              {phase >= 9 && (
+                <motion.p
+                  layout
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.8, ease: 'easeOut' }}
+                  style={{ fontFamily: 'var(--font-body)', fontSize: '18px', color: 'oklch(55% 0.02 60)', margin: 0, letterSpacing: '0.04em' }}
+                >
+                  关于你的专业、现在的状态，或是当下的困惑……随便聊聊。
+                </motion.p>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
       </div>

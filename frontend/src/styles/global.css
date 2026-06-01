@@ -59,6 +59,13 @@ button {
   border: 0;
 }
 
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0;
+  text-wrap: pretty;
+}
+
 #root {
   min-block-size: 100svh;
 }

@@ -89,20 +89,25 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
   const reduceMotion = useReducedMotion();
 
   useEffect(() => {
+    const runAnimate = (...args: Parameters<typeof animate>) => {
+      if (!scope.current) return;
+      animate(...args);
+    };
+
     /* ── 无障碍：prefers-reduced-motion 静态降级 ── */
     if (reduceMotion) {
-      animate('.node-el', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0 });
-      animate('.task-item', { opacity: 1, x: 0 }, { duration: 0 });
-      animate('.check-icon', { opacity: 1, scale: 1 }, { duration: 0 });
-      animate('.sandtable-line', { pathLength: 1 }, { duration: 0 });
-      SUBS.forEach(s => animate(`#${s.id}`, { x: s.dx, y: s.dy, scale: 1, opacity: 1 }, { duration: 0 }));
-      animate('.sub-line-path', { opacity: 0.4 }, { duration: 0 });
-      animate('#tree-trunk', { pathLength: 1 }, { duration: 0 });
-      animate('.tree-branch', { pathLength: 1 }, { duration: 0 });
-      BRANCHES.forEach(b => animate(`#${b.id}`, { x: b.dx, y: b.dy, scale: 1, opacity: 1 }, { duration: 0 }));
-      animate('.term-line', { opacity: 1 }, { duration: 0 });
-      animate('.term-char', { opacity: 1 }, { duration: 0 });
-      animate('.terminal-cursor', { opacity: 1 }, { duration: 0 });
+      runAnimate('.node-el', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0 });
+      runAnimate('.task-item', { opacity: 1, x: 0 }, { duration: 0 });
+      runAnimate('.check-icon', { opacity: 1, scale: 1 }, { duration: 0 });
+      runAnimate('.sandtable-line', { pathLength: 1 }, { duration: 0 });
+      SUBS.forEach(s => runAnimate(`#${s.id}`, { x: s.dx, y: s.dy, scale: 1, opacity: 1 }, { duration: 0 }));
+      runAnimate('.sub-line-path', { opacity: 0.4 }, { duration: 0 });
+      runAnimate('#tree-trunk', { pathLength: 1 }, { duration: 0 });
+      runAnimate('.tree-branch', { pathLength: 1 }, { duration: 0 });
+      BRANCHES.forEach(b => runAnimate(`#${b.id}`, { x: b.dx, y: b.dy, scale: 1, opacity: 1 }, { duration: 0 }));
+      runAnimate('.term-line', { opacity: 1 }, { duration: 0 });
+      runAnimate('.term-char', { opacity: 1 }, { duration: 0 });
+      runAnimate('.terminal-cursor', { opacity: 1 }, { duration: 0 });
       return;
     }
 
@@ -116,25 +121,25 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 
       while (alive) {
         /* ════════════ RESET ════════════ */
-        animate('.node-el', { opacity: 0, filter: 'blur(10px)', scale: 0.88 }, { duration: 0 });
-        animate('.task-item', { opacity: 0, x: -10 }, { duration: 0 });
-        animate('.check-icon', { opacity: 0, scale: 0 }, { duration: 0 });
-        animate('.sandtable-line', { pathLength: 0 }, { duration: 0 });
-        animate('.sub-dot', { opacity: 0, scale: 0, x: 0, y: 0 }, { duration: 0 });
-        animate('.sub-line-path', { opacity: 0 }, { duration: 0 });
-        animate('#tree-trunk', { pathLength: 0 }, { duration: 0 });
-        animate('.tree-branch', { pathLength: 0 }, { duration: 0 });
-        animate('.tree-leaf', { opacity: 0, scale: 0, x: 0, y: 0 }, { duration: 0 });
-        animate('.term-line', { opacity: 0 }, { duration: 0 });
-        animate('.term-char', { opacity: 0 }, { duration: 0 });
-        animate('.terminal-cursor', { opacity: 0 }, { duration: 0 });
-        animate('#pulse-line', { opacity: 0, pathLength: 0, pathOffset: 0 }, { duration: 0 });
+        runAnimate('.node-el', { opacity: 0, filter: 'blur(10px)', scale: 0.88 }, { duration: 0 });
+        runAnimate('.task-item', { opacity: 0, x: -10 }, { duration: 0 });
+        runAnimate('.check-icon', { opacity: 0, scale: 0 }, { duration: 0 });
+        runAnimate('.sandtable-line', { pathLength: 0 }, { duration: 0 });
+        runAnimate('.sub-dot', { opacity: 0, scale: 0, x: 0, y: 0 }, { duration: 0 });
+        runAnimate('.sub-line-path', { opacity: 0 }, { duration: 0 });
+        runAnimate('#tree-trunk', { pathLength: 0 }, { duration: 0 });
+        runAnimate('.tree-branch', { pathLength: 0 }, { duration: 0 });
+        runAnimate('.tree-leaf', { opacity: 0, scale: 0, x: 0, y: 0 }, { duration: 0 });
+        runAnimate('.term-line', { opacity: 0 }, { duration: 0 });
+        runAnimate('.term-char', { opacity: 0 }, { duration: 0 });
+        runAnimate('.terminal-cursor', { opacity: 0 }, { duration: 0 });
+        runAnimate('#pulse-line', { opacity: 0, pathLength: 0, pathOffset: 0 }, { duration: 0 });
 
         await wait(350);
         if (!alive) break;
 
         /* ════════════ 0.35s: USER INPUT ════════════ */
-        animate('#user-input', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0.7, ease: ed });
+        runAnimate('#user-input', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0.7, ease: ed });
         await wait(600);
         if (!alive) break;
 
@@ -142,26 +147,26 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         setStageIndex(0);
 
         // 终端 Line 1: 极速逐字流淌 (与标题 AnimatePresence 同步触发)
-        animate('#term-1', { opacity: 1 }, { duration: 0.01 });
-        animate('.term-char-term-1', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
-        animate('.terminal-cursor', { opacity: 1 }, { duration: 0.01 });
+        runAnimate('#term-1', { opacity: 1 }, { duration: 0.01 });
+        runAnimate('.term-char-term-1', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
+        runAnimate('.terminal-cursor', { opacity: 1 }, { duration: 0.01 });
 
-        animate('#line-0', { pathLength: 1 }, { duration: 0.6, ease: 'easeInOut' });
+        runAnimate('#line-0', { pathLength: 1 }, { duration: 0.6, ease: 'easeInOut' });
         await wait(600);
-        animate('#planner-node', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0.8, ease: ed });
+        runAnimate('#planner-node', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0.8, ease: ed });
         await wait(860);
 
         // 任务项依次滑入
-        animate('.task-item', { opacity: 1, x: 0 }, { duration: 0.3, delay: stagger(0.16), ease: 'easeOut' });
+        runAnimate('.task-item', { opacity: 1, x: 0 }, { duration: 0.3, delay: stagger(0.16), ease: 'easeOut' });
         await wait(1250);
 
         // 打勾 ✓ 依次弹出
-        animate('.check-icon', { opacity: 1, scale: 1 }, { duration: 0.2, delay: stagger(0.2), ease: 'easeOut' });
+        runAnimate('.check-icon', { opacity: 1, scale: 1 }, { duration: 0.2, delay: stagger(0.2), ease: 'easeOut' });
         await wait(1350);
 
         // 终端 Line 2
-        animate('#term-2', { opacity: 1 }, { duration: 0.01 });
-        animate('.term-char-term-2', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
+        runAnimate('#term-2', { opacity: 1 }, { duration: 0.01 });
+        runAnimate('.term-char-term-2', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
         await wait(940);
         if (!alive) break;
 
@@ -169,17 +174,17 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         setStageIndex(1);
 
         // 终端 Line 3: 并行唤醒 (与标题 AnimatePresence 同步触发)
-        animate('#term-3', { opacity: 1 }, { duration: 0.01 });
-        animate('.term-char-term-3', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
+        runAnimate('#term-3', { opacity: 1 }, { duration: 0.01 });
+        runAnimate('.term-char-term-3', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
 
-        animate('#line-1', { pathLength: 1 }, { duration: 0.6, ease: 'easeInOut' });
+        runAnimate('#line-1', { pathLength: 1 }, { duration: 0.6, ease: 'easeInOut' });
         await wait(600);
-        animate('#researcher-node', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0.8, ease: ed });
+        runAnimate('#researcher-node', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0.8, ease: ed });
         await wait(700);
 
         // Sub-agents 从中心弹射 (近临界阻尼 spring — 丝滑落位, 零过冲)
         for (const s of SUBS) {
-          animate(`#${s.id}`, { x: s.dx, y: s.dy, scale: 1, opacity: 1 }, {
+          runAnimate(`#${s.id}`, { x: s.dx, y: s.dy, scale: 1, opacity: 1 }, {
             type: 'spring', stiffness: 170, damping: 24,
           });
           await wait(95);
@@ -187,11 +192,11 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         await wait(220);
 
         // 虚线连线淡入
-        animate('.sub-line-path', { opacity: 0.45 }, { duration: 0.4, delay: stagger(0.08), ease: 'easeOut' });
+        runAnimate('.sub-line-path', { opacity: 0.45 }, { duration: 0.4, delay: stagger(0.08), ease: 'easeOut' });
 
         // 终端 Line 4: 降维清洗 (具体数字)
-        animate('#term-4', { opacity: 1 }, { duration: 0.01 });
-        animate('.term-char-term-4', { opacity: 1 }, { duration: 0.01, delay: stagger(0.016) });
+        runAnimate('#term-4', { opacity: 1 }, { duration: 0.01 });
+        runAnimate('.term-char-term-4', { opacity: 1 }, { duration: 0.01, delay: stagger(0.016) });
         await wait(1555);
         await wait(1640);
         if (!alive) break;
@@ -200,28 +205,28 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         setStageIndex(2);
 
         // 终端 Line 5: 路径收敛 (与标题 AnimatePresence 同步触发)
-        animate('#term-5', { opacity: 1 }, { duration: 0.01 });
-        animate('.term-char-term-5', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
+        runAnimate('#term-5', { opacity: 1 }, { duration: 0.01 });
+        runAnimate('.term-char-term-5', { opacity: 1 }, { duration: 0.01, delay: stagger(0.018) });
 
         // 标题先出，视觉动画 0.5s 后启动
         await wait(500);
 
-        animate('#line-2', { pathLength: 1 }, { duration: 0.6, ease: 'easeInOut' });
+        runAnimate('#line-2', { pathLength: 1 }, { duration: 0.6, ease: 'easeInOut' });
         await wait(600);
-        animate('#path-node', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0.8, ease: ed });
+        runAnimate('#path-node', { opacity: 1, filter: 'blur(0px)', scale: 1 }, { duration: 0.8, ease: ed });
         await wait(700);
 
         // 主干生长
-        animate('#tree-trunk', { pathLength: 1 }, { duration: 0.45, ease: 'easeOut' });
+        runAnimate('#tree-trunk', { pathLength: 1 }, { duration: 0.45, ease: 'easeOut' });
         await wait(500);
 
         // 三根分支藤蔓展开
-        animate('.tree-branch', { pathLength: 1 }, { duration: 0.35, delay: stagger(0.1), ease: 'easeOut' });
+        runAnimate('.tree-branch', { pathLength: 1 }, { duration: 0.35, delay: stagger(0.1), ease: 'easeOut' });
         await wait(500);
 
         // 叶子节点弹射 (近临界阻尼 — 舒展丝滑, 零过冲)
         for (const b of BRANCHES) {
-          animate(`#${b.id}`, { x: b.dx, y: b.dy, scale: 1, opacity: 1 }, {
+          runAnimate(`#${b.id}`, { x: b.dx, y: b.dy, scale: 1, opacity: 1 }, {
             type: 'spring', stiffness: 190, damping: 25,
           });
           await wait(120);
@@ -231,7 +236,7 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         if (!alive) break;
 
         /* ════════════ 8.5s: 认知流光脉冲 ════════════ */
-        animate('#pulse-line', {
+        runAnimate('#pulse-line', {
           opacity: [0, 0.8, 0.8, 0],
           pathLength: [0, 0.3, 0.3, 0],
           pathOffset: [0, 0, 0.7, 1],
@@ -240,7 +245,7 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
         if (!alive) break;
 
         /* ════════════ 退场 (仅 opacity — 合规 docs/07) ════════════ */
-        await animate('.hide-on-reset', { opacity: 0 }, {
+        await runAnimate('.hide-on-reset', { opacity: 0 }, {
           duration: 1, ease: 'easeInOut', delay: stagger(0.02),
         });
         await wait(350);
