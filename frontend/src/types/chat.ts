@@ -25,6 +25,57 @@ export interface QuestionBox {
   options: string[];
 }
 
+export interface AgentUserAnswer {
+  userMessage: string;
+  questionBox: QuestionBox | null;
+}
+
+export interface AgentTraceStep {
+  stepId: string;
+  agentKey: string;
+  label: string;
+  phase: string;
+  status: string;
+  message: string;
+  dependsOn: string[];
+  parallelGroup: string | null;
+}
+
+export interface LearningPathResult {
+  learning_goal: {
+    target_course_or_skill: string;
+    target_completion_time: string;
+    goal_type: '考试' | '课程学习' | '项目实践' | '能力提升' | '就业准备' | '其他';
+    desired_outcome: string;
+  };
+  gap_analysis: {
+    current_mastered_content: string[];
+    current_weaknesses: string[];
+    required_capabilities: string[];
+    main_gaps: string[];
+  };
+  foundation_path: {
+    stages: Array<{
+      stage_id: string;
+      stage_name: string;
+      learning_goal: string;
+      learning_content: string[];
+      learning_tasks: string[];
+      recommended_methods: string[];
+      completion_standard: string[];
+    }>;
+  };
+  generated_path: {
+    overall_goal: string;
+    stage_routes: Array<{ stage_id: string; route_summary: string }>;
+    schedule: Array<{ period: string; focus: string; milestone: string }>;
+    task_checklist: string[];
+    recommended_resource_types: string[];
+    stage_acceptance_criteria: Array<{ stage_id: string; criteria: string[] }>;
+    next_actions: string[];
+  };
+}
+
 export interface SessionMessage {
   type: 'collecting' | 'basic_profile';
   stage: ChatStage;
@@ -61,6 +112,8 @@ export interface ChatMessage {
   status: MessageStatus;
   timestamp: number;
   sessionMessage?: SessionMessage | null;
+  agentAnswer?: AgentUserAnswer | null;
+  learningPath?: LearningPathResult | null;
   runTrace?: AgentRunStep[];
   activeStepId?: string | null;
   error?: string;

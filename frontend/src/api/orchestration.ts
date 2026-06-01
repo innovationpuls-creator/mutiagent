@@ -1,24 +1,74 @@
-import type { SessionMessage } from '../types/chat';
+import type { AgentTraceStep, AgentUserAnswer, LearningPathResult, QuestionBox, SessionMessage } from '../types/chat';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
 
-interface StartChatflowResponse {
-  execution_id: string;
-  conversation_id: string;
-  answer: SessionMessage;
-  completed: boolean;
-  final_result: SessionMessage | null;
-}
-
-interface ContinueChatflowResponse {
-  conversation_id: string;
-  answer: SessionMessage;
-  completed: boolean;
-  final_result: SessionMessage | null;
-}
-
 interface ApiErrorResponse {
   detail?: string | { msg?: string }[];
+}
+
+interface ApiAgentUserAnswer {
+  user_message: string;
+  question_box: QuestionBox | null;
+}
+
+interface ApiAgentTraceStep {
+  step_id: string;
+  agent_key: string;
+  label: string;
+  phase: string;
+  status: string;
+  message: string;
+  depends_on?: string[];
+  parallel_group?: string | null;
+}
+
+interface SessionResponse {
+  session_id: string;
+  answer: ApiAgentUserAnswer;
+  agent_trace: ApiAgentTraceStep[];
+  completed: boolean;
+  profile: SessionMessage | null;
+  learning_path: LearningPathResult | null;
+}
+
+interface UnknownRecord {
+  [key: string]: unknown;
+}
+
+export interface SessionTurn {
+  sessionId: string;
+  answer: AgentUserAnswer;
+  agentTrace: AgentTraceStep[];
+  completed: boolean;
+  profile: SessionMessage | null;
+  learningPath: LearningPathResult | null;
+}
+
+export type SessionEventName =
+  | 'agent_step_started'
+  | 'agent_step_completed'
+  | 'agent_step_failed'
+  | 'orchestration_completed'
+  | 'orchestration_failed';
+
+export interface SessionAgentEvent {
+  event: SessionEventName;
+  stepId?: string;
+  agentKey?: string;
+  agent?: string;
+  label?: string;
+  phase?: string;
+  status?: string;
+  message?: string;
+  error?: string;
+  intent?: string;
+  routeStatus?: string;
+  sessionId?: string;
+  answer?: AgentUserAnswer;
+  agentTrace?: AgentTraceStep[];
+  completed?: boolean;
+  profile?: SessionMessage | null;
+  learningPath?: LearningPathResult | null;
 }
 
 export interface ChatflowTurn {
@@ -58,7 +108,7 @@ function getErrorMessage(error: ApiErrorResponse | null): string {
   return '输入内容不完整，请检查后重试';
 }
 
-async function requestChatflow<TResponse>(
+async function requestOrchestration<TResponse>(
   path: string,
   token: string,
   body: object,
@@ -80,68 +130,243 @@ async function requestChatflow<TResponse>(
   return (await response.json()) as TResponse;
 }
 
-export async function startChatflow(token: string, query: string): Promise<ChatflowTurn> {
-  const payload = await requestChatflow<StartChatflowResponse>(
-    '/api/orchestration/chatflow/start',
-    token,
-    { query },
-  );
-
+function normalizeAnswer(answer: ApiAgentUserAnswer): AgentUserAnswer {
   return {
-    executionId: payload.execution_id,
-    conversationId: payload.conversation_id,
-    answer: payload.answer,
-    completed: payload.completed,
-    finalResult: payload.final_result,
+    userMessage: answer.user_message,
+    questionBox: answer.question_box,
   };
 }
 
-export async function continueChatflow(
-  token: string,
-  executionId: string,
-  query: string,
-): Promise<ChatflowTurn> {
-  const payload = await requestChatflow<ContinueChatflowResponse>(
-    '/api/orchestration/chatflow/continue',
-    token,
-    { execution_id: executionId, query },
-  );
-
+function normalizeTraceStep(step: ApiAgentTraceStep): AgentTraceStep {
   return {
-    executionId,
-    conversationId: payload.conversation_id,
-    answer: payload.answer,
-    completed: payload.completed,
-    finalResult: payload.final_result,
+    stepId: step.step_id,
+    agentKey: step.agent_key,
+    label: step.label,
+    phase: step.phase,
+    status: step.status,
+    message: step.message,
+    dependsOn: step.depends_on ?? [],
+    parallelGroup: step.parallel_group ?? null,
   };
 }
 
-function parseSseChunk(buffer: string): { events: ChatflowAgentEvent[]; rest: string } {
+function normalizeSessionResponse(payload: SessionResponse): SessionTurn {
+  return {
+    sessionId: payload.session_id,
+    answer: normalizeAnswer(payload.answer),
+    agentTrace: payload.agent_trace.map(normalizeTraceStep),
+    completed: payload.completed,
+    profile: payload.profile,
+    learningPath: payload.learning_path,
+  };
+}
+
+function isUnknownRecord(value: unknown): value is UnknownRecord {
+  return value !== null && typeof value === 'object';
+}
+
+function getString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function getProfile(value: unknown): SessionMessage | null | undefined {
+  if (value === null) return null;
+  return isUnknownRecord(value) ? (value as unknown as SessionMessage) : undefined;
+}
+
+function getLearningPath(value: unknown): LearningPathResult | null | undefined {
+  if (value === null) return null;
+  return isUnknownRecord(value) ? (value as unknown as LearningPathResult) : undefined;
+}
+
+function getAnswer(value: unknown): AgentUserAnswer | undefined {
+  if (!isUnknownRecord(value)) return undefined;
+  const userMessage = getString(value.user_message);
+  if (userMessage === undefined) return undefined;
+  return {
+    userMessage,
+    questionBox: value.question_box === null || isUnknownRecord(value.question_box)
+      ? (value.question_box as QuestionBox | null)
+      : null,
+  };
+}
+
+function getTrace(value: unknown): AgentTraceStep[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.map((step) => normalizeTraceStep(step as ApiAgentTraceStep));
+}
+
+function normalizeSessionEvent(event: SessionEventName, payload: UnknownRecord): SessionAgentEvent {
+  const answer = getAnswer(payload.answer);
+  const agentTrace = getTrace(payload.agent_trace);
+  return {
+    event,
+    stepId: getString(payload.step_id),
+    agentKey: getString(payload.agent_key),
+    agent: getString(payload.agent),
+    label: getString(payload.label),
+    phase: getString(payload.phase),
+    status: getString(payload.status),
+    message: getString(payload.message),
+    error: getString(payload.error),
+    intent: getString(payload.intent),
+    routeStatus: getString(payload.route_status),
+    sessionId: getString(payload.session_id),
+    answer,
+    agentTrace,
+    completed: getBoolean(payload.completed),
+    profile: getProfile(payload.profile),
+    learningPath: getLearningPath(payload.learning_path),
+  };
+}
+
+function parseSseChunk(buffer: string): { events: SessionAgentEvent[]; rest: string } {
   const parts = buffer.split('\n\n');
   const rest = parts.pop() ?? '';
   const events = parts
     .map((part) => {
-      const eventLine = part.split('\n').find((line) => line.startsWith('event: '));
-      const dataLine = part.split('\n').find((line) => line.startsWith('data: '));
-      if (!eventLine || !dataLine) return null;
+      const lines = part.split('\n');
+      const eventLine = lines.find((line) => line.startsWith('event: '));
+      const dataLines = lines.filter((line) => line.startsWith('data: '));
+      if (!eventLine || dataLines.length === 0) return null;
 
-      const event = eventLine.slice('event: '.length).trim() as AgentEventName;
-      const data = JSON.parse(dataLine.slice('data: '.length)) as Omit<ChatflowAgentEvent, 'event'>;
-      return { event, ...data };
+      const event = eventLine.slice('event: '.length).trim() as SessionEventName;
+      const data = dataLines.map((line) => line.slice('data: '.length)).join('\n');
+      const payload = JSON.parse(data) as UnknownRecord;
+      return normalizeSessionEvent(event, payload);
     })
-    .filter((event): event is ChatflowAgentEvent => event !== null);
+    .filter((event): event is SessionAgentEvent => event !== null);
 
   return { events, rest };
 }
 
-export async function streamChatflow(
+function sessionMessageFromAnswer(answer: AgentUserAnswer): SessionMessage {
+  return {
+    type: 'collecting',
+    stage: 'basic_info',
+    question_mode: answer.questionBox ? 'question_box' : 'none',
+    confirmed_info: {
+      current_grade: '',
+      major: '',
+      learning_stage: '',
+      has_clear_goal: '',
+      learning_method_preference: '',
+      learning_pace_preference: '',
+      content_preference: [],
+      need_guidance: '',
+      knowledge_foundation: '',
+      strengths: '',
+      weaknesses: '',
+      experience: '',
+      short_term_goal: '',
+      long_term_goal: '',
+      weekly_available_time: '',
+      constraints: '',
+    },
+    defaulted_fields: [],
+    question_md: answer.userMessage,
+    question_box: answer.questionBox ?? { question: '', options: [] },
+    text: answer.userMessage,
+  };
+}
+
+function toChatflowEvent(event: SessionAgentEvent): ChatflowAgentEvent {
+  const agent = event.agentKey ?? event.agent;
+  if (event.event === 'agent_step_started') {
+    return {
+      event: 'agent_started',
+      agent,
+      label: event.label,
+      message: event.message,
+      phase: event.phase,
+    };
+  }
+  if (event.event === 'agent_step_completed') {
+    return {
+      event: 'agent_completed',
+      agent,
+      label: event.label,
+      message: event.message,
+      phase: event.phase,
+    };
+  }
+  if (event.event === 'agent_step_failed' || event.event === 'orchestration_failed') {
+    return {
+      event: 'error',
+      agent,
+      label: event.label,
+      message: event.error || event.message || '对话请求失败，请稍后重试',
+      phase: event.phase,
+    };
+  }
+
+  const answer = event.profile ?? (event.answer ? sessionMessageFromAnswer(event.answer) : undefined);
+  return {
+    event: 'completed',
+    agent,
+    label: event.label,
+    message: event.message,
+    execution_id: event.sessionId,
+    conversation_id: event.sessionId,
+    answer,
+    completed: event.completed,
+    final_result: event.completed ? event.profile ?? null : null,
+    phase: event.phase,
+    error: event.error,
+  };
+}
+
+function chatflowTurnFromSession(turn: SessionTurn): ChatflowTurn {
+  const answer = turn.profile ?? sessionMessageFromAnswer(turn.answer);
+  return {
+    executionId: turn.sessionId,
+    conversationId: turn.sessionId,
+    answer,
+    completed: turn.completed,
+    finalResult: turn.completed ? turn.profile : null,
+  };
+}
+
+export async function startSession(token: string, query: string): Promise<SessionTurn> {
+  const payload = await requestOrchestration<SessionResponse>(
+    '/api/orchestration/sessions/start',
+    token,
+    { query },
+  );
+  return normalizeSessionResponse(payload);
+}
+
+export async function continueSession(token: string, sessionId: string, query: string): Promise<SessionTurn> {
+  const payload = await requestOrchestration<SessionResponse>(
+    '/api/orchestration/sessions/continue',
+    token,
+    { session_id: sessionId, query },
+  );
+  return normalizeSessionResponse(payload);
+}
+
+export async function startChatflow(token: string, query: string): Promise<ChatflowTurn> {
+  const turn = await startSession(token, query);
+  return chatflowTurnFromSession(turn);
+}
+
+export async function continueChatflow(token: string, executionId: string, query: string): Promise<ChatflowTurn> {
+  const turn = await continueSession(token, executionId, query);
+  return chatflowTurnFromSession(turn);
+}
+
+export async function streamSession(
   token: string,
   query: string,
-  executionId: string | null,
-  onEvent: (event: ChatflowAgentEvent) => void,
-): Promise<ChatflowTurn> {
-  const path = executionId ? '/api/orchestration/chatflow/continue/stream' : '/api/orchestration/chatflow/start/stream';
-  const body = executionId ? { execution_id: executionId, query } : { query };
+  sessionId: string | null,
+  onEvent: (event: SessionAgentEvent) => void,
+): Promise<SessionTurn> {
+  const path = sessionId ? '/api/orchestration/sessions/continue/stream' : '/api/orchestration/sessions/start/stream';
+  const body = sessionId ? { session_id: sessionId, query } : { query };
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     headers: {
@@ -163,7 +388,7 @@ export async function streamChatflow(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-  let finalTurn: ChatflowTurn | null = null;
+  let finalTurn: SessionTurn | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -176,19 +401,17 @@ export async function streamChatflow(
 
     parsed.events.forEach((event) => {
       onEvent(event);
-      if (event.event === 'error') {
-        throw new Error(event.message || '对话请求失败，请稍后重试');
+      if (event.event === 'orchestration_failed' || event.event === 'agent_step_failed') {
+        throw new Error(event.error || event.message || '对话请求失败，请稍后重试');
       }
-      if (event.event === 'completed' && event.error) {
-        throw new Error(event.error);
-      }
-      if (event.event === 'completed' && event.answer && event.execution_id) {
+      if (event.event === 'orchestration_completed' && event.answer && event.sessionId) {
         finalTurn = {
-          executionId: event.execution_id,
-          conversationId: event.conversation_id ?? '',
+          sessionId: event.sessionId,
           answer: event.answer,
+          agentTrace: event.agentTrace ?? [],
           completed: event.completed ?? false,
-          finalResult: event.final_result ?? null,
+          profile: event.profile ?? null,
+          learningPath: event.learningPath ?? null,
         };
       }
     });
@@ -201,4 +424,14 @@ export async function streamChatflow(
   }
 
   return finalTurn;
+}
+
+export async function streamChatflow(
+  token: string,
+  query: string,
+  executionId: string | null,
+  onEvent: (event: ChatflowAgentEvent) => void,
+): Promise<ChatflowTurn> {
+  const turn = await streamSession(token, query, executionId, (event) => onEvent(toChatflowEvent(event)));
+  return chatflowTurnFromSession(turn);
 }
