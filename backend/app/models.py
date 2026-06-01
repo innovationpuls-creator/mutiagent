@@ -32,3 +32,18 @@ class UserDifyConversation(SQLModel, table=True):
     profile_conversation_id: str = Field(default="")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class UserAgentConversation(SQLModel, table=True):
+    user_uid: str = Field(foreign_key="user.uid", primary_key=True)
+    agent_key: str = Field(primary_key=True, max_length=64)
+    conversation_id: str = Field(default="")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class UserLearningPath(SQLModel, table=True):
+    user_uid: str = Field(foreign_key="user.uid", primary_key=True)
+    path_data: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
