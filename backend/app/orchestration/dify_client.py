@@ -12,8 +12,10 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(BACKEND_ROOT / ".env")
 
 DIFY_API_URL = os.getenv("DIFY_API_URL", "http://localhost/v1")
+DIFY_CHAT_API_KEY = os.getenv("DIFY_CHAT_API_KEY", "")
 DIFY_PROFILE_AGENT_API_KEY = os.getenv("DIFY_PROFILE_AGENT_API_KEY", "")
 DIFY_INTENT_RECOGNITION_API_KEY = os.getenv("DIFY_INTENT_RECOGNITION_API_KEY", "")
+DIFY_LEARNING_PATH_AGENT_API_KEY = os.getenv("DIFY_LEARNING_PATH_AGENT_API_KEY", "")
 
 
 @dataclass
@@ -35,10 +37,11 @@ class DifyClient:
         query: str,
         user_id: str,
         conversation_id: str = "",
+        inputs: dict | None = None,
     ) -> DifyResponse:
         url = f"{self._base_url}/chat-messages"
         payload = {
-            "inputs": {},
+            "inputs": inputs or {},
             "query": query,
             "response_mode": "blocking",
             "conversation_id": conversation_id,
@@ -73,10 +76,11 @@ class DifyClient:
         query: str,
         user_id: str,
         conversation_id: str = "",
+        inputs: dict | None = None,
     ):
         url = f"{self._base_url}/chat-messages"
         payload = {
-            "inputs": {},
+            "inputs": inputs or {},
             "query": query,
             "response_mode": "streaming",
             "conversation_id": conversation_id,
