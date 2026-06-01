@@ -10,98 +10,118 @@ from app.orchestration.state import OrchestrationState
 class FakeDifyClient:
     def __init__(self, answers: list[str]) -> None:
         self.answers = answers
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[dict] = []
 
-    async def chat_blocking(self, query: str, user_id: str, conversation_id: str = "") -> DifyResponse:
-        self.calls.append((query, conversation_id))
+    async def chat_blocking(
+        self,
+        query: str,
+        user_id: str,
+        conversation_id: str = "",
+        inputs: dict | None = None,
+    ) -> DifyResponse:
+        self.calls.append(
+            {
+                "query": query,
+                "user_id": user_id,
+                "conversation_id": conversation_id,
+                "inputs": inputs or {},
+            }
+        )
         answer = self.answers.pop(0)
         return DifyResponse(
             answer=answer,
-            conversation_id=conversation_id or "conv-1",
+            conversation_id=conversation_id or "main-conv-1",
             task_id="task-1",
             message_id="msg-1",
-            raw={"answer": answer, "conversation_id": conversation_id or "conv-1"},
+            raw={"answer": answer, "conversation_id": conversation_id or "main-conv-1"},
         )
 
 
-def make_state(query: str = "我想完善基础画像") -> OrchestrationState:
+class FakeExecutor:
+    def __init__(self, results: dict[str, dict]) -> None:
+        self.results = results
+        self.calls = []
+
+    async def execute_calls(self, calls: list) -> dict[str, dict]:
+        self.calls = calls
+        return self.results
+
+
+def make_state(query: str = "我想规划学习") -> OrchestrationState:
     return {
         "query": query,
         "user_id": "user-1",
-        "conversation_id": "",
-        "intent_conversation_id": "",
-        "intent_raw": {},
-        "intent": "",
-        "route_status": "",
-        "dify_raw": {},
-        "answer_json": {},
-        "phase": "collecting",
+        "session_id": "session-1",
+        "mode": "session",
+        "main_raw": {},
+        "main_result": {},
+        "agent_results": {},
+        "answer": {},
+        "profile": None,
+        "learning_path": None,
+        "completed": False,
         "error": "",
     }
 
 
-def test_graph_routes_profile_intent_to_profile_agent() -> None:
-    intent = FakeDifyClient(["profile_agent"])
-    profile = FakeDifyClient(
+def test_graph_returns_reply_only_main_agent_answer() -> None:
+    main = FakeDifyClient(
         [
             (
-                '{"type":"collecting","stage":"basic_info","question_mode":"question_md",'
-                '"confirmed_info":{},"defaulted_fields":[],"question_md":"请介绍",'
-                '"question_box":{"question":"","options":[]},"text":"请介绍"}'
+                '{"response":{"user_message":"你好，我会先了解你的目标。","question_box":null},'
+                '"control":{"action":"reply_only","calls":[]}}'
             )
         ]
     )
-    graph = create_orchestration_graph(profile_client=profile, intent_client=intent)
+    graph = create_orchestration_graph(main_client=main)
 
-    result = asyncio.run(graph.ainvoke(make_state(), {"configurable": {"thread_id": "graph-test-1"}}))
+    result = asyncio.run(graph.ainvoke(make_state("你好"), {"configurable": {"thread_id": "graph-main-1"}}))
 
-    assert result["intent"] == "profile_agent"
-    assert result["route_status"] == "supported"
-    assert result["intent_conversation_id"] == "conv-1"
-    assert result["phase"] == "collecting"
-    assert result["conversation_id"] == "conv-1"
-    assert result["answer_json"]["type"] == "collecting"
-    assert len(profile.calls) == 1
+    assert result["answer"]["user_message"] == "你好，我会先了解你的目标。"
+    assert result["completed"] is False
 
 
-def test_graph_hides_unsupported_routes() -> None:
-    intent = FakeDifyClient(["learning_path_agent"])
-    profile = FakeDifyClient([])
-    graph = create_orchestration_graph(profile_client=profile, intent_client=intent)
+def test_graph_sets_error_when_main_agent_json_is_invalid() -> None:
+    main = FakeDifyClient(["不是 JSON"])
+    graph = create_orchestration_graph(main_client=main)
+
+    result = asyncio.run(graph.ainvoke(make_state("你好"), {"configurable": {"thread_id": "graph-main-2"}}))
+
+    assert "valid JSON" in result["error"]
+
+
+def test_graph_executes_agent_calls_and_returns_final_main_agent_answer() -> None:
+    main = FakeDifyClient(
+        [
+            (
+                '{"response":{"user_message":"我先调用画像智能体。","question_box":null},'
+                '"control":{"action":"call_agents","calls":[{'
+                '"call_id":"profile",'
+                '"agent_key":"profile_agent",'
+                '"label":"基础画像智能体",'
+                '"depends_on":[],'
+                '"parallel_group":null,'
+                '"agent_input":{"query":"完善画像"}'
+                '}]}}'
+            ),
+            (
+                '{"response":{"user_message":"画像已经生成。","question_box":null},'
+                '"control":{"action":"final_answer","calls":[]}}'
+            ),
+        ]
+    )
+    profile = {"type": "basic_profile", "stage": "generated", "text": "画像"}
+    executor = FakeExecutor({"profile": profile})
+    graph = create_orchestration_graph(main_client=main, executor_factory=lambda _state: executor)
 
     result = asyncio.run(
-        graph.ainvoke(make_state("帮我规划学习路径"), {"configurable": {"thread_id": "graph-test-2"}})
+        graph.ainvoke(make_state("完善画像"), {"configurable": {"thread_id": "graph-main-3"}})
     )
 
-    assert result["intent"] == "learning_path_agent"
-    assert result["intent_conversation_id"] == "conv-1"
-    assert result["route_status"] == "unsupported"
-    assert result["phase"] == "unsupported"
-    assert "基础画像" in result["error"]
-    assert profile.calls == []
-
-
-def test_graph_keeps_active_profile_conversation_after_intent_check() -> None:
-    intent = FakeDifyClient(["chat"])
-    profile = FakeDifyClient(
-        [
-            (
-                '{"type":"collecting","stage":"ability_basis","question_mode":"question_md",'
-                '"confirmed_info":{},"defaulted_fields":[],"question_md":"继续",'
-                '"question_box":{"question":"","options":[]},"text":"继续"}'
-            )
-        ]
-    )
-    graph = create_orchestration_graph(profile_client=profile, intent_client=intent)
-    state = make_state("我有编程基础")
-    state["conversation_id"] = "conv-existing"
-    state["intent_conversation_id"] = "intent-existing"
-
-    result = asyncio.run(graph.ainvoke(state, {"configurable": {"thread_id": "graph-test-3"}}))
-
-    assert result["intent"] == "chat"
-    assert result["intent_conversation_id"] == "intent-existing"
-    assert result["route_status"] == "supported"
-    assert result["phase"] == "collecting"
-    assert profile.calls == [("我有编程基础", "conv-existing")]
-    assert intent.calls == [("我有编程基础", "intent-existing")]
+    assert result["answer"]["user_message"] == "画像已经生成。"
+    assert result["agent_results"] == {"profile": profile}
+    assert result["profile"] == profile
+    assert result["completed"] is True
+    assert main.calls[1]["query"] == "请基于 agent 结果生成最终回复"
+    assert main.calls[1]["inputs"] == {"agent_results": {"profile": profile}}
+    assert executor.calls[0].agent_key == "profile_agent"

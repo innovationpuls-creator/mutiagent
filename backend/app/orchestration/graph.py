@@ -1,244 +1,333 @@
 from __future__ import annotations
 
-import json
 import logging
-import re
+from collections.abc import AsyncGenerator, Callable
+from typing import Any
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
+from pydantic import ValidationError
 
-from collections.abc import AsyncGenerator
-
-from app.orchestration.dify_client import DIFY_INTENT_RECOGNITION_API_KEY, DIFY_PROFILE_AGENT_API_KEY, DifyClient
+from app.orchestration.agent_executor import AgentExecutor
+from app.orchestration.agent_plan import AgentCall, MainAgentResult, validate_call_graph
+from app.orchestration.dify_client import DIFY_CHAT_API_KEY, DifyClient
+from app.orchestration.response_parser import DifyAnswerParseError, parse_json_answer
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
 
-PROFILE_AGENT_INTENT = "profile_agent"
-INTENT_AGENT_KEY = "intent_recognition_agent"
-PROFILE_AGENT_KEY = "profile_agent"
-SUPPORTED_INTENTS = {
-    "profile_agent",
-    "learning_path_agent",
-    "course_knowledge_agent",
-    "learning_resource_agent",
-    "dynamic_update_agent",
-    "chat",
-}
+MAIN_AGENT_KEY = "main_agent"
+MAIN_AGENT_LABEL = "主智能体"
+FINAL_REPLY_QUERY = "请基于 agent 结果生成最终回复"
 
 AGENT_LABELS = {
-    INTENT_AGENT_KEY: "意图识别智能体",
-    PROFILE_AGENT_KEY: "基础画像智能体",
+    MAIN_AGENT_KEY: MAIN_AGENT_LABEL,
+    "intent_recognition_agent": "意图识别智能体",
+    "profile_agent": "基础画像智能体",
     "learning_path_agent": "学习路径智能体",
-    "course_knowledge_agent": "课程知识智能体",
-    "learning_resource_agent": "资源推荐智能体",
-    "dynamic_update_agent": "动态更新智能体",
-    "chat": "日常对话智能体",
 }
 
-
-def _parse_answer(raw: dict) -> dict:
-    raw_answer = raw.get("answer", "")
-    if not isinstance(raw_answer, str):
-        return {"type": "unknown", "text": str(raw_answer)}
-
-    cleaned = raw_answer.strip()
-    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", cleaned, flags=re.DOTALL)
-    if fenced:
-        cleaned = fenced.group(1).strip()
-
-    try:
-        return json.loads(cleaned)
-    except (json.JSONDecodeError, TypeError):
-        logger.warning("answer is not valid JSON: %s", cleaned[:200])
-        return {"type": "unknown", "text": raw_answer}
+ExecutorFactory = Callable[[OrchestrationState], Any]
 
 
-def _parse_intent(raw: dict) -> str:
-    raw_answer = str(raw.get("answer", "")).strip()
-    intent = raw_answer.splitlines()[0].strip().strip("`").strip()
-    if intent in SUPPORTED_INTENTS:
-        return intent
-    logger.warning("unknown intent response: %s", raw_answer[:200])
-    return "chat"
+def _trace_step(
+    *,
+    step_id: str,
+    agent_key: str,
+    label: str,
+    phase: str,
+    status: str,
+    message: str,
+    depends_on: list[str] | None = None,
+    parallel_group: str | None = None,
+) -> dict:
+    return {
+        "step_id": step_id,
+        "agent_key": agent_key,
+        "label": label,
+        "phase": phase,
+        "status": status,
+        "message": message,
+        "depends_on": depends_on or [],
+        "parallel_group": parallel_group,
+    }
 
 
-async def _call_intent_dify(state: OrchestrationState, client: DifyClient) -> dict:
-    logger.info(
-        "calling intent Dify: query=%s conv_id=%s",
-        state["query"][:50],
-        state.get("intent_conversation_id", ""),
-    )
+def _append_trace(state: OrchestrationState, step: dict) -> list[dict]:
+    trace = state.get("agent_trace", [])
+    if not isinstance(trace, list):
+        trace = []
+    return [*trace, step]
+
+
+def _parse_main_response(raw: dict) -> MainAgentResult:
+    parsed = parse_json_answer(raw)
+    result = MainAgentResult.model_validate(parsed)
+    validate_call_graph(result.control.calls)
+    return result
+
+
+def _main_conversation_key(state: OrchestrationState) -> str:
+    return f"{state['user_id']}:{MAIN_AGENT_KEY}"
+
+
+async def _call_main_agent(
+    *,
+    state: OrchestrationState,
+    client: DifyClient,
+    conversation_ids: dict[str, str],
+    query: str,
+    inputs: dict | None = None,
+) -> tuple[dict, MainAgentResult]:
+    conversation_key = _main_conversation_key(state)
     response = await client.chat_blocking(
-        query=state["query"],
+        query=query,
         user_id=state["user_id"],
-        conversation_id=state.get("intent_conversation_id", ""),
+        conversation_id=conversation_ids.get(conversation_key, ""),
+        inputs=inputs or {},
     )
-    intent = _parse_intent(response.raw)
-    has_active_profile_conversation = bool(state.get("conversation_id"))
+    conversation_ids[conversation_key] = response.conversation_id
+    return response.raw, _parse_main_response(response.raw)
+
+
+def _error_update(state: OrchestrationState, error: Exception) -> dict:
+    logger.warning("main-agent graph failed: %s", error)
     return {
-        "intent_raw": response.raw,
-        "intent_conversation_id": response.conversation_id,
-        "intent": intent,
-        "route_status": "supported" if intent == PROFILE_AGENT_INTENT or has_active_profile_conversation else "unsupported",
+        "error": str(error),
+        "completed": False,
+        "agent_trace": _append_trace(
+            state,
+            _trace_step(
+                step_id=MAIN_AGENT_KEY,
+                agent_key=MAIN_AGENT_KEY,
+                label=MAIN_AGENT_LABEL,
+                phase="main",
+                status="failed",
+                message=str(error),
+            ),
+        ),
     }
 
 
-def _route_by_intent(state: OrchestrationState) -> str:
-    if state.get("intent") == PROFILE_AGENT_INTENT or state.get("conversation_id"):
-        return "profile"
-    return "unsupported"
-
-
-async def _call_profile_dify(state: OrchestrationState, client: DifyClient) -> dict:
-    logger.info("calling profile Dify: query=%s conv_id=%s", state["query"][:50], state["conversation_id"])
-    response = await client.chat_blocking(
-        query=state["query"],
-        user_id=state["user_id"],
-        conversation_id=state.get("conversation_id", ""),
+def _call_trace(call: AgentCall, status: str, message: str) -> dict:
+    return _trace_step(
+        step_id=call.call_id,
+        agent_key=call.agent_key,
+        label=call.label or AGENT_LABELS.get(call.agent_key, call.agent_key),
+        phase="agent",
+        status=status,
+        message=message,
+        depends_on=call.depends_on,
+        parallel_group=call.parallel_group,
     )
-    return {
-        "dify_raw": response.raw,
-        "conversation_id": response.conversation_id,
-    }
 
 
-async def _parse_response(state: OrchestrationState) -> dict:
-    raw = state.get("dify_raw", {})
-    parsed = _parse_answer(raw)
-    logger.info(
-        "parsed response: type=%s stage=%s",
-        parsed.get("type"),
-        parsed.get("stage"),
-    )
-    return {"answer_json": parsed}
+def _result_for_agent(calls: list[AgentCall], results: dict[str, dict], agent_key: str) -> dict | None:
+    for call in calls:
+        if call.agent_key == agent_key and call.call_id in results:
+            return results[call.call_id]
+    return None
 
 
-async def _check_completion(state: OrchestrationState) -> dict:
-    aj = state.get("answer_json", {})
-    if aj.get("type") == "basic_profile" and aj.get("stage") == "generated":
-        return {"phase": "completed"}
-    return {"phase": "collecting"}
+def _completed_profile(calls: list[AgentCall], results: dict[str, dict]) -> dict | None:
+    profile = _result_for_agent(calls, results, "profile_agent")
+    if profile is None:
+        return None
+    if profile.get("type") == "basic_profile" and profile.get("stage") == "generated":
+        return profile
+    return None
 
 
-async def _unsupported_route(state: OrchestrationState) -> dict:
-    return {
-        "phase": "unsupported",
-        "answer_json": {},
-        "error": "当前仅支持基础画像对话，请告诉我你的年级、专业、学习偏好或学习目标。",
-    }
+def _learning_path(calls: list[AgentCall], results: dict[str, dict]) -> dict | None:
+    return _result_for_agent(calls, results, "learning_path_agent")
+
+
+def _route_after_main(state: OrchestrationState) -> str:
+    if state.get("error"):
+        return "end"
+
+    main_result = state.get("main_result", {})
+    control = main_result.get("control", {}) if isinstance(main_result, dict) else {}
+    if control.get("action") == "call_agents":
+        return "execute_agents"
+    return "end"
+
+
+def _route_after_agent_execution(state: OrchestrationState) -> str:
+    if state.get("error"):
+        return "end"
+    return "call_main_final"
+
+
+def _default_executor_factory(state: OrchestrationState) -> AgentExecutor:
+    raise RuntimeError("AgentExecutor requires an injected executor_factory")
 
 
 async def stream_orchestration_events(
     state: OrchestrationState,
-    profile_client: DifyClient | None = None,
-    intent_client: DifyClient | None = None,
+    main_client: DifyClient | None = None,
+    executor_factory: ExecutorFactory | None = None,
 ) -> AsyncGenerator[dict, None]:
-    profile = profile_client or DifyClient(api_key=DIFY_PROFILE_AGENT_API_KEY)
-    intent = intent_client or DifyClient(api_key=DIFY_INTENT_RECOGNITION_API_KEY)
-
     yield {
         "event": "agent_started",
-        "agent": INTENT_AGENT_KEY,
-        "label": AGENT_LABELS[INTENT_AGENT_KEY],
-        "message": "正在判断这次对话应该交给哪个智能体。",
-    }
-    intent_update = await _call_intent_dify(state, intent)
-    state.update(intent_update)
-    yield {
-        "event": "agent_completed",
-        "agent": INTENT_AGENT_KEY,
-        "label": AGENT_LABELS[INTENT_AGENT_KEY],
-        "intent": state.get("intent", ""),
-        "route_status": state.get("route_status", ""),
-        "message": "意图识别完成。",
+        "step_id": MAIN_AGENT_KEY,
+        "agent_key": MAIN_AGENT_KEY,
+        "agent": MAIN_AGENT_KEY,
+        "label": MAIN_AGENT_LABEL,
+        "message": "主智能体开始处理。",
     }
 
-    route = _route_by_intent(state)
-    routed_agent = PROFILE_AGENT_KEY if route == "profile" else state.get("intent", "chat")
-    yield {
-        "event": "route_decided",
-        "agent": routed_agent,
-        "label": AGENT_LABELS.get(routed_agent, routed_agent),
-        "intent": state.get("intent", ""),
-        "route_status": state.get("route_status", ""),
-        "message": "路由已完成，准备进入具体智能体。",
-    }
+    graph = create_orchestration_graph(main_client=main_client, executor_factory=executor_factory)
+    result = await graph.ainvoke(state, {"configurable": {"thread_id": state["session_id"] or state["user_id"]}})
 
-    if route == "unsupported":
-        state.update(await _unsupported_route(state))
+    if result.get("error"):
         yield {
-            "event": "completed",
-            "agent": routed_agent,
-            "label": AGENT_LABELS.get(routed_agent, routed_agent),
-            "state": state,
-            "answer": state.get("answer_json", {}),
-            "completed": False,
-            "phase": state.get("phase", ""),
-            "error": state.get("error", ""),
+            "event": "error",
+            "step_id": MAIN_AGENT_KEY,
+            "agent_key": MAIN_AGENT_KEY,
+            "agent": MAIN_AGENT_KEY,
+            "label": MAIN_AGENT_LABEL,
+            "message": result["error"],
+            "state": result,
         }
         return
 
     yield {
-        "event": "agent_started",
-        "agent": PROFILE_AGENT_KEY,
-        "label": AGENT_LABELS[PROFILE_AGENT_KEY],
-        "message": "正在整理基础画像信息。",
-    }
-    profile_update = await _call_profile_dify(state, profile)
-    state.update(profile_update)
-    yield {
-        "event": "agent_completed",
-        "agent": PROFILE_AGENT_KEY,
-        "label": AGENT_LABELS[PROFILE_AGENT_KEY],
-        "message": "基础画像智能体已返回结果。",
-    }
-
-    state.update(await _parse_response(state))
-    state.update(await _check_completion(state))
-    yield {
         "event": "completed",
-        "agent": PROFILE_AGENT_KEY,
-        "label": AGENT_LABELS[PROFILE_AGENT_KEY],
-        "state": state,
-        "answer": state.get("answer_json", {}),
-        "completed": state.get("phase") == "completed",
-        "phase": state.get("phase", ""),
+        "step_id": MAIN_AGENT_KEY,
+        "agent_key": MAIN_AGENT_KEY,
+        "agent": MAIN_AGENT_KEY,
+        "label": MAIN_AGENT_LABEL,
+        "message": "主智能体已完成。",
+        "state": result,
+        "answer": result.get("answer", {}),
+        "completed": result.get("completed", False),
     }
 
 
 def create_orchestration_graph(
-    profile_client: DifyClient | None = None,
-    intent_client: DifyClient | None = None,
-) -> StateGraph:
-    profile = profile_client or DifyClient(api_key=DIFY_PROFILE_AGENT_API_KEY)
-    intent = intent_client or DifyClient(api_key=DIFY_INTENT_RECOGNITION_API_KEY)
+    main_client: DifyClient | None = None,
+    executor_factory: ExecutorFactory | None = None,
+):
+    main = main_client or DifyClient(api_key=DIFY_CHAT_API_KEY)
+    build_executor = executor_factory or _default_executor_factory
+    main_conversation_ids: dict[str, str] = {}
 
-    async def call_intent_dify(state: OrchestrationState) -> dict:
-        return await _call_intent_dify(state, intent)
+    async def call_main_agent(state: OrchestrationState) -> dict:
+        try:
+            raw, result = await _call_main_agent(
+                state=state,
+                client=main,
+                conversation_ids=main_conversation_ids,
+                query=state["query"],
+            )
+        except (DifyAnswerParseError, ValidationError, ValueError) as exc:
+            return _error_update(state, exc)
 
-    async def call_profile_dify(state: OrchestrationState) -> dict:
-        return await _call_profile_dify(state, profile)
+        action = result.control.action
+        return {
+            "main_raw": raw,
+            "main_result": result.model_dump(),
+            "answer": result.response.model_dump(),
+            "completed": action == "final_answer",
+            "error": "",
+            "agent_trace": _append_trace(
+                state,
+                _trace_step(
+                    step_id=MAIN_AGENT_KEY,
+                    agent_key=MAIN_AGENT_KEY,
+                    label=MAIN_AGENT_LABEL,
+                    phase="main",
+                    status="completed",
+                    message="主智能体已返回控制结果。",
+                ),
+            ),
+        }
+
+    async def execute_agent_calls(state: OrchestrationState) -> dict:
+        result = MainAgentResult.model_validate(state["main_result"])
+        calls = result.control.calls
+        trace = state.get("agent_trace", [])
+        if not isinstance(trace, list):
+            trace = []
+
+        try:
+            executor = build_executor(state)
+            agent_results = await executor.execute_calls(calls)
+        except Exception as exc:
+            logger.warning("agent execution failed: %s", exc)
+            return {
+                "error": str(exc),
+                "completed": False,
+                "agent_trace": [
+                    *trace,
+                    *[_call_trace(call, "failed", str(exc)) for call in calls],
+                ],
+            }
+
+        return {
+            "agent_results": agent_results,
+            "profile": _completed_profile(calls, agent_results),
+            "learning_path": _learning_path(calls, agent_results),
+            "agent_trace": [
+                *trace,
+                *[_call_trace(call, "completed", f"{call.label}已完成。") for call in calls],
+            ],
+        }
+
+    async def call_main_final(state: OrchestrationState) -> dict:
+        try:
+            raw, result = await _call_main_agent(
+                state=state,
+                client=main,
+                conversation_ids=main_conversation_ids,
+                query=FINAL_REPLY_QUERY,
+                inputs={"agent_results": state.get("agent_results", {})},
+            )
+        except (DifyAnswerParseError, ValidationError, ValueError) as exc:
+            return _error_update(state, exc)
+
+        return {
+            "main_raw": raw,
+            "main_result": result.model_dump(),
+            "answer": result.response.model_dump(),
+            "completed": True,
+            "error": "",
+            "agent_trace": _append_trace(
+                state,
+                _trace_step(
+                    step_id="main_agent_final",
+                    agent_key=MAIN_AGENT_KEY,
+                    label=MAIN_AGENT_LABEL,
+                    phase="final",
+                    status="completed",
+                    message="主智能体已整合智能体结果。",
+                ),
+            ),
+        }
 
     builder = StateGraph(OrchestrationState)
-    builder.add_node("call_intent_dify", call_intent_dify)
-    builder.add_node("call_profile_dify", call_profile_dify)
-    builder.add_node("parse_response", _parse_response)
-    builder.add_node("check_completion", _check_completion)
-    builder.add_node("unsupported_route", _unsupported_route)
+    builder.add_node("call_main_agent", call_main_agent)
+    builder.add_node("execute_agent_calls", execute_agent_calls)
+    builder.add_node("call_main_final", call_main_final)
 
-    builder.set_entry_point("call_intent_dify")
+    builder.set_entry_point("call_main_agent")
     builder.add_conditional_edges(
-        "call_intent_dify",
-        _route_by_intent,
+        "call_main_agent",
+        _route_after_main,
         {
-            "profile": "call_profile_dify",
-            "unsupported": "unsupported_route",
+            "execute_agents": "execute_agent_calls",
+            "end": END,
         },
     )
-    builder.add_edge("call_profile_dify", "parse_response")
-    builder.add_edge("parse_response", "check_completion")
-    builder.add_edge("check_completion", END)
-    builder.add_edge("unsupported_route", END)
+    builder.add_conditional_edges(
+        "execute_agent_calls",
+        _route_after_agent_execution,
+        {
+            "call_main_final": "call_main_final",
+            "end": END,
+        },
+    )
+    builder.add_edge("call_main_final", END)
 
     return builder.compile(checkpointer=MemorySaver())
