@@ -203,6 +203,63 @@ def _learning_path(calls: list[AgentCall], results: dict[str, dict]) -> dict | N
     return _result_for_agent(calls, results, "learning_path_agent")
 
 
+def _has_completed_profile_context(state: OrchestrationState) -> bool:
+    user_profile = state.get("user_profile", {})
+    if not isinstance(user_profile, dict):
+        return False
+    return user_profile.get("type") == "basic_profile" and user_profile.get("stage") == "generated"
+
+
+def _requires_profile_before_learning_path(state: OrchestrationState, calls: list[AgentCall]) -> bool:
+    if _has_completed_profile_context(state):
+        return False
+    return any(call.agent_key == "learning_path_agent" for call in calls)
+
+
+def _requires_profile_for_main_result(state: OrchestrationState, result: MainAgentResult) -> bool:
+    if _has_completed_profile_context(state):
+        return False
+    if any(call.agent_key == "profile_agent" for call in result.control.calls):
+        return False
+    if any(call.agent_key != "profile_agent" for call in result.control.calls):
+        return True
+    return result.control.action != "call_agents" and result.response.question_box is not None
+
+
+def _profile_first_calls(state: OrchestrationState) -> list[AgentCall]:
+    return [
+        AgentCall(
+            call_id="profile",
+            agent_key="profile_agent",
+            label=AGENT_LABELS["profile_agent"],
+            depends_on=[],
+            parallel_group=None,
+            agent_input={"query": state["query"]},
+        )
+    ]
+
+
+def _calls_for_profile_state(state: OrchestrationState, calls: list[AgentCall]) -> list[AgentCall]:
+    if _requires_profile_before_learning_path(state, calls):
+        return _profile_first_calls(state)
+    return calls
+
+
+def _main_result_for_profile_state(state: OrchestrationState, result: MainAgentResult) -> MainAgentResult:
+    if not _requires_profile_for_main_result(state, result):
+        return result
+    return result.model_copy(
+        update={
+            "control": result.control.model_copy(
+                update={
+                    "action": "call_agents",
+                    "calls": _profile_first_calls(state),
+                }
+            )
+        }
+    )
+
+
 def _calls_with_default_query(calls: list[AgentCall], query: str) -> list[AgentCall]:
     enriched: list[AgentCall] = []
     for call in calls:
@@ -299,6 +356,7 @@ async def stream_orchestration_events(
         }
         return
 
+    main_result = _main_result_for_profile_state(current_state, main_result)
     action = main_result.control.action
     plan_labels = "、".join(call.label or AGENT_LABELS.get(call.agent_key, call.agent_key) for call in main_result.control.calls)
     current_state = {
@@ -347,7 +405,10 @@ async def stream_orchestration_events(
         }
         return
 
-    calls = _calls_with_default_query(main_result.control.calls, current_state["query"])
+    calls = _calls_with_default_query(
+        _calls_for_profile_state(current_state, main_result.control.calls),
+        current_state["query"],
+    )
     trace = current_state.get("agent_trace", [])
     if not isinstance(trace, list):
         trace = []
@@ -626,6 +687,7 @@ def create_orchestration_graph(
         except (DifyAnswerParseError, ValidationError, ValueError) as exc:
             return _error_update(state, exc)
 
+        result = _main_result_for_profile_state(state, result)
         action = result.control.action
         return {
             "main_raw": raw,
@@ -648,7 +710,7 @@ def create_orchestration_graph(
 
     async def execute_agent_calls(state: OrchestrationState) -> dict:
         result = MainAgentResult.model_validate(state["main_result"])
-        calls = _calls_with_default_query(result.control.calls, state["query"])
+        calls = _calls_with_default_query(_calls_for_profile_state(state, result.control.calls), state["query"])
         trace = state.get("agent_trace", [])
         if not isinstance(trace, list):
             trace = []

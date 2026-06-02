@@ -208,6 +208,117 @@ def test_graph_returns_to_main_agent_after_agent_failure() -> None:
     assert result["completed"] is True
 
 
+def test_graph_routes_learning_path_plan_to_profile_when_profile_is_missing() -> None:
+    main = FakeDifyClient(
+        [
+            (
+                '{"response":{"user_message":"我会先生成学习路径。","question_box":null},'
+                '"control":{"action":"call_agents","calls":[{'
+                '"call_id":"learning",'
+                '"agent_key":"learning_path_agent",'
+                '"label":"学习路径智能体",'
+                '"depends_on":[],'
+                '"parallel_group":null,'
+                '"agent_input":{"goal":"FastAPI 后端实习"}'
+                '}]}}'
+            )
+        ]
+    )
+    profile = {
+        "type": "collecting",
+        "stage": "basic_info",
+        "question_mode": "question_box",
+        "question_md": "",
+        "question_box": {"question": "你目前处于哪个学习阶段？", "options": ["刚入门", "有基础"]},
+        "text": "你目前处于哪个学习阶段？",
+    }
+    executor = FakeExecutor({"profile": profile})
+    graph = create_orchestration_graph(main_client=main, executor_factory=lambda _state: executor)
+
+    result = asyncio.run(
+        graph.ainvoke(make_state("我想生成 FastAPI 学习路径"), {"configurable": {"thread_id": "graph-profile-first"}})
+    )
+
+    assert result["awaiting_profile"] is True
+    assert result["profile"] == profile
+    assert result["learning_path"] is None
+    assert result["answer"]["question_box"] == {"question": "你目前处于哪个学习阶段？", "options": ["刚入门", "有基础"]}
+    assert executor.calls[0].agent_key == "profile_agent"
+    assert executor.calls[0].agent_input == {"query": "我想生成 FastAPI 学习路径"}
+    assert len(main.calls) == 1
+
+
+def test_graph_routes_main_question_box_to_profile_when_profile_is_missing() -> None:
+    main = FakeDifyClient(
+        [
+            (
+                '{"response":{"user_message":"请先说明你的技术基础。",'
+                '"question_box":{"question":"请选择你当前的技术基础水平：","options":["Python 基础扎实","完全零基础"]}},'
+                '"control":{"action":"reply_only","calls":[]}}'
+            )
+        ]
+    )
+    profile = {
+        "type": "collecting",
+        "stage": "basic_info",
+        "question_mode": "question_box",
+        "question_md": "",
+        "question_box": {"question": "你目前处于哪个学习阶段？", "options": ["刚入门", "有基础"]},
+        "text": "你目前处于哪个学习阶段？",
+    }
+    executor = FakeExecutor({"profile": profile})
+    graph = create_orchestration_graph(main_client=main, executor_factory=lambda _state: executor)
+
+    result = asyncio.run(
+        graph.ainvoke(make_state("我想生成 FastAPI 学习路径"), {"configurable": {"thread_id": "graph-qbox-profile"}})
+    )
+
+    assert result["awaiting_profile"] is True
+    assert result["profile"] == profile
+    assert result["answer"]["question_box"] == {"question": "你目前处于哪个学习阶段？", "options": ["刚入门", "有基础"]}
+    assert executor.calls[0].agent_key == "profile_agent"
+
+
+def test_graph_keeps_learning_path_plan_when_profile_is_completed() -> None:
+    main = FakeDifyClient(
+        [
+            (
+                '{"response":{"user_message":"我会生成学习路径。","question_box":null},'
+                '"control":{"action":"call_agents","calls":[{'
+                '"call_id":"learning",'
+                '"agent_key":"learning_path_agent",'
+                '"label":"学习路径智能体",'
+                '"depends_on":[],'
+                '"parallel_group":null,'
+                '"agent_input":{"goal":"FastAPI 后端实习"}'
+                '}]}}'
+            ),
+            (
+                '{"response":{"user_message":"学习路径已生成。","question_box":null},'
+                '"control":{"action":"final_answer","calls":[]}}'
+            ),
+        ]
+    )
+    learning_path = {
+        "learning_goal": {
+            "target_course_or_skill": "FastAPI 后端开发",
+            "target_completion_time": "3 个月",
+            "goal_type": "就业准备",
+            "desired_outcome": "完成可展示项目",
+        }
+    }
+    executor = FakeExecutor({"learning": learning_path})
+    graph = create_orchestration_graph(main_client=main, executor_factory=lambda _state: executor)
+    state = make_state("生成学习路径")
+    state["user_profile"] = {"type": "basic_profile", "stage": "generated"}
+
+    result = asyncio.run(graph.ainvoke(state, {"configurable": {"thread_id": "graph-learning-after-profile"}}))
+
+    assert result["learning_path"] == learning_path
+    assert result["completed"] is True
+    assert executor.calls[0].agent_key == "learning_path_agent"
+
+
 def test_graph_supplies_current_query_when_agent_call_query_is_missing() -> None:
     main = FakeDifyClient(
         [
@@ -356,10 +467,12 @@ def test_stream_orchestration_events_returns_to_main_agent_after_agent_failure()
     executor = FailingExecutor(RuntimeError("请先完成基础画像，再生成学习路径。"))
 
     async def collect_events() -> list[dict]:
+        state = make_state("生成学习路径")
+        state["user_profile"] = {"type": "basic_profile", "stage": "generated"}
         return [
             event
             async for event in stream_orchestration_events(
-                make_state("生成学习路径"),
+                state,
                 main_client=main,
                 executor_factory=lambda _state: executor,
             )
@@ -373,6 +486,52 @@ def test_stream_orchestration_events_returns_to_main_agent_after_agent_failure()
     assert events[-1]["event"] == "completed"
     assert events[-1]["answer"]["user_message"] == "学习路径暂时无法生成，我会说明下一步。"
     assert main.calls[1]["inputs"]["agent_results"]["__error__"]["next_action"] == "main_agent_final"
+
+
+def test_stream_orchestration_events_routes_learning_path_plan_to_profile_when_profile_is_missing() -> None:
+    main = FakeDifyClient(
+        [
+            (
+                '{"response":{"user_message":"我会先生成学习路径。","question_box":null},'
+                '"control":{"action":"call_agents","calls":[{'
+                '"call_id":"learning",'
+                '"agent_key":"learning_path_agent",'
+                '"label":"学习路径智能体",'
+                '"depends_on":[],'
+                '"parallel_group":null,'
+                '"agent_input":{"goal":"FastAPI 后端实习"}'
+                '}]}}'
+            )
+        ]
+    )
+    profile = {
+        "type": "collecting",
+        "stage": "basic_info",
+        "question_mode": "question_box",
+        "question_md": "",
+        "question_box": {"question": "你目前处于哪个学习阶段？", "options": ["刚入门", "有基础"]},
+        "text": "你目前处于哪个学习阶段？",
+    }
+    executor = FakeExecutor({"profile": profile})
+
+    async def collect_events() -> list[dict]:
+        return [
+            event
+            async for event in stream_orchestration_events(
+                make_state("我想生成 FastAPI 学习路径"),
+                main_client=main,
+                executor_factory=lambda _state: executor,
+            )
+        ]
+
+    events = asyncio.run(collect_events())
+
+    assert ("agent_started", "profile") in [(event["event"], event["step_id"]) for event in events]
+    assert ("agent_started", "learning") not in [(event["event"], event["step_id"]) for event in events]
+    assert events[-1]["event"] == "completed"
+    assert events[-1]["answer"]["question_box"] == {"question": "你目前处于哪个学习阶段？", "options": ["刚入门", "有基础"]}
+    assert events[-1]["state"]["awaiting_profile"] is True
+    assert executor.calls[0].agent_key == "profile_agent"
 
 
 def test_stream_orchestration_events_describes_learning_path_context_inputs() -> None:
