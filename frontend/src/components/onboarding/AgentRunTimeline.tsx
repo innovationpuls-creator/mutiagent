@@ -64,12 +64,12 @@ export function AgentRunTimeline({ steps = [], status }: AgentRunTimelineProps) 
   const currentStep = [...steps].reverse().find((s) => s.status === 'running');
   const statusText = currentStep
     ? currentStep.kind === 'answer'
-      ? 'generating response'
+      ? '正在生成回复'
       : currentStep.kind === 'route'
-        ? 'routing'
-        : 'working'
+        ? '正在调度智能体'
+        : '智能体处理中'
     : runStatus === 'running'
-      ? 'working'
+      ? '智能体处理中'
       : '';
 
   if (steps.length === 0) return null;

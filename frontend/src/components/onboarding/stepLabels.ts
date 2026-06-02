@@ -1,9 +1,9 @@
 import type { AgentRunStep } from '../../types/chat';
 
 const STEP_LABELS: Record<AgentRunStep['kind'], string> = {
-  agent: 'agent',
-  route: 'route',
-  answer: 'answer',
+  agent: '智能体',
+  route: '调度',
+  answer: '回复',
 };
 
 export function formatStepKind(step: AgentRunStep): string {
@@ -21,8 +21,9 @@ export function formatRunSummary(params: {
   duration: string;
 }): string {
   const { agent, runStatus, stepCount, duration } = params;
-  const symbol = runStatus === 'running' ? '●' : runStatus === 'failed' ? '✗' : '✓';
-  const stepsLabel = `${stepCount} step${stepCount !== 1 ? 's' : ''}`;
+  const symbol = runStatus === 'running' ? '●' : runStatus === 'failed' ? '×' : '✓';
+  const statusLabel = runStatus === 'running' ? '运行中' : runStatus === 'failed' ? '异常' : '已完成';
+  const stepsLabel = `${stepCount} 个步骤`;
   const durationPart = duration ? ` · ${duration}` : '';
-  return `${symbol} ${agent} ${runStatus === 'running' ? 'running' : runStatus === 'failed' ? 'failed' : 'completed'} · ${stepsLabel}${durationPart}`;
+  return `${symbol} ${agent} ${statusLabel} · ${stepsLabel}${durationPart}`;
 }

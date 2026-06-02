@@ -16,9 +16,9 @@ function formatDuration(ms?: number): string {
 
 function StatusSymbol({ status }: { status: string }) {
   switch (status) {
-    case 'running': return <span>running</span>;
-    case 'success': return <span>done</span>;
-    case 'error': return <span>error</span>;
+    case 'running': return <span>运行中</span>;
+    case 'success': return <span>已完成</span>;
+    case 'error': return <span>异常</span>;
     default: return <span>{status}</span>;
   }
 }
@@ -45,7 +45,7 @@ export function ExpandedLog({ steps }: ExpandedLogProps) {
           >
             <div className="step-line">
               <span className="branch">{branch}</span>
-              <span className="kind">[{formatStepKind(step)}]</span>
+              <span className="kind">【{formatStepKind(step)}】</span>
               <span className="name">{formatStepTitle(step)}</span>
               <span className={`status status-${step.status}`}>
                 <StatusSymbol status={step.status} />

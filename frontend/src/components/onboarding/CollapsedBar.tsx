@@ -30,7 +30,7 @@ export function CollapsedBar({
       transition={{ duration: 0.3, ease: [0.33, 1, 0.68, 1] }}
     >
       <span>{summary}</span>
-      <span className="chevron">expand</span>
+      <span className="chevron">展开详情</span>
     </CollapsedButton>
   );
 }
