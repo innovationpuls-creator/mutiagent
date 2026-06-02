@@ -81,30 +81,6 @@ class HealthResponse(BaseModel):
     database: Literal["connected"]
 
 
-class ChatflowStartRequest(BaseModel):
-    query: str = Field(min_length=1, max_length=4000)
-
-
-class ChatflowContinueRequest(BaseModel):
-    execution_id: str = Field(min_length=1, max_length=80)
-    query: str = Field(min_length=1, max_length=4000)
-
-
-class ChatflowResponse(BaseModel):
-    execution_id: str
-    conversation_id: str
-    answer: dict
-    completed: bool
-    final_result: dict | None = None
-
-
-class ChatflowContinueResponse(BaseModel):
-    answer: dict
-    completed: bool
-    conversation_id: str
-    final_result: dict | None = None
-
-
 class SessionStartRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
 

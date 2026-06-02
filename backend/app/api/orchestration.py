@@ -12,31 +12,40 @@ from app.core.security import create_get_current_user
 from app.models import User, UserProfile
 from app.orchestration.agent_executor import AgentExecutor
 from app.orchestration.execution_registry import ExecutionState, registry
-from app.orchestration.graph import create_orchestration_graph, stream_orchestration_events
+from app.orchestration.graph import complete_with_main_agent_final, create_orchestration_graph, stream_orchestration_events
 from app.orchestration.state import OrchestrationState
 from app.schemas import (
-    ChatflowContinueRequest,
-    ChatflowContinueResponse,
-    ChatflowResponse,
-    ChatflowStartRequest,
     SessionContinueRequest,
     SessionResponse,
     SessionStartRequest,
 )
-from app.services.dify_conversation_service import get_user_dify_conversation, upsert_user_dify_conversation
-from app.services.agent_conversation_service import get_agent_conversation_id
-from app.services.profile_service import upsert_user_profile
+from app.services.agent_conversation_service import get_agent_conversation_id, upsert_agent_conversation
 
 SessionDependency = Callable[[], Generator[Session, None, None]]
 
 graph = None
 
 
+def _conversation_getter(session: Session):
+    return lambda user_uid, agent_key: get_agent_conversation_id(session, user_uid, agent_key)
+
+
+def _conversation_setter(session: Session):
+    return lambda user_uid, agent_key, conversation_id: upsert_agent_conversation(
+        session,
+        user_uid,
+        agent_key,
+        conversation_id,
+    )
+
+
 def _request_graph(session: Session):
     if graph is not None:
         return graph
     return create_orchestration_graph(
-        executor_factory=lambda state: AgentExecutor(session=session, user_uid=state["user_id"])
+        executor_factory=lambda state: AgentExecutor(session=session, user_uid=state["user_id"]),
+        conversation_getter=_conversation_getter(session),
+        conversation_setter=_conversation_setter(session),
     )
 
 
@@ -93,31 +102,6 @@ def _reject_unsupported_route(state: OrchestrationState) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail=state.get("error") or "当前仅支持基础画像对话。",
         )
-
-
-def _sync_execution(execution: ExecutionState, state: OrchestrationState) -> None:
-    execution.conversation_id = state.get("conversation_id", "")
-    execution.intent_conversation_id = state.get("intent_conversation_id", "")
-    execution.completed = state.get("phase") == "completed"
-    execution.final_result = state.get("answer_json") if execution.completed else None
-    registry.save(execution)
-
-
-def _restore_saved_conversations(session: Session, execution: ExecutionState) -> None:
-    stored = get_user_dify_conversation(session, execution.user_id)
-    if stored is None:
-        return
-    execution.intent_conversation_id = stored.intent_conversation_id
-    execution.conversation_id = stored.profile_conversation_id
-
-
-def _persist_conversations(session: Session, execution: ExecutionState) -> None:
-    upsert_user_dify_conversation(
-        session=session,
-        user_uid=execution.user_id,
-        intent_conversation_id=execution.intent_conversation_id,
-        profile_conversation_id=execution.conversation_id,
-    )
 
 
 def _sse(event: str, payload: dict) -> str:
@@ -183,11 +167,22 @@ async def _profile_session_state(state: OrchestrationState, session: Session) ->
             }
         ],
         "profile": profile_result,
+        "user_profile": profile_result if completed else state.get("user_profile", {}),
         "learning_path": None,
         "awaiting_profile": not completed,
         "completed": completed,
         "error": "",
     }
+
+
+async def _finalize_completed_profile_state(state: OrchestrationState, session: Session) -> OrchestrationState:
+    if state.get("awaiting_profile"):
+        return state
+    return await complete_with_main_agent_final(
+        state,
+        conversation_getter=_conversation_getter(session),
+        conversation_setter=_conversation_setter(session),
+    )
 
 
 def _session_response_from_state(execution: ExecutionState, state: dict) -> SessionResponse:
@@ -248,6 +243,41 @@ async def _stream_session_turn(
                     "message": "基础画像智能体已完成本轮处理。",
                 },
             )
+            if not final_state.get("awaiting_profile"):
+                yield _sse(
+                    "agent_step_started",
+                    {
+                        "step_id": "main_agent_final",
+                        "agent_key": "main_agent",
+                        "agent": "main_agent",
+                        "label": "主智能体",
+                        "message": "主智能体开始整合智能体结果。",
+                    },
+                )
+                final_state = await _finalize_completed_profile_state(final_state, session)
+                if final_state.get("error"):
+                    yield _sse(
+                        "orchestration_failed",
+                        {
+                            "event": "error",
+                            "step_id": "main_agent_final",
+                            "agent_key": "main_agent",
+                            "agent": "main_agent",
+                            "label": "主智能体",
+                            "message": final_state["error"],
+                        },
+                    )
+                    return
+                yield _sse(
+                    "agent_step_completed",
+                    {
+                        "step_id": "main_agent_final",
+                        "agent_key": "main_agent",
+                        "agent": "main_agent",
+                        "label": "主智能体",
+                        "message": "主智能体已整合智能体结果。",
+                    },
+                )
             session_response = _session_response_from_state(execution, final_state)
             yield _sse(
                 "orchestration_completed",
@@ -269,6 +299,19 @@ async def _stream_session_turn(
                 session=session,
                 user_uid=event_state["user_id"],
             )
+        if "conversation_getter" in inspect.signature(stream_orchestration_events).parameters:
+            stream_kwargs["conversation_getter"] = lambda user_uid, agent_key: get_agent_conversation_id(
+                session,
+                user_uid,
+                agent_key,
+            )
+        if "conversation_setter" in inspect.signature(stream_orchestration_events).parameters:
+            stream_kwargs["conversation_setter"] = lambda user_uid, agent_key, conversation_id: upsert_agent_conversation(
+                session,
+                user_uid,
+                agent_key,
+                conversation_id,
+            )
         async for event in stream_orchestration_events(state, **stream_kwargs):
             event_name = _session_event_name(str(event.get("event", "agent_step_completed")))
             payload = {key: value for key, value in event.items() if key != "state"}
@@ -281,39 +324,6 @@ async def _stream_session_turn(
             yield _sse(event_name, payload)
     except Exception as exc:
         yield _sse("orchestration_failed", {"message": str(exc) or "对话请求失败，请稍后重试"})
-
-
-async def _stream_chatflow_turn(
-    execution: ExecutionState,
-    state: OrchestrationState,
-    session: Session,
-) -> AsyncGenerator[str, None]:
-    try:
-        async for event in stream_orchestration_events(state):
-            event_name = str(event.get("event", "message"))
-            payload = {key: value for key, value in event.items() if key != "state"}
-
-            if event_name == "completed":
-                final_state = event.get("state", state)
-                _sync_execution(execution, final_state)
-                _persist_conversations(session, execution)
-
-                if execution.completed and execution.final_result:
-                    upsert_user_profile(session, execution.user_id, execution.final_result)
-
-                payload.update(
-                    {
-                        "execution_id": execution.execution_id,
-                        "conversation_id": execution.conversation_id,
-                        "answer": final_state.get("answer_json", {}),
-                        "completed": execution.completed,
-                        "final_result": execution.final_result,
-                    }
-                )
-
-            yield _sse(event_name, payload)
-    except Exception as exc:
-        yield _sse("error", {"message": str(exc) or "对话请求失败，请稍后重试"})
 
 
 def create_orchestration_router(session_dependency: SessionDependency) -> APIRouter:
@@ -332,6 +342,7 @@ def create_orchestration_router(session_dependency: SessionDependency) -> APIRou
         if _has_active_profile_conversation(session, current_user.uid):
             state["mode"] = "profile"
             state = await _profile_session_state(state, session)
+            state = await _finalize_completed_profile_state(state, session)
         else:
             state = await _request_graph(session).ainvoke(state, _graph_config(execution))
         if state.get("error"):
@@ -353,6 +364,7 @@ def create_orchestration_router(session_dependency: SessionDependency) -> APIRou
         if _has_active_profile_conversation(session, current_user.uid):
             state["mode"] = "profile"
             state = await _profile_session_state(state, session)
+            state = await _finalize_completed_profile_state(state, session)
         else:
             state = await _request_graph(session).ainvoke(state, _graph_config(execution))
         if state.get("error"):
@@ -394,119 +406,6 @@ def create_orchestration_router(session_dependency: SessionDependency) -> APIRou
 
         return StreamingResponse(
             _stream_session_turn(execution, state, session),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
-    @router.post("/chatflow/start", response_model=ChatflowResponse)
-    async def start_chatflow(
-        payload: ChatflowStartRequest,
-        current_user: User = Depends(get_current_user),
-        session: Session = Depends(session_dependency),
-    ) -> ChatflowResponse:
-        execution = registry.create(current_user.uid)
-        _restore_saved_conversations(session, execution)
-        state = await _request_graph(session).ainvoke(
-            _initial_state(
-                query=payload.query,
-                user_id=current_user.uid,
-                conversation_id=execution.conversation_id,
-                intent_conversation_id=execution.intent_conversation_id,
-            ),
-            _graph_config(execution),
-        )
-        _reject_unsupported_route(state)
-        _sync_execution(execution, state)
-        _persist_conversations(session, execution)
-
-        if execution.completed and execution.final_result:
-            upsert_user_profile(session, current_user.uid, execution.final_result)
-
-        return ChatflowResponse(
-            execution_id=execution.execution_id,
-            conversation_id=execution.conversation_id,
-            answer=state.get("answer_json", {}),
-            completed=execution.completed,
-            final_result=execution.final_result,
-        )
-
-    @router.post("/chatflow/start/stream")
-    async def start_chatflow_stream(
-        payload: ChatflowStartRequest,
-        current_user: User = Depends(get_current_user),
-        session: Session = Depends(session_dependency),
-    ) -> StreamingResponse:
-        execution = registry.create(current_user.uid)
-        _restore_saved_conversations(session, execution)
-        state = _initial_state(
-            query=payload.query,
-            user_id=current_user.uid,
-            conversation_id=execution.conversation_id,
-            intent_conversation_id=execution.intent_conversation_id,
-        )
-
-        return StreamingResponse(
-            _stream_chatflow_turn(execution, state, session),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
-    @router.post("/chatflow/continue", response_model=ChatflowContinueResponse)
-    async def continue_chatflow(
-        payload: ChatflowContinueRequest,
-        current_user: User = Depends(get_current_user),
-        session: Session = Depends(session_dependency),
-    ) -> ChatflowContinueResponse:
-        execution = registry.get(payload.execution_id)
-        if execution is None or execution.user_id != current_user.uid:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="对话不存在")
-        if execution.completed:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="对话已完成")
-
-        state = await graph.ainvoke(
-            _initial_state(
-                query=payload.query,
-                user_id=current_user.uid,
-                conversation_id=execution.conversation_id,
-                intent_conversation_id=execution.intent_conversation_id,
-            ),
-            _graph_config(execution),
-        )
-        _reject_unsupported_route(state)
-        _sync_execution(execution, state)
-        _persist_conversations(session, execution)
-
-        if execution.completed and execution.final_result:
-            upsert_user_profile(session, current_user.uid, execution.final_result)
-
-        return ChatflowContinueResponse(
-            answer=state.get("answer_json", {}),
-            completed=execution.completed,
-            conversation_id=execution.conversation_id,
-            final_result=execution.final_result,
-        )
-
-    @router.post("/chatflow/continue/stream")
-    async def continue_chatflow_stream(
-        payload: ChatflowContinueRequest,
-        current_user: User = Depends(get_current_user),
-        session: Session = Depends(session_dependency),
-    ) -> StreamingResponse:
-        execution = registry.get(payload.execution_id)
-        if execution is None or execution.user_id != current_user.uid:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="对话不存在")
-        if execution.completed:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="对话已完成")
-
-        state = _initial_state(
-            query=payload.query,
-            user_id=current_user.uid,
-            conversation_id=execution.conversation_id,
-            intent_conversation_id=execution.intent_conversation_id,
-        )
-
-        return StreamingResponse(
-            _stream_chatflow_turn(execution, state, session),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )

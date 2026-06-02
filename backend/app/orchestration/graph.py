@@ -29,6 +29,8 @@ AGENT_LABELS = {
 }
 
 ExecutorFactory = Callable[[OrchestrationState], Any]
+ConversationGetter = Callable[[str, str], str]
+ConversationSetter = Callable[[str, str, str], object]
 
 
 def _trace_step(
@@ -93,10 +95,6 @@ def _parse_main_response(raw: dict) -> MainAgentResult:
     return result
 
 
-def _main_conversation_key(state: OrchestrationState) -> str:
-    return f"{state['user_id']}:{MAIN_AGENT_KEY}"
-
-
 def _query_with_profile_context(state: OrchestrationState, query: str) -> str:
     user_profile = state.get("user_profile", {})
     if not isinstance(user_profile, dict) or not user_profile:
@@ -117,16 +115,35 @@ async def _call_main_agent(
     conversation_ids: dict[str, str],
     query: str,
     inputs: dict | None = None,
+    conversation_getter: ConversationGetter | None = None,
+    conversation_setter: ConversationSetter | None = None,
 ) -> tuple[dict, MainAgentResult]:
-    conversation_key = _main_conversation_key(state)
+    conversation_id = (
+        conversation_getter(state["user_id"], MAIN_AGENT_KEY)
+        if conversation_getter is not None
+        else conversation_ids.get(state["user_id"], "")
+    )
     response = await client.chat_blocking(
         query=_query_with_profile_context(state, query),
         user_id=state["user_id"],
-        conversation_id=conversation_ids.get(conversation_key, ""),
+        conversation_id=conversation_id,
         inputs={**(inputs or {}), "user_profile": state.get("user_profile", {})},
     )
-    conversation_ids[conversation_key] = response.conversation_id
+    if conversation_setter is not None:
+        conversation_setter(state["user_id"], MAIN_AGENT_KEY, response.conversation_id)
+    else:
+        conversation_ids[state["user_id"]] = response.conversation_id
     return response.raw, _parse_main_response(response.raw)
+
+
+def _agent_error_results(error: Exception) -> dict[str, dict]:
+    return {
+        "__error__": {
+            "type": "agent_error",
+            "message": str(error) or "智能体执行失败，请稍后重试。",
+            "next_action": "main_agent_final",
+        }
+    }
 
 
 def _error_update(state: OrchestrationState, error: Exception) -> dict:
@@ -227,6 +244,8 @@ async def stream_orchestration_events(
     state: OrchestrationState,
     main_client: DifyClient | None = None,
     executor_factory: ExecutorFactory | None = None,
+    conversation_getter: ConversationGetter | None = None,
+    conversation_setter: ConversationSetter | None = None,
 ) -> AsyncGenerator[dict, None]:
     main = main_client or DifyClient(api_key=DIFY_CHAT_API_KEY)
     build_executor = executor_factory or _default_executor_factory
@@ -263,6 +282,8 @@ async def stream_orchestration_events(
             client=main,
             conversation_ids=conversation_ids,
             query=current_state["query"],
+            conversation_getter=conversation_getter,
+            conversation_setter=conversation_setter,
         )
     except (DifyAnswerParseError, ValidationError, ValueError) as exc:
         result = {**current_state, **_error_update(current_state, exc)}
@@ -334,78 +355,92 @@ async def stream_orchestration_events(
     agent_results: dict[str, dict] = {}
     pending = {call.call_id: call for call in calls}
 
-    try:
-        executor = build_executor(current_state)
-        while pending:
-            ready = [
-                call
-                for call in pending.values()
-                if all(dependency in agent_results for dependency in call.depends_on)
-            ]
-            if not ready:
-                raise RuntimeError("Agent call graph has unresolved dependencies")
-
-            for call in ready:
-                yield _context_event(
-                    f"{call.call_id}_context",
-                    "准备智能体上下文",
-                    _agent_context_message(call),
-                )
-                yield {
-                    "event": "agent_started",
-                    "step_id": call.call_id,
-                    "agent_key": call.agent_key,
-                    "agent": call.agent_key,
-                    "label": call.label or AGENT_LABELS.get(call.agent_key, call.agent_key),
-                    "phase": "agent",
-                    "kind": "agent",
-                    "message": f"{call.label or AGENT_LABELS.get(call.agent_key, call.agent_key)}开始处理。",
-                    "depends_on": call.depends_on,
-                    "parallel_group": call.parallel_group,
-                }
-
-            batch = await asyncio.gather(*(executor.execute_call(call) for call in ready))
-            for call, call_result in zip(ready, batch, strict=True):
-                agent_results[call.call_id] = call_result
-                pending.pop(call.call_id)
-                trace = [
-                    *trace,
-                    _call_trace(call, "completed", f"{call.label or AGENT_LABELS.get(call.agent_key, call.agent_key)}已完成。"),
-                ]
-                yield {
-                    "event": "agent_completed",
-                    "step_id": call.call_id,
-                    "agent_key": call.agent_key,
-                    "agent": call.agent_key,
-                    "label": call.label or AGENT_LABELS.get(call.agent_key, call.agent_key),
-                    "phase": "agent",
-                    "kind": "agent",
-                    "message": f"{call.label or AGENT_LABELS.get(call.agent_key, call.agent_key)}结果返回成功。",
-                    "depends_on": call.depends_on,
-                    "parallel_group": call.parallel_group,
-                }
-    except Exception as exc:
-        trace = [
-            *trace,
-            *[_call_trace(call, "failed", str(exc)) for call in pending.values()],
+    executor = build_executor(current_state)
+    agent_error: Exception | None = None
+    while pending:
+        ready = [
+            call
+            for call in pending.values()
+            if all(dependency in agent_results for dependency in call.depends_on)
         ]
-        result = {
-            **current_state,
-            "error": str(exc),
-            "completed": False,
-            "agent_trace": trace,
-        }
-        yield {
-            "event": "error",
-            "step_id": MAIN_AGENT_KEY,
-            "agent_key": MAIN_AGENT_KEY,
-            "agent": MAIN_AGENT_KEY,
-            "label": MAIN_AGENT_LABEL,
-            "kind": "agent",
-            "message": str(exc),
-            "state": result,
-        }
-        return
+        if not ready:
+            agent_error = RuntimeError("Agent call graph has unresolved dependencies")
+            for call in pending.values():
+                trace = [*trace, _call_trace(call, "failed", str(agent_error))]
+                yield {
+                    "event": "agent_failed",
+                    "step_id": call.call_id,
+                    "agent_key": call.agent_key,
+                    "agent": call.agent_key,
+                    "label": call.label or AGENT_LABELS.get(call.agent_key, call.agent_key),
+                    "phase": "agent",
+                    "kind": "agent",
+                    "message": str(agent_error),
+                    "depends_on": call.depends_on,
+                    "parallel_group": call.parallel_group,
+                }
+            break
+
+        for call in ready:
+            yield _context_event(
+                f"{call.call_id}_context",
+                "准备智能体上下文",
+                _agent_context_message(call),
+            )
+            yield {
+                "event": "agent_started",
+                "step_id": call.call_id,
+                "agent_key": call.agent_key,
+                "agent": call.agent_key,
+                "label": call.label or AGENT_LABELS.get(call.agent_key, call.agent_key),
+                "phase": "agent",
+                "kind": "agent",
+                "message": f"{call.label or AGENT_LABELS.get(call.agent_key, call.agent_key)}开始处理。",
+                "depends_on": call.depends_on,
+                "parallel_group": call.parallel_group,
+            }
+
+        batch = await asyncio.gather(*(executor.execute_call(call) for call in ready), return_exceptions=True)
+        for call, call_result in zip(ready, batch, strict=True):
+            pending.pop(call.call_id)
+            if isinstance(call_result, Exception):
+                agent_error = call_result
+                trace = [*trace, _call_trace(call, "failed", str(call_result))]
+                yield {
+                    "event": "agent_failed",
+                    "step_id": call.call_id,
+                    "agent_key": call.agent_key,
+                    "agent": call.agent_key,
+                    "label": call.label or AGENT_LABELS.get(call.agent_key, call.agent_key),
+                    "phase": "agent",
+                    "kind": "agent",
+                    "message": str(call_result) or "智能体执行失败，请稍后重试。",
+                    "depends_on": call.depends_on,
+                    "parallel_group": call.parallel_group,
+                }
+                continue
+
+            agent_results[call.call_id] = call_result
+            trace = [
+                *trace,
+                _call_trace(call, "completed", f"{call.label or AGENT_LABELS.get(call.agent_key, call.agent_key)}已完成。"),
+            ]
+            yield {
+                "event": "agent_completed",
+                "step_id": call.call_id,
+                "agent_key": call.agent_key,
+                "agent": call.agent_key,
+                "label": call.label or AGENT_LABELS.get(call.agent_key, call.agent_key),
+                "phase": "agent",
+                "kind": "agent",
+                "message": f"{call.label or AGENT_LABELS.get(call.agent_key, call.agent_key)}结果返回成功。",
+                "depends_on": call.depends_on,
+                "parallel_group": call.parallel_group,
+            }
+
+        if agent_error is not None:
+            agent_results.update(_agent_error_results(agent_error))
+            break
 
     profile_result = _profile_result(calls, agent_results)
     completed_profile = _completed_profile(calls, agent_results)
@@ -464,6 +499,8 @@ async def stream_orchestration_events(
             conversation_ids=conversation_ids,
             query=FINAL_REPLY_QUERY,
             inputs={"agent_results": current_state.get("agent_results", {})},
+            conversation_getter=conversation_getter,
+            conversation_setter=conversation_setter,
         )
     except (DifyAnswerParseError, ValidationError, ValueError) as exc:
         result = {**current_state, **_error_update(current_state, exc)}
@@ -524,9 +561,53 @@ async def stream_orchestration_events(
     }
 
 
+async def complete_with_main_agent_final(
+    state: OrchestrationState,
+    main_client: DifyClient | None = None,
+    conversation_getter: ConversationGetter | None = None,
+    conversation_setter: ConversationSetter | None = None,
+) -> OrchestrationState:
+    main = main_client or DifyClient(api_key=DIFY_CHAT_API_KEY)
+    conversation_ids: dict[str, str] = {}
+    try:
+        raw, result = await _call_main_agent(
+            state=state,
+            client=main,
+            conversation_ids=conversation_ids,
+            query=FINAL_REPLY_QUERY,
+            inputs={"agent_results": state.get("agent_results", {})},
+            conversation_getter=conversation_getter,
+            conversation_setter=conversation_setter,
+        )
+    except (DifyAnswerParseError, ValidationError, ValueError) as exc:
+        return {**state, **_error_update(state, exc)}
+
+    return {
+        **state,
+        "main_raw": raw,
+        "main_result": result.model_dump(),
+        "answer": result.response.model_dump(),
+        "completed": True,
+        "error": "",
+        "agent_trace": _append_trace(
+            state,
+            _trace_step(
+                step_id="main_agent_final",
+                agent_key=MAIN_AGENT_KEY,
+                label=MAIN_AGENT_LABEL,
+                phase="final",
+                status="completed",
+                message="主智能体已整合智能体结果。",
+            ),
+        ),
+    }
+
+
 def create_orchestration_graph(
     main_client: DifyClient | None = None,
     executor_factory: ExecutorFactory | None = None,
+    conversation_getter: ConversationGetter | None = None,
+    conversation_setter: ConversationSetter | None = None,
 ):
     main = main_client or DifyClient(api_key=DIFY_CHAT_API_KEY)
     build_executor = executor_factory or _default_executor_factory
@@ -539,6 +620,8 @@ def create_orchestration_graph(
                 client=main,
                 conversation_ids=main_conversation_ids,
                 query=state["query"],
+                conversation_getter=conversation_getter,
+                conversation_setter=conversation_setter,
             )
         except (DifyAnswerParseError, ValidationError, ValueError) as exc:
             return _error_update(state, exc)
@@ -576,7 +659,7 @@ def create_orchestration_graph(
         except Exception as exc:
             logger.warning("agent execution failed: %s", exc)
             return {
-                "error": str(exc),
+                "agent_results": _agent_error_results(exc),
                 "completed": False,
                 "agent_trace": [
                     *trace,
@@ -622,6 +705,8 @@ def create_orchestration_graph(
                 conversation_ids=main_conversation_ids,
                 query=FINAL_REPLY_QUERY,
                 inputs={"agent_results": state.get("agent_results", {})},
+                conversation_getter=conversation_getter,
+                conversation_setter=conversation_setter,
             )
         except (DifyAnswerParseError, ValidationError, ValueError) as exc:
             return _error_update(state, exc)

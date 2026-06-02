@@ -51,6 +51,20 @@ class FakeExecutor:
         return self.results[call.call_id]
 
 
+class FailingExecutor:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+        self.calls = []
+
+    async def execute_calls(self, calls: list) -> dict[str, dict]:
+        self.calls = calls
+        raise self.error
+
+    async def execute_call(self, call) -> dict:
+        self.calls.append(call)
+        raise self.error
+
+
 def make_state(query: str = "我想规划学习") -> OrchestrationState:
     return {
         "query": query,
@@ -132,6 +146,66 @@ def test_graph_executes_agent_calls_and_returns_final_main_agent_answer() -> Non
     assert main.calls[1]["query"] == "请基于 agent 结果生成最终回复"
     assert main.calls[1]["inputs"] == {"agent_results": {"profile": profile}, "user_profile": {}}
     assert executor.calls[0].agent_key == "profile_agent"
+
+
+def test_graph_persists_main_agent_conversation_with_callbacks() -> None:
+    main = FakeDifyClient(
+        [
+            (
+                '{"response":{"user_message":"继续主智能体会话。","question_box":null},'
+                '"control":{"action":"reply_only","calls":[]}}'
+            )
+        ]
+    )
+    writes: list[tuple[str, str, str]] = []
+    graph = create_orchestration_graph(
+        main_client=main,
+        conversation_getter=lambda user_uid, agent_key: "main-conv-saved",
+        conversation_setter=lambda user_uid, agent_key, conversation_id: writes.append(
+            (user_uid, agent_key, conversation_id)
+        ),
+    )
+
+    result = asyncio.run(graph.ainvoke(make_state("继续"), {"configurable": {"thread_id": "graph-main-conv"}}))
+
+    assert result["answer"]["user_message"] == "继续主智能体会话。"
+    assert main.calls[0]["conversation_id"] == "main-conv-saved"
+    assert writes == [("user-1", "main_agent", "main-conv-saved")]
+
+
+def test_graph_returns_to_main_agent_after_agent_failure() -> None:
+    main = FakeDifyClient(
+        [
+            (
+                '{"response":{"user_message":"我会调用学习路径智能体。","question_box":null},'
+                '"control":{"action":"call_agents","calls":[{'
+                '"call_id":"learning",'
+                '"agent_key":"learning_path_agent",'
+                '"label":"学习路径智能体",'
+                '"depends_on":[],'
+                '"parallel_group":null,'
+                '"agent_input":{"goal":"后端就业"}'
+                '}]}}'
+            ),
+            (
+                '{"response":{"user_message":"学习路径暂时无法生成，我会说明下一步。","question_box":null},'
+                '"control":{"action":"final_answer","calls":[]}}'
+            ),
+        ]
+    )
+    executor = FailingExecutor(RuntimeError("请先完成基础画像，再生成学习路径。"))
+    graph = create_orchestration_graph(main_client=main, executor_factory=lambda _state: executor)
+
+    result = asyncio.run(
+        graph.ainvoke(make_state("生成学习路径"), {"configurable": {"thread_id": "graph-agent-failure"}})
+    )
+
+    assert result["answer"]["user_message"] == "学习路径暂时无法生成，我会说明下一步。"
+    assert result["agent_results"]["__error__"]["type"] == "agent_error"
+    assert result["agent_results"]["__error__"]["next_action"] == "main_agent_final"
+    assert main.calls[1]["query"] == "请基于 agent 结果生成最终回复"
+    assert main.calls[1]["inputs"]["agent_results"]["__error__"]["message"] == "请先完成基础画像，再生成学习路径。"
+    assert result["completed"] is True
 
 
 def test_graph_supplies_current_query_when_agent_call_query_is_missing() -> None:
@@ -257,6 +331,48 @@ def test_stream_orchestration_events_emits_detailed_agent_flow() -> None:
     assert events[8]["message"] == "基础画像智能体结果返回成功。"
     assert events[9]["message"] == "主智能体开始整合智能体结果。"
     assert events[-1]["answer"]["user_message"] == "画像已经生成。"
+
+
+def test_stream_orchestration_events_returns_to_main_agent_after_agent_failure() -> None:
+    main = FakeDifyClient(
+        [
+            (
+                '{"response":{"user_message":"我会调用学习路径智能体。","question_box":null},'
+                '"control":{"action":"call_agents","calls":[{'
+                '"call_id":"learning",'
+                '"agent_key":"learning_path_agent",'
+                '"label":"学习路径智能体",'
+                '"depends_on":[],'
+                '"parallel_group":null,'
+                '"agent_input":{"goal":"后端就业"}'
+                '}]}}'
+            ),
+            (
+                '{"response":{"user_message":"学习路径暂时无法生成，我会说明下一步。","question_box":null},'
+                '"control":{"action":"final_answer","calls":[]}}'
+            ),
+        ]
+    )
+    executor = FailingExecutor(RuntimeError("请先完成基础画像，再生成学习路径。"))
+
+    async def collect_events() -> list[dict]:
+        return [
+            event
+            async for event in stream_orchestration_events(
+                make_state("生成学习路径"),
+                main_client=main,
+                executor_factory=lambda _state: executor,
+            )
+        ]
+
+    events = asyncio.run(collect_events())
+
+    assert ("agent_failed", "learning") in [(event["event"], event["step_id"]) for event in events]
+    assert ("agent_started", "main_agent_final") in [(event["event"], event["step_id"]) for event in events]
+    assert ("agent_completed", "main_agent_final") in [(event["event"], event["step_id"]) for event in events]
+    assert events[-1]["event"] == "completed"
+    assert events[-1]["answer"]["user_message"] == "学习路径暂时无法生成，我会说明下一步。"
+    assert main.calls[1]["inputs"]["agent_results"]["__error__"]["next_action"] == "main_agent_final"
 
 
 def test_stream_orchestration_events_describes_learning_path_context_inputs() -> None:
