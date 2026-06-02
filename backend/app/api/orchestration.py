@@ -177,6 +177,7 @@ async def _profile_session_state(state: OrchestrationState, session: Session) ->
                 "phase": "agent",
                 "status": "completed",
                 "message": "基础画像智能体已完成本轮处理。",
+                "kind": "agent",
                 "depends_on": [],
                 "parallel_group": None,
             }

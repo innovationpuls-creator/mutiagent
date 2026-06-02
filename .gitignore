@@ -3,6 +3,7 @@
 CLAUDE.md
 .superpowers
 docs/superpowers
+opencode.json
 
 backend/.venv/
 backend/.pytest_cache/

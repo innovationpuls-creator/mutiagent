@@ -110,34 +110,34 @@ test('renders detailed main agent flow in the left message timeline', async () =
         encoder.encode(
           [
             'event: agent_step_completed',
-            'data: {"step_id":"context_user_input","agent_key":"main_agent","label":"读取用户输入","message":"已读取本轮用户输入。"}',
+            'data: {"step_id":"context_user_input","agent_key":"main_agent","label":"读取用户输入","message":"已读取本轮用户输入。","kind":"data"}',
             '',
             'event: agent_step_completed',
-            'data: {"step_id":"context_profile","agent_key":"main_agent","label":"加载用户画像","message":"已加载基础画像上下文。"}',
+            'data: {"step_id":"context_profile","agent_key":"main_agent","label":"加载用户画像","message":"已加载基础画像上下文。","kind":"data"}',
             '',
             'event: agent_step_completed',
-            'data: {"step_id":"context_agent_registry","agent_key":"main_agent","label":"配置智能体能力","message":"已配置可调用智能体。"}',
+            'data: {"step_id":"context_agent_registry","agent_key":"main_agent","label":"配置智能体能力","message":"已配置可调用智能体。","kind":"system"}',
             '',
             'event: agent_step_completed',
-            'data: {"step_id":"context_main_inputs","agent_key":"main_agent","label":"整理主智能体上下文","message":"已注入主智能体上下文。"}',
+            'data: {"step_id":"context_main_inputs","agent_key":"main_agent","label":"整理主智能体上下文","message":"已注入主智能体上下文。","kind":"data"}',
             '',
             'event: agent_step_started',
-            'data: {"step_id":"main_agent","agent_key":"main_agent","label":"主智能体","message":"主智能体开始处理。"}',
+            'data: {"step_id":"main_agent","agent_key":"main_agent","label":"主智能体","message":"主智能体开始处理。","kind":"agent"}',
             '',
             'event: agent_step_completed',
-            'data: {"step_id":"main_agent","agent_key":"main_agent","label":"主智能体","message":"主智能体已返回调用计划：学习路径智能体。"}',
+            'data: {"step_id":"main_agent","agent_key":"main_agent","label":"主智能体","message":"主智能体已返回调用计划：学习路径智能体。","kind":"agent"}',
             '',
             'event: agent_step_started',
-            'data: {"step_id":"learning","agent_key":"learning_path_agent","label":"学习路径智能体","message":"学习路径智能体开始处理。","depends_on":["main_agent"],"parallel_group":"path"}',
+            'data: {"step_id":"learning","agent_key":"learning_path_agent","label":"学习路径智能体","message":"学习路径智能体开始处理。","depends_on":["main_agent"],"parallel_group":"path","kind":"agent"}',
             '',
             'event: agent_step_completed',
-            'data: {"step_id":"learning","agent_key":"learning_path_agent","label":"学习路径智能体","message":"学习路径智能体结果返回成功。","depends_on":["main_agent"],"parallel_group":"path"}',
+            'data: {"step_id":"learning","agent_key":"learning_path_agent","label":"学习路径智能体","message":"学习路径智能体结果返回成功。","depends_on":["main_agent"],"parallel_group":"path","kind":"agent"}',
             '',
             'event: agent_step_started',
-            'data: {"step_id":"main_agent_final","agent_key":"main_agent","label":"主智能体","message":"主智能体开始整合智能体结果。"}',
+            'data: {"step_id":"main_agent_final","agent_key":"main_agent","label":"主智能体","message":"主智能体开始整合智能体结果。","kind":"agent"}',
             '',
             'event: agent_step_completed',
-            'data: {"step_id":"main_agent_final","agent_key":"main_agent","label":"主智能体","message":"主智能体已整合智能体结果。"}',
+            'data: {"step_id":"main_agent_final","agent_key":"main_agent","label":"主智能体","message":"主智能体已整合智能体结果。","kind":"agent"}',
             '',
             'event: orchestration_completed',
             'data: {"session_id":"session-1","answer":{"user_message":"学习路径已生成","question_box":null},"agent_trace":[],"completed":true,"profile":null,"learning_path":null}',
@@ -164,6 +164,8 @@ test('renders detailed main agent flow in the left message timeline', async () =
 
   await waitFor(() => {
     expect(screen.getByText('已读取本轮用户输入。')).toBeTruthy();
+    expect(screen.getAllByText('【数据】').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('【系统】').length).toBeGreaterThan(0);
     expect(screen.getAllByText('【agent】').length).toBeGreaterThan(0);
     expect(screen.getByText('主智能体已返回调用计划：学习路径智能体。')).toBeTruthy();
     expect(screen.getByText(/学习路径智能体结果返回成功。 · 并行中：path · 依赖：main_agent/)).toBeTruthy();

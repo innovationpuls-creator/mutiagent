@@ -131,6 +131,7 @@ class AgentTraceStep(BaseModel):
     phase: str
     status: str
     message: str
+    kind: str = Field(default="agent", description="步骤类型：data(数据准备)/system(系统主控)/agent(智能体)")
     depends_on: list[str] = Field(default_factory=list)
     parallel_group: str | None = None
 

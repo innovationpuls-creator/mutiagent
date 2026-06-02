@@ -4,7 +4,7 @@ import styled from 'styled-components';
 import { streamSession, type SessionAgentEvent } from '../../api/orchestration';
 import { useAiWidget } from '../../context/AiWidgetContext';
 import { useAuth } from '../../contexts/AuthContext';
-import type { AgentRunStep, ChatMessage, SessionMessage } from '../../types/chat';
+import type { AgentRunStep, AgentRunStepKind, ChatMessage, SessionMessage } from '../../types/chat';
 import { chatReducer, initialChatStore, nextMessageId } from '../../onboarding/chatReducer';
 import { useChatSession } from '../../onboarding/hooks/useChatSession';
 import { LearningPathCard } from '../learning/LearningPathCard';
@@ -237,6 +237,7 @@ export function AiGreetingInput() {
   const eventToStep = useCallback((event: SessionAgentEvent, now: number): { step: AgentRunStep | null } => {
     const agent = getSessionEventAgent(event);
     const label = getSessionEventTitle(event);
+    const kind: AgentRunStepKind = (event.kind as AgentRunStepKind) || 'agent';
 
     if (event.event === 'agent_step_started') {
       const stepId = getSessionEventStepId(event);
@@ -244,7 +245,7 @@ export function AiGreetingInput() {
       return {
         step: {
           stepId,
-          kind: 'agent',
+          kind,
           status: 'running',
           title: label,
           summary: getTimelineSummary(event, event.message ?? '正在执行...'),
@@ -261,7 +262,7 @@ export function AiGreetingInput() {
       return {
         step: {
           stepId,
-          kind: 'agent',
+          kind,
           status: 'success',
           title: label,
           summary: getTimelineSummary(event, event.message ?? '完成'),
@@ -279,7 +280,7 @@ export function AiGreetingInput() {
       return {
         step: {
           stepId,
-          kind: 'agent',
+          kind,
           status: 'error',
           title: label,
           summary: getTimelineSummary(event, event.error ?? event.message ?? '这一步没有正常完成'),

@@ -18,6 +18,7 @@ interface ApiAgentTraceStep {
   phase: string;
   status: string;
   message: string;
+  kind?: string;
   depends_on?: string[];
   parallel_group?: string | null;
 }
@@ -60,6 +61,7 @@ export interface SessionAgentEvent {
   phase?: string;
   status?: string;
   message?: string;
+  kind?: string;
   error?: string;
   intent?: string;
   routeStatus?: string;
@@ -147,6 +149,7 @@ function normalizeTraceStep(step: ApiAgentTraceStep): AgentTraceStep {
     phase: step.phase,
     status: step.status,
     message: step.message,
+    kind: step.kind ?? 'agent',
     dependsOn: step.depends_on ?? [],
     parallelGroup: step.parallel_group ?? null,
   };
@@ -224,6 +227,7 @@ function normalizeSessionEvent(event: SessionEventName, payload: UnknownRecord):
     phase: getString(payload.phase),
     status: getString(payload.status),
     message: getString(payload.message),
+    kind: getString(payload.kind),
     error: getString(payload.error),
     intent: getString(payload.intent),
     routeStatus: getString(payload.route_status),

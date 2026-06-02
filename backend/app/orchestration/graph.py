@@ -39,6 +39,7 @@ def _trace_step(
     phase: str,
     status: str,
     message: str,
+    kind: str = "agent",
     depends_on: list[str] | None = None,
     parallel_group: str | None = None,
 ) -> dict:
@@ -49,6 +50,7 @@ def _trace_step(
         "phase": phase,
         "status": status,
         "message": message,
+        "kind": kind,
         "depends_on": depends_on or [],
         "parallel_group": parallel_group,
     }
@@ -69,6 +71,7 @@ def _context_event(step_id: str, label: str, message: str) -> dict:
         "agent": MAIN_AGENT_KEY,
         "label": label,
         "phase": "context",
+        "kind": "data",
         "message": message,
     }
 
@@ -153,6 +156,7 @@ def _call_trace(call: AgentCall, status: str, message: str) -> dict:
         phase="agent",
         status=status,
         message=message,
+        kind="agent",
         depends_on=call.depends_on,
         parallel_group=call.parallel_group,
     )
@@ -249,6 +253,7 @@ async def stream_orchestration_events(
         "agent_key": MAIN_AGENT_KEY,
         "agent": MAIN_AGENT_KEY,
         "label": MAIN_AGENT_LABEL,
+        "kind": "agent",
         "message": "主智能体开始处理。",
     }
 
@@ -267,6 +272,7 @@ async def stream_orchestration_events(
             "agent_key": MAIN_AGENT_KEY,
             "agent": MAIN_AGENT_KEY,
             "label": MAIN_AGENT_LABEL,
+            "kind": "agent",
             "message": result["error"],
             "state": result,
         }
@@ -301,6 +307,7 @@ async def stream_orchestration_events(
         "agent": MAIN_AGENT_KEY,
         "label": MAIN_AGENT_LABEL,
         "phase": "main",
+        "kind": "agent",
         "message": f"主智能体已返回调用计划：{plan_labels}。" if plan_labels else "主智能体已完成本轮判断。",
     }
 
@@ -311,6 +318,7 @@ async def stream_orchestration_events(
             "agent_key": MAIN_AGENT_KEY,
             "agent": MAIN_AGENT_KEY,
             "label": MAIN_AGENT_LABEL,
+            "kind": "agent",
             "message": "主智能体已完成。",
             "state": current_state,
             "answer": current_state.get("answer", {}),
@@ -350,6 +358,7 @@ async def stream_orchestration_events(
                     "agent": call.agent_key,
                     "label": call.label or AGENT_LABELS.get(call.agent_key, call.agent_key),
                     "phase": "agent",
+                    "kind": "agent",
                     "message": f"{call.label or AGENT_LABELS.get(call.agent_key, call.agent_key)}开始处理。",
                     "depends_on": call.depends_on,
                     "parallel_group": call.parallel_group,
@@ -370,6 +379,7 @@ async def stream_orchestration_events(
                     "agent": call.agent_key,
                     "label": call.label or AGENT_LABELS.get(call.agent_key, call.agent_key),
                     "phase": "agent",
+                    "kind": "agent",
                     "message": f"{call.label or AGENT_LABELS.get(call.agent_key, call.agent_key)}结果返回成功。",
                     "depends_on": call.depends_on,
                     "parallel_group": call.parallel_group,
@@ -391,6 +401,7 @@ async def stream_orchestration_events(
             "agent_key": MAIN_AGENT_KEY,
             "agent": MAIN_AGENT_KEY,
             "label": MAIN_AGENT_LABEL,
+            "kind": "agent",
             "message": str(exc),
             "state": result,
         }
@@ -418,6 +429,7 @@ async def stream_orchestration_events(
             "agent_key": calls[-1].agent_key,
             "agent": calls[-1].agent_key,
             "label": calls[-1].label or AGENT_LABELS.get(calls[-1].agent_key, calls[-1].agent_key),
+            "kind": "agent",
             "message": "智能体结果已返回，等待用户补充信息。",
             "state": result,
             "answer": result.get("answer", {}),
@@ -441,6 +453,7 @@ async def stream_orchestration_events(
         "agent": MAIN_AGENT_KEY,
         "label": MAIN_AGENT_LABEL,
         "phase": "final",
+        "kind": "agent",
         "message": "主智能体开始整合智能体结果。",
     }
 
@@ -460,6 +473,7 @@ async def stream_orchestration_events(
             "agent_key": MAIN_AGENT_KEY,
             "agent": MAIN_AGENT_KEY,
             "label": MAIN_AGENT_LABEL,
+            "kind": "agent",
             "message": result["error"],
             "state": result,
         }
@@ -492,6 +506,7 @@ async def stream_orchestration_events(
         "agent": MAIN_AGENT_KEY,
         "label": MAIN_AGENT_LABEL,
         "phase": "final",
+        "kind": "agent",
         "message": "主智能体已整合智能体结果。",
     }
 
@@ -501,6 +516,7 @@ async def stream_orchestration_events(
         "agent_key": MAIN_AGENT_KEY,
         "agent": MAIN_AGENT_KEY,
         "label": MAIN_AGENT_LABEL,
+        "kind": "agent",
         "message": "主智能体已完成。",
         "state": result,
         "answer": result.get("answer", {}),

@@ -37,6 +37,7 @@ export interface AgentTraceStep {
   phase: string;
   status: string;
   message: string;
+  kind: string;
   dependsOn: string[];
   parallelGroup: string | null;
 }
@@ -91,7 +92,7 @@ export type MessageRole = 'user' | 'assistant' | 'system';
 
 export type MessageStatus = 'pending' | 'streaming' | 'completed' | 'error';
 
-export type AgentRunStepKind = 'agent' | 'route' | 'answer';
+export type AgentRunStepKind = 'agent' | 'route' | 'answer' | 'data' | 'system';
 
 export type AgentRunStepStatus = 'running' | 'success' | 'error' | 'skipped';
 
