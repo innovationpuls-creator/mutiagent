@@ -61,6 +61,28 @@ def _append_trace(state: OrchestrationState, step: dict) -> list[dict]:
     return [*trace, step]
 
 
+def _context_event(step_id: str, label: str, message: str) -> dict:
+    return {
+        "event": "agent_completed",
+        "step_id": step_id,
+        "agent_key": MAIN_AGENT_KEY,
+        "agent": MAIN_AGENT_KEY,
+        "label": label,
+        "phase": "context",
+        "message": message,
+    }
+
+
+def _agent_context_message(call: AgentCall) -> str:
+    if call.agent_key == "learning_path_agent":
+        return "学习路径智能体已接收画像与学习目标。"
+    if call.agent_key == "profile_agent":
+        return "基础画像智能体已接收本轮补充信息。"
+    if call.agent_key == "intent_recognition_agent":
+        return "意图识别智能体已接收本轮输入。"
+    return f"{call.label or AGENT_LABELS.get(call.agent_key, call.agent_key)}已接收上下文。"
+
+
 def _parse_main_response(raw: dict) -> MainAgentResult:
     parsed = parse_json_answer(raw)
     result = MainAgentResult.model_validate(parsed)
@@ -206,6 +228,20 @@ async def stream_orchestration_events(
     build_executor = executor_factory or _default_executor_factory
     conversation_ids: dict[str, str] = {}
     current_state: OrchestrationState = {**state, "agent_trace": state.get("agent_trace", [])}
+    has_profile_context = isinstance(current_state.get("user_profile"), dict) and bool(current_state.get("user_profile"))
+
+    yield _context_event("context_user_input", "读取用户输入", "已读取本轮用户输入。")
+    yield _context_event(
+        "context_profile",
+        "加载用户画像",
+        "已加载基础画像上下文。" if has_profile_context else "未检测到完整基础画像。",
+    )
+    yield _context_event(
+        "context_agent_registry",
+        "配置智能体能力",
+        "已配置可调用智能体。",
+    )
+    yield _context_event("context_main_inputs", "整理主智能体上下文", "已注入主智能体上下文。")
 
     yield {
         "event": "agent_started",
@@ -302,6 +338,11 @@ async def stream_orchestration_events(
                 raise RuntimeError("Agent call graph has unresolved dependencies")
 
             for call in ready:
+                yield _context_event(
+                    f"{call.call_id}_context",
+                    "准备智能体上下文",
+                    _agent_context_message(call),
+                )
                 yield {
                     "event": "agent_started",
                     "step_id": call.call_id,

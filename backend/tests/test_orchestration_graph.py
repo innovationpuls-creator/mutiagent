@@ -238,19 +238,103 @@ def test_stream_orchestration_events_emits_detailed_agent_flow() -> None:
     events = asyncio.run(collect_events())
 
     assert [(event["event"], event["step_id"]) for event in events] == [
+        ("agent_completed", "context_user_input"),
+        ("agent_completed", "context_profile"),
+        ("agent_completed", "context_agent_registry"),
+        ("agent_completed", "context_main_inputs"),
         ("agent_started", "main_agent"),
         ("agent_completed", "main_agent"),
+        ("agent_completed", "profile_context"),
         ("agent_started", "profile"),
         ("agent_completed", "profile"),
         ("agent_started", "main_agent_final"),
         ("agent_completed", "main_agent_final"),
         ("completed", "main_agent_final"),
     ]
-    assert events[1]["message"] == "主智能体已返回调用计划：基础画像智能体。"
-    assert events[2]["message"] == "基础画像智能体开始处理。"
-    assert events[3]["message"] == "基础画像智能体结果返回成功。"
-    assert events[4]["message"] == "主智能体开始整合智能体结果。"
+    assert events[5]["message"] == "主智能体已返回调用计划：基础画像智能体。"
+    assert events[6]["message"] == "基础画像智能体已接收本轮补充信息。"
+    assert events[7]["message"] == "基础画像智能体开始处理。"
+    assert events[8]["message"] == "基础画像智能体结果返回成功。"
+    assert events[9]["message"] == "主智能体开始整合智能体结果。"
     assert events[-1]["answer"]["user_message"] == "画像已经生成。"
+
+
+def test_stream_orchestration_events_describes_learning_path_context_inputs() -> None:
+    main = FakeDifyClient(
+        [
+            (
+                '{"response":{"user_message":"我会调用学习路径智能体。","question_box":null},'
+                '"control":{"action":"call_agents","calls":[{'
+                '"call_id":"learning",'
+                '"agent_key":"learning_path_agent",'
+                '"label":"学习路径智能体",'
+                '"depends_on":[],'
+                '"parallel_group":null,'
+                '"agent_input":{"goal":"后端就业"}'
+                '}]}}'
+            ),
+            (
+                '{"response":{"user_message":"学习路径已经生成。","question_box":null},'
+                '"control":{"action":"final_answer","calls":[]}}'
+            ),
+        ]
+    )
+    learning_path = {
+        "learning_goal": {
+            "target_course_or_skill": "后端开发",
+            "target_completion_time": "大四秋招前",
+            "goal_type": "就业准备",
+            "desired_outcome": "具备投递后端开发岗位的能力",
+        },
+        "gap_analysis": {
+            "current_mastered_content": ["Python 基础"],
+            "current_weaknesses": ["系统设计"],
+            "required_capabilities": ["后端项目"],
+            "main_gaps": ["缺少实战"],
+        },
+        "foundation_path": {
+            "stages": [
+                {
+                    "stage_id": "stage_1",
+                    "stage_name": "基础阶段",
+                    "learning_goal": "掌握后端基础",
+                    "learning_content": ["FastAPI"],
+                    "learning_tasks": ["完成接口项目"],
+                    "recommended_methods": ["项目实践"],
+                    "completion_standard": ["可独立开发接口"],
+                }
+            ]
+        },
+        "generated_path": {
+            "overall_goal": "完成后端就业准备",
+            "stage_routes": [{"stage_id": "stage_1", "route_summary": "学习后端基础"}],
+            "schedule": [{"period": "大三", "focus": "项目", "milestone": "完成项目"}],
+            "task_checklist": ["完成项目"],
+            "recommended_resource_types": ["项目教程"],
+            "stage_acceptance_criteria": [{"stage_id": "stage_1", "criteria": ["完成项目"]}],
+            "next_actions": ["开始项目"],
+        },
+    }
+    executor = FakeExecutor({"learning": learning_path})
+    state = make_state("生成学习路径")
+    state["user_profile"] = {"type": "basic_profile", "stage": "generated"}
+
+    async def collect_events() -> list[dict]:
+        return [
+            event
+            async for event in stream_orchestration_events(
+                state,
+                main_client=main,
+                executor_factory=lambda _state: executor,
+            )
+        ]
+
+    events = asyncio.run(collect_events())
+
+    assert any(
+        event["step_id"] == "learning_context" and event["message"] == "学习路径智能体已接收画像与学习目标。"
+        for event in events
+    )
 
 
 def test_stream_orchestration_events_marks_ready_agent_batch_as_parallel() -> None:
@@ -301,4 +385,37 @@ def test_stream_orchestration_events_marks_ready_agent_batch_as_parallel() -> No
         ("agent_started", "profile", "profile_batch"),
         ("agent_completed", "intent", "profile_batch"),
         ("agent_completed", "profile", "profile_batch"),
+    ]
+
+
+def test_stream_orchestration_events_emits_context_preparation_for_reply_only() -> None:
+    main = FakeDifyClient(
+        [
+            (
+                '{"response":{"user_message":"我先追问学习路径侧重点。","question_box":null},'
+                '"control":{"action":"reply_only","calls":[]}}'
+            )
+        ]
+    )
+    state = make_state("我是大三学生")
+    state["user_profile"] = {"type": "basic_profile", "stage": "generated"}
+
+    async def collect_events() -> list[dict]:
+        return [
+            event
+            async for event in stream_orchestration_events(
+                state,
+                main_client=main,
+                executor_factory=lambda _state: FakeExecutor({}),
+            )
+        ]
+
+    events = asyncio.run(collect_events())
+
+    assert [(event["event"], event["step_id"], event["message"]) for event in events[:5]] == [
+        ("agent_completed", "context_user_input", "已读取本轮用户输入。"),
+        ("agent_completed", "context_profile", "已加载基础画像上下文。"),
+        ("agent_completed", "context_agent_registry", "已配置可调用智能体。"),
+        ("agent_completed", "context_main_inputs", "已注入主智能体上下文。"),
+        ("agent_started", "main_agent", "主智能体开始处理。"),
     ]

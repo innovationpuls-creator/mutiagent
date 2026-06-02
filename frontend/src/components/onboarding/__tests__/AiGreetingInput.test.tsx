@@ -87,6 +87,18 @@ test('renders detailed main agent flow in the left message timeline', async () =
       controller.enqueue(
         encoder.encode(
           [
+            'event: agent_step_completed',
+            'data: {"step_id":"context_user_input","agent_key":"main_agent","label":"读取用户输入","message":"已读取本轮用户输入。"}',
+            '',
+            'event: agent_step_completed',
+            'data: {"step_id":"context_profile","agent_key":"main_agent","label":"加载用户画像","message":"已加载基础画像上下文。"}',
+            '',
+            'event: agent_step_completed',
+            'data: {"step_id":"context_agent_registry","agent_key":"main_agent","label":"配置智能体能力","message":"已配置可调用智能体。"}',
+            '',
+            'event: agent_step_completed',
+            'data: {"step_id":"context_main_inputs","agent_key":"main_agent","label":"整理主智能体上下文","message":"已注入主智能体上下文。"}',
+            '',
             'event: agent_step_started',
             'data: {"step_id":"main_agent","agent_key":"main_agent","label":"主智能体","message":"主智能体开始处理。"}',
             '',
@@ -129,8 +141,11 @@ test('renders detailed main agent flow in the left message timeline', async () =
   fireEvent.click(screen.getByLabelText('发送消息'));
 
   await waitFor(() => {
+    expect(screen.getByText('已读取本轮用户输入。')).toBeTruthy();
+    expect(screen.getAllByText('【agent】').length).toBeGreaterThan(0);
     expect(screen.getByText('主智能体已返回调用计划：学习路径智能体。')).toBeTruthy();
     expect(screen.getByText(/学习路径智能体结果返回成功。 · 并行中：path · 依赖：main_agent/)).toBeTruthy();
     expect(screen.getByText('主智能体已整合智能体结果。')).toBeTruthy();
+    expect(screen.getByText('【answer】')).toBeTruthy();
   });
 });

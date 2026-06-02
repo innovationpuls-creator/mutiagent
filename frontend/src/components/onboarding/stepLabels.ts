@@ -1,9 +1,9 @@
 import type { AgentRunStep } from '../../types/chat';
 
 const STEP_LABELS: Record<AgentRunStep['kind'], string> = {
-  agent: '智能体',
+  agent: 'agent',
   route: '调度',
-  answer: '回复',
+  answer: 'answer',
 };
 
 export function formatStepKind(step: AgentRunStep): string {
