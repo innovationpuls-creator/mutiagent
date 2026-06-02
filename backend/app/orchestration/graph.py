@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator, Callable
 from typing import Any
@@ -201,6 +202,11 @@ async def stream_orchestration_events(
     main_client: DifyClient | None = None,
     executor_factory: ExecutorFactory | None = None,
 ) -> AsyncGenerator[dict, None]:
+    main = main_client or DifyClient(api_key=DIFY_CHAT_API_KEY)
+    build_executor = executor_factory or _default_executor_factory
+    conversation_ids: dict[str, str] = {}
+    current_state: OrchestrationState = {**state, "agent_trace": state.get("agent_trace", [])}
+
     yield {
         "event": "agent_started",
         "step_id": MAIN_AGENT_KEY,
@@ -210,10 +216,15 @@ async def stream_orchestration_events(
         "message": "主智能体开始处理。",
     }
 
-    graph = create_orchestration_graph(main_client=main_client, executor_factory=executor_factory)
-    result = await graph.ainvoke(state, {"configurable": {"thread_id": state["session_id"] or state["user_id"]}})
-
-    if result.get("error"):
+    try:
+        raw, main_result = await _call_main_agent(
+            state=current_state,
+            client=main,
+            conversation_ids=conversation_ids,
+            query=current_state["query"],
+        )
+    except (DifyAnswerParseError, ValidationError, ValueError) as exc:
+        result = {**current_state, **_error_update(current_state, exc)}
         yield {
             "event": "error",
             "step_id": MAIN_AGENT_KEY,
@@ -225,26 +236,227 @@ async def stream_orchestration_events(
         }
         return
 
-    for step in result.get("agent_trace", []):
-        if not isinstance(step, dict):
-            continue
-        if step.get("step_id") == MAIN_AGENT_KEY:
-            continue
+    action = main_result.control.action
+    plan_labels = "、".join(call.label or AGENT_LABELS.get(call.agent_key, call.agent_key) for call in main_result.control.calls)
+    current_state = {
+        **current_state,
+        "main_raw": raw,
+        "main_result": main_result.model_dump(),
+        "answer": main_result.response.model_dump(),
+        "completed": action == "final_answer",
+        "error": "",
+        "agent_trace": _append_trace(
+            current_state,
+            _trace_step(
+                step_id=MAIN_AGENT_KEY,
+                agent_key=MAIN_AGENT_KEY,
+                label=MAIN_AGENT_LABEL,
+                phase="main",
+                status="completed",
+                message="主智能体已返回控制结果。",
+            ),
+        ),
+    }
+
+    yield {
+        "event": "agent_completed",
+        "step_id": MAIN_AGENT_KEY,
+        "agent_key": MAIN_AGENT_KEY,
+        "agent": MAIN_AGENT_KEY,
+        "label": MAIN_AGENT_LABEL,
+        "phase": "main",
+        "message": f"主智能体已返回调用计划：{plan_labels}。" if plan_labels else "主智能体已完成本轮判断。",
+    }
+
+    if action != "call_agents":
         yield {
-            "event": "agent_completed" if step.get("status") == "completed" else "agent_failed",
-            "step_id": step.get("step_id", ""),
-            "agent_key": step.get("agent_key", ""),
-            "agent": step.get("agent_key", ""),
-            "label": step.get("label", ""),
-            "message": step.get("message", ""),
-            "phase": step.get("phase", ""),
-            "depends_on": step.get("depends_on", []),
-            "parallel_group": step.get("parallel_group"),
+            "event": "completed",
+            "step_id": MAIN_AGENT_KEY,
+            "agent_key": MAIN_AGENT_KEY,
+            "agent": MAIN_AGENT_KEY,
+            "label": MAIN_AGENT_LABEL,
+            "message": "主智能体已完成。",
+            "state": current_state,
+            "answer": current_state.get("answer", {}),
+            "completed": current_state.get("completed", False),
         }
+        return
+
+    calls = _calls_with_default_query(main_result.control.calls, current_state["query"])
+    trace = current_state.get("agent_trace", [])
+    if not isinstance(trace, list):
+        trace = []
+
+    agent_results: dict[str, dict] = {}
+    pending = {call.call_id: call for call in calls}
+
+    try:
+        executor = build_executor(current_state)
+        while pending:
+            ready = [
+                call
+                for call in pending.values()
+                if all(dependency in agent_results for dependency in call.depends_on)
+            ]
+            if not ready:
+                raise RuntimeError("Agent call graph has unresolved dependencies")
+
+            for call in ready:
+                yield {
+                    "event": "agent_started",
+                    "step_id": call.call_id,
+                    "agent_key": call.agent_key,
+                    "agent": call.agent_key,
+                    "label": call.label or AGENT_LABELS.get(call.agent_key, call.agent_key),
+                    "phase": "agent",
+                    "message": f"{call.label or AGENT_LABELS.get(call.agent_key, call.agent_key)}开始处理。",
+                    "depends_on": call.depends_on,
+                    "parallel_group": call.parallel_group,
+                }
+
+            batch = await asyncio.gather(*(executor.execute_call(call) for call in ready))
+            for call, call_result in zip(ready, batch, strict=True):
+                agent_results[call.call_id] = call_result
+                pending.pop(call.call_id)
+                trace = [
+                    *trace,
+                    _call_trace(call, "completed", f"{call.label or AGENT_LABELS.get(call.agent_key, call.agent_key)}已完成。"),
+                ]
+                yield {
+                    "event": "agent_completed",
+                    "step_id": call.call_id,
+                    "agent_key": call.agent_key,
+                    "agent": call.agent_key,
+                    "label": call.label or AGENT_LABELS.get(call.agent_key, call.agent_key),
+                    "phase": "agent",
+                    "message": f"{call.label or AGENT_LABELS.get(call.agent_key, call.agent_key)}结果返回成功。",
+                    "depends_on": call.depends_on,
+                    "parallel_group": call.parallel_group,
+                }
+    except Exception as exc:
+        trace = [
+            *trace,
+            *[_call_trace(call, "failed", str(exc)) for call in pending.values()],
+        ]
+        result = {
+            **current_state,
+            "error": str(exc),
+            "completed": False,
+            "agent_trace": trace,
+        }
+        yield {
+            "event": "error",
+            "step_id": MAIN_AGENT_KEY,
+            "agent_key": MAIN_AGENT_KEY,
+            "agent": MAIN_AGENT_KEY,
+            "label": MAIN_AGENT_LABEL,
+            "message": str(exc),
+            "state": result,
+        }
+        return
+
+    profile_result = _profile_result(calls, agent_results)
+    completed_profile = _completed_profile(calls, agent_results)
+    if profile_result is not None and completed_profile is None:
+        result = {
+            **current_state,
+            "agent_results": agent_results,
+            "answer": {
+                "user_message": str(profile_result.get("question_md") or profile_result.get("text") or ""),
+                "question_box": profile_result.get("question_box"),
+            },
+            "profile": profile_result,
+            "learning_path": None,
+            "completed": False,
+            "awaiting_profile": True,
+            "agent_trace": trace,
+        }
+        yield {
+            "event": "completed",
+            "step_id": calls[-1].call_id,
+            "agent_key": calls[-1].agent_key,
+            "agent": calls[-1].agent_key,
+            "label": calls[-1].label or AGENT_LABELS.get(calls[-1].agent_key, calls[-1].agent_key),
+            "message": "智能体结果已返回，等待用户补充信息。",
+            "state": result,
+            "answer": result.get("answer", {}),
+            "completed": False,
+        }
+        return
+
+    current_state = {
+        **current_state,
+        "agent_results": agent_results,
+        "profile": completed_profile,
+        "learning_path": _learning_path(calls, agent_results),
+        "awaiting_profile": False,
+        "agent_trace": trace,
+    }
+
+    yield {
+        "event": "agent_started",
+        "step_id": "main_agent_final",
+        "agent_key": MAIN_AGENT_KEY,
+        "agent": MAIN_AGENT_KEY,
+        "label": MAIN_AGENT_LABEL,
+        "phase": "final",
+        "message": "主智能体开始整合智能体结果。",
+    }
+
+    try:
+        raw, final_result = await _call_main_agent(
+            state=current_state,
+            client=main,
+            conversation_ids=conversation_ids,
+            query=FINAL_REPLY_QUERY,
+            inputs={"agent_results": current_state.get("agent_results", {})},
+        )
+    except (DifyAnswerParseError, ValidationError, ValueError) as exc:
+        result = {**current_state, **_error_update(current_state, exc)}
+        yield {
+            "event": "error",
+            "step_id": "main_agent_final",
+            "agent_key": MAIN_AGENT_KEY,
+            "agent": MAIN_AGENT_KEY,
+            "label": MAIN_AGENT_LABEL,
+            "message": result["error"],
+            "state": result,
+        }
+        return
+
+    result = {
+        **current_state,
+        "main_raw": raw,
+        "main_result": final_result.model_dump(),
+        "answer": final_result.response.model_dump(),
+        "completed": True,
+        "error": "",
+        "agent_trace": _append_trace(
+            current_state,
+            _trace_step(
+                step_id="main_agent_final",
+                agent_key=MAIN_AGENT_KEY,
+                label=MAIN_AGENT_LABEL,
+                phase="final",
+                status="completed",
+                message="主智能体已整合智能体结果。",
+            ),
+        ),
+    }
+
+    yield {
+        "event": "agent_completed",
+        "step_id": "main_agent_final",
+        "agent_key": MAIN_AGENT_KEY,
+        "agent": MAIN_AGENT_KEY,
+        "label": MAIN_AGENT_LABEL,
+        "phase": "final",
+        "message": "主智能体已整合智能体结果。",
+    }
 
     yield {
         "event": "completed",
-        "step_id": MAIN_AGENT_KEY,
+        "step_id": "main_agent_final",
         "agent_key": MAIN_AGENT_KEY,
         "agent": MAIN_AGENT_KEY,
         "label": MAIN_AGENT_LABEL,

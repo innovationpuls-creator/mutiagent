@@ -103,6 +103,8 @@ export interface AgentRunStep {
   summary?: string;
   agent?: string | null;
   durationMs?: number;
+  dependsOn?: string[];
+  parallelGroup?: string | null;
 }
 
 export interface ChatMessage {

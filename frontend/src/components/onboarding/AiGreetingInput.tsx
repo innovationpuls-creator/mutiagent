@@ -74,6 +74,13 @@ function getSessionEventDetail(event: SessionAgentEvent): string {
   return event.error ?? event.message ?? event.phase ?? '等待下一步结果';
 }
 
+function getTimelineSummary(event: SessionAgentEvent, fallback: string): string {
+  const details = [fallback];
+  if (event.parallelGroup) details.push(`并行中：${event.parallelGroup}`);
+  if (event.dependsOn && event.dependsOn.length > 0) details.push(`依赖：${event.dependsOn.join('、')}`);
+  return details.join(' · ');
+}
+
 function upsertPanelStep(
   current: AgentStepStatus[],
   nextStep: AgentStepStatus,
@@ -208,8 +215,10 @@ export function AiGreetingInput() {
           kind: 'agent',
           status: 'running',
           title: label,
-          summary: event.message ?? '正在执行...',
+          summary: getTimelineSummary(event, event.message ?? '正在执行...'),
           agent: agent ?? null,
+          dependsOn: event.dependsOn,
+          parallelGroup: event.parallelGroup,
         },
       };
     }
@@ -223,9 +232,11 @@ export function AiGreetingInput() {
           kind: 'agent',
           status: 'success',
           title: label,
-          summary: event.message ?? '完成',
+          summary: getTimelineSummary(event, event.message ?? '完成'),
           agent: agent ?? null,
           durationMs: now - startTime,
+          dependsOn: event.dependsOn,
+          parallelGroup: event.parallelGroup,
         },
       };
     }
@@ -238,9 +249,11 @@ export function AiGreetingInput() {
           kind: 'agent',
           status: 'error',
           title: label,
-          summary: event.error ?? event.message ?? '这一步没有正常完成',
+          summary: getTimelineSummary(event, event.error ?? event.message ?? '这一步没有正常完成'),
           agent: agent ?? null,
           durationMs: 0,
+          dependsOn: event.dependsOn,
+          parallelGroup: event.parallelGroup,
         },
       };
     }

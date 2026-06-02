@@ -63,6 +63,8 @@ export interface SessionAgentEvent {
   error?: string;
   intent?: string;
   routeStatus?: string;
+  dependsOn?: string[];
+  parallelGroup?: string | null;
   sessionId?: string;
   answer?: AgentUserAnswer;
   agentTrace?: AgentTraceStep[];
@@ -173,6 +175,16 @@ function getBoolean(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
 
+function getStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.every((item) => typeof item === 'string') ? value : undefined;
+}
+
+function getNullableString(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  return typeof value === 'string' ? value : undefined;
+}
+
 function getProfile(value: unknown): SessionMessage | null | undefined {
   if (value === null) return null;
   return isUnknownRecord(value) ? (value as unknown as SessionMessage) : undefined;
@@ -215,6 +227,8 @@ function normalizeSessionEvent(event: SessionEventName, payload: UnknownRecord):
     error: getString(payload.error),
     intent: getString(payload.intent),
     routeStatus: getString(payload.route_status),
+    dependsOn: getStringArray(payload.depends_on),
+    parallelGroup: getNullableString(payload.parallel_group),
     sessionId: getString(payload.session_id),
     answer,
     agentTrace,
