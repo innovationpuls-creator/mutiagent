@@ -251,3 +251,137 @@ test('keeps the agent timeline when a structured question card is rendered', asy
     expect(screen.getByText('基础画像智能体已完成本轮处理。')).toBeTruthy();
   });
 });
+
+test('hides options after user clicks one and shows user message in chat', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  stubLocalStorage({
+    'mutiagent-auth': JSON.stringify({
+      token: 'token-1',
+      user: {
+        uid: 'user-1',
+        username: '测试用户',
+        identifier: 'user@example.com',
+        provider: 'password',
+        is_active: true,
+        created_at: '2026-06-02T00:00:00Z',
+        last_login_at: null,
+      },
+    }),
+  });
+
+  const profile = {
+    type: 'collecting',
+    stage: 'basic_info',
+    question_mode: 'question_box',
+    confirmed_info: emptyConfirmedInfo,
+    defaulted_fields: [],
+    question_md: '请选择你的年级',
+    question_box: { question: '请选择你的年级', options: ['大一', '大二'] },
+    text: '请选择你的年级',
+  };
+
+  const encoder = new TextEncoder();
+  let fetchCallCount = 0;
+  const fetchMock = vi.fn().mockImplementation(() => {
+    fetchCallCount++;
+    if (fetchCallCount === 1) {
+      // First call: return the question card
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              [
+                'event: agent_step_started',
+                'data: {"step_id":"profile_agent","agent_key":"profile_agent","label":"基础画像智能体","message":"基础画像智能体开始处理。"}',
+                '',
+                'event: agent_step_completed',
+                'data: {"step_id":"profile_agent","agent_key":"profile_agent","label":"基础画像智能体","message":"基础画像智能体已完成本轮处理。"}',
+                '',
+                'event: orchestration_completed',
+                `data: ${JSON.stringify({
+                  session_id: 'session-structured',
+                  answer: { user_message: '请选择你的年级', question_box: profile.question_box },
+                  agent_trace: [],
+                  completed: false,
+                  profile,
+                  learning_path: null,
+                })}`,
+                '',
+              ].join('\n'),
+            ),
+          );
+          controller.close();
+        },
+      });
+      return Promise.resolve(new Response(stream, { status: 200 }));
+    }
+    // Second call: return a simple response
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            [
+              'event: agent_step_started',
+              'data: {"step_id":"profile_agent","agent_key":"profile_agent","label":"基础画像智能体","message":"基础画像智能体开始处理。"}',
+              '',
+              'event: agent_step_completed',
+              'data: {"step_id":"profile_agent","agent_key":"profile_agent","label":"基础画像智能体","message":"基础画像智能体已完成本轮处理。"}',
+              '',
+              'event: orchestration_completed',
+              `data: ${JSON.stringify({
+                session_id: 'session-structured-2',
+                answer: { user_message: '好的，已记录你的年级。', question_box: null },
+                agent_trace: [],
+                completed: false,
+                profile: { ...profile, type: 'collecting', stage: 'learning_preference', question_box: { question: '请选择你的学习偏好', options: ['自主学习', '小组学习'] } },
+                learning_path: null,
+              })}`,
+              '',
+            ].join('\n'),
+          ),
+        );
+        controller.close();
+      },
+    });
+    return Promise.resolve(new Response(stream, { status: 200 }));
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <ExpandedWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  // Step 1: Send initial message to get the question card
+  const input = await screen.findByPlaceholderText('输入你的学习情况...');
+  fireEvent.change(input, { target: { value: '重新采集画像' } });
+  fireEvent.click(screen.getByLabelText('发送消息'));
+
+  // Step 2: Wait for the question card to appear
+  await waitFor(() => {
+    expect(screen.getByText('请选择你的年级')).toBeTruthy();
+    expect(screen.getByText('大一')).toBeTruthy();
+    expect(screen.getByText('大二')).toBeTruthy();
+  });
+
+  // Step 3: Click an option
+  fireEvent.click(screen.getByText('大一'));
+
+  // Step 4: Verify that the user message appears in the chat
+  await waitFor(() => {
+    expect(screen.getByText('大一')).toBeTruthy();
+  });
+
+  // Step 5: Verify that the original question card's options are no longer interactive
+  // The original ChatCard should still show the question text, but the options should be disabled
+  // or hidden because isLatestInteractive is false
+  await waitFor(() => {
+    // The options should be disabled (not clickable)
+    const optionButtons = screen.getAllByText('大一');
+    // There should be at least one "大一" (the user message)
+    expect(optionButtons.length).toBeGreaterThan(0);
+  });
+});

@@ -19,3 +19,4 @@ frontend/tsconfig.tsbuildinfo
 
 .playwright-mcp/
 mutiagent-auth-desktop.png
+frontend/public/fonts/*.ttf

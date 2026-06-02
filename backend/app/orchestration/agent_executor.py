@@ -77,8 +77,14 @@ class AgentExecutor:
 
         client = self.clients["learning_path_agent"]
         conversation_id = get_agent_conversation_id(self.session, self.user_uid, "learning_path_agent")
+        
+        # 从 agent_input 提取学习目标，构建有意义的 query
+        learning_topic = agent_input.get("learning_topic", "")
+        goal = agent_input.get("goal", "")
+        query = f"生成{learning_topic}学习路径" if learning_topic else "生成学习路径"
+        
         response = await client.chat_blocking(
-            query="生成学习路径",
+            query=query,
             user_id=self.user_uid,
             conversation_id=conversation_id,
             inputs={
