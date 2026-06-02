@@ -189,7 +189,7 @@ export function ChatCard({ message, onSendReply, disabled = false }: ChatCardPro
             </div>
           </section>
 
-          {message.question_mode === 'question_box' ? (
+          {onSendReply && (message.question_mode === 'question_box' ? (
             <div className="options-grid">
               {options.map((option) => (
                 <button
@@ -220,7 +220,7 @@ export function ChatCard({ message, onSendReply, disabled = false }: ChatCardPro
                 +
               </button>
             </div>
-          )}
+          ))}
         </>
       )}
     </CardWrapper>

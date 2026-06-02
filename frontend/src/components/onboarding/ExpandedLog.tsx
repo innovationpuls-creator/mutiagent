@@ -10,6 +10,7 @@ interface ExpandedLogProps {
 
 function formatDuration(ms?: number): string {
   if (typeof ms !== 'number' || Number.isNaN(ms) || ms < 0) return '';
+  if (ms < 10) return `${ms.toFixed(1)}ms`;
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
 }

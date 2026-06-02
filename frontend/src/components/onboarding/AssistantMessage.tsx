@@ -37,12 +37,13 @@ interface AssistantMessageProps {
   message: ChatMessage;
   onSendReply?: (text: string) => void;
   disabled?: boolean;
+  showTimeline?: boolean;
 }
 
-export function AssistantMessage({ message, onSendReply, disabled }: AssistantMessageProps) {
+export function AssistantMessage({ message, onSendReply, disabled, showTimeline = true }: AssistantMessageProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
-      {(message.runTrace && message.runTrace.length > 0) && (
+      {showTimeline && (message.runTrace && message.runTrace.length > 0) && (
         <AgentRunTimeline
           steps={message.runTrace}
           status={message.status}
@@ -69,7 +70,7 @@ export function AssistantMessage({ message, onSendReply, disabled }: AssistantMe
         <StreamingText content={message.content} status={message.status} />
       ) : null}
 
-      {message.agentAnswer?.questionBox && (
+      {message.agentAnswer?.questionBox && onSendReply && (
         <QuestionBoxPanel>
           <p>{message.agentAnswer.questionBox.question}</p>
           <div>

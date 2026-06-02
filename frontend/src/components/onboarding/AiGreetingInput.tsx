@@ -48,6 +48,17 @@ const DEFAULT_AGENT_STEPS: AgentStepStatus[] = [
   { id: 'update', title: '更新画像 / 生成问题', status: 'pending', detail: '等待智能体返回内容', agentType: 'write' },
 ];
 
+const MIN_VISIBLE_DURATION_MS = 0.1;
+
+function getTimelineNow(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+function getVisibleDuration(startTime: number, endTime: number): number {
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) return MIN_VISIBLE_DURATION_MS;
+  return Math.max(endTime - startTime, MIN_VISIBLE_DURATION_MS);
+}
+
 function statusLabel(status: 'pending' | 'running' | 'completed' | 'routed' | 'error'): string {
   const map: Record<string, string> = { running: '运行中', completed: '已完成', routed: '已转交', error: '异常', pending: '等待中' };
   return map[status] || '待命';
@@ -146,6 +157,25 @@ function currentProgressLabel(steps: AgentStepStatus[]): string {
   return '等待你输入学习线索';
 }
 
+interface AssistantMessageFrameProps {
+  message: ChatMessage;
+  children: React.ReactNode;
+}
+
+function AssistantMessageFrame({ message, children }: AssistantMessageFrameProps) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
+      {(message.runTrace && message.runTrace.length > 0) && (
+        <AgentRunTimeline
+          steps={message.runTrace}
+          status={message.status}
+        />
+      )}
+      {children}
+    </div>
+  );
+}
+
 export function AiGreetingInput() {
   const { widgetState, setWidgetState } = useAiWidget();
   const { token } = useAuth();
@@ -159,6 +189,8 @@ export function AiGreetingInput() {
 
   const runIdRef = useRef(0);
   const startTimeRef = useRef<Record<string, number>>({});
+  const runStartTimeRef = useRef(0);
+  const lastEventTimeRef = useRef(0);
   const executionIdRef = useRef<string | null>(null);
   const isCompletedRef = useRef(false);
 
@@ -225,7 +257,7 @@ export function AiGreetingInput() {
 
     if (event.event === 'agent_step_completed') {
       const stepId = getSessionEventStepId(event);
-      const startTime = startTimeRef.current[stepId] ?? now;
+      const startTime = startTimeRef.current[stepId] ?? (lastEventTimeRef.current || runStartTimeRef.current || now);
       return {
         step: {
           stepId,
@@ -234,7 +266,7 @@ export function AiGreetingInput() {
           title: label,
           summary: getTimelineSummary(event, event.message ?? '完成'),
           agent: agent ?? null,
-          durationMs: now - startTime,
+          durationMs: getVisibleDuration(startTime, now),
           dependsOn: event.dependsOn,
           parallelGroup: event.parallelGroup,
         },
@@ -243,6 +275,7 @@ export function AiGreetingInput() {
 
     if (event.event === 'agent_step_failed' || event.event === 'orchestration_failed') {
       const stepId = getSessionEventStepId(event);
+      const startTime = startTimeRef.current[stepId] ?? (lastEventTimeRef.current || runStartTimeRef.current || now);
       return {
         step: {
           stepId,
@@ -251,7 +284,7 @@ export function AiGreetingInput() {
           title: label,
           summary: getTimelineSummary(event, event.error ?? event.message ?? '这一步没有正常完成'),
           agent: agent ?? null,
-          durationMs: 0,
+          durationMs: getVisibleDuration(startTime, now),
           dependsOn: event.dependsOn,
           parallelGroup: event.parallelGroup,
         },
@@ -259,6 +292,7 @@ export function AiGreetingInput() {
     }
 
     if (event.event === 'orchestration_completed') {
+      const startTime = lastEventTimeRef.current || runStartTimeRef.current || now;
       return {
         step: {
           stepId: `step-answer-${event.sessionId ?? now}`,
@@ -267,7 +301,7 @@ export function AiGreetingInput() {
           title: '生成回复',
           summary: event.message ?? '本轮内容已生成',
           agent: agent ?? null,
-          durationMs: 0,
+          durationMs: getVisibleDuration(startTime, now),
         },
       };
     }
@@ -299,6 +333,9 @@ export function AiGreetingInput() {
       const runId = runIdRef.current + 1;
       runIdRef.current = runId;
       startTimeRef.current = {};
+      const runStartedAt = getTimelineNow();
+      runStartTimeRef.current = runStartedAt;
+      lastEventTimeRef.current = runStartedAt;
 
       try {
         let finalSessionId: string | undefined;
@@ -312,7 +349,7 @@ export function AiGreetingInput() {
             setAgentSteps((current) => mergeSessionAgentStep(current, event));
             setAgentEvents((current) => [...current, event]);
 
-            const now = Date.now();
+            const now = getTimelineNow();
 
             if (
               event.event === 'agent_step_started'
@@ -328,6 +365,7 @@ export function AiGreetingInput() {
               if (step) {
                 dispatch({ type: 'STEP', step });
               }
+              lastEventTimeRef.current = now;
             }
 
             if (event.event === 'orchestration_completed') {
@@ -404,7 +442,7 @@ export function AiGreetingInput() {
     void sendMessage(inputValue);
   };
 
-  function renderMessage(message: ChatMessage) {
+  function renderMessage(message: ChatMessage, isLatestInteractive: boolean) {
     if (message.role === 'user') {
       return <MessageBubble key={message.id} content={message.content} />;
     }
@@ -414,28 +452,33 @@ export function AiGreetingInput() {
     }
 
     if (message.role === 'assistant') {
-      if (message.learningPath) {
-        return <LearningPathCard key={message.id} path={message.learningPath} />;
-      }
+      let assistantContent: React.ReactNode;
 
-      if (message.sessionMessage && isStructuredMessage(message.sessionMessage)) {
-        return (
+      if (message.learningPath) {
+        assistantContent = <LearningPathCard path={message.learningPath} />;
+      } else if (message.sessionMessage && isStructuredMessage(message.sessionMessage)) {
+        assistantContent = (
           <ChatCard
-            key={message.id}
             message={message.sessionMessage}
-            onSendReply={sendMessage}
-            disabled={isPending}
+            onSendReply={isLatestInteractive ? sendMessage : undefined}
+            disabled={!isLatestInteractive || isPending}
+          />
+        );
+      } else {
+        assistantContent = (
+          <AssistantMessage
+            message={message}
+            onSendReply={isLatestInteractive ? sendMessage : undefined}
+            disabled={!isLatestInteractive || isPending}
+            showTimeline={false}
           />
         );
       }
 
       return (
-        <AssistantMessage
-          key={message.id}
-          message={message}
-          onSendReply={sendMessage}
-          disabled={isPending}
-        />
+        <AssistantMessageFrame key={message.id} message={message}>
+          {assistantContent}
+        </AssistantMessageFrame>
       );
     }
 
@@ -511,7 +554,12 @@ export function AiGreetingInput() {
                     </div>
                   )}
 
-                  {store.messages.map(renderMessage)}
+                  {store.messages.map((message, index) => {
+                    const hasSubsequentUserMessage = store.messages
+                      .slice(index + 1)
+                      .some((m) => m.role === 'user');
+                    return renderMessage(message, !hasSubsequentUserMessage);
+                  })}
                 </div>
 
                 <form

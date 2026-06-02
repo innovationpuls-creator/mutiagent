@@ -16,25 +16,42 @@ interface AgentRunTimelineProps {
 export function AgentRunTimeline({ steps = [], status }: AgentRunTimelineProps) {
   const [expanded, setExpanded] = useState(false);
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const manualExpandedRef = useRef(false);
 
   useEffect(() => {
     if (status === 'streaming' || status === 'pending') {
+      manualExpandedRef.current = false;
+      if (collapseTimerRef.current) {
+        clearTimeout(collapseTimerRef.current);
+        collapseTimerRef.current = null;
+      }
       setExpanded(true);
     }
   }, [status]);
 
   useEffect(() => {
-    if (status === 'completed' && expanded) {
+    if (status === 'completed' && expanded && !manualExpandedRef.current) {
       collapseTimerRef.current = setTimeout(() => {
         setExpanded(false);
+        collapseTimerRef.current = null;
       }, COLLAPSE_DELAY_MS);
     }
     return () => {
       if (collapseTimerRef.current) {
         clearTimeout(collapseTimerRef.current);
+        collapseTimerRef.current = null;
       }
     };
   }, [status, expanded]);
+
+  const handleManualExpand = () => {
+    manualExpandedRef.current = true;
+    if (collapseTimerRef.current) {
+      clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = null;
+    }
+    setExpanded(true);
+  };
 
   const agent = useMemo(
     () => [...steps].reverse().find((s) => s.agent)?.agent || 'Agent',
@@ -105,7 +122,7 @@ export function AgentRunTimeline({ steps = [], status }: AgentRunTimelineProps) 
               runStatus={runStatus}
               stepCount={stepCount}
               duration={durationText}
-              onClick={() => setExpanded(true)}
+              onClick={handleManualExpand}
             />
           </motion.div>
         )}
