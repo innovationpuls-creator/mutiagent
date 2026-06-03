@@ -22,23 +22,6 @@ from app.schemas import (
 SessionDependency = Callable[[], Generator[Session, None, None]]
 
 
-def _initial_state(query: str, user_id: str, session_id: str) -> OrchestrationState:
-    return OrchestrationState(
-        query=query,
-        user_id=user_id,
-        session_id=session_id,
-        messages=[],
-        profile=None,
-        learning_path=None,
-        course_knowledge=None,
-        response="",
-        answer=None,
-        question_box=None,
-        profile_completed=None,
-        error=None,
-    )
-
-
 def _completed_user_profile(session: Session, user_uid: str) -> dict:
     profile = session.get(UserProfile, user_uid)
     if profile is None:
@@ -119,15 +102,27 @@ def _prepare_state(
     execution: ExecutionState,
     session: Session,
     current_user: User,
-) -> OrchestrationState:
-    """Build the initial OrchestrationState for a turn — shared by all 4 endpoints."""
+) -> dict:
+    """Build the initial OrchestrationState update for a turn — shared by all 4 endpoints."""
     from langchain_core.messages import HumanMessage
 
     user_profile = _completed_user_profile(session, current_user.uid)
-    state = _initial_state(payload_query, current_user.uid, execution.execution_id)
-    state["messages"] = [HumanMessage(content=payload_query)]
+    
+    state = {
+        "query": payload_query,
+        "user_id": current_user.uid,
+        "session_id": execution.execution_id,
+        "messages": [HumanMessage(content=payload_query)],
+        "response": "",
+        "answer": None,
+        "question_box": None,
+        "profile_completed": None,
+        "error": None,
+    }
+    
     if user_profile:
         state["profile"] = user_profile
+        
     return state
 
 

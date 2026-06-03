@@ -32,6 +32,7 @@ def _build(timeout: int, max_retries: int = 1) -> ChatOpenAI:
         timeout=timeout,
         max_retries=max_retries,
         streaming=True,
+        model_kwargs={"extra_body": {"enable_thinking": False}},
     )
 
 

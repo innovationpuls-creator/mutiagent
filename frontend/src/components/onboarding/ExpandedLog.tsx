@@ -99,7 +99,7 @@ export function ExpandedLog({ steps }: ExpandedLogProps) {
             {step.summary && (
               <div className="summary">{step.summary}</div>
             )}
-            {step.thoughtLog && step.thoughtLog.length > 0 && (
+            {step.status === 'running' && step.thoughtLog && step.thoughtLog.length > 0 && (
               <ThoughtStream entries={step.thoughtLog} />
             )}
           </StepRow>

@@ -73,6 +73,12 @@ def create_supervisor_node(llm: BaseChatModel):
         system_message = SystemMessage(content=SUPERVISOR_SYSTEM_PROMPT)
         full_messages = [system_message] + messages
 
+        profile = state.get("profile", {})
+        if profile and profile.get("type") == "collecting":
+            full_messages.append(
+                SystemMessage(content="[系统级强制指令] 当前正处于 profile_agent 的信息收集中。无论用户刚才说了什么（哪怕只是几个字的选项或毫无上下文的简短回答），你都**必须**调用 profile_agent，将用户的最新回答通过 query 参数传给它。千万不要自己直接回答用户。")
+            )
+
         try:
             response: AIMessage = await llm_with_tools.ainvoke(full_messages)
         except Exception as exc:

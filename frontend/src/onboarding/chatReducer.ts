@@ -130,6 +130,15 @@ export function chatReducer(state: ChatStore, action: ChatAction): ChatStore {
               ...trace[stepIdx],
               thoughtLog: [...existingLog, entry],
             };
+          } else {
+            trace.push({
+              stepId: action.stepId,
+              kind: 'thought',
+              status: 'running',
+              title: '主智能体思考',
+              summary: action.text.slice(0, 50),
+              thoughtLog: [entry],
+            });
           }
           return { ...msg, runTrace: trace };
         }),

@@ -316,9 +316,10 @@ export function AiGreetingInput() {
 
     if (event.event === 'tool_call_started') {
       const stepId = event.stepId ?? getSessionEventStepId(event);
+      const toolStepId = `tool-${event.toolName ?? stepId}`;
       return {
         step: {
-          stepId: `tool-${event.toolName ?? stepId}-${now}`,
+          stepId: toolStepId,
           kind: 'tool_call' as AgentRunStepKind,
           status: 'running',
           title: event.label ?? `调用 ${event.toolName ?? '工具'}`,
@@ -330,10 +331,11 @@ export function AiGreetingInput() {
 
     if (event.event === 'tool_call_completed') {
       const stepId = event.stepId ?? getSessionEventStepId(event);
+      const toolStepId = `tool-${event.toolName ?? stepId}`;
       const startTime = lastEventTimeRef.current || runStartTimeRef.current || now;
       return {
         step: {
-          stepId: `tool-${event.toolName ?? stepId}-${now}`,
+          stepId: toolStepId,
           kind: 'tool_call' as AgentRunStepKind,
           status: 'success',
           title: event.label ?? `${event.toolName ?? '工具'} 完成`,
