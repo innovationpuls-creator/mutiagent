@@ -31,6 +31,7 @@ def _build(timeout: int, max_retries: int = 1) -> ChatOpenAI:
         temperature=0.7,
         timeout=timeout,
         max_retries=max_retries,
+        streaming=True,
     )
 
 
