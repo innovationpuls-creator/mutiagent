@@ -5,84 +5,47 @@ import logging
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate
 
-from app.orchestration.agents.models import ProfileAgentOutput
+from app.orchestration.agents.models import ProfileOutput
 from app.orchestration.agents.prompts import PROFILE_AGENT_SYSTEM_PROMPT
-from app.orchestration.agents.utils import extract_last_tool_call_id, parse_json_response
+from app.orchestration.agents.utils import extract_last_tool_call_args, extract_last_tool_call_id
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
 
-PROFILE_AGENT_PROMPT = PROFILE_AGENT_SYSTEM_PROMPT + """
 
-## 输出 JSON Schema（必须严格遵循此格式）
-最终回复必须是合法 JSON，不要包含 markdown 代码块标记，直接输出纯 JSON。输出结构示例：
+async def run_profile_agent(state: OrchestrationState, llm: BaseChatModel) -> dict:
+    """One-shot profile generation: receives conversation summary, outputs structured profile."""
+    tool_args = extract_last_tool_call_args(state)
+    conversation_summary = tool_args.get("conversation_summary", state["query"])
 
-```
-类型字段 type: "collecting" 或 "basic_profile"
-阶段字段 stage: "basic_info"、"learning_preference"、"ability_basis"、"goal_constraint" 或 "generated"
-问题模式 question_mode: "question_md"、"question_box" 或 "none"
-已确认信息 confirmed_info: 对象，包含 current_grade、major、learning_stage、has_clear_goal、learning_method_preference、learning_pace_preference、content_preference(数组)、need_guidance、knowledge_foundation、strengths、weaknesses、experience、short_term_goal、long_term_goal、weekly_available_time、constraints 字段
-系统补全 defaulted_fields: 字符串数组
-问题文本 question_md: 字符串
-选项框 question_box: 对象，包含 question(字符串) 和 options(数组，每项含 label、value、description、target_fields、fills 字段)
-对话文本 text: 字符串
-```
-
-示例输出：
-```
-{{"type": "collecting", "stage": "basic_info", "question_mode": "question_box", "confirmed_info": {{"current_grade": "", "major": "", ...}}, "defaulted_fields": [], "question_md": "", "question_box": {{"question": "你是大几的？", "options": [{{"label": "大一", "value": "大一", "description": "", "target_fields": ["current_grade"], "fills": {{"current_grade": "大一"}}}}]}}, "text": "请告诉我你的基本信息。"}}
-```"""
-
-
-def _build_profile_chain(llm: BaseChatModel):
+    structured_llm = llm.with_structured_output(ProfileOutput)
     prompt = ChatPromptTemplate.from_messages([
-        ("system", PROFILE_AGENT_PROMPT),
-        MessagesPlaceholder("history"),
-        ("human", "{query}"),
+        ("system", PROFILE_AGENT_SYSTEM_PROMPT),
+        ("human", "{summary}"),
     ])
-    return prompt | llm
-
-
-async def run_profile_agent(
-    state: OrchestrationState,
-    llm: BaseChatModel,
-) -> dict:
-    chain = _build_profile_chain(llm)
-    messages = [
-        m for m in state.get("messages", [])
-        if not (hasattr(m, "content") and m.content == "" and hasattr(m, "tool_calls") and m.tool_calls)
-    ]
-    chain_input = {"query": state["query"], "history": messages}
+    chain = prompt | structured_llm
 
     try:
-        response = await chain.ainvoke(chain_input)
-        parsed = parse_json_response(response.content)
-        result = ProfileAgentOutput.model_validate(parsed)
+        result: ProfileOutput = await chain.ainvoke({"summary": conversation_summary})
     except Exception as exc:
-        logger.warning("ProfileAgent failed: %s", exc)
-        return {"error": str(exc)}
+        logger.warning("ProfileAgent structured output failed: %s", exc)
+        return {"error": f"画像生成失败：{str(exc)[:200]}"}
 
     profile_dict = result.model_dump()
-    is_completed = result.type == "basic_profile" and result.stage == "generated"
 
-    if is_completed:
-        from sqlmodel import Session
-        from app.database import get_engine
-        from app.services.profile_service import upsert_user_profile
+    from sqlmodel import Session
+    from app.database import get_engine
+    from app.services.profile_service import upsert_user_profile
+    try:
         with Session(get_engine()) as db_session:
             upsert_user_profile(db_session, state["user_id"], profile_dict)
+        logger.info("Profile persisted for user %s", state["user_id"])
+    except Exception as exc:
+        logger.error("Failed to persist profile for user %s: %s", state["user_id"], exc)
 
-    user_answer = {
-        "user_message": result.question_md or result.text or "",
-        "question_box": {
-            "question": result.question_box.question,
-            "options": [opt.model_dump() for opt in result.question_box.options],
-        } if result.question_box.question else None,
-    }
-
-    return {"profile": profile_dict, "answer": user_answer, "profile_completed": is_completed}
+    return {"profile": profile_dict}
 
 
 def create_profile_agent_node(llm: BaseChatModel):
@@ -95,11 +58,11 @@ def create_profile_agent_node(llm: BaseChatModel):
             tool_call_id=tool_call_id or "unknown",
         )
 
-        return {
-            "profile": agent_result.get("profile"),
-            "answer": agent_result.get("answer"),
-            "profile_completed": agent_result.get("profile_completed", False),
-            "messages": [tool_message],
-        }
+        result = {"messages": [tool_message]}
+        if agent_result.get("profile") is not None:
+            result["profile"] = agent_result["profile"]
+        if agent_result.get("error") is not None:
+            result["response"] = agent_result["error"]
+        return result
 
     return profile_agent_node

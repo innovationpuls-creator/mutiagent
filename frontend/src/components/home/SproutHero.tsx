@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchProfileDashboard } from '../../api/profile';
 import type { ProfileDashboardData } from '../../types/profile';
 import { ProfileCard } from './ProfileCard';
 import { TodayLearningCard } from './TodayLearningCard';
 import { RecommendationCard } from './RecommendationCard';
+import { ProfileDetailOverlay } from './ProfileDetailOverlay';
 import { motionTokens } from '../../styles/motion-tokens';
 import './SproutHero.css';
 
@@ -43,6 +44,7 @@ export function SproutHero() {
   const reduceMotion = useReducedMotion();
   const [data, setData] = useState<ProfileDashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isOverlayOpen, setIsOverlayOpen] = useState(false);
 
   const username = auth.user?.username ?? '同学';
 
@@ -154,6 +156,7 @@ export function SproutHero() {
           profile={data.profile}
           completeness={data.profileCompleteness}
           summaryText={data.profileSummaryText}
+          onClick={() => setIsOverlayOpen(true)}
         />
         <TodayLearningCard data={data.todayLearning} />
       </div>
@@ -164,6 +167,16 @@ export function SproutHero() {
           <RecommendationCard key={rec.id} data={rec} index={i} />
         ))}
       </div>
+
+      <AnimatePresence>
+        {isOverlayOpen && (
+          <ProfileDetailOverlay
+            isOpen={isOverlayOpen}
+            onClose={() => setIsOverlayOpen(false)}
+            profile={data.profile}
+          />
+        )}
+      </AnimatePresence>
     </section>
   );
 }

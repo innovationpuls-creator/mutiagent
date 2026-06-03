@@ -5,7 +5,7 @@ from pathlib import Path
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.models import User
-from app.services.learning_path_service import get_user_learning_path, upsert_user_learning_path
+from app.services.learning_path_service import get_year_learning_path, upsert_year_learning_path
 
 
 def build_session(tmp_path: Path) -> Session:
@@ -20,15 +20,15 @@ def build_session(tmp_path: Path) -> Session:
     return session
 
 
-def test_upsert_user_learning_path_saves_latest_path_data(tmp_path: Path) -> None:
+def test_upsert_year_learning_path_saves_latest_path_data(tmp_path: Path) -> None:
     session = build_session(tmp_path)
-    first = {"learning_goal": {"target_course_or_skill": "Python"}}
-    second = {"learning_goal": {"target_course_or_skill": "数据结构"}}
+    first = {"grade_year": "year_1", "courses": []}
+    second = {"grade_year": "year_1", "courses": [{"course_id": "year_1_course_1", "course_name": "Python"}]}
 
-    upsert_user_learning_path(session, "user-1", first)
-    saved = upsert_user_learning_path(session, "user-1", second)
-    loaded = get_user_learning_path(session, "user-1")
+    upsert_year_learning_path(session, "user-1", "year_1", "Python", first)
+    saved = upsert_year_learning_path(session, "user-1", "year_1", "Python进阶", second)
+    loaded = get_year_learning_path(session, "user-1", "year_1")
 
     assert saved.path_data == second
     assert loaded is not None
-    assert loaded.path_data["learning_goal"]["target_course_or_skill"] == "数据结构"
+    assert loaded["courses"][0]["course_name"] == "Python"

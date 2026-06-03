@@ -1,1 +1,1 @@
-"""Backend service layer."""
+"""Service layer: domain logic and database operations."""

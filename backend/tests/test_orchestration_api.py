@@ -9,178 +9,84 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 
 
-def make_client(tmp_path: Path) -> TestClient:
-    database_url = f"sqlite:///{tmp_path / 'orchestration-test.db'}"
-    return TestClient(create_app(database_url=database_url))
+def _auth_header(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
 
 
-def register(client: TestClient, identifier: str) -> tuple[str, str]:
-    response = client.post(
-        "/api/auth/register",
-        json={
-            "username": "编排用户",
-            "identifier": identifier,
-            "password": "test-password-123",
-            "confirm_password": "test-password-123",
-        },
-    )
-    body = response.json()
-    return body["access_token"], body["user"]["uid"]
-
-
-class MockGraph:
-    def __init__(self, response_template: str = "回复：{query}", extra_state: dict | None = None) -> None:
-        self.response_template = response_template
-        self.extra_state = extra_state or {}
-
-    async def ainvoke(self, state: dict, config: dict) -> dict:
-        return {
-            **state,
-            "response": self.response_template.format(query=state.get("query", "")),
-            "agent_trace": [],
-            "error": None,
-            **self.extra_state,
-        }
-
-    async def astream_events(self, state: dict, config: dict, version: str = "v2"):
-        output = {
-            **state,
-            "response": self.response_template.format(query=state.get("query", "")),
-            "agent_trace": [],
-            "error": None,
-            **self.extra_state,
-        }
-        yield {
-            "event": "on_chain_end",
-            "name": "LangGraph",
-            "data": {"output": output},
-        }
+def _register_user(client: TestClient, identifier: str, password: str) -> str:
+    """Register a user and return the JWT token."""
+    resp = client.post("/api/auth/register", json={
+        "username": "测试用户",
+        "identifier": identifier,
+        "password": password,
+        "confirm_password": password,
+    })
+    assert resp.status_code == 201, resp.text
+    return resp.json()["access_token"]
 
 
 @contextmanager
-def _mock_create_graph(graph: MockGraph | None = None):
-    g = graph or MockGraph()
-    with patch("app.api.orchestration.get_orchestration_graph", return_value=g), \
-         patch("app.orchestration.graph.get_orchestration_graph", return_value=g):
-        yield g
+def chat_app(tmp_path: Path):
+    database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+    app = create_app(database_url=database_url)
+    with TestClient(app) as client:
+        yield client
 
 
-def test_start_session_returns_response(tmp_path: Path) -> None:
-    with _mock_create_graph():
-        client = make_client(tmp_path)
-        token, _ = register(client, "start-session@example.com")
+class TestChatEndpoints:
+    def test_start_chat_returns_session(self, tmp_path: Path) -> None:
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, "chatuser@example.com", "chat123456")
 
-        response = client.post(
-            "/api/orchestration/sessions/start",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"query": "你好"},
-        )
+            response = client.post(
+                "/api/chat/start",
+                json={"query": "你好"},
+                headers=_auth_header(token),
+            )
 
-        assert response.status_code == 200
-        body = response.json()
-        assert body["answer"]["user_message"] == "回复：你好"
-        assert body["completed"] is True
-        assert "session_id" in body
+            assert response.status_code == 200
+            data = response.json()
+            assert "session_id" in data
+            assert len(data["session_id"]) > 0
 
+    def test_start_chat_requires_auth(self, tmp_path: Path) -> None:
+        with chat_app(tmp_path) as client:
+            response = client.post("/api/chat/start", json={"query": "你好"})
+            assert response.status_code == 401
 
-def test_start_session_stream_returns_sse(tmp_path: Path) -> None:
-    with _mock_create_graph():
-        client = make_client(tmp_path)
-        token, _ = register(client, "stream-session@example.com")
+    def test_get_session_404_for_nonexistent(self, tmp_path: Path) -> None:
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, "sessionuser@example.com", "session123")
+            response = client.get(
+                "/api/chat/sessions/nonexistent-id",
+                headers=_auth_header(token),
+            )
+            assert response.status_code == 404
 
-        response = client.post(
-            "/api/orchestration/sessions/start/stream",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"query": "你好"},
-        )
+    @patch("app.api.orchestration.stream_orchestration_events")
+    def test_send_message_streams_sse(self, mock_stream, tmp_path: Path) -> None:
+        async def mock_events(state):
+            yield {"event": "session_started", "session_id": state["session_id"]}
+            yield {"event": "supervisor_thinking", "message": "thinking"}
+            yield {"event": "session_completed", "session_id": state["session_id"]}
 
-        assert response.status_code == 200
-        assert "orchestration_completed" in response.text
+        mock_stream.side_effect = mock_events
 
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, "sseuser@example.com", "sse123456")
+            start_resp = client.post(
+                "/api/chat/start",
+                json={"query": "开始"},
+                headers=_auth_header(token),
+            )
+            session_id = start_resp.json()["session_id"]
 
-def test_continue_session_uses_session_id(tmp_path: Path) -> None:
-    with _mock_create_graph():
-        client = make_client(tmp_path)
-        token, _ = register(client, "continue-session@example.com")
+            response = client.post(
+                "/api/chat/message",
+                json={"session_id": session_id, "message": "我想学Python"},
+                headers=_auth_header(token),
+            )
 
-        start_response = client.post(
-            "/api/orchestration/sessions/start",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"query": "第一次"},
-        )
-        session_id = start_response.json()["session_id"]
-
-        continue_response = client.post(
-            "/api/orchestration/sessions/continue",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"session_id": session_id, "query": "继续"},
-        )
-
-        assert continue_response.status_code == 200
-        assert continue_response.json()["answer"]["user_message"] == "回复：继续"
-
-
-def test_continue_session_rejects_wrong_user(tmp_path: Path) -> None:
-    with _mock_create_graph():
-        client = make_client(tmp_path)
-        token_a, _ = register(client, "user-a@example.com")
-
-        start_response = client.post(
-            "/api/orchestration/sessions/start",
-            headers={"Authorization": f"Bearer {token_a}"},
-            json={"query": "用户A的会话"},
-        )
-        session_id = start_response.json()["session_id"]
-
-        token_b, _ = register(client, "user-b@example.com")
-
-        continue_response = client.post(
-            "/api/orchestration/sessions/continue",
-            headers={"Authorization": f"Bearer {token_b}"},
-            json={"session_id": session_id, "query": "用户B尝试继续"},
-        )
-
-        assert continue_response.status_code == 404
-        assert continue_response.json()["detail"] == "对话不存在"
-
-
-def test_start_session_requires_auth(tmp_path: Path) -> None:
-    with _mock_create_graph():
-        client = make_client(tmp_path)
-
-        response = client.post(
-            "/api/orchestration/sessions/start",
-            json={"query": "你好"},
-        )
-
-        assert response.status_code == 401
-
-
-def test_session_response_includes_profile_when_present(tmp_path: Path) -> None:
-    profile_data = {"type": "basic_profile", "stage": "generated", "text": "用户画像"}
-    with _mock_create_graph(MockGraph(extra_state={"profile": profile_data})):
-        client = make_client(tmp_path)
-        token, _ = register(client, "profile-response@example.com")
-
-        response = client.post(
-            "/api/orchestration/sessions/start",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"query": "你好"},
-        )
-
-        assert response.status_code == 200
-        assert response.json()["profile"] == profile_data
-
-
-def test_session_response_handles_error(tmp_path: Path) -> None:
-    with _mock_create_graph(MockGraph(extra_state={"error": "服务异常，请稍后重试"})):
-        client = make_client(tmp_path)
-        token, _ = register(client, "error-response@example.com")
-
-        response = client.post(
-            "/api/orchestration/sessions/start",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"query": "你好"},
-        )
-
-        assert response.status_code == 500
+            assert response.status_code == 200
+            assert "session_started" in response.text
+            assert "session_completed" in response.text

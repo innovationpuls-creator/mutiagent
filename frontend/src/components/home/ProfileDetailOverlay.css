@@ -1,0 +1,240 @@
+/* ==========================================================
+   ProfileDetailOverlay — 居中悬浮展开的二级详情界面
+   ========================================================== */
+
+.overlay-portal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 100; /* 高于仪表板，但如果 Navbar 极高，则让 Navbar 浮于上方 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px 24px 24px; /* 顶部留出 80px 的空间，确保与任何可能的导航栏保持安全距离 */
+}
+
+.overlay-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: oklch(91% 0.06 68 / 0.15); /* 极其微弱的暖色遮罩 */
+  backdrop-filter: blur(12px); /* 纯粹用毛玻璃弱化背景，而非用黑色变暗 */
+}
+
+.overlay-content {
+  position: relative;
+  width: 100%;
+  max-width: 960px; /* 居中卡片的最大宽度 */
+  height: 100%;
+  max-height: 85vh; /* 避免触及屏幕上下边缘 */
+  background: var(--color-surface-elevated, oklch(98% 0.004 80 / 0.72)); /* 完美继承原卡片的颜色 */
+  backdrop-filter: var(--glass-pebble-blur); /* 完美继承原卡片的毛玻璃质感 */
+  border: 1px solid var(--color-border-subtle, oklch(78% 0.012 80 / 0.55)); /* 原卡片的柔和边框 */
+  border-radius: var(--radius-2xl, 32px); /* 展开后变成大圆角 */
+  box-shadow: var(--shadow-xl, 0 32px 64px rgba(0,0,0,0.15));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-32) var(--space-40);
+  z-index: 2;
+}
+
+.overlay-title {
+  font-family: var(--font-heading);
+  font-size: var(--text-h3);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.overlay-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: var(--space-8);
+  margin-inline-end: calc(-1 * var(--space-8));
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--duration-fast) ease;
+}
+
+.overlay-close-btn:hover {
+  background-color: var(--color-hover-wash, oklch(99% 0.01 80 / 0.68));
+  color: var(--color-text-primary);
+}
+
+.overlay-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  justify-content: center; /* 居中内容区域 */
+}
+
+.overlay-body {
+  width: 100%;
+  max-width: 800px; /* 内容最大宽度 */
+  padding: var(--space-16) var(--space-40) var(--space-80);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-64);
+}
+
+.overlay-intro {
+  display: flex;
+  align-items: center;
+  gap: var(--space-32);
+}
+
+.overlay-sphere {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 35%,
+    oklch(95% 0.05 75),
+    oklch(82% 0.10 60),
+    oklch(72% 0.12 50)
+  );
+  box-shadow:
+    0 0 60px oklch(82% 0.10 60 / 0.3),
+    inset -15px -15px 30px oklch(65% 0.14 45 / 0.15);
+  animation: sphere-breathe var(--duration-breathe) var(--ease-breathe) infinite alternate;
+  flex-shrink: 0;
+}
+
+.intro-text h3 {
+  font-family: var(--font-heading);
+  font-size: var(--text-h2);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-8) 0;
+}
+
+.intro-text p {
+  font-family: var(--font-heading);
+  font-size: var(--text-h2);
+  font-weight: var(--font-weight-light);
+  color: oklch(70% 0.13 50);
+  font-style: italic;
+  margin: 0;
+}
+
+/* 各分区块样式 */
+.overlay-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-32);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.section-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-lavender { background-color: var(--color-accent-lavender, oklch(75% 0.07 292)); }
+.dot-sage { background-color: var(--color-accent-sage, oklch(75% 0.09 135)); }
+.dot-peach { background-color: var(--color-accent-peach, oklch(84% 0.08 58)); }
+
+.section-title {
+  font-family: var(--font-heading);
+  font-size: var(--text-h3);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.section-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-32) var(--space-48);
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.field-group.full-width {
+  grid-column: 1 / -1;
+}
+
+.field-label {
+  font-size: var(--text-body-sm);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-regular);
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.field-value {
+  font-size: var(--text-body);
+  color: var(--color-text-primary);
+  margin: 0;
+  line-height: 1.7;
+  text-wrap: pretty;
+}
+
+.overlay-placeholder {
+  color: var(--color-text-muted, oklch(58% 0.025 235));
+  font-style: italic;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .overlay-portal {
+    padding: 60px 16px 16px 16px;
+  }
+  
+  .overlay-content {
+    max-height: 90vh;
+  }
+  
+  .overlay-header {
+    padding: var(--space-24);
+  }
+  
+  .overlay-body {
+    padding: var(--space-16) var(--space-24) var(--space-48);
+    gap: var(--space-48);
+  }
+  
+  .section-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-24);
+  }
+
+  .overlay-intro {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-24);
+  }
+
+  .overlay-sphere {
+    width: 80px;
+    height: 80px;
+  }
+}

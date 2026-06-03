@@ -7,107 +7,109 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 
-from app.orchestration.agent_plan import CourseKnowledgeOutlineResult
+from app.orchestration.agents.models import CourseKnowledgeOutput
 from app.orchestration.agents.prompts import COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
-from app.orchestration.agents.utils import extract_last_tool_call_id, parse_json_response
+from app.orchestration.agents.utils import extract_last_tool_call_args, extract_last_tool_call_id
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
 
-COURSE_KNOWLEDGE_PROMPT = COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT + """
 
-## 输出格式
-你必须输出一个合法的 JSON 对象，不要包含 markdown 代码块标记。输出结构必须包含：
+def _resolve_next_course(year_learning_paths: dict, course_knowledge: dict | None) -> tuple[str | None, dict | None]:
+    """Find the next course without an outline across all years."""
+    if not year_learning_paths:
+        return None, None
 
-- schema_version: 字符串 "course_knowledge_outline.v1"
-- course_node_id: 字符串
-- course_name: 字符串
-- grade_id: 字符串 "year_1"到"year_4"
-- personalization_summary: 字符串
-- sections: 数组 每项含 section_id(格式如 "1"/"1.1"/"1.1.1" 数字点分), parent_section_id(字符串或null), depth(整数1-4), title(字符串), order_index(整数)
-- learning_sequence: 字符串数组 section_id 的顺序列表
-- markmap_source: 字符串 思维导图文本
-
-示例输出格式:
-{{"schema_version": "course_knowledge_outline.v1", "course_node_id": "year_1_course_1", "course_name": "程序设计基础", "grade_id": "year_1", "personalization_summary": "...", "sections": [{{"section_id": "1", "parent_section_id": null, "depth": 1, "title": "第1章 ...", "order_index": 1}}], "learning_sequence": ["1", "1.1", "1.2"], "markmap_source": "# 课程名\\n## 第1章 ..."}}
-
-直接输出纯 JSON。"""
-
-
-def _build_course_knowledge_chain(llm: BaseChatModel):
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", COURSE_KNOWLEDGE_PROMPT),
-        ("human", "{query}"),
-    ])
-    return prompt | llm
-
-
-async def run_course_knowledge_agent(
-    state: OrchestrationState,
-    llm: BaseChatModel,
-) -> dict:
     from sqlmodel import Session
     from app.database import get_engine
-    from app.services.course_knowledge_service import (
-        get_user_course_knowledge_outline,
-        resolve_current_course_node,
-        upsert_user_course_knowledge_outline,
-    )
-    from app.services.learning_path_service import get_user_learning_path
-    from app.models import UserProfile
+    from app.services.course_knowledge_service import list_user_course_outlines
 
-    user_uid = state["user_id"]
+    # Gather all course_ids that already have outlines
+    existing_outlines: set[str] = set()
+    if course_knowledge:
+        existing_outlines.add(course_knowledge.get("course_id", ""))
 
-    with Session(get_engine()) as db_session:
-        profile = db_session.get(UserProfile, user_uid)
-        if profile is None or profile.profile_data.get("type") != "basic_profile":
-            return {"error": "请先完成基础画像。"}
+    for grade_year in sorted(year_learning_paths.keys()):
+        path = year_learning_paths[grade_year]
+        courses = path.get("courses", [])
+        sequence = path.get("recommended_sequence", [])
+        for course_id in sequence:
+            course = next((c for c in courses if c.get("course_id") == course_id), None)
+            if course and course_id not in existing_outlines:
+                return course_id, course
 
-        stored_path = get_user_learning_path(db_session, user_uid)
-        if stored_path is None:
-            return {"error": "请先生成学习路径。"}
+    return None, None
 
-        path_data = stored_path.path_data
-        course_node = resolve_current_course_node(path_data)
-        course_node_id = str(course_node.get("course_node_id") or "")
-        if not course_node_id:
-            return {"error": "当前课程节点缺少 course_node_id。"}
 
-        existing = get_user_course_knowledge_outline(db_session, user_uid, course_node_id)
-        if existing is not None:
-            return {"course_knowledge": existing.outline_data}
+async def run_course_knowledge_agent(state: OrchestrationState, llm: BaseChatModel) -> dict:
+    """Generate detailed course outline, auto-resolving next course if not specified."""
+    tool_args = extract_last_tool_call_args(state)
+    course_id = tool_args.get("course_id", "")
 
-        # Capture data needed for LLM call before closing the session
-        profile_data = profile.profile_data
-        learning_goal = path_data.get("learning_goal", {})
-        learner_baseline = path_data.get("learner_baseline", {})
+    profile = state.get("profile", {})
+    year_learning_paths = state.get("year_learning_paths", {})
+    course_knowledge = state.get("course_knowledge")
 
-    # LLM call happens outside the DB session — no connection held during long inference
+    # Guard: profile must exist
+    if not profile or profile.get("type") != "basic_profile":
+        return {"error": "请先完成基础画像。"}
+
+    # Guard: need at least one year path
+    if not year_learning_paths:
+        return {"error": "请先生成学习路径。"}
+
+    # Auto-resolve next course
+    course_info = None
+    if not course_id:
+        course_id, course_info = _resolve_next_course(year_learning_paths, course_knowledge)
+        if not course_id:
+            return {"error": "当前路径中没有待学习的课程，所有课程已生成大纲。"}
+    else:
+        for path in year_learning_paths.values():
+            for c in path.get("courses", []):
+                if c.get("course_id") == course_id:
+                    course_info = c
+                    break
+            if course_info:
+                break
+        if not course_info:
+            return {"error": f"未找到课程 {course_id}。"}
+
     input_data = {
-        "course_node": course_node,
-        "user_profile": profile_data,
-        "learning_goal": learning_goal,
-        "learner_baseline": learner_baseline,
+        "course": json.dumps(course_info, ensure_ascii=False, indent=2),
+        "profile": json.dumps(profile, ensure_ascii=False, indent=2),
     }
-    input_text = f"请为当前课程生成个性化章节定义。\n\n{json.dumps(input_data, ensure_ascii=False, indent=2)}"
 
-    chain = _build_course_knowledge_chain(llm)
+    input_text = (
+        f"请为以下课程生成详细的章节大纲：\n\n"
+        f"课程信息：{input_data['course']}\n"
+        f"用户画像：{input_data['profile']}"
+    )
+
+    structured_llm = llm.with_structured_output(CourseKnowledgeOutput)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT),
+        ("human", "{query}"),
+    ])
+    chain = prompt | structured_llm
 
     try:
-        response = await chain.ainvoke({"query": input_text})
-        parsed = parse_json_response(response.content)
-        result = CourseKnowledgeOutlineResult.model_validate(parsed)
+        result: CourseKnowledgeOutput = await chain.ainvoke({"query": input_text})
     except Exception as exc:
-        logger.warning("CourseKnowledgeAgent failed: %s", exc)
-        return {"error": str(exc)}
+        logger.warning("CourseKnowledgeAgent structured output failed: %s", exc)
+        return {"error": f"大纲生成失败：{str(exc)[:200]}"}
 
     outline_dict = result.model_dump()
 
-    if outline_dict.get("course_node_id") != course_node_id:
-        return {"error": "生成的课程章节 node_id 不匹配。"}
-
-    with Session(get_engine()) as db_session:
-        upsert_user_course_knowledge_outline(db_session, user_uid, outline_dict)
+    from sqlmodel import Session
+    from app.database import get_engine
+    from app.services.course_knowledge_service import upsert_user_course_knowledge_outline
+    try:
+        with Session(get_engine()) as db_session:
+            upsert_user_course_knowledge_outline(db_session, state["user_id"], outline_dict)
+        logger.info("CourseKnowledgeOutline persisted for user %s, course %s", state["user_id"], course_id)
+    except Exception as exc:
+        logger.error("Failed to persist course_knowledge for user %s: %s", state["user_id"], exc)
 
     return {"course_knowledge": outline_dict}
 
@@ -122,9 +124,11 @@ def create_course_knowledge_agent_node(llm: BaseChatModel):
             tool_call_id=tool_call_id or "unknown",
         )
 
-        return {
-            "course_knowledge": agent_result.get("course_knowledge"),
-            "messages": [tool_message],
-        }
+        result = {"messages": [tool_message]}
+        if agent_result.get("course_knowledge") is not None:
+            result["course_knowledge"] = agent_result["course_knowledge"]
+        if agent_result.get("error") is not None:
+            result["response"] = agent_result["error"]
+        return result
 
     return course_knowledge_node

@@ -95,7 +95,6 @@
   inline-size: 100%;
   max-inline-size: var(--container-wide, 1120px);
   margin-block-end: var(--space-24);
-  align-items: start; /* Prevent right card from stretching when left card expands */
 }
 
 /* ── 主卡片（左大卡：用户画像） ── */
@@ -575,75 +574,4 @@
   }
 }
 
-/* ── 画像内联展开区域 (Inline Expansion) ── */
-.profile-expanded-content {
-  grid-column: 1 / -1;
-  overflow: hidden;
-  border-top: 1px solid var(--color-border-subtle, oklch(78% 0.012 80 / 0.3));
-  padding-top: var(--space-32);
-}
 
-.expanded-sections {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-32);
-}
-
-.expanded-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-16);
-}
-
-.expanded-section .section-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-}
-
-.expanded-section .section-title {
-  font-family: var(--font-heading);
-  font-size: var(--text-body);
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.expanded-section .section-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-16) var(--space-24);
-}
-
-.expanded-section .field-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.expanded-section .field-label {
-  font-size: var(--text-caption);
-  color: var(--color-text-whisper);
-  letter-spacing: 0.02em;
-}
-
-.expanded-section .field-value {
-  font-size: var(--text-body-sm);
-  color: var(--color-text-secondary);
-  line-height: 1.5;
-  text-wrap: pretty;
-}
-
-.profile-placeholder {
-  color: var(--color-text-muted, oklch(58% 0.025 235));
-  font-style: italic;
-}
-
-.section-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-.dot-lavender { background-color: var(--color-accent-lavender, oklch(75% 0.07 292)); }
-.dot-sage { background-color: var(--color-accent-sage, oklch(75% 0.09 135)); }
-.dot-peach { background-color: var(--color-accent-peach, oklch(84% 0.08 58)); }

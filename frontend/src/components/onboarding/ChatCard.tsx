@@ -1,4 +1,6 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import styled from 'styled-components';
 import type { ConfirmedInfo, PartialStructuredData, QuestionBoxOption, SessionMessage } from '../../types/chat';
 
@@ -212,8 +214,10 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData }
           <section className="question-panel">
             <h3>接下来</h3>
             <div className="question-list">
-              {questions.map((question) => (
-                <p key={question}>{question}</p>
+              {questions.map((question, i) => (
+                <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
+                  {question}
+                </ReactMarkdown>
               ))}
             </div>
           </section>
@@ -401,6 +405,18 @@ const CardWrapper = styled.article`
     content: '//';
     color: var(--color-primary);
     margin-inline-end: var(--space-8);
+  }
+
+  .question-list ul,
+  .question-list ol {
+    margin: 0;
+    padding-inline-start: var(--space-24);
+    color: var(--color-text-primary);
+    line-height: 1.8;
+  }
+
+  .question-list li {
+    margin-block-end: var(--space-4);
   }
 
   .options-grid {
