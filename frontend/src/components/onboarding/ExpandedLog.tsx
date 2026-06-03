@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import styled from 'styled-components';
-import type { AgentRunStep } from '../../types/chat';
+import type { AgentRunStep, ThoughtChunkEntry } from '../../types/chat';
 import { formatStepTitle, formatStepKind } from './stepLabels';
 
 interface ExpandedLogProps {
@@ -23,6 +23,47 @@ function StatusSymbol({ status }: { status: string }) {
     default: return <span>{status}</span>;
   }
 }
+
+function ThoughtStream({ entries }: { entries: ThoughtChunkEntry[] }) {
+  const fullText = entries.map((e) => e.text).join('');
+  if (!fullText.trim()) return null;
+  return (
+    <ThoughtStreamShell>
+      <span className="cursor" aria-hidden="true">▎</span>
+      <span className="thought-text">{fullText}</span>
+    </ThoughtStreamShell>
+  );
+}
+
+const ThoughtStreamShell = styled.div`
+  padding: var(--space-4) 0 var(--space-8) 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  display: flex;
+  gap: 4px;
+
+  .cursor {
+    flex-shrink: 0;
+    color: var(--color-primary);
+    animation: thought-blink 1s ease-in-out infinite;
+  }
+
+  .thought-text {
+    word-break: break-word;
+    white-space: pre-wrap;
+  }
+
+  @keyframes thought-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cursor { animation: none; }
+  }
+`;
 
 export function ExpandedLog({ steps }: ExpandedLogProps) {
   return (
@@ -57,6 +98,9 @@ export function ExpandedLog({ steps }: ExpandedLogProps) {
             </div>
             {step.summary && (
               <div className="summary">{step.summary}</div>
+            )}
+            {step.thoughtLog && step.thoughtLog.length > 0 && (
+              <ThoughtStream entries={step.thoughtLog} />
             )}
           </StepRow>
         );
