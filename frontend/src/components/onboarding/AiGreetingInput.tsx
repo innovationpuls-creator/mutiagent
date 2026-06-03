@@ -568,6 +568,7 @@ export function AiGreetingInput() {
             message={message.sessionMessage}
             onSendReply={isLatestInteractive ? sendMessage : undefined}
             disabled={!isLatestInteractive || isPending}
+            partialData={message.partialData ?? null}
           />
         );
       } else {

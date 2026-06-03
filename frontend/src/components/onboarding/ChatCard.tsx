@@ -1,11 +1,12 @@
 import React from 'react';
 import styled from 'styled-components';
-import type { ConfirmedInfo, QuestionBoxOption, SessionMessage } from '../../types/chat';
+import type { ConfirmedInfo, PartialStructuredData, QuestionBoxOption, SessionMessage } from '../../types/chat';
 
 interface ChatCardProps {
   message: SessionMessage;
   onSendReply?: (text: string) => void;
   disabled?: boolean;
+  partialData?: PartialStructuredData | null;
 }
 
 type FieldKey = keyof ConfirmedInfo;
@@ -97,7 +98,7 @@ function normalizeQuestionOption(option: QuestionBoxOption | string): QuestionBo
   };
 }
 
-export function ChatCard({ message, onSendReply, disabled = false }: ChatCardProps) {
+export function ChatCard({ message, onSendReply, disabled = false, partialData }: ChatCardProps) {
   const [inputValue, setInputValue] = React.useState('');
   const [hasSubmittedReply, setHasSubmittedReply] = React.useState(false);
   const confirmed = filledFields(message.confirmed_info);
@@ -109,6 +110,12 @@ export function ChatCard({ message, onSendReply, disabled = false }: ChatCardPro
   const generatedSections = message.type === 'basic_profile' ? splitProfileText(message.text) : [];
   const profileSummary = generatedSections[0]?.body || message.text || '画像已生成，可以继续补充你的学习目标与约束。';
   const showReplyControls = Boolean(onSendReply) && !hasSubmittedReply;
+
+  const isFieldStreaming = (fieldName: string): boolean => {
+    if (!partialData?.partialData || typeof partialData.partialData !== 'object') return false;
+    const data = partialData.partialData as Record<string, unknown>;
+    return fieldName in data && data[fieldName] !== undefined;
+  };
 
   const submitInlineAnswer = () => {
     const answer = inputValue.trim();
@@ -153,7 +160,7 @@ export function ChatCard({ message, onSendReply, disabled = false }: ChatCardPro
                   {fields.length > 0 ? (
                     <dl>
                       {fields.map(([key, value]) => (
-                        <div key={key}>
+                        <div key={key} data-streaming={isFieldStreaming(key) ? true : undefined}>
                           <dt>{FIELD_LABELS[key]}</dt>
                           <dd>{value}</dd>
                         </div>
@@ -184,12 +191,12 @@ export function ChatCard({ message, onSendReply, disabled = false }: ChatCardPro
             <h3>已确认</h3>
             {confirmed.length > 0 ? (
               <div className="confirmed-list">
-                {confirmed.map(([key, value]) => (
-                  <span className="info-chip" key={key}>
-                    <strong>{FIELD_LABELS[key]}</strong>
-                    {value}
-                  </span>
-                ))}
+                  {confirmed.map(([key, value]) => (
+                    <span className="info-chip" key={key} data-streaming={isFieldStreaming(key) ? true : undefined}>
+                      <strong>{FIELD_LABELS[key]}</strong>
+                      {value}
+                    </span>
+                  ))}
               </div>
             ) : (
               <p className="muted-copy">还没有确认的信息。先从年级、专业或近期目标开始。</p>
@@ -357,6 +364,12 @@ const CardWrapper = styled.article`
   .info-chip strong {
     color: var(--color-text-primary);
     font-weight: var(--font-weight-medium);
+  }
+
+  .info-chip[data-streaming='true'],
+  .profile-section div[data-streaming='true'] {
+    box-shadow: 0 0 6px var(--color-primary);
+    animation: field-pulse 0.8s var(--ease-editorial) infinite alternate;
   }
 
   .muted-copy,
@@ -587,5 +600,15 @@ const CardWrapper = styled.article`
       transition: opacity var(--duration-instant) ease;
       transform: none;
     }
+
+    .info-chip[data-streaming='true'],
+    .profile-section div[data-streaming='true'] {
+      animation: none;
+    }
+  }
+
+  @keyframes field-pulse {
+    from { box-shadow: 0 0 4px var(--color-primary); }
+    to { box-shadow: 0 0 12px var(--color-primary); }
   }
 `;
