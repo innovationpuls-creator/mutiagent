@@ -1,33 +1,17 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from sqlmodel import Session, create_engine
 
-from app.api import orchestration as orchestration_api
 from app.main import create_app
-from app.models import UserAgentConversation
 
 
-class EchoSessionGraph:
-    def __init__(self) -> None:
-        self.states: list[dict] = []
-        self.configs: list[dict] = []
-
-    async def ainvoke(self, state: dict, config: dict) -> dict:
-        self.states.append(state.copy())
-        self.configs.append(config)
-        return {
-            **state,
-            "answer": {"user_message": f"会话：{state['query']}", "question_box": None},
-            "agent_trace": [],
-            "agent_results": {},
-            "profile": None,
-            "learning_path": None,
-            "completed": False,
-            "error": "",
-        }
+def make_client(tmp_path: Path) -> TestClient:
+    database_url = f"sqlite:///{tmp_path / 'orchestration-test.db'}"
+    return TestClient(create_app(database_url=database_url))
 
 
 def register(client: TestClient, identifier: str) -> tuple[str, str]:
@@ -44,85 +28,159 @@ def register(client: TestClient, identifier: str) -> tuple[str, str]:
     return body["access_token"], body["user"]["uid"]
 
 
-def test_chatflow_routes_are_removed(tmp_path: Path, monkeypatch) -> None:
-    database_url = f"sqlite:///{tmp_path / 'removed-chatflow.db'}"
-    monkeypatch.setattr(orchestration_api, "graph", EchoSessionGraph())
-    client = TestClient(create_app(database_url=database_url))
-    token, _ = register(client, "removed-chatflow@example.com")
+class MockGraph:
+    def __init__(self, response_template: str = "回复：{query}", extra_state: dict | None = None) -> None:
+        self.response_template = response_template
+        self.extra_state = extra_state or {}
 
-    response = client.post(
-        "/api/orchestration/chatflow/start",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"query": "旧入口"},
-    )
-
-    assert response.status_code == 404
-
-
-def test_session_uses_user_scoped_graph_thread(tmp_path: Path, monkeypatch) -> None:
-    database_url = f"sqlite:///{tmp_path / 'session-thread.db'}"
-    fake_graph = EchoSessionGraph()
-    monkeypatch.setattr(orchestration_api, "graph", fake_graph)
-    client = TestClient(create_app(database_url=database_url))
-    token, uid = register(client, "session-thread@example.com")
-
-    first = client.post(
-        "/api/orchestration/sessions/start",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"query": "第一次"},
-    )
-    second = client.post(
-        "/api/orchestration/sessions/start",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"query": "第二次"},
-    )
-
-    assert first.status_code == 200
-    assert second.status_code == 200
-    thread_ids = [config["configurable"]["thread_id"] for config in fake_graph.configs]
-    assert thread_ids == [uid, uid]
-    assert ":" not in thread_ids[0]
-
-
-def test_completed_profile_session_returns_main_agent_final(tmp_path: Path, monkeypatch) -> None:
-    database_url = f"sqlite:///{tmp_path / 'profile-final.db'}"
-    client = TestClient(create_app(database_url=database_url))
-    token, uid = register(client, "profile-final@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
-    with Session(engine) as session:
-        session.add(UserAgentConversation(user_uid=uid, agent_key="profile_agent", conversation_id="profile-conv"))
-        session.commit()
-
-    async def completed_profile_state(state: dict, session: Session) -> dict:
+    async def ainvoke(self, state: dict, config: dict) -> dict:
         return {
             **state,
-            "answer": {"user_message": "画像完成", "question_box": None},
-            "agent_results": {"profile": {"type": "basic_profile", "stage": "generated", "text": "画像"}},
+            "response": self.response_template.format(query=state.get("query", "")),
             "agent_trace": [],
-            "profile": {"type": "basic_profile", "stage": "generated", "text": "画像"},
-            "user_profile": {"type": "basic_profile", "stage": "generated", "text": "画像"},
-            "learning_path": None,
-            "awaiting_profile": False,
-            "completed": True,
-            "error": "",
+            "error": None,
+            **self.extra_state,
         }
 
-    async def final_state(state: dict, session: Session) -> dict:
-        return {
+    async def astream_events(self, state: dict, config: dict, version: str = "v2"):
+        output = {
             **state,
-            "answer": {"user_message": "主智能体最终总结", "question_box": None},
-            "completed": True,
-            "error": "",
+            "response": self.response_template.format(query=state.get("query", "")),
+            "agent_trace": [],
+            "error": None,
+            **self.extra_state,
+        }
+        yield {
+            "event": "on_chain_end",
+            "name": "LangGraph",
+            "data": {"output": output},
         }
 
-    monkeypatch.setattr(orchestration_api, "_profile_session_state", completed_profile_state)
-    monkeypatch.setattr(orchestration_api, "_finalize_completed_profile_state", final_state)
 
-    response = client.post(
-        "/api/orchestration/sessions/start",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"query": "补充完成"},
-    )
+@contextmanager
+def _mock_create_graph(graph: MockGraph | None = None):
+    g = graph or MockGraph()
+    with patch("app.api.orchestration.create_orchestration_graph", return_value=g), \
+         patch("app.orchestration.graph.create_orchestration_graph", return_value=g):
+        yield g
 
-    assert response.status_code == 200
-    assert response.json()["answer"]["user_message"] == "主智能体最终总结"
+
+def test_start_session_returns_response(tmp_path: Path) -> None:
+    with _mock_create_graph():
+        client = make_client(tmp_path)
+        token, _ = register(client, "start-session@example.com")
+
+        response = client.post(
+            "/api/orchestration/sessions/start",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"query": "你好"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["answer"]["user_message"] == "回复：你好"
+        assert body["completed"] is True
+        assert "session_id" in body
+
+
+def test_start_session_stream_returns_sse(tmp_path: Path) -> None:
+    with _mock_create_graph():
+        client = make_client(tmp_path)
+        token, _ = register(client, "stream-session@example.com")
+
+        response = client.post(
+            "/api/orchestration/sessions/start/stream",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"query": "你好"},
+        )
+
+        assert response.status_code == 200
+        assert "orchestration_completed" in response.text
+
+
+def test_continue_session_uses_session_id(tmp_path: Path) -> None:
+    with _mock_create_graph():
+        client = make_client(tmp_path)
+        token, _ = register(client, "continue-session@example.com")
+
+        start_response = client.post(
+            "/api/orchestration/sessions/start",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"query": "第一次"},
+        )
+        session_id = start_response.json()["session_id"]
+
+        continue_response = client.post(
+            "/api/orchestration/sessions/continue",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"session_id": session_id, "query": "继续"},
+        )
+
+        assert continue_response.status_code == 200
+        assert continue_response.json()["answer"]["user_message"] == "回复：继续"
+
+
+def test_continue_session_rejects_wrong_user(tmp_path: Path) -> None:
+    with _mock_create_graph():
+        client = make_client(tmp_path)
+        token_a, _ = register(client, "user-a@example.com")
+
+        start_response = client.post(
+            "/api/orchestration/sessions/start",
+            headers={"Authorization": f"Bearer {token_a}"},
+            json={"query": "用户A的会话"},
+        )
+        session_id = start_response.json()["session_id"]
+
+        token_b, _ = register(client, "user-b@example.com")
+
+        continue_response = client.post(
+            "/api/orchestration/sessions/continue",
+            headers={"Authorization": f"Bearer {token_b}"},
+            json={"session_id": session_id, "query": "用户B尝试继续"},
+        )
+
+        assert continue_response.status_code == 404
+        assert continue_response.json()["detail"] == "对话不存在"
+
+
+def test_start_session_requires_auth(tmp_path: Path) -> None:
+    with _mock_create_graph():
+        client = make_client(tmp_path)
+
+        response = client.post(
+            "/api/orchestration/sessions/start",
+            json={"query": "你好"},
+        )
+
+        assert response.status_code == 401
+
+
+def test_session_response_includes_profile_when_present(tmp_path: Path) -> None:
+    profile_data = {"type": "basic_profile", "stage": "generated", "text": "用户画像"}
+    with _mock_create_graph(MockGraph(extra_state={"profile": profile_data})):
+        client = make_client(tmp_path)
+        token, _ = register(client, "profile-response@example.com")
+
+        response = client.post(
+            "/api/orchestration/sessions/start",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"query": "你好"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["profile"] == profile_data
+
+
+def test_session_response_handles_error(tmp_path: Path) -> None:
+    with _mock_create_graph(MockGraph(extra_state={"error": "服务异常，请稍后重试"})):
+        client = make_client(tmp_path)
+        token, _ = register(client, "error-response@example.com")
+
+        response = client.post(
+            "/api/orchestration/sessions/start",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"query": "你好"},
+        )
+
+        assert response.status_code == 500
