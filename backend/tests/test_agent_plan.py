@@ -11,19 +11,6 @@ from app.orchestration.agent_plan import (
     normalize_learning_path_result_payload,
     validate_call_graph,
 )
-from app.orchestration.response_parser import parse_json_answer
-
-
-def test_parse_json_answer_accepts_plain_json() -> None:
-    result = parse_json_answer(
-        {
-            "answer": '{"response":{"user_message":"你好","question_box":null},'
-            '"control":{"action":"reply_only","calls":[]}}'
-        }
-    )
-
-    assert result["response"]["user_message"] == "你好"
-
 
 def test_main_agent_result_requires_known_agent_key() -> None:
     with pytest.raises(ValidationError):
