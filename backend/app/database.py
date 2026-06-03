@@ -1,21 +1,22 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Generator
-from pathlib import Path
 
+from dotenv import load_dotenv
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.security import hash_password
 from app.models import User
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DATABASE_URL = f"sqlite:///{BACKEND_ROOT / 'mutiagent.db'}"
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://mutiagent:mutiagent@localhost:5432/mutiagent")
 
 
-def build_engine(database_url: str = DEFAULT_DATABASE_URL) -> Engine:
-    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
-    return create_engine(database_url, connect_args=connect_args)
+def build_engine(database_url: str = DATABASE_URL) -> Engine:
+    return create_engine(database_url)
 
 
 def create_session_dependency(engine: Engine) -> Callable[[], Generator[Session, None, None]]:

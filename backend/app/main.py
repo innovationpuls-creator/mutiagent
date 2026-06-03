@@ -7,11 +7,11 @@ from app.api.auth import create_auth_router
 from app.api.learning_path import create_learning_path_router
 from app.api.orchestration import create_orchestration_router
 from app.api.profile import create_profile_router
-from app.database import DEFAULT_DATABASE_URL, build_engine, create_session_dependency, init_db
+from app.database import DATABASE_URL, build_engine, create_session_dependency, init_db
 from app.schemas import HealthResponse
 
 
-def create_app(database_url: str = DEFAULT_DATABASE_URL) -> FastAPI:
+def create_app(database_url: str = DATABASE_URL) -> FastAPI:
     engine = build_engine(database_url)
     init_db(engine)
 
