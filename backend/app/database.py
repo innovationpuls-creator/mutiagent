@@ -16,7 +16,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://mutiagent:mutiagent@local
 
 
 def build_engine(database_url: str = DATABASE_URL) -> Engine:
-    return create_engine(database_url)
+    return create_engine(database_url, pool_pre_ping=True, pool_recycle=3600)
 
 
 def create_session_dependency(engine: Engine) -> Callable[[], Generator[Session, None, None]]:
