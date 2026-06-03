@@ -10,7 +10,7 @@ from sqlmodel import Session
 from app.core.security import create_get_current_user
 from app.models import User, UserProfile
 from app.orchestration.execution_registry import ExecutionState, registry
-from app.orchestration.graph import create_orchestration_graph, stream_orchestration_events
+from app.orchestration.graph import get_orchestration_graph, stream_orchestration_events
 from app.orchestration.state import OrchestrationState
 from app.schemas import (
     AgentUserAnswer,
@@ -32,7 +32,9 @@ def _initial_state(query: str, user_id: str, session_id: str) -> OrchestrationSt
         learning_path=None,
         course_knowledge=None,
         response="",
+        answer=None,
         question_box=None,
+        profile_completed=None,
         error=None,
     )
 
@@ -98,17 +100,44 @@ def _session_event_name(event_name: str) -> str:
         "agent_failed": "agent_step_failed",
         "completed": "orchestration_completed",
         "error": "orchestration_failed",
+        "orchestration_started": "orchestration_started",
+        "context_loaded": "context_loaded",
+        "tool_call_started": "tool_call_started",
+        "tool_call_completed": "tool_call_completed",
+        "thought_chunk": "thought_chunk",
+        "message_started": "message_started",
+        "text_chunk": "text_chunk",
+        "data_schema_started": "data_schema_started",
+        "data_chunk": "data_chunk",
+        "data_completed": "data_completed",
     }
     return mapping.get(event_name, event_name)
+
+
+def _prepare_state(
+    payload_query: str,
+    execution: ExecutionState,
+    session: Session,
+    current_user: User,
+) -> OrchestrationState:
+    """Build the initial OrchestrationState for a turn — shared by all 4 endpoints."""
+    from langchain_core.messages import HumanMessage
+
+    user_profile = _completed_user_profile(session, current_user.uid)
+    state = _initial_state(payload_query, current_user.uid, execution.execution_id)
+    state["messages"] = [HumanMessage(content=payload_query)]
+    if user_profile:
+        state["profile"] = user_profile
+    return state
 
 
 async def _stream_session_turn(
     execution: ExecutionState,
     state: OrchestrationState,
-    session: Session,
 ) -> AsyncGenerator[str, None]:
+    """SSE generator — no longer holds a DB session during the entire stream."""
     try:
-        async for event in stream_orchestration_events(state, session):
+        async for event in stream_orchestration_events(state):
             event_name = _session_event_name(str(event.get("event", "")))
             payload = {k: v for k, v in event.items() if k not in ("state", "event")}
 
@@ -133,17 +162,9 @@ def create_orchestration_router(session_dependency: SessionDependency) -> APIRou
         session: Session = Depends(session_dependency),
     ) -> SessionResponse:
         execution = registry.create(current_user.uid)
+        state = _prepare_state(payload.query, execution, session, current_user)
 
-        user_profile = _completed_user_profile(session, current_user.uid)
-        state = _initial_state(payload.query, current_user.uid, execution.execution_id)
-
-        graph = create_orchestration_graph(session)
-
-        from langchain_core.messages import HumanMessage
-        state["messages"] = [HumanMessage(content=payload.query)]
-        if user_profile:
-            state["profile"] = user_profile
-
+        graph = get_orchestration_graph()
         result_state = await graph.ainvoke(state, _graph_config(execution))
 
         if result_state.get("error"):
@@ -160,17 +181,9 @@ def create_orchestration_router(session_dependency: SessionDependency) -> APIRou
         session: Session = Depends(session_dependency),
     ) -> SessionResponse:
         execution = _recover_or_get_execution(payload.session_id, current_user)
+        state = _prepare_state(payload.query, execution, session, current_user)
 
-        user_profile = _completed_user_profile(session, current_user.uid)
-        state = _initial_state(payload.query, current_user.uid, execution.execution_id)
-
-        graph = create_orchestration_graph(session)
-
-        from langchain_core.messages import HumanMessage
-        state["messages"] = [HumanMessage(content=payload.query)]
-        if user_profile:
-            state["profile"] = user_profile
-
+        graph = get_orchestration_graph()
         result_state = await graph.ainvoke(state, _graph_config(execution))
 
         if result_state.get("error"):
@@ -187,17 +200,10 @@ def create_orchestration_router(session_dependency: SessionDependency) -> APIRou
         session: Session = Depends(session_dependency),
     ) -> StreamingResponse:
         execution = registry.create(current_user.uid)
-
-        state = _initial_state(payload.query, current_user.uid, execution.execution_id)
-        user_profile = _completed_user_profile(session, current_user.uid)
-
-        from langchain_core.messages import HumanMessage
-        state["messages"] = [HumanMessage(content=payload.query)]
-        if user_profile:
-            state["profile"] = user_profile
+        state = _prepare_state(payload.query, execution, session, current_user)
 
         return StreamingResponse(
-            _stream_session_turn(execution, state, session),
+            _stream_session_turn(execution, state),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
@@ -209,17 +215,10 @@ def create_orchestration_router(session_dependency: SessionDependency) -> APIRou
         session: Session = Depends(session_dependency),
     ) -> StreamingResponse:
         execution = _recover_or_get_execution(payload.session_id, current_user)
-
-        state = _initial_state(payload.query, current_user.uid, execution.execution_id)
-        user_profile = _completed_user_profile(session, current_user.uid)
-
-        from langchain_core.messages import HumanMessage
-        state["messages"] = [HumanMessage(content=payload.query)]
-        if user_profile:
-            state["profile"] = user_profile
+        state = _prepare_state(payload.query, execution, session, current_user)
 
         return StreamingResponse(
-            _stream_session_turn(execution, state, session),
+            _stream_session_turn(execution, state),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )

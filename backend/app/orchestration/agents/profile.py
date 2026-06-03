@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage
@@ -10,6 +9,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from app.orchestration.agents.models import ProfileAgentOutput
 from app.orchestration.agents.prompts import PROFILE_AGENT_SYSTEM_PROMPT
+from app.orchestration.agents.utils import extract_last_tool_call_id, parse_json_response
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
@@ -45,25 +45,9 @@ def _build_profile_chain(llm: BaseChatModel):
     return prompt | llm
 
 
-def _parse_json_response(text: str) -> dict:
-    """从 LLM 响应中提取 JSON，支持代码块和纯文本格式。"""
-    text = text.strip()
-
-    json_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
-    if json_match:
-        text = json_match.group(1).strip()
-
-    text = text.strip()
-    if text.startswith("{") or text.startswith("["):
-        return json.loads(text)
-
-    raise ValueError(f"Response does not contain valid JSON: {text[:200]}")
-
-
 async def run_profile_agent(
     state: OrchestrationState,
     llm: BaseChatModel,
-    db_session,
 ) -> dict:
     chain = _build_profile_chain(llm)
     messages = [
@@ -74,7 +58,7 @@ async def run_profile_agent(
 
     try:
         response = await chain.ainvoke(chain_input)
-        parsed = _parse_json_response(response.content)
+        parsed = parse_json_response(response.content)
         result = ProfileAgentOutput.model_validate(parsed)
     except Exception as exc:
         logger.warning("ProfileAgent failed: %s", exc)
@@ -84,8 +68,11 @@ async def run_profile_agent(
     is_completed = result.type == "basic_profile" and result.stage == "generated"
 
     if is_completed:
+        from sqlmodel import Session
+        from app.database import get_engine
         from app.services.profile_service import upsert_user_profile
-        upsert_user_profile(db_session, state["user_id"], profile_dict)
+        with Session(get_engine()) as db_session:
+            upsert_user_profile(db_session, state["user_id"], profile_dict)
 
     user_answer = {
         "user_message": result.question_md or result.text or "",
@@ -98,19 +85,11 @@ async def run_profile_agent(
     return {"profile": profile_dict, "answer": user_answer, "profile_completed": is_completed}
 
 
-def _extract_last_tool_call_id(state: OrchestrationState) -> str | None:
-    messages = state.get("messages", [])
-    for msg in reversed(messages):
-        if hasattr(msg, "tool_calls") and msg.tool_calls:
-            return msg.tool_calls[0].get("id")
-    return None
-
-
-def create_profile_agent_node(llm: BaseChatModel, db_session):
+def create_profile_agent_node(llm: BaseChatModel):
     async def profile_agent_node(state: OrchestrationState) -> dict:
-        agent_result = await run_profile_agent(state, llm, db_session)
+        agent_result = await run_profile_agent(state, llm)
 
-        tool_call_id = _extract_last_tool_call_id(state)
+        tool_call_id = extract_last_tool_call_id(state)
         tool_message = ToolMessage(
             content=json.dumps(agent_result, ensure_ascii=False),
             tool_call_id=tool_call_id or "unknown",

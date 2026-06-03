@@ -46,10 +46,20 @@ export interface SessionTurn {
 }
 
 export type SessionEventName =
+  | 'orchestration_started'
+  | 'context_loaded'
   | 'agent_step_started'
   | 'agent_step_progress'
   | 'agent_step_completed'
   | 'agent_step_failed'
+  | 'tool_call_started'
+  | 'tool_call_completed'
+  | 'thought_chunk'
+  | 'message_started'
+  | 'text_chunk'
+  | 'data_schema_started'
+  | 'data_chunk'
+  | 'data_completed'
   | 'orchestration_completed'
   | 'orchestration_failed';
 
@@ -74,6 +84,15 @@ export interface SessionAgentEvent {
   completed?: boolean;
   profile?: SessionMessage | null;
   learningPath?: LearningPathResult | null;
+  chunk?: string;
+  schemaName?: string;
+  partialData?: unknown;
+  finalData?: unknown;
+  toolName?: string;
+  output?: string;
+  key?: string;
+  role?: string;
+  query?: string;
 }
 
 export interface ChatflowTurn {
@@ -241,6 +260,15 @@ function normalizeSessionEvent(event: SessionEventName, payload: UnknownRecord):
     completed: getBoolean(payload.completed),
     profile: getProfile(payload.profile),
     learningPath: getLearningPath(payload.learning_path),
+    chunk: getString(payload.chunk),
+    schemaName: getString(payload.schema_name),
+    partialData: payload.partial_data,
+    finalData: payload.final_data,
+    toolName: getString(payload.tool_name),
+    output: getString(payload.output),
+    key: getString(payload.key),
+    role: getString(payload.role),
+    query: getString(payload.query),
   };
 }
 

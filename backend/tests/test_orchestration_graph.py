@@ -13,7 +13,8 @@ from app.orchestration.graph import (
     _extract_answer,
     _normalize_question_box,
     _route_after_supervisor,
-    create_orchestration_graph,
+    _route_after_worker,
+    get_orchestration_graph,
     stream_orchestration_events,
 )
 
@@ -87,6 +88,30 @@ def test_route_all_three_agent_keys():
             ]
         }
         assert _route_after_supervisor(state) == agent_key
+
+
+# ============================================================
+# _route_after_worker
+# ============================================================
+
+def test_route_after_worker_ends_when_collecting():
+    state = {"profile": {"type": "collecting"}, "learning_path": None, "course_knowledge": None}
+    assert _route_after_worker(state) == END
+
+
+def test_route_after_worker_ends_when_learning_path_present():
+    state = {"profile": None, "learning_path": {"some": "data"}, "course_knowledge": None}
+    assert _route_after_worker(state) == END
+
+
+def test_route_after_worker_ends_when_course_knowledge_present():
+    state = {"profile": None, "learning_path": None, "course_knowledge": {"some": "data"}}
+    assert _route_after_worker(state) == END
+
+
+def test_route_after_worker_returns_supervisor_when_no_final_data():
+    state = {"profile": {"type": "basic_profile"}, "learning_path": None, "course_knowledge": None}
+    assert _route_after_worker(state) == "supervisor"
 
 
 # ============================================================
@@ -214,17 +239,19 @@ def test_agent_labels():
 
 
 # ============================================================
-# Graph structure
+# Graph structure — uses get_orchestration_graph() singleton
 # ============================================================
 
 def test_graph_compiles_and_has_nodes():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
-    init_db(engine)
+    mock_llm = MagicMock()
+    mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-    with patch("app.orchestration.graph._build_llm", return_value=MagicMock()):
-        with Session(engine) as session:
-            graph = create_orchestration_graph(session)
-            nodes = graph.get_graph().nodes
+    with patch("app.orchestration.graph._compiled_graph", None), \
+         patch("app.orchestration.graph._memory_saver", None), \
+         patch("app.orchestration.graph.get_supervisor_llm", return_value=mock_llm), \
+         patch("app.orchestration.graph.get_worker_llm", return_value=mock_llm):
+        graph = get_orchestration_graph()
+        nodes = graph.get_graph().nodes
 
     assert "supervisor" in nodes
     assert "profile_agent" in nodes
@@ -252,24 +279,23 @@ def _make_mock_llm(response_content: str):
 def test_graph_invoke_direct_supervisor_response():
     mock_llm = _make_mock_llm("你好，我会帮助你规划学习。")
 
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
-    init_db(engine)
+    state = {
+        "query": "你好",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "messages": [HumanMessage(content="你好")],
+    }
 
-    with Session(engine) as session:
-        state = {
-            "query": "你好",
-            "user_id": "user-1",
-            "session_id": "session-1",
-            "messages": [HumanMessage(content="你好")],
-        }
+    async def _run():
+        with patch("app.orchestration.graph._compiled_graph", None), \
+             patch("app.orchestration.graph._memory_saver", None), \
+             patch("app.orchestration.graph.get_supervisor_llm", return_value=mock_llm), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=mock_llm):
+            graph = get_orchestration_graph()
+            config = {"configurable": {"thread_id": "test-1"}}
+            return await graph.ainvoke(state, config)
 
-        async def _run():
-            with patch("app.orchestration.graph._build_llm", return_value=mock_llm):
-                graph = create_orchestration_graph(session)
-                config = {"configurable": {"thread_id": "test-1"}}
-                return await graph.ainvoke(state, config)
-
-        result = asyncio.run(_run())
+    result = asyncio.run(_run())
 
     assert result["response"] == "你好，我会帮助你规划学习。"
 
@@ -281,22 +307,21 @@ def test_graph_invoke_direct_supervisor_response():
 def test_stream_events_direct_supervisor_response():
     mock_llm = _make_mock_llm("你好，我会帮助你规划学习。")
 
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
-    init_db(engine)
+    state = {
+        "query": "你好",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "messages": [HumanMessage(content="你好")],
+    }
 
-    with Session(engine) as session:
-        state = {
-            "query": "你好",
-            "user_id": "user-1",
-            "session_id": "session-1",
-            "messages": [HumanMessage(content="你好")],
-        }
+    async def _collect():
+        with patch("app.orchestration.graph._compiled_graph", None), \
+             patch("app.orchestration.graph._memory_saver", None), \
+             patch("app.orchestration.graph.get_supervisor_llm", return_value=mock_llm), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=mock_llm):
+            return [event async for event in stream_orchestration_events(state)]
 
-        async def _collect():
-            with patch("app.orchestration.graph._build_llm", return_value=mock_llm):
-                return [event async for event in stream_orchestration_events(state, session)]
-
-        events = asyncio.run(_collect())
+    events = asyncio.run(_collect())
 
     assert len(events) >= 1
     completed = events[-1]
@@ -335,19 +360,19 @@ def test_stream_events_with_agent_flow():
             "messages": [ToolMessage(content='{"profile":"ok"}', tool_call_id="call_1")],
         }
 
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
-    init_db(engine)
+    state = {
+        "query": "test",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "messages": [HumanMessage(content="test")],
+    }
 
-    with Session(engine) as session:
-        state = {
-            "query": "test",
-            "user_id": "user-1",
-            "session_id": "session-1",
-            "messages": [HumanMessage(content="test")],
-        }
-
-        async def _collect():
-            with patch(
+    async def _collect():
+        with patch("app.orchestration.graph._compiled_graph", None), \
+             patch("app.orchestration.graph._memory_saver", None), \
+             patch("app.orchestration.graph.get_supervisor_llm", return_value=mock_llm), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=mock_llm), \
+             patch(
                 "app.orchestration.agents.profile.create_profile_agent_node", return_value=profile_stub
             ), patch(
                 "app.orchestration.agents.learning_path.create_learning_path_agent_node",
@@ -355,12 +380,10 @@ def test_stream_events_with_agent_flow():
             ), patch(
                 "app.orchestration.agents.course_knowledge.create_course_knowledge_agent_node",
                 return_value=AsyncMock(),
-            ), patch(
-                "app.orchestration.graph._build_llm", return_value=mock_llm
             ):
-                return [event async for event in stream_orchestration_events(state, session)]
+            return [event async for event in stream_orchestration_events(state)]
 
-        events = asyncio.run(_collect())
+    events = asyncio.run(_collect())
 
     event_tuples = [(e["event"], e.get("step_id")) for e in events]
     assert ("agent_started", "profile_agent") in event_tuples
@@ -378,9 +401,6 @@ def test_stream_events_with_agent_flow():
     completed = events[-1]
     assert completed["event"] == "completed"
     assert completed["completed"] is True
-    # answer key is not in OrchestrationState TypedDict, so _extract_answer
-    # falls through to profile branch (question_mode="none" is truthy),
-    # then to the response fallback.
     assert "user_message" in completed["answer"]
 
 
@@ -406,19 +426,19 @@ def test_stream_events_agent_failed():
             "messages": [ToolMessage(content='{"error":"请先完成基础画像。"}', tool_call_id="call_1")],
         }
 
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
-    init_db(engine)
+    state = {
+        "query": "生成学习路径",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "messages": [HumanMessage(content="生成学习路径")],
+    }
 
-    with Session(engine) as session:
-        state = {
-            "query": "生成学习路径",
-            "user_id": "user-1",
-            "session_id": "session-1",
-            "messages": [HumanMessage(content="生成学习路径")],
-        }
-
-        async def _collect():
-            with patch(
+    async def _collect():
+        with patch("app.orchestration.graph._compiled_graph", None), \
+             patch("app.orchestration.graph._memory_saver", None), \
+             patch("app.orchestration.graph.get_supervisor_llm", return_value=mock_llm), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=mock_llm), \
+             patch(
                 "app.orchestration.agents.profile.create_profile_agent_node",
                 return_value=AsyncMock(),
             ), patch(
@@ -427,12 +447,10 @@ def test_stream_events_agent_failed():
             ), patch(
                 "app.orchestration.agents.course_knowledge.create_course_knowledge_agent_node",
                 return_value=AsyncMock(),
-            ), patch(
-                "app.orchestration.graph._build_llm", return_value=mock_llm
             ):
-                return [event async for event in stream_orchestration_events(state, session)]
+            return [event async for event in stream_orchestration_events(state)]
 
-        events = asyncio.run(_collect())
+    events = asyncio.run(_collect())
 
     event_tuples = [(e["event"], e.get("step_id")) for e in events]
     assert ("agent_started", "learning_path_agent") in event_tuples
@@ -448,28 +466,24 @@ def test_stream_events_agent_failed():
 # ============================================================
 
 def test_stream_events_error():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
-    init_db(engine)
-
     mock_graph = MagicMock()
     mock_graph.astream_events = MagicMock(side_effect=RuntimeError("模拟错误"))
 
-    with Session(engine) as session:
-        state = {
-            "query": "test",
-            "user_id": "user-1",
-            "session_id": "session-1",
-            "messages": [HumanMessage(content="test")],
-        }
+    state = {
+        "query": "test",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "messages": [HumanMessage(content="test")],
+    }
 
-        async def _collect():
-            with patch("app.orchestration.graph.create_orchestration_graph", return_value=mock_graph):
-                return [event async for event in stream_orchestration_events(state, session)]
+    async def _collect():
+        with patch("app.orchestration.graph.get_orchestration_graph", return_value=mock_graph):
+            return [event async for event in stream_orchestration_events(state)]
 
-        events = asyncio.run(_collect())
+    events = asyncio.run(_collect())
 
-    assert len(events) == 1
-    assert events[0]["event"] == "error"
-    assert events[0]["message"] == "模拟错误"
-    assert events[0]["step_id"] == "supervisor"
-    assert events[0]["label"] == "主智能体"
+    assert len(events) >= 2
+    assert events[-1]["event"] == "error"
+    assert events[-1]["message"] == "模拟错误"
+    assert events[-1]["step_id"] == "supervisor"
+    assert "label" in events[-1]

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate
 
 from app.orchestration.agent_plan import CourseKnowledgeOutlineResult
 from app.orchestration.agents.prompts import COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
+from app.orchestration.agents.utils import extract_last_tool_call_id, parse_json_response
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
@@ -34,21 +34,9 @@ COURSE_KNOWLEDGE_PROMPT = COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT + """
 直接输出纯 JSON。"""
 
 
-def _parse_json_response(text: str) -> dict:
-    text = text.strip()
-    json_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
-    if json_match:
-        text = json_match.group(1).strip()
-    text = text.strip()
-    if text.startswith("{") or text.startswith("["):
-        return json.loads(text)
-    raise ValueError(f"Response does not contain valid JSON: {text[:200]}")
-
-
 def _build_course_knowledge_chain(llm: BaseChatModel):
     prompt = ChatPromptTemplate.from_messages([
         ("system", COURSE_KNOWLEDGE_PROMPT),
-        MessagesPlaceholder("history"),
         ("human", "{query}"),
     ])
     return prompt | llm
@@ -57,8 +45,9 @@ def _build_course_knowledge_chain(llm: BaseChatModel):
 async def run_course_knowledge_agent(
     state: OrchestrationState,
     llm: BaseChatModel,
-    db_session,
 ) -> dict:
+    from sqlmodel import Session
+    from app.database import get_engine
     from app.services.course_knowledge_service import (
         get_user_course_knowledge_outline,
         resolve_current_course_node,
@@ -69,37 +58,44 @@ async def run_course_knowledge_agent(
 
     user_uid = state["user_id"]
 
-    profile = db_session.get(UserProfile, user_uid)
-    if profile is None or profile.profile_data.get("type") != "basic_profile":
-        return {"error": "请先完成基础画像。"}
+    with Session(get_engine()) as db_session:
+        profile = db_session.get(UserProfile, user_uid)
+        if profile is None or profile.profile_data.get("type") != "basic_profile":
+            return {"error": "请先完成基础画像。"}
 
-    stored_path = get_user_learning_path(db_session, user_uid)
-    if stored_path is None:
-        return {"error": "请先生成学习路径。"}
+        stored_path = get_user_learning_path(db_session, user_uid)
+        if stored_path is None:
+            return {"error": "请先生成学习路径。"}
 
-    path_data = stored_path.path_data
-    course_node = resolve_current_course_node(path_data)
-    course_node_id = str(course_node.get("course_node_id") or "")
-    if not course_node_id:
-        return {"error": "当前课程节点缺少 course_node_id。"}
+        path_data = stored_path.path_data
+        course_node = resolve_current_course_node(path_data)
+        course_node_id = str(course_node.get("course_node_id") or "")
+        if not course_node_id:
+            return {"error": "当前课程节点缺少 course_node_id。"}
 
-    existing = get_user_course_knowledge_outline(db_session, user_uid, course_node_id)
-    if existing is not None:
-        return {"course_knowledge": existing.outline_data}
+        existing = get_user_course_knowledge_outline(db_session, user_uid, course_node_id)
+        if existing is not None:
+            return {"course_knowledge": existing.outline_data}
 
+        # Capture data needed for LLM call before closing the session
+        profile_data = profile.profile_data
+        learning_goal = path_data.get("learning_goal", {})
+        learner_baseline = path_data.get("learner_baseline", {})
+
+    # LLM call happens outside the DB session — no connection held during long inference
     input_data = {
         "course_node": course_node,
-        "user_profile": profile.profile_data,
-        "learning_goal": path_data.get("learning_goal", {}),
-        "learner_baseline": path_data.get("learner_baseline", {}),
+        "user_profile": profile_data,
+        "learning_goal": learning_goal,
+        "learner_baseline": learner_baseline,
     }
     input_text = f"请为当前课程生成个性化章节定义。\n\n{json.dumps(input_data, ensure_ascii=False, indent=2)}"
 
     chain = _build_course_knowledge_chain(llm)
 
     try:
-        response = await chain.ainvoke({"query": input_text, "history": []})
-        parsed = _parse_json_response(response.content)
+        response = await chain.ainvoke({"query": input_text})
+        parsed = parse_json_response(response.content)
         result = CourseKnowledgeOutlineResult.model_validate(parsed)
     except Exception as exc:
         logger.warning("CourseKnowledgeAgent failed: %s", exc)
@@ -110,23 +106,17 @@ async def run_course_knowledge_agent(
     if outline_dict.get("course_node_id") != course_node_id:
         return {"error": "生成的课程章节 node_id 不匹配。"}
 
-    upsert_user_course_knowledge_outline(db_session, user_uid, outline_dict)
+    with Session(get_engine()) as db_session:
+        upsert_user_course_knowledge_outline(db_session, user_uid, outline_dict)
+
     return {"course_knowledge": outline_dict}
 
 
-def _extract_last_tool_call_id(state: OrchestrationState) -> str | None:
-    messages = state.get("messages", [])
-    for msg in reversed(messages):
-        if hasattr(msg, "tool_calls") and msg.tool_calls:
-            return msg.tool_calls[0].get("id")
-    return None
-
-
-def create_course_knowledge_agent_node(llm: BaseChatModel, db_session):
+def create_course_knowledge_agent_node(llm: BaseChatModel):
     async def course_knowledge_node(state: OrchestrationState) -> dict:
-        agent_result = await run_course_knowledge_agent(state, llm, db_session)
+        agent_result = await run_course_knowledge_agent(state, llm)
 
-        tool_call_id = _extract_last_tool_call_id(state)
+        tool_call_id = extract_last_tool_call_id(state)
         tool_message = ToolMessage(
             content=json.dumps(agent_result, ensure_ascii=False),
             tool_call_id=tool_call_id or "unknown",

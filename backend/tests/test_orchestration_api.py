@@ -60,8 +60,8 @@ class MockGraph:
 @contextmanager
 def _mock_create_graph(graph: MockGraph | None = None):
     g = graph or MockGraph()
-    with patch("app.api.orchestration.create_orchestration_graph", return_value=g), \
-         patch("app.orchestration.graph.create_orchestration_graph", return_value=g):
+    with patch("app.api.orchestration.get_orchestration_graph", return_value=g), \
+         patch("app.orchestration.graph.get_orchestration_graph", return_value=g):
         yield g
 
 

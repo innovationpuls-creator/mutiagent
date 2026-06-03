@@ -18,5 +18,7 @@ class OrchestrationState(TypedDict):
     course_knowledge: Optional[dict]
 
     response: str
+    answer: Optional[dict]
     question_box: Optional[dict]
+    profile_completed: Optional[bool]
     error: Optional[str]

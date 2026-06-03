@@ -266,9 +266,22 @@ export type MessageRole = 'user' | 'assistant' | 'system';
 
 export type MessageStatus = 'pending' | 'streaming' | 'completed' | 'error';
 
-export type AgentRunStepKind = 'agent' | 'route' | 'answer' | 'data' | 'system';
+export type AgentRunStepKind = 'agent' | 'route' | 'answer' | 'data' | 'system' | 'thought' | 'tool_call';
 
 export type AgentRunStepStatus = 'running' | 'success' | 'error' | 'skipped';
+
+export interface ThoughtChunkEntry {
+  stepId: string;
+  text: string;
+  timestamp: number;
+}
+
+export interface PartialStructuredData {
+  schemaName: string;
+  partialData: unknown;
+  raw: string;
+  timestamp: number;
+}
 
 export interface AgentRunStep {
   stepId: string;
@@ -280,6 +293,7 @@ export interface AgentRunStep {
   durationMs?: number;
   dependsOn?: string[];
   parallelGroup?: string | null;
+  thoughtLog?: ThoughtChunkEntry[];
 }
 
 export interface ChatMessage {
@@ -294,6 +308,7 @@ export interface ChatMessage {
   runTrace?: AgentRunStep[];
   activeStepId?: string | null;
   error?: string;
+  partialData?: PartialStructuredData | null;
 }
 
 export type ChatState = 'idle' | 'connecting' | 'streaming' | 'error';

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate
 
 from app.orchestration.agent_plan import LearningPathResult, normalize_learning_path_result_payload
 from app.orchestration.agents.prompts import LEARNING_PATH_AGENT_SYSTEM_PROMPT
+from app.orchestration.agents.utils import extract_last_tool_call_id, parse_json_response
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
@@ -31,21 +31,9 @@ LEARNING_PATH_PROMPT = LEARNING_PATH_AGENT_SYSTEM_PROMPT + """
 直接输出纯 JSON。"""
 
 
-def _parse_json_response(text: str) -> dict:
-    text = text.strip()
-    json_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
-    if json_match:
-        text = json_match.group(1).strip()
-    text = text.strip()
-    if text.startswith("{") or text.startswith("["):
-        return json.loads(text)
-    raise ValueError(f"Response does not contain valid JSON: {text[:200]}")
-
-
 def _build_learning_path_chain(llm: BaseChatModel):
     prompt = ChatPromptTemplate.from_messages([
         ("system", LEARNING_PATH_PROMPT),
-        MessagesPlaceholder("history"),
         ("human", "{query}"),
     ])
     return prompt | llm
@@ -54,7 +42,6 @@ def _build_learning_path_chain(llm: BaseChatModel):
 async def run_learning_path_agent(
     state: OrchestrationState,
     llm: BaseChatModel,
-    db_session,
 ) -> dict:
     profile_data = state.get("profile", {})
     if not profile_data or profile_data.get("type") != "basic_profile":
@@ -80,34 +67,30 @@ async def run_learning_path_agent(
     chain = _build_learning_path_chain(llm)
 
     try:
-        response = await chain.ainvoke({"query": input_text, "history": []})
-        parsed = _parse_json_response(response.content)
+        response = await chain.ainvoke({"query": input_text})
+        parsed = parse_json_response(response.content)
         result = LearningPathResult.model_validate(normalize_learning_path_result_payload(parsed))
     except Exception as exc:
         logger.warning("LearningPathAgent failed: %s", exc)
         return {"error": str(exc)}
 
-    path_dict = normalize_learning_path_result_payload(result.model_dump())
+    # Use model_dump() directly — no redundant second normalize call
+    path_dict = result.model_dump()
 
+    from sqlmodel import Session
+    from app.database import get_engine
     from app.services.learning_path_service import upsert_user_learning_path
-    upsert_user_learning_path(db_session, state["user_id"], path_dict)
+    with Session(get_engine()) as db_session:
+        upsert_user_learning_path(db_session, state["user_id"], path_dict)
 
     return {"learning_path": path_dict}
 
 
-def _extract_last_tool_call_id(state: OrchestrationState) -> str | None:
-    messages = state.get("messages", [])
-    for msg in reversed(messages):
-        if hasattr(msg, "tool_calls") and msg.tool_calls:
-            return msg.tool_calls[0].get("id")
-    return None
-
-
-def create_learning_path_agent_node(llm: BaseChatModel, db_session):
+def create_learning_path_agent_node(llm: BaseChatModel):
     async def learning_path_agent_node(state: OrchestrationState) -> dict:
-        agent_result = await run_learning_path_agent(state, llm, db_session)
+        agent_result = await run_learning_path_agent(state, llm)
 
-        tool_call_id = _extract_last_tool_call_id(state)
+        tool_call_id = extract_last_tool_call_id(state)
         tool_message = ToolMessage(
             content=json.dumps(agent_result, ensure_ascii=False),
             tool_call_id=tool_call_id or "unknown",
