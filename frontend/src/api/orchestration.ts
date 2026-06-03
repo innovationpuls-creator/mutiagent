@@ -1,4 +1,4 @@
-import type { AgentTraceStep, AgentUserAnswer, LearningPathResult, QuestionBox, SessionMessage } from '../types/chat';
+import { isLearningPathResult, type AgentTraceStep, type AgentUserAnswer, type LearningPathResult, type QuestionBox, type SessionMessage } from '../types/chat';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
 
@@ -47,6 +47,7 @@ export interface SessionTurn {
 
 export type SessionEventName =
   | 'agent_step_started'
+  | 'agent_step_progress'
   | 'agent_step_completed'
   | 'agent_step_failed'
   | 'orchestration_completed'
@@ -85,6 +86,7 @@ export interface ChatflowTurn {
 
 export type AgentEventName =
   | 'agent_started'
+  | 'agent_progress'
   | 'agent_completed'
   | 'route_decided'
   | 'completed'
@@ -162,7 +164,7 @@ function normalizeSessionResponse(payload: SessionResponse): SessionTurn {
     agentTrace: payload.agent_trace.map(normalizeTraceStep),
     completed: payload.completed,
     profile: payload.profile,
-    learningPath: payload.learning_path,
+    learningPath: isLearningPathResult(payload.learning_path) ? payload.learning_path : null,
   };
 }
 
@@ -195,7 +197,7 @@ function getProfile(value: unknown): SessionMessage | null | undefined {
 
 function getLearningPath(value: unknown): LearningPathResult | null | undefined {
   if (value === null) return null;
-  return isUnknownRecord(value) ? (value as unknown as LearningPathResult) : undefined;
+  return isLearningPathResult(value) ? value : undefined;
 }
 
 function getAnswer(value: unknown): AgentUserAnswer | undefined {
@@ -297,6 +299,15 @@ function toChatflowEvent(event: SessionAgentEvent): ChatflowAgentEvent {
   if (event.event === 'agent_step_started') {
     return {
       event: 'agent_started',
+      agent,
+      label: event.label,
+      message: event.message,
+      phase: event.phase,
+    };
+  }
+  if (event.event === 'agent_step_progress') {
+    return {
+      event: 'agent_progress',
       agent,
       label: event.label,
       message: event.message,

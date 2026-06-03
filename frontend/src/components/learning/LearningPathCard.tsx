@@ -1,5 +1,5 @@
 import styled from 'styled-components';
-import type { LearningPathResult } from '../../types/chat';
+import type { GradeId, LearningPathResult, ResourceDirection } from '../../types/chat';
 
 interface LearningPathCardProps {
   path: LearningPathResult;
@@ -32,114 +32,211 @@ function TextPair({ label, value }: { label: string; value: string }) {
   );
 }
 
+const gradeOrder: GradeId[] = ['year_1', 'year_2', 'year_3', 'year_4'];
+
+const relationTypeLabels: Record<string, string> = {
+  prerequisite: '先修',
+  contains: '包含',
+  parallel: '并行',
+  reinforces: '强化',
+  applies_to: '应用',
+  extends: '扩展',
+  review_before: '复习先于',
+  resource_basis_for: '资源基础',
+};
+
+function findResourceDirections(path: LearningPathResult, ids: string[]): ResourceDirection[] {
+  return path.resource_generation_contract.resource_directions.filter((direction) =>
+    ids.includes(direction.resource_direction_id),
+  );
+}
+
 export function LearningPathCard({ path }: LearningPathCardProps) {
   return (
     <Card>
       <Header>
-        <span>学习路径</span>
-        <strong>为你整理的学习路径</strong>
+        <span>学习路径 · {path.schema_version}</span>
+        <strong>大学四年课程路径</strong>
       </Header>
 
       <Section>
-        <h3>明确学习目标</h3>
+        <h3>目标与基础画像</h3>
         <GoalGrid>
           <TextPair label="目标课程或技能" value={path.learning_goal.target_course_or_skill} />
-          <TextPair label="目标完成时间" value={path.learning_goal.target_completion_time} />
           <TextPair label="学习目标类型" value={path.learning_goal.goal_type} />
           <TextPair label="最终效果" value={path.learning_goal.desired_outcome} />
+          <TextPair label="四年结果" value={path.learning_goal.four_year_outcome} />
+          <TextPair label="当前年级" value={path.learner_baseline.current_grade} />
+          <TextPair label="专业方向" value={path.learner_baseline.major} />
+          <TextPair label="每周可用时间" value={path.learner_baseline.weekly_available_time} />
         </GoalGrid>
       </Section>
 
       <Section>
-        <h3>分析当前差距</h3>
-        <SubSection>
-          <h4>当前已掌握内容</h4>
-          <ListBlock items={path.gap_analysis.current_mastered_content} />
-        </SubSection>
-        <SubSection>
-          <h4>当前薄弱环节</h4>
-          <ListBlock items={path.gap_analysis.current_weaknesses} />
-        </SubSection>
-        <SubSection>
-          <h4>目标所需能力</h4>
-          <ListBlock items={path.gap_analysis.required_capabilities} />
-        </SubSection>
-        <SubSection>
-          <h4>主要差距</h4>
-          <ListBlock items={path.gap_analysis.main_gaps} />
-        </SubSection>
-      </Section>
-
-      <Section>
-        <h3>规划基础学习路径</h3>
-        <StageStack>
-          {path.foundation_path.stages.map((stage) => (
-            <StageCard key={stage.stage_id}>
-              <StageHeader>
-                <span>{stage.stage_id}</span>
-                <h4>{stage.stage_name}</h4>
-              </StageHeader>
-              <p>{stage.learning_goal}</p>
-              <StageGrid>
-                <SubSection>
-                  <h5>学习内容</h5>
-                  <ListBlock items={stage.learning_content} />
-                </SubSection>
-                <SubSection>
-                  <h5>学习任务</h5>
-                  <ListBlock items={stage.learning_tasks} />
-                </SubSection>
-                <SubSection>
-                  <h5>推荐方法</h5>
-                  <ListBlock items={stage.recommended_methods} />
-                </SubSection>
-                <SubSection>
-                  <h5>完成标准</h5>
-                  <ListBlock items={stage.completion_standard} />
-                </SubSection>
-              </StageGrid>
-            </StageCard>
-          ))}
-        </StageStack>
-      </Section>
-
-      <Section>
-        <h3>生成学习路径</h3>
-        <Overview>{path.generated_path.overall_goal}</Overview>
+        <h3>画像约束</h3>
         <RouteGrid>
           <SubSection>
-            <h4>阶段路线</h4>
-            <ListBlock
-              items={path.generated_path.stage_routes.map((route) => `${route.stage_id}：${route.route_summary}`)}
-            />
+            <h4>已掌握内容</h4>
+            <ListBlock items={path.learner_baseline.mastered_content} />
           </SubSection>
           <SubSection>
-            <h4>学习节奏</h4>
+            <h4>薄弱环节</h4>
+            <ListBlock items={path.learner_baseline.weaknesses} />
+          </SubSection>
+          <SubSection>
+            <h4>学习约束</h4>
+            <ListBlock items={path.learner_baseline.constraints} />
+          </SubSection>
+        </RouteGrid>
+      </Section>
+
+      <Section>
+        <h3>年级课程节点</h3>
+        <GradeStack>
+          {gradeOrder.map((gradeId) => (
+            <GradeCard key={gradeId}>
+              <GradeHeader>
+                <span>{path.grade_plans[gradeId].grade_id}</span>
+                <div>
+                  <h4>{path.grade_plans[gradeId].grade_name}</h4>
+                  <p>{path.grade_plans[gradeId].grade_goal}</p>
+                </div>
+              </GradeHeader>
+
+              <CourseStack>
+                {path.grade_plans[gradeId].course_nodes.map((courseNode) => (
+                  <CourseCard key={courseNode.course_node_id}>
+                    <CourseHeader>
+                      <div>
+                        <span>{courseNode.course_node_id}</span>
+                        <h5>{courseNode.course_or_chapter_theme}</h5>
+                      </div>
+                      <TimePill>
+                        {courseNode.time_arrangement.semester_scope} · {courseNode.time_arrangement.duration}
+                      </TimePill>
+                    </CourseHeader>
+
+                    <Overview>{courseNode.course_goal}</Overview>
+
+                    <StageGrid>
+                      <SubSection>
+                        <h5>先修知识</h5>
+                        <ListBlock items={courseNode.prerequisite_node_ids} />
+                      </SubSection>
+                      <SubSection>
+                        <h5>学习顺序</h5>
+                        <ListBlock items={courseNode.learning_sequence} />
+                      </SubSection>
+                      <SubSection>
+                        <h5>重点</h5>
+                        <ListBlock items={courseNode.key_points} />
+                      </SubSection>
+                      <SubSection>
+                        <h5>难点</h5>
+                        <ListBlock items={courseNode.difficult_points} />
+                      </SubSection>
+                    </StageGrid>
+
+                    <SubSection>
+                      <h5>核心知识点</h5>
+                      <KnowledgeGrid>
+                        {courseNode.core_knowledge_points.map((knowledgePoint) => (
+                          <KnowledgeItem key={knowledgePoint.knowledge_point_id}>
+                            <span>{knowledgePoint.level}</span>
+                            <strong>{knowledgePoint.name}</strong>
+                            <p>{knowledgePoint.description}</p>
+                            <small>{knowledgePoint.mastery_standard}</small>
+                          </KnowledgeItem>
+                        ))}
+                      </KnowledgeGrid>
+                    </SubSection>
+
+                    <SubSection>
+                      <h5>章节与知识点层级</h5>
+                      <ChapterStack>
+                        {courseNode.chapter_nodes.map((chapterNode) => (
+                          <ChapterCard key={chapterNode.chapter_node_id}>
+                            <strong>{chapterNode.chapter_theme}</strong>
+                            <ListBlock
+                              items={chapterNode.knowledge_hierarchy.map(
+                                (item) => `${item.hierarchy_level}：${item.title}，${item.summary}`,
+                              )}
+                            />
+                          </ChapterCard>
+                        ))}
+                      </ChapterStack>
+                    </SubSection>
+
+                    <SubSection>
+                      <h5>知识点之间的关系</h5>
+                      <ListBlock
+                        items={courseNode.knowledge_relations.map(
+                          (relation) =>
+                            `${relation.from_node_id} ${relationTypeLabels[relation.relation_type]} ${relation.to_node_id}：${relation.description}`,
+                        )}
+                      />
+                    </SubSection>
+
+                    <SubSection>
+                      <h5>后续资源生成方向</h5>
+                      <ResourceGrid>
+                        {findResourceDirections(path, courseNode.downstream_resource_direction_ids).map((direction) => (
+                          <ResourceItem key={direction.resource_direction_id}>
+                            <span>{direction.resource_type} · {direction.difficulty_level}</span>
+                            <strong>{direction.generation_goal}</strong>
+                            <ListBlock items={direction.content_requirements} />
+                          </ResourceItem>
+                        ))}
+                      </ResourceGrid>
+                    </SubSection>
+
+                    <SubSection>
+                      <h5>验收标准</h5>
+                      <ListBlock items={courseNode.acceptance_criteria} />
+                    </SubSection>
+                  </CourseCard>
+                ))}
+              </CourseStack>
+            </GradeCard>
+          ))}
+        </GradeStack>
+      </Section>
+
+      <Section>
+        <h3>全局关系与更新规则</h3>
+        <RouteGrid>
+          <SubSection>
+            <h4>关键路径</h4>
             <ListBlock
-              items={path.generated_path.schedule.map(
-                (item) => `${item.period}：${item.focus}，${item.milestone}`,
+              items={path.knowledge_graph.critical_paths.map(
+                (pathItem) => `${pathItem.purpose}：${pathItem.ordered_node_ids.join(' → ')}`,
               )}
             />
           </SubSection>
           <SubSection>
-            <h4>任务清单</h4>
-            <ListBlock items={path.generated_path.task_checklist} />
-          </SubSection>
-          <SubSection>
-            <h4>资源类型</h4>
-            <ListBlock items={path.generated_path.recommended_resource_types} />
-          </SubSection>
-          <SubSection>
-            <h4>验收标准</h4>
+            <h4>跨节点关系</h4>
             <ListBlock
-              items={path.generated_path.stage_acceptance_criteria.flatMap((item) =>
-                item.criteria.map((criterion) => `${item.stage_id}：${criterion}`),
+              items={path.knowledge_graph.global_relations.map(
+                (relation) =>
+                  `${relation.from_node_id} ${relationTypeLabels[relation.relation_type]} ${relation.to_node_id}：${relation.description}`,
               )}
             />
           </SubSection>
           <SubSection>
-            <h4>下一步行动</h4>
-            <ListBlock items={path.generated_path.next_actions} />
+            <h4>后续资源生成方向</h4>
+            <ListBlock
+              items={path.resource_generation_contract.resource_directions.map(
+                (direction) => `${direction.resource_type}：${direction.generation_goal}`,
+              )}
+            />
+          </SubSection>
+          <SubSection>
+            <h4>动态更新依据</h4>
+            <ListBlock items={[...path.dynamic_update_contract.trackable_metrics, ...path.dynamic_update_contract.update_triggers]} />
+          </SubSection>
+          <SubSection>
+            <h4>调整策略</h4>
+            <Overview>{path.dynamic_update_contract.adjustment_strategy}</Overview>
           </SubSection>
         </RouteGrid>
       </Section>
@@ -263,26 +360,27 @@ const EmptyText = styled.p`
   color: var(--color-text-muted);
 `;
 
-const StageStack = styled.div`
+const GradeStack = styled.div`
   display: grid;
   gap: var(--space-16);
 `;
 
-const StageCard = styled.article`
+const GradeCard = styled.article`
   display: grid;
-  gap: var(--space-12);
+  gap: var(--space-16);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   box-shadow: var(--shadow-sm);
   padding: var(--space-16);
 `;
 
-const StageHeader = styled.header`
+const GradeHeader = styled.header`
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-12);
 
   span {
+    flex: 0 0 auto;
     border-radius: var(--radius-full);
     background: var(--color-secondary-soft);
     color: var(--color-text-secondary);
@@ -290,6 +388,59 @@ const StageHeader = styled.header`
     line-height: 1.6;
     padding: var(--space-4) var(--space-8);
   }
+
+  div {
+    display: grid;
+    gap: var(--space-4);
+    min-inline-size: 0;
+  }
+`;
+
+const CourseStack = styled.div`
+  display: grid;
+  gap: var(--space-12);
+`;
+
+const CourseCard = styled.article`
+  display: grid;
+  gap: var(--space-16);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  padding: var(--space-16);
+`;
+
+const CourseHeader = styled.header`
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-12);
+
+  div {
+    display: grid;
+    gap: var(--space-4);
+    min-inline-size: 0;
+  }
+
+  span {
+    color: var(--color-text-muted);
+    font-size: var(--text-caption);
+    line-height: 1.6;
+  }
+
+  @media (max-width: 767px) {
+    display: grid;
+  }
+`;
+
+const TimePill = styled.p`
+  flex: 0 0 auto;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  line-height: 1.6;
+  padding: var(--space-4) var(--space-12);
 `;
 
 const StageGrid = styled.div`
@@ -308,4 +459,78 @@ const RouteGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(var(--container-narrow), 100%), 1fr));
   gap: var(--space-16);
+`;
+
+const KnowledgeGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--container-narrow), 100%), 1fr));
+  gap: var(--space-12);
+`;
+
+const KnowledgeItem = styled.article`
+  display: grid;
+  gap: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-secondary-soft);
+  padding: var(--space-12) var(--space-16);
+
+  span,
+  small {
+    color: var(--color-text-secondary);
+    font-size: var(--text-caption);
+    line-height: 1.6;
+  }
+
+  strong {
+    color: var(--color-text-primary);
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.6;
+  }
+`;
+
+const ChapterStack = styled.div`
+  display: grid;
+  gap: var(--space-8);
+`;
+
+const ChapterCard = styled.article`
+  display: grid;
+  gap: var(--space-8);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: var(--space-12) var(--space-16);
+
+  strong {
+    color: var(--color-text-primary);
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.6;
+  }
+`;
+
+const ResourceGrid = styled.div`
+  display: grid;
+  gap: var(--space-8);
+`;
+
+const ResourceItem = styled.article`
+  display: grid;
+  gap: var(--space-8);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  padding: var(--space-12) var(--space-16);
+
+  span {
+    color: var(--color-text-secondary);
+    font-size: var(--text-caption);
+    line-height: 1.6;
+  }
+
+  strong {
+    color: var(--color-text-primary);
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.6;
+  }
 `;

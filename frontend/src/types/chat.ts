@@ -22,7 +22,15 @@ export interface ConfirmedInfo {
 
 export interface QuestionBox {
   question: string;
-  options: string[];
+  options: QuestionBoxOption[];
+}
+
+export interface QuestionBoxOption {
+  label: string;
+  value: string;
+  description: string;
+  target_fields: string[];
+  fills: Record<string, string | string[]>;
 }
 
 export interface AgentUserAnswer {
@@ -43,38 +51,204 @@ export interface AgentTraceStep {
 }
 
 export interface LearningPathResult {
+  schema_version: 'learning_path.v2.course_node';
   learning_goal: {
     target_course_or_skill: string;
-    target_completion_time: string;
     goal_type: '考试' | '课程学习' | '项目实践' | '能力提升' | '就业准备' | '其他';
     desired_outcome: string;
+    four_year_outcome: string;
   };
-  gap_analysis: {
-    current_mastered_content: string[];
-    current_weaknesses: string[];
-    required_capabilities: string[];
-    main_gaps: string[];
+  learner_baseline: {
+    current_grade: string;
+    major: string;
+    mastered_content: string[];
+    weaknesses: string[];
+    constraints: string[];
+    weekly_available_time: string;
   };
-  foundation_path: {
-    stages: Array<{
-      stage_id: string;
-      stage_name: string;
-      learning_goal: string;
-      learning_content: string[];
-      learning_tasks: string[];
-      recommended_methods: string[];
-      completion_standard: string[];
-    }>;
+  planning_rules: {
+    node_unit: 'course_node';
+    grade_boundary_rule: string;
+    sequence_rule: string;
+    resource_rule: string;
   };
-  generated_path: {
-    overall_goal: string;
-    stage_routes: Array<{ stage_id: string; route_summary: string }>;
-    schedule: Array<{ period: string; focus: string; milestone: string }>;
-    task_checklist: string[];
-    recommended_resource_types: string[];
-    stage_acceptance_criteria: Array<{ stage_id: string; criteria: string[] }>;
-    next_actions: string[];
+  grade_plans: Record<GradeId, GradePlan>;
+  knowledge_graph: {
+    global_relations: KnowledgeRelation[];
+    critical_paths: CriticalPath[];
   };
+  resource_generation_contract: {
+    downstream_agents: ResourceAgent[];
+    resource_directions: ResourceDirection[];
+  };
+  dynamic_update_contract: {
+    trackable_metrics: string[];
+    update_triggers: string[];
+    adjustment_strategy: string;
+  };
+}
+
+function hasRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
+
+function hasString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+function hasArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+export function isLearningPathResult(value: unknown): value is LearningPathResult {
+  if (!hasRecord(value)) return false;
+  if (value.schema_version !== 'learning_path.v2.course_node') return false;
+
+  const learningGoal = value.learning_goal;
+  const learnerBaseline = value.learner_baseline;
+  const gradePlans = value.grade_plans;
+  const knowledgeGraph = value.knowledge_graph;
+  const resourceContract = value.resource_generation_contract;
+  const updateContract = value.dynamic_update_contract;
+  if (!hasRecord(learningGoal) || !hasRecord(learnerBaseline) || !hasRecord(gradePlans)) return false;
+  if (!hasRecord(knowledgeGraph) || !hasRecord(resourceContract) || !hasRecord(updateContract)) return false;
+
+  const hasGradePlan = (gradeId: GradeId) => {
+    const gradePlan = gradePlans[gradeId];
+    return hasRecord(gradePlan)
+      && hasString(gradePlan.grade_id)
+      && hasString(gradePlan.grade_name)
+      && hasString(gradePlan.grade_goal)
+      && hasArray(gradePlan.course_nodes);
+  };
+
+  return hasString(learningGoal.target_course_or_skill)
+    && hasString(learningGoal.goal_type)
+    && hasString(learningGoal.desired_outcome)
+    && hasString(learningGoal.four_year_outcome)
+    && hasString(learnerBaseline.current_grade)
+    && hasString(learnerBaseline.major)
+    && hasArray(learnerBaseline.mastered_content)
+    && hasArray(learnerBaseline.weaknesses)
+    && hasArray(learnerBaseline.constraints)
+    && hasString(learnerBaseline.weekly_available_time)
+    && hasGradePlan('year_1')
+    && hasGradePlan('year_2')
+    && hasGradePlan('year_3')
+    && hasGradePlan('year_4')
+    && hasArray(knowledgeGraph.global_relations)
+    && hasArray(knowledgeGraph.critical_paths)
+    && hasArray(resourceContract.downstream_agents)
+    && hasArray(resourceContract.resource_directions)
+    && hasArray(updateContract.trackable_metrics)
+    && hasArray(updateContract.update_triggers)
+    && hasString(updateContract.adjustment_strategy);
+}
+
+export type GradeId = 'year_1' | 'year_2' | 'year_3' | 'year_4';
+export type SemesterScope = '上学期' | '下学期' | '寒假' | '暑假' | '全年级内弹性安排';
+export type HierarchyLevel = '课程' | '章节' | '主题' | '知识点';
+export type KnowledgePointLevel = '基础' | '核心' | '进阶' | '应用';
+export type RelationType =
+  | 'prerequisite'
+  | 'contains'
+  | 'parallel'
+  | 'reinforces'
+  | 'applies_to'
+  | 'extends'
+  | 'review_before'
+  | 'resource_basis_for';
+export type ResourceAgent =
+  | 'learning_resource_agent'
+  | 'question_bank_agent'
+  | 'document_agent'
+  | 'code_example_agent'
+  | 'video_script_agent'
+  | 'dynamic_update_agent';
+export type ResourceType = '学习资源' | '题库' | '文档' | '代码示例' | '视频脚本' | '动态更新任务';
+export type DifficultyLevel = '入门' | '基础' | '中级' | '高级';
+
+export interface GradePlan {
+  grade_id: GradeId;
+  grade_name: string;
+  grade_goal: string;
+  course_nodes: CourseNode[];
+}
+
+export interface CourseNode {
+  course_node_id: string;
+  grade_id: GradeId;
+  course_or_chapter_theme: string;
+  time_arrangement: TimeArrangement;
+  course_goal: string;
+  prerequisite_node_ids: string[];
+  chapter_nodes: ChapterNode[];
+  core_knowledge_points: KnowledgePoint[];
+  key_points: string[];
+  difficult_points: string[];
+  learning_sequence: string[];
+  knowledge_relations: KnowledgeRelation[];
+  downstream_resource_direction_ids: string[];
+  acceptance_criteria: string[];
+}
+
+export interface TimeArrangement {
+  semester_scope: SemesterScope;
+  duration: string;
+  pace_reason: string;
+}
+
+export interface ChapterNode {
+  chapter_node_id: string;
+  chapter_theme: string;
+  knowledge_hierarchy: KnowledgeHierarchyItem[];
+  core_knowledge_point_ids: string[];
+  key_points: string[];
+  difficult_points: string[];
+  prerequisite_node_ids: string[];
+  learning_sequence: string[];
+  knowledge_relations: KnowledgeRelation[];
+  downstream_resource_direction_ids: string[];
+}
+
+export interface KnowledgeHierarchyItem {
+  hierarchy_id: string;
+  parent_hierarchy_id: string | null;
+  hierarchy_level: HierarchyLevel;
+  title: string;
+  summary: string;
+  knowledge_point_ids: string[];
+}
+
+export interface KnowledgePoint {
+  knowledge_point_id: string;
+  name: string;
+  parent_knowledge_point_id: string | null;
+  level: KnowledgePointLevel;
+  description: string;
+  mastery_standard: string;
+}
+
+export interface KnowledgeRelation {
+  from_node_id: string;
+  to_node_id: string;
+  relation_type: RelationType;
+  description: string;
+}
+
+export interface CriticalPath {
+  path_id: string;
+  purpose: string;
+  ordered_node_ids: string[];
+}
+
+export interface ResourceDirection {
+  resource_direction_id: string;
+  target_node_ids: string[];
+  resource_type: ResourceType;
+  generation_goal: string;
+  content_requirements: string[];
+  difficulty_level: DifficultyLevel;
 }
 
 export interface SessionMessage {

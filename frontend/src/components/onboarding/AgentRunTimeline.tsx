@@ -107,6 +107,10 @@ export function AgentRunTimeline({ steps = [], status }: AgentRunTimelineProps) 
               text={statusText}
               time={runStatus === 'running' ? durationText : undefined}
               status={runStatus === 'running' ? 'running' : 'done'}
+              onClick={() => {
+                manualExpandedRef.current = false;
+                setExpanded(false);
+              }}
             />
           </motion.div>
         ) : (

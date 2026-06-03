@@ -23,6 +23,7 @@ export function useChatSession(
 
   useEffect(() => {
     if (recoveredRef.current) return;
+    if (storeSessionId) return;
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get(SESSION_PARAM);
     if (!sessionId) return;
@@ -37,7 +38,7 @@ export function useChatSession(
     } catch {
       clearSessionFromUrl();
     }
-  }, [onSessionRecovered, clearSessionFromUrl]);
+  }, [storeSessionId, onSessionRecovered, clearSessionFromUrl]);
 
   useEffect(() => {
     if (!storeSessionId) return;

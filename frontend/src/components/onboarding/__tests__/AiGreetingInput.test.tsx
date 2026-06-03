@@ -53,6 +53,16 @@ const emptyConfirmedInfo = {
   constraints: '',
 };
 
+function questionOption(label: string) {
+  return {
+    label,
+    value: label,
+    description: `${label}阶段`,
+    target_fields: ['current_grade'],
+    fills: { current_grade: label },
+  };
+}
+
 test('renders AiGreetingInput cleanly without CSS areas', () => {
   const { container } = render(
     <AuthProvider>
@@ -199,7 +209,7 @@ test('keeps the agent timeline when a structured question card is rendered', asy
     confirmed_info: emptyConfirmedInfo,
     defaulted_fields: [],
     question_md: '请选择你的年级',
-    question_box: { question: '请选择你的年级', options: ['大一', '大二'] },
+    question_box: { question: '请选择你的年级', options: [questionOption('大一'), questionOption('大二')] },
     text: '请选择你的年级',
   };
   const encoder = new TextEncoder();

@@ -1,22 +1,33 @@
 import React from 'react';
 import styled from 'styled-components';
+import { motion } from 'framer-motion';
 
 interface StatusBarProps {
   text: string;
   time?: string;
   status?: 'running' | 'done' | 'none';
+  onClick?: () => void;
 }
 
-export function StatusBar({ text, time, status = 'running' }: StatusBarProps) {
+export function StatusBar({ text, time, status = 'running', onClick }: StatusBarProps) {
   return (
     <>
       <Divider />
-      <Bar>
+      <Bar 
+        as={onClick ? motion.button : 'div'} 
+        type={onClick ? "button" : undefined}
+        onClick={onClick}
+        whileHover={onClick ? { background: 'oklch(90% 0.03 73 / 0.25)' } : undefined}
+        whileTap={onClick ? { scale: 0.99 } : undefined}
+        $clickable={!!onClick}
+        $hasTime={!!time}
+      >
         {status !== 'none' && (
           <Dot className={status === 'running' ? 'dot-running' : status === 'done' ? 'dot-done' : ''} data-testid="status-dot" />
         )}
         <span className="text">{text}</span>
         {time && <span className="time">{time}</span>}
+        {onClick && <span className="chevron">收起详情</span>}
       </Bar>
     </>
   );
@@ -27,7 +38,7 @@ const Divider = styled.div`
   border-top: 1px solid oklch(78% 0.012 80 / 0.18);
 `;
 
-const Bar = styled.div`
+const Bar = styled.div<{ $clickable?: boolean; $hasTime?: boolean }>`
   margin: 0 var(--space-12) var(--space-12);
   padding: 6px var(--space-12);
   display: flex;
@@ -36,6 +47,13 @@ const Bar = styled.div`
   font-family: var(--font-mono);
   font-size: var(--text-caption);
   background: transparent;
+  border: none;
+  width: calc(100% - var(--space-24));
+  text-align: left;
+  border-radius: var(--radius-md);
+  ${props => props.$clickable && `
+    cursor: pointer;
+  `}
 
   .text {
     color: var(--color-text-secondary);
@@ -44,6 +62,13 @@ const Bar = styled.div`
   .time {
     color: var(--color-text-muted);
     margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .chevron {
+    color: var(--color-text-muted);
+    font-size: 11px;
+    margin-left: ${props => props.$hasTime ? 'var(--space-8)' : 'auto'};
     flex-shrink: 0;
   }
 `;

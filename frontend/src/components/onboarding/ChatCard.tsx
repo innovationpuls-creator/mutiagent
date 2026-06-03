@@ -1,6 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
-import type { ConfirmedInfo, SessionMessage } from '../../types/chat';
+import type { ConfirmedInfo, QuestionBoxOption, SessionMessage } from '../../types/chat';
 
 interface ChatCardProps {
   message: SessionMessage;
@@ -86,20 +86,42 @@ function splitProfileText(text: string): Array<{ title: string; body: string }> 
     .filter((section) => section.title && section.body);
 }
 
+function normalizeQuestionOption(option: QuestionBoxOption | string): QuestionBoxOption {
+  if (typeof option !== 'string') return option;
+  return {
+    label: option,
+    value: option,
+    description: '',
+    target_fields: [],
+    fills: {},
+  };
+}
+
 export function ChatCard({ message, onSendReply, disabled = false }: ChatCardProps) {
   const [inputValue, setInputValue] = React.useState('');
+  const [hasSubmittedReply, setHasSubmittedReply] = React.useState(false);
   const confirmed = filledFields(message.confirmed_info);
   const defaultedFields = Array.isArray(message.defaulted_fields) ? message.defaulted_fields : [];
-  const options = Array.isArray(message.question_box?.options) ? message.question_box.options : [];
+  const options = Array.isArray(message.question_box?.options)
+    ? (message.question_box.options as Array<QuestionBoxOption | string>).map(normalizeQuestionOption)
+    : [];
   const questions = extractQuestions(message);
   const generatedSections = message.type === 'basic_profile' ? splitProfileText(message.text) : [];
   const profileSummary = generatedSections[0]?.body || message.text || '画像已生成，可以继续补充你的学习目标与约束。';
+  const showReplyControls = Boolean(onSendReply) && !hasSubmittedReply;
 
   const submitInlineAnswer = () => {
     const answer = inputValue.trim();
     if (!answer || disabled) return;
     onSendReply?.(answer);
+    setHasSubmittedReply(true);
     setInputValue('');
+  };
+
+  const submitOptionAnswer = (option: QuestionBoxOption) => {
+    if (disabled) return;
+    onSendReply?.(option.label);
+    setHasSubmittedReply(true);
   };
 
   return (
@@ -189,17 +211,19 @@ export function ChatCard({ message, onSendReply, disabled = false }: ChatCardPro
             </div>
           </section>
 
-          {onSendReply && (message.question_mode === 'question_box' ? (
+          {showReplyControls && (message.question_mode === 'question_box' ? (
             <div className="options-grid">
               {options.map((option) => (
                 <button
-                  key={option}
+                  key={`${option.label}:${option.value}`}
+                  aria-label={option.label}
                   className="option-btn"
                   disabled={disabled}
-                  onClick={() => onSendReply?.(option)}
+                  onClick={() => submitOptionAnswer(option)}
                   type="button"
                 >
-                  {option}
+                  <span>{option.label}</span>
+                  {option.description ? <small>{option.description}</small> : null}
                 </button>
               ))}
             </div>
@@ -388,8 +412,23 @@ const CardWrapper = styled.article`
   }
 
   .option-btn {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
     min-block-size: 44px;
     padding: var(--space-12) var(--space-24);
+    text-align: start;
+  }
+
+  .option-btn span {
+    line-height: 1.4;
+  }
+
+  .option-btn small {
+    color: var(--color-text-muted);
+    font-size: var(--text-caption);
+    line-height: 1.5;
   }
 
   .option-btn:hover,

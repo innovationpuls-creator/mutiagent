@@ -425,7 +425,44 @@ Use this prompt in the Dify main Chatflow LLM for `DIFY_CHAT_API_KEY`.
     "user_message": "我先帮你确认学习目标，然后再生成完整学习路径。你希望这条路径更偏考试、项目实践，还是就业准备？",
     "question_box": {
       "question": "你希望学习目标更偏向哪一类？",
-      "options": ["考试", "项目实践", "就业准备", "能力提升"]
+      "options": [
+        {
+          "label": "考试",
+          "value": "考试",
+          "description": "以考试、期末、考证或考研为目标",
+          "target_fields": ["learning_goal_type"],
+          "fills": {
+            "learning_goal_type": "考试"
+          }
+        },
+        {
+          "label": "项目实践",
+          "value": "项目实践",
+          "description": "以做出可展示项目为目标",
+          "target_fields": ["learning_goal_type"],
+          "fills": {
+            "learning_goal_type": "项目实践"
+          }
+        },
+        {
+          "label": "就业准备",
+          "value": "就业准备",
+          "description": "以实习、简历、面试和作品集为目标",
+          "target_fields": ["learning_goal_type"],
+          "fills": {
+            "learning_goal_type": "就业准备"
+          }
+        },
+        {
+          "label": "能力提升",
+          "value": "能力提升",
+          "description": "以提升某项技术能力为目标",
+          "target_fields": ["learning_goal_type"],
+          "fills": {
+            "learning_goal_type": "能力提升"
+          }
+        }
+      ]
     }
   },
   "control": {

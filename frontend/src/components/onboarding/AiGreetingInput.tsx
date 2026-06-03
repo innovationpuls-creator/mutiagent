@@ -105,7 +105,7 @@ function upsertPanelStep(
 }
 
 function mergeSessionAgentStep(current: AgentStepStatus[], event: SessionAgentEvent): AgentStepStatus[] {
-  if (event.event === 'agent_step_started') {
+  if (event.event === 'agent_step_started' || event.event === 'agent_step_progress') {
     return upsertPanelStep(
       updateStep(current, 'context', 'completed', '已读取本轮输入与历史对话'),
       {
@@ -239,9 +239,11 @@ export function AiGreetingInput() {
     const label = getSessionEventTitle(event);
     const kind: AgentRunStepKind = (event.kind as AgentRunStepKind) || 'agent';
 
-    if (event.event === 'agent_step_started') {
+    if (event.event === 'agent_step_started' || event.event === 'agent_step_progress') {
       const stepId = getSessionEventStepId(event);
-      startTimeRef.current[stepId] = now;
+      if (event.event === 'agent_step_started') {
+          startTimeRef.current[stepId] = now;
+      }
       return {
         step: {
           stepId,
@@ -354,6 +356,7 @@ export function AiGreetingInput() {
 
             if (
               event.event === 'agent_step_started'
+              || event.event === 'agent_step_progress'
               || event.event === 'agent_step_completed'
               || event.event === 'agent_step_failed'
               || event.event === 'orchestration_completed'
@@ -364,7 +367,7 @@ export function AiGreetingInput() {
               }
               const { step } = eventToStep(event, now);
               if (step) {
-                dispatch({ type: 'STEP', step });
+                dispatch({ type: 'STEP', messageId: assistantMsgId, step });
               }
               lastEventTimeRef.current = now;
             }
@@ -376,13 +379,14 @@ export function AiGreetingInput() {
               finalSessionId = event.sessionId ?? undefined;
 
               if (event.error) {
-                dispatch({ type: 'RUN_ERROR', message: event.error });
+                dispatch({ type: 'RUN_ERROR', messageId: assistantMsgId, message: event.error });
                 setGlobalError(event.error);
                 return;
               }
 
               dispatch({
                 type: 'RUN_DONE',
+                messageId: assistantMsgId,
                 content: text,
                 sessionMessage: event.profile,
                 agentAnswer: event.answer ?? null,
@@ -393,7 +397,7 @@ export function AiGreetingInput() {
 
             if (event.event === 'agent_step_failed' || event.event === 'orchestration_failed') {
               const message = event.error ?? event.message ?? '对话请求失败，请稍后重试';
-              dispatch({ type: 'RUN_ERROR', message });
+              dispatch({ type: 'RUN_ERROR', messageId: assistantMsgId, message });
               setGlobalError(message);
             }
           },
@@ -411,7 +415,7 @@ export function AiGreetingInput() {
       } catch (err) {
         if (runIdRef.current !== runId) return;
         const message = err instanceof Error ? err.message : '对话请求失败，请稍后重试';
-        dispatch({ type: 'RUN_ERROR', message });
+        dispatch({ type: 'RUN_ERROR', messageId: assistantMsgId, message });
         setGlobalError(message);
         setAgentSteps((current) =>
           current.map((step) =>

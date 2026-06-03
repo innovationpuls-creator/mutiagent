@@ -5,6 +5,7 @@ import { IcebreakerFlow } from './components/learning/IcebreakerFlow';
 import { BlankPage } from './components/home/BlankPage';
 import { MainLayout } from './components/layout/MainLayout';
 import { SproutPage } from './pages/SproutPage';
+import { BranchPage } from './pages/branch/BranchPage';
 
 function AnimatedRoutes() {
   const location = useLocation();
@@ -19,7 +20,7 @@ function AnimatedRoutes() {
         
         <Route element={<MainLayout />}>
           <Route path="/sprout" element={<SproutPage />} />
-          <Route path="/branch" element={<BlankPage title="繁枝" />} />
+          <Route path="/branch" element={<BranchPage />} />
           <Route path="/leaf" element={<BlankPage title="叶茂" />} />
           <Route path="/forest" element={<BlankPage title="成林" />} />
           <Route path="/canopy" element={<BlankPage title="成森" />} />

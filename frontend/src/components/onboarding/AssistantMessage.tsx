@@ -1,6 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
-import type { ChatMessage } from '../../types/chat';
+import type { ChatMessage, QuestionBoxOption } from '../../types/chat';
 import { AgentRunTimeline } from './AgentRunTimeline';
 import { StreamingText } from './StreamingText';
 
@@ -40,6 +40,17 @@ interface AssistantMessageProps {
   showTimeline?: boolean;
 }
 
+function normalizeQuestionOption(option: QuestionBoxOption | string): QuestionBoxOption {
+  if (typeof option !== 'string') return option;
+  return {
+    label: option,
+    value: option,
+    description: '',
+    target_fields: [],
+    fills: {},
+  };
+}
+
 export function AssistantMessage({ message, onSendReply, disabled, showTimeline = true }: AssistantMessageProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
@@ -74,16 +85,20 @@ export function AssistantMessage({ message, onSendReply, disabled, showTimeline 
         <QuestionBoxPanel>
           <p>{message.agentAnswer.questionBox.question}</p>
           <div>
-            {message.agentAnswer.questionBox.options.map((option) => (
-              <button
-                key={option}
-                type="button"
-                disabled={disabled || !onSendReply}
-                onClick={() => onSendReply?.(option)}
-              >
-                {option}
-              </button>
-            ))}
+            {(message.agentAnswer.questionBox.options as Array<QuestionBoxOption | string>)
+              .map(normalizeQuestionOption)
+              .map((option) => (
+                <button
+                  key={`${option.label}:${option.value}`}
+                  aria-label={option.label}
+                  type="button"
+                  disabled={disabled || !onSendReply}
+                  onClick={() => onSendReply?.(option.label)}
+                >
+                  <span>{option.label}</span>
+                  {option.description ? <small>{option.description}</small> : null}
+                </button>
+              ))}
           </div>
         </QuestionBoxPanel>
       )}
@@ -133,6 +148,10 @@ const QuestionBoxPanel = styled.div`
   }
 
   button {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
     min-block-size: calc(var(--space-40) + var(--space-4));
     border: none;
     border-radius: var(--radius-full);
@@ -142,12 +161,20 @@ const QuestionBoxPanel = styled.div`
     font-family: var(--font-body);
     font-size: var(--text-button);
     font-weight: var(--font-weight-medium);
-    line-height: 1;
+    line-height: 1.4;
     padding: var(--space-12) var(--space-16);
+    text-align: start;
     box-shadow: var(--shadow-sm);
     transition:
       transform var(--duration-lazy-hover) var(--ease-lazy),
       opacity var(--duration-lazy-hover) var(--ease-lazy);
+  }
+
+  button small {
+    color: var(--color-text-muted);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-regular);
+    line-height: 1.5;
   }
 
   button:hover:not(:disabled) {

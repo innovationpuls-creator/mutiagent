@@ -17,16 +17,17 @@ export const initialChatStore: ChatStore = {
 export type ChatAction =
   | { type: 'ADD_USER_MESSAGE'; id: string; content: string }
   | { type: 'ADD_ASSISTANT_MESSAGE'; id: string }
-  | { type: 'STEP'; step: AgentRunStep }
+  | { type: 'STEP'; messageId: string; step: AgentRunStep }
   | {
     type: 'RUN_DONE';
+    messageId: string;
     content: string;
     sessionMessage: ChatMessage['sessionMessage'];
     sessionId?: string;
     agentAnswer?: ChatMessage['agentAnswer'];
     learningPath?: ChatMessage['learningPath'];
   }
-  | { type: 'RUN_ERROR'; message: string }
+  | { type: 'RUN_ERROR'; messageId: string; message: string }
   | { type: 'CONNECTING' }
   | { type: 'STREAMING_STARTED' }
   | { type: 'CLEAR_ERROR' }
@@ -43,6 +44,17 @@ function updateLastAssistant(messages: ChatMessage[], updater: (msg: ChatMessage
     }
   }
   return updated;
+}
+
+function updateAssistantById(
+  messages: ChatMessage[],
+  messageId: string,
+  updater: (msg: ChatMessage) => ChatMessage,
+): ChatMessage[] {
+  const messageIndex = messages.findIndex((msg) => msg.id === messageId && msg.role === 'assistant');
+  if (messageIndex < 0) return messages;
+
+  return messages.map((msg, index) => (index === messageIndex ? updater(msg) : msg));
 }
 
 export function chatReducer(state: ChatStore, action: ChatAction): ChatStore {
@@ -90,7 +102,7 @@ export function chatReducer(state: ChatStore, action: ChatAction): ChatStore {
       return {
         ...state,
         state: 'streaming',
-        messages: updateLastAssistant(state.messages, (msg) => {
+        messages: updateAssistantById(state.messages, action.messageId, (msg) => {
           const trace = [...(msg.runTrace ?? [])];
           const existingIdx = trace.findIndex((s) => s.stepId === step.stepId);
           if (existingIdx >= 0) {
@@ -114,7 +126,7 @@ export function chatReducer(state: ChatStore, action: ChatAction): ChatStore {
         ...state,
         state: 'idle',
         currentSessionId: action.sessionId ?? state.currentSessionId,
-        messages: updateLastAssistant(state.messages, (msg) => ({
+        messages: updateAssistantById(state.messages, action.messageId, (msg) => ({
           ...msg,
           content: action.content,
           sessionMessage: action.sessionMessage,
@@ -131,7 +143,7 @@ export function chatReducer(state: ChatStore, action: ChatAction): ChatStore {
         ...state,
         state: 'error',
         errorMessage: action.message,
-        messages: updateLastAssistant(state.messages, (msg) => ({
+        messages: updateAssistantById(state.messages, action.messageId, (msg) => ({
           ...msg,
           status: 'error',
           error: action.message,

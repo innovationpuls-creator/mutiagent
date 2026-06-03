@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 OAuthProvider = Literal["qq", "xuexitong"]
@@ -90,9 +90,30 @@ class SessionContinueRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
 
 
+class AgentQuestionBoxOption(BaseModel):
+    label: str
+    value: str
+    description: str
+    target_fields: list[str]
+    fills: dict[str, str | list[str]]
+
+    @model_validator(mode="before")
+    @classmethod
+    def convert_from_string(cls, data: object) -> object:
+        if isinstance(data, str):
+            return {
+                "label": data,
+                "value": data,
+                "description": "",
+                "target_fields": ["query"],
+                "fills": {"query": data},
+            }
+        return data
+
+
 class AgentQuestionBox(BaseModel):
     question: str
-    options: list[str]
+    options: list[AgentQuestionBoxOption]
 
 
 class AgentUserAnswer(BaseModel):
@@ -119,6 +140,7 @@ class SessionResponse(BaseModel):
     completed: bool
     profile: dict | None = None
     learning_path: dict | None = None
+    course_knowledge_outline: dict | None = None
 
 
 class LearningPathReadResponse(BaseModel):
