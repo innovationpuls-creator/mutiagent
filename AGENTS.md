@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 这是一个全栈单体仓库 (Monorepo) 项目。
 - **frontend/**: 前端设计系统项目，风格参考 Headspace 冥想应用——温暖、柔和、有呼吸感。所有界面使用中文，面向中文用户。
-- **backend/**: AI 驱动的后端服务，基于 FastAPI、LangGraph 和 Dify 架构。
+- **backend/**: AI 驱动的后端服务，基于 FastAPI、LangGraph、LangChain 架构。
 
 ## Mandatory: Design System Docs
 
@@ -51,9 +51,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 后端 (backend)
 - **核心框架**：FastAPI + Python
-- **智能体中枢**：LangGraph (负责意图识别与工作流路由)
-- **智能体执行层**：Dify (具体的 Agent 业务工作流开发)
-- **数据库与 ORM**：SQLite + SQLModel
+- **智能体中枢**：LangGraph Supervisor + ToolNode (负责调度 Worker Agent)
+- **智能体执行层**：LangChain Chain + structured_output (Worker Agent — Profile/LearningPath/CourseKnowledge)
+- **LLM 接入**：OpenAI-compatible API (当前: 阿里百炼 Qwen3.5+)
+- **数据库与 ORM**：PostgreSQL (psycopg2) + SQLModel (测试用 SQLite)
+- **异步**：全链路 asyncio
+- **参考文档**：`docs/后端技术栈.md` 包含完整架构说明
 
 ## Code Style
 
@@ -68,7 +71,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 后端规范
 - **强类型化**：必须使用 Python Type Hints（Pydantic/SQLModel）保证类型安全。
 - **路由拆分**：FastAPI 的接口必须基于功能模块通过 `APIRouter` 拆分，禁止在 main.py 中堆砌逻辑。
-- **节点解耦**：LangGraph 的 State 与 Node 必须解耦，保持中枢路由的轻量化。只负责控制走向，繁重的 AI 工作流交给 Dify 处理。
+- **节点解耦**：LangGraph 的 State 与 Node 必须解耦，保持中枢路由的轻量化。Worker Agent 各自是独立的 LangChain Chain，不直接互相调用。
 
 ## Git
 

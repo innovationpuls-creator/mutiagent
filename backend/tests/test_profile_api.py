@@ -44,7 +44,7 @@ def test_profile_dashboard_returns_empty_state_before_profile_generated(tmp_path
     assert body["recommendations"] == []
 
 
-def test_profile_dashboard_reads_saved_dify_profile(tmp_path: Path) -> None:
+def test_profile_dashboard_reads_saved_profile(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'profile-saved.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
