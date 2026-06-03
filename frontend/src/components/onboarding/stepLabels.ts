@@ -6,6 +6,8 @@ const STEP_LABELS: Record<AgentRunStep['kind'], string> = {
   answer: 'answer',
   data: '数据',
   system: '系统',
+  thought: '思考',
+  tool_call: '工具调用',
 };
 
 export function formatStepKind(step: AgentRunStep): string {

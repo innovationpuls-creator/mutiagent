@@ -138,6 +138,26 @@ function mergeSessionAgentStep(current: AgentStepStatus[], event: SessionAgentEv
     });
   }
 
+  if (event.event === 'data_schema_started') {
+    return upsertPanelStep(current, {
+      id: getSessionEventStepId(event),
+      title: event.schemaName ? `生成 ${event.schemaName}` : '结构化数据生成中',
+      status: 'running',
+      detail: `正在生成 ${event.label ?? '结构化数据'}...`,
+      agentType: 'write',
+    });
+  }
+
+  if (event.event === 'data_completed') {
+    return upsertPanelStep(current, {
+      id: getSessionEventStepId(event),
+      title: event.label ?? '数据生成完成',
+      status: 'completed',
+      detail: '结构化数据已生成',
+      agentType: 'write',
+    });
+  }
+
   if (event.event === 'orchestration_completed') {
     return current.map((step) =>
       step.status === 'running' || step.status === 'routed'
@@ -294,6 +314,36 @@ export function AiGreetingInput() {
       };
     }
 
+    if (event.event === 'tool_call_started') {
+      const stepId = event.stepId ?? getSessionEventStepId(event);
+      return {
+        step: {
+          stepId: `tool-${event.toolName ?? stepId}-${now}`,
+          kind: 'tool_call' as AgentRunStepKind,
+          status: 'running',
+          title: event.label ?? `调用 ${event.toolName ?? '工具'}`,
+          summary: getTimelineSummary(event, event.message ?? '正在调用...'),
+          agent: agent ?? null,
+        },
+      };
+    }
+
+    if (event.event === 'tool_call_completed') {
+      const stepId = event.stepId ?? getSessionEventStepId(event);
+      const startTime = lastEventTimeRef.current || runStartTimeRef.current || now;
+      return {
+        step: {
+          stepId: `tool-${event.toolName ?? stepId}-${now}`,
+          kind: 'tool_call' as AgentRunStepKind,
+          status: 'success',
+          title: event.label ?? `${event.toolName ?? '工具'} 完成`,
+          summary: getTimelineSummary(event, event.output ?? event.message ?? '完成'),
+          agent: agent ?? null,
+          durationMs: getVisibleDuration(startTime, now),
+        },
+      };
+    }
+
     if (event.event === 'orchestration_completed') {
       const startTime = lastEventTimeRef.current || runStartTimeRef.current || now;
       return {
@@ -351,6 +401,57 @@ export function AiGreetingInput() {
             if (runIdRef.current !== runId) return;
             setAgentSteps((current) => mergeSessionAgentStep(current, event));
             setAgentEvents((current) => [...current, event]);
+
+            if (event.event === 'message_started') {
+              dispatch({ type: 'MESSAGE_STARTED', messageId: assistantMsgId });
+              return;
+            }
+
+            if (event.event === 'text_chunk' && event.chunk) {
+              dispatch({ type: 'TEXT_CHUNK', messageId: assistantMsgId, chunk: event.chunk });
+              return;
+            }
+
+            if (event.event === 'thought_chunk' && event.chunk) {
+              dispatch({
+                type: 'THOUGHT_CHUNK',
+                messageId: assistantMsgId,
+                stepId: event.stepId ?? 'supervisor',
+                text: event.chunk,
+              });
+              return;
+            }
+
+            if (event.event === 'tool_call_started' || event.event === 'tool_call_completed') {
+              if (event.event === 'tool_call_started') {
+                dispatch({ type: 'STREAMING_STARTED' });
+              }
+              const { step } = eventToStep(event, getTimelineNow());
+              if (step) {
+                dispatch({ type: 'STEP', messageId: assistantMsgId, step });
+              }
+              lastEventTimeRef.current = getTimelineNow();
+              return;
+            }
+
+            if (event.event === 'data_schema_started' && event.schemaName) {
+              dispatch({ type: 'DATA_SCHEMA_STARTED', messageId: assistantMsgId, schemaName: event.schemaName });
+              return;
+            }
+
+            if (event.event === 'data_chunk' && event.partialData) {
+              dispatch({
+                type: 'DATA_CHUNK',
+                messageId: assistantMsgId,
+                raw: typeof event.partialData === 'string' ? event.partialData : JSON.stringify(event.partialData),
+              });
+              return;
+            }
+
+            if (event.event === 'data_completed') {
+              dispatch({ type: 'DATA_COMPLETED', messageId: assistantMsgId, finalData: event.finalData });
+              return;
+            }
 
             const now = getTimelineNow();
 
