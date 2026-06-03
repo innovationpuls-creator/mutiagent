@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage
-from langchain_core.runnables import Runnable
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from app.orchestration.agent_plan import CourseKnowledgeOutlineResult
@@ -14,14 +14,44 @@ from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
 
+COURSE_KNOWLEDGE_PROMPT = COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT + """
 
-def _build_course_knowledge_chain(llm: BaseChatModel) -> Runnable:
+## 输出格式
+你必须输出一个合法的 JSON 对象，不要包含 markdown 代码块标记。输出结构必须包含：
+
+- schema_version: 字符串 "course_knowledge_outline.v1"
+- course_node_id: 字符串
+- course_name: 字符串
+- grade_id: 字符串 "year_1"到"year_4"
+- personalization_summary: 字符串
+- sections: 数组 每项含 section_id(格式如 "1"/"1.1"/"1.1.1" 数字点分), parent_section_id(字符串或null), depth(整数1-4), title(字符串), order_index(整数)
+- learning_sequence: 字符串数组 section_id 的顺序列表
+- markmap_source: 字符串 思维导图文本
+
+示例输出格式:
+{{"schema_version": "course_knowledge_outline.v1", "course_node_id": "year_1_course_1", "course_name": "程序设计基础", "grade_id": "year_1", "personalization_summary": "...", "sections": [{{"section_id": "1", "parent_section_id": null, "depth": 1, "title": "第1章 ...", "order_index": 1}}], "learning_sequence": ["1", "1.1", "1.2"], "markmap_source": "# 课程名\\n## 第1章 ..."}}
+
+直接输出纯 JSON。"""
+
+
+def _parse_json_response(text: str) -> dict:
+    text = text.strip()
+    json_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+    if json_match:
+        text = json_match.group(1).strip()
+    text = text.strip()
+    if text.startswith("{") or text.startswith("["):
+        return json.loads(text)
+    raise ValueError(f"Response does not contain valid JSON: {text[:200]}")
+
+
+def _build_course_knowledge_chain(llm: BaseChatModel):
     prompt = ChatPromptTemplate.from_messages([
-        ("system", COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT),
+        ("system", COURSE_KNOWLEDGE_PROMPT),
         MessagesPlaceholder("history"),
         ("human", "{query}"),
     ])
-    return prompt | llm.with_structured_output(CourseKnowledgeOutlineResult)
+    return prompt | llm
 
 
 async def run_course_knowledge_agent(
@@ -68,7 +98,9 @@ async def run_course_knowledge_agent(
     chain = _build_course_knowledge_chain(llm)
 
     try:
-        result: CourseKnowledgeOutlineResult = await chain.ainvoke({"query": input_text, "history": []})
+        response = await chain.ainvoke({"query": input_text, "history": []})
+        parsed = _parse_json_response(response.content)
+        result = CourseKnowledgeOutlineResult.model_validate(parsed)
     except Exception as exc:
         logger.warning("CourseKnowledgeAgent failed: %s", exc)
         return {"error": str(exc)}

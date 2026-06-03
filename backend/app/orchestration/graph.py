@@ -114,7 +114,10 @@ async def stream_orchestration_events(
                 if name in AGENT_LABELS:
                     output = event.get("data", {}).get("output", {})
                     agent_result = output.get(name.replace("_agent", "")) or output
-                    is_error = isinstance(agent_result, dict) and "error" in agent_result
+                    is_error = (
+                        not isinstance(agent_result, dict)
+                        or "error" in agent_result
+                    )
 
                     yield {
                         "event": "agent_failed" if is_error else "agent_completed",
