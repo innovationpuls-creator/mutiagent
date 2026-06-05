@@ -1,17 +1,25 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, StateGraph
 
 from app.orchestration.agents.supervisor import create_supervisor_node
-from app.orchestration.agents.profile import create_profile_agent_node
+from app.orchestration.agents.profile import create_profile_agent_node, is_complete_profile_data
 from app.orchestration.agents.learning_path import create_learning_path_agent_node
 from app.orchestration.agents.course_knowledge import create_course_knowledge_agent_node
-from app.orchestration.llm import get_supervisor_llm, get_worker_llm
+from app.orchestration.llm import (
+    get_supervisor_llm,
+    get_thinking_worker_llm,
+    get_worker_llm,
+)
+from app.orchestration.rule_engine import should_auto_continue_learning_path_after_profile
 from app.orchestration.state import OrchestrationState
+from app.services.learning_path_service import get_preferred_year_learning_path
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +45,13 @@ def route_after_supervisor(state: OrchestrationState) -> str:
     return END
 
 
+def route_after_worker(state: OrchestrationState) -> str:
+    """Allow profile update to hand off to learning-path refresh when required."""
+    if should_auto_continue_learning_path_after_profile(state):
+        return SUPERVISOR_NODE
+    return END
+
+
 def build_orchestration_graph():
     """Build and return the compiled LangGraph — no checkpoint."""
     global _graph
@@ -45,11 +60,12 @@ def build_orchestration_graph():
 
     supervisor_llm = get_supervisor_llm()
     worker_llm = get_worker_llm()
+    thinking_worker_llm = get_thinking_worker_llm()
 
     supervisor_node = create_supervisor_node(supervisor_llm)
     profile_node = create_profile_agent_node(supervisor_llm)
-    learning_path_node = create_learning_path_agent_node(worker_llm)
-    course_knowledge_node = create_course_knowledge_agent_node(worker_llm)
+    learning_path_node = create_learning_path_agent_node(thinking_worker_llm)
+    course_knowledge_node = create_course_knowledge_agent_node(thinking_worker_llm)
 
     builder = StateGraph(OrchestrationState)
 
@@ -71,9 +87,15 @@ def build_orchestration_graph():
         },
     )
 
-    # All workers route back to supervisor for further decision-making
     for worker in WORKER_AGENTS:
-        builder.add_edge(worker, SUPERVISOR_NODE)
+        builder.add_conditional_edges(
+            worker,
+            route_after_worker,
+            {
+                SUPERVISOR_NODE: SUPERVISOR_NODE,
+                END: END,
+            },
+        )
 
     _graph = builder.compile()
     logger.info("Orchestration graph compiled (no checkpoint)")
@@ -86,20 +108,149 @@ def _emit(event_name: str, **kwargs: object) -> dict:
     return {"event": event_name, **kwargs}
 
 
+def _is_hard_agent_error(payload: dict) -> bool:
+    return bool(payload.get("hard_error")) and bool(payload.get("error"))
+
+
+def _event_for_agent_error(agent: str, message: str) -> dict:
+    event = {
+        "event": "error",
+        "agent": agent,
+        "label": AGENT_LABELS.get(agent, agent),
+        "message": message,
+        "recoverable": True,
+        "retryable": False,
+    }
+    if agent == "learning_path_agent":
+        event["retryable"] = True
+        event["retryAction"] = "retry_learning_path"
+    return event
+
+
+def _extract_current_learning_course(final_state: dict[str, Any]) -> dict[str, Any] | None:
+    year_learning_path = final_state.get("year_learning_path")
+    if isinstance(year_learning_path, dict):
+        current_learning_course = year_learning_path.get("current_learning_course")
+        if isinstance(current_learning_course, dict):
+            return current_learning_course
+
+    year_learning_paths = final_state.get("year_learning_paths")
+    if not isinstance(year_learning_paths, dict):
+        return None
+
+    latest_grade_year = final_state.get("latest_grade_year")
+    if isinstance(latest_grade_year, str):
+        preferred_path = get_preferred_year_learning_path(year_learning_paths, latest_grade_year)
+        if isinstance(preferred_path, dict):
+            current_learning_course = preferred_path.get("current_learning_course")
+            if isinstance(current_learning_course, dict):
+                return current_learning_course
+
+    grade_year = final_state.get("grade_year")
+    if isinstance(grade_year, str):
+        scoped_path = year_learning_paths.get(grade_year)
+        if isinstance(scoped_path, dict):
+            current_learning_course = scoped_path.get("current_learning_course")
+            if isinstance(current_learning_course, dict):
+                return current_learning_course
+
+    for path in year_learning_paths.values():
+        if not isinstance(path, dict):
+            continue
+        current_learning_course = path.get("current_learning_course")
+        if isinstance(current_learning_course, dict):
+            return current_learning_course
+
+    return None
+
+
+async def _iter_graph_events_with_idle_status(
+    graph_events: AsyncGenerator[dict, None],
+    idle_timeout_seconds: float,
+) -> AsyncGenerator[dict, None]:
+    iterator = graph_events.__aiter__()
+    pending = asyncio.create_task(iterator.__anext__())
+    try:
+        while True:
+            done, _ = await asyncio.wait({pending}, timeout=idle_timeout_seconds)
+            if not done:
+                yield {"event": "__idle_timeout__"}
+                continue
+
+            try:
+                event = pending.result()
+            except StopAsyncIteration:
+                break
+
+            yield event
+            pending = asyncio.create_task(iterator.__anext__())
+    finally:
+        if not pending.done():
+            pending.cancel()
+
+
+def _final_response_from_state(final_state: dict[str, Any], supervisor_streaming_text: str) -> str:
+    response = final_state.get("response")
+    if isinstance(response, str) and response.strip():
+        return response.strip()
+
+    if supervisor_streaming_text.strip():
+        return supervisor_streaming_text.strip()
+
+    course_knowledge = final_state.get("course_knowledge")
+    if isinstance(course_knowledge, dict):
+        course_name = course_knowledge.get("course_name")
+        personalization_summary = course_knowledge.get("personalization_summary")
+        parts: list[str] = []
+        if isinstance(course_name, str) and course_name.strip():
+            parts.append(f"课程大纲已生成：《{course_name.strip()}》")
+        if isinstance(personalization_summary, str) and personalization_summary.strip():
+            parts.append(personalization_summary.strip())
+        if parts:
+            return "，".join(parts) + "。"
+
+    current_learning_course = _extract_current_learning_course(final_state)
+    if isinstance(current_learning_course, dict):
+        theme = current_learning_course.get("course_or_chapter_theme")
+        next_action = current_learning_course.get("next_action")
+        clauses = ["学习路径已生成"]
+        if isinstance(theme, str) and theme.strip():
+            clauses.append(f"当前建议先学习《{theme.strip()}》")
+        if isinstance(next_action, str) and next_action.strip():
+            clauses.append(f"下一步：{next_action.strip()}")
+        return "，".join(clauses) + "。"
+
+    profile = final_state.get("profile")
+    if isinstance(profile, dict):
+        for key in ("text", "summary_text"):
+            value = profile.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    return ""
+
+
 async def stream_orchestration_events(
     state: OrchestrationState,
+    idle_timeout_seconds: float = 8.0,
 ) -> AsyncGenerator[dict, None]:
     """Stream LangGraph execution as fine-grained SSE events."""
     graph = build_orchestration_graph()
 
     current_agent: str | None = None
     supervisor_streaming_text = ""
+    generated_paths_this_turn = False
+    generated_outline_this_turn = False
+    announced_agents: set[str] = set()
 
     try:
         yield _emit(
-            "session_started",
-            session_id=state.get("session_id", ""),
-            query=state.get("query", ""),
+            "agent_calling",
+            stepId="intent-routing",
+            kind="route",
+            agent="intent_agent",
+            label="意图识别智能体",
+            message="正在判断本轮要调用的智能体",
         )
 
         yield _emit(
@@ -123,13 +274,29 @@ async def stream_orchestration_events(
                 summary=f"已加载 {len(paths)} 个年级的学习路径",
             )
 
-        async for event in graph.astream_events(state, version="v2"):
+        graph_events = graph.astream_events(state, version="v2")
+        async for event in _iter_graph_events_with_idle_status(graph_events, idle_timeout_seconds):
             kind = event.get("event", "")
             name = event.get("name", "")
+
+            if kind == "__idle_timeout__":
+                yield _emit(
+                    "supervisor_thinking",
+                    message="仍在处理，请稍等一下...",
+                )
+                continue
 
             if kind == "on_chain_start":
                 if name in AGENT_LABELS:
                     current_agent = name
+                    if name not in announced_agents:
+                        announced_agents.add(name)
+                        yield _emit(
+                            "agent_calling",
+                            agent=name,
+                            label=AGENT_LABELS.get(name, name),
+                            message=f"{AGENT_LABELS.get(name, name)}开始处理本轮请求",
+                        )
 
             elif kind == "on_chat_model_stream":
                 chunk = event.get("data", {}).get("chunk")
@@ -147,6 +314,7 @@ async def stream_orchestration_events(
                             tc_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
                             tc_args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", "")
                             if tc_name:
+                                announced_agents.add(tc_name)
                                 yield _emit(
                                     "supervisor_plan",
                                     agent=tc_name,
@@ -180,6 +348,18 @@ async def stream_orchestration_events(
                             try:
                                 import json
                                 data = json.loads(str(msg.content)) if isinstance(msg.content, str) else msg.content
+                                if isinstance(data, dict) and _is_hard_agent_error(data):
+                                    yield _emit(
+                                        "agent_result",
+                                        stepId=f"{name}-result",
+                                        kind="agent",
+                                        agent=name,
+                                        label=AGENT_LABELS.get(name, name),
+                                        success=False,
+                                        error=str(data["error"]),
+                                    )
+                                    yield _event_for_agent_error(name, str(data["error"]))
+                                    return
                                 if isinstance(data, dict) and data.get("error"):
                                     has_error = True
                                     error_msg = data["error"]
@@ -196,6 +376,10 @@ async def stream_orchestration_events(
                             error=error_msg,
                         )
                     else:
+                        if name == "learning_path_agent":
+                            generated_paths_this_turn = True
+                        if name == "course_knowledge_agent":
+                            generated_outline_this_turn = True
                         yield _emit(
                             "agent_progress",
                             agent=name,
@@ -215,14 +399,14 @@ async def stream_orchestration_events(
                     final_state = event.get("data", {}).get("output", state)
                     yield _emit(
                         "message_completed",
-                        full_text=final_state.get("response", supervisor_streaming_text),
+                        full_text=_final_response_from_state(final_state, supervisor_streaming_text),
                     )
                     yield _emit(
                         "session_completed",
                         session_id=state.get("session_id", ""),
-                        has_profile=bool(final_state.get("profile")),
-                        has_paths=bool(final_state.get("year_learning_paths")),
-                        has_outline=bool(final_state.get("course_knowledge")),
+                        has_profile=is_complete_profile_data(final_state.get("profile")),
+                        has_paths=generated_paths_this_turn,
+                        has_outline=generated_outline_this_turn,
                     )
 
     except Exception as exc:

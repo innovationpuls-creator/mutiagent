@@ -9,6 +9,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.security import hash_password
 from app.models import User
+from app.schema_upgrades import migrate_removed_learning_path_table, run_schema_upgrades
 
 load_dotenv()
 
@@ -53,7 +54,9 @@ def create_session_dependency(engine: Engine) -> Callable[[], Generator[Session,
 
 
 def init_db(engine: Engine) -> None:
+    run_schema_upgrades(engine)
     SQLModel.metadata.create_all(engine)
+    migrate_removed_learning_path_table(engine)
 
     with Session(engine) as session:
         existing = session.exec(

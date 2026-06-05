@@ -7,7 +7,9 @@ import { ProfileCard } from './ProfileCard';
 import { TodayLearningCard } from './TodayLearningCard';
 import { RecommendationCard } from './RecommendationCard';
 import { ProfileDetailOverlay } from './ProfileDetailOverlay';
+import { TodayLearningDetailOverlay } from './TodayLearningDetailOverlay';
 import { motionTokens } from '../../styles/motion-tokens';
+import { useAiWidget } from '../../context/AiWidgetContext';
 import './SproutHero.css';
 
 /**
@@ -41,10 +43,12 @@ function getWeekday(): string {
  */
 export function SproutHero() {
   const auth = useAuth();
+  const { openWithMessage } = useAiWidget();
   const reduceMotion = useReducedMotion();
   const [data, setData] = useState<ProfileDashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
+  const [isTodayOverlayOpen, setIsTodayOverlayOpen] = useState(false);
 
   const username = auth.user?.username ?? '同学';
 
@@ -158,7 +162,11 @@ export function SproutHero() {
           summaryText={data.profileSummaryText}
           onClick={() => setIsOverlayOpen(true)}
         />
-        <TodayLearningCard data={data.todayLearning} />
+        <TodayLearningCard
+          data={data.todayLearning}
+          onClick={data.todayLearning.currentLearningCourse ? () => setIsTodayOverlayOpen(true) : undefined}
+          onStartLearning={data.todayLearning.currentLearningCourse ? () => openWithMessage('开始第一门课') : undefined}
+        />
       </div>
 
       {/* ── 底部推荐行 ── */}
@@ -174,6 +182,13 @@ export function SproutHero() {
             isOpen={isOverlayOpen}
             onClose={() => setIsOverlayOpen(false)}
             profile={data.profile}
+          />
+        )}
+        {isTodayOverlayOpen && (
+          <TodayLearningDetailOverlay
+            isOpen={isTodayOverlayOpen}
+            onClose={() => setIsTodayOverlayOpen(false)}
+            data={data.todayLearning}
           />
         )}
       </AnimatePresence>

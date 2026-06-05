@@ -31,7 +31,7 @@ describe('AuthPage', () => {
 
   it('shows login, register, QQ, and xuexitong access in one auth surface', () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
           <AuthPage
             authApi={{
@@ -56,7 +56,7 @@ describe('AuthPage', () => {
     const login = vi.fn().mockResolvedValue(makeAuthResponse('password'));
 
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
           <AuthPage
             authApi={{
@@ -90,7 +90,7 @@ describe('AuthPage', () => {
     const oauth = vi.fn().mockResolvedValue(makeAuthResponse('oauth'));
 
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
           <AuthPage
             authApi={{

@@ -1,3 +1,5 @@
+import type { CourseKnowledgeResult, CourseNode, LearningPathResult } from './chat';
+
 /**
  * 用户画像数据类型
  * 基于 Dify Agent 的 basic_profile → generated 阶段输出的 confirmed_info 结构
@@ -36,6 +38,10 @@ export interface TodayLearning {
   title: string;
   description: string;
   source: string;
+  currentLearningCourse: LearningPathResult['current_learning_course'] | null;
+  currentCourseDetail: CourseNode | null;
+  currentCourseOutline: CourseKnowledgeResult | null;
+  followingCourses: CourseNode[];
 }
 
 export interface ProfileDashboardData {

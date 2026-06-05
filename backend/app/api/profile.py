@@ -7,6 +7,13 @@ from sqlmodel import Session
 
 from app.core.security import create_get_current_user
 from app.models import User, UserProfile
+from app.services.course_knowledge_service import get_user_course_knowledge_outline
+from app.services.learning_path_service import (
+    find_current_course,
+    get_all_year_learning_paths,
+    get_latest_grade_year,
+    iter_year_learning_paths,
+)
 
 SessionDependency = Callable[[], Generator[Session, None, None]]
 
@@ -97,21 +104,99 @@ def _compact(value: object, fallback: str, limit: int = 48) -> str:
     return text if len(text) <= limit else f"{text[:limit]}..."
 
 
-def _dashboard_from_profile(stored: UserProfile | None) -> dict:
+def _today_learning_from_path(
+    session: Session,
+    user_uid: str,
+    year_learning_paths: dict[str, dict] | None,
+    latest_grade_year: str = "",
+) -> dict | None:
+    if not year_learning_paths:
+        return None
+    for path in iter_year_learning_paths(year_learning_paths, latest_grade_year):
+        try:
+            current_course = find_current_course(path)
+        except ValueError:
+            continue
+        current = path["current_learning_course"]
+        grade_plan = path.get("grade_plans", {}).get(current.get("grade_id"), {})
+        course_nodes = grade_plan.get("course_nodes", [])
+        current_index = next(
+            (
+                index
+                for index, course in enumerate(course_nodes)
+                if course.get("course_node_id") == current.get("course_node_id")
+            ),
+            -1,
+        )
+        following = course_nodes[current_index + 1 :] if current_index >= 0 else []
+        course_id = current.get("course_node_id")
+        current_course_outline = None
+        if isinstance(course_id, str) and course_id:
+            current_course_outline = get_user_course_knowledge_outline(session, user_uid, course_id)
+        return {
+            "title": current["course_or_chapter_theme"],
+            "description": (
+                f"{current['course_goal']} 当前重点：{current['current_focus']} "
+                f"下一步：{current['next_action']}"
+            ),
+            "source": "学习路径智能体",
+            "currentLearningCourse": current,
+            "currentCourseDetail": current_course,
+            "currentCourseOutline": current_course_outline,
+            "followingCourses": following,
+        }
+    return None
+
+
+def _dashboard_from_profile(
+    session: Session,
+    user_uid: str,
+    stored: UserProfile | None,
+    year_learning_paths: dict[str, dict] | None = None,
+    latest_grade_year: str = "",
+) -> dict:
+    today_from_path = _today_learning_from_path(
+        session,
+        user_uid,
+        year_learning_paths,
+        latest_grade_year,
+    )
     if stored is None:
         return {
             "profile": DEFAULT_PROFILE,
             "profileCompleteness": 0,
             "profileSummaryText": "还没有生成基础画像。完成 AI 对话后，这里会展示你的真实画像摘要。",
-            "todayLearning": {
+            "todayLearning": today_from_path or {
                 "title": "先完成基础画像",
                 "description": "回答关于年级、专业、学习偏好和目标的几个问题后，我会把结果保存到你的画像里。",
                 "source": "等待画像生成",
+                "currentLearningCourse": None,
+                "currentCourseDetail": None,
+                "currentCourseOutline": None,
+                "followingCourses": [],
             },
             "recommendations": [],
         }
 
-    profile = _camelize_confirmed_info(stored.profile_data)
+    profile_data = stored.profile_data if isinstance(stored.profile_data, dict) else {}
+    profile = _camelize_confirmed_info(profile_data)
+    if profile_data.get("type") == "collecting":
+        return {
+            "profile": profile,
+            "profileCompleteness": _profile_completeness(profile),
+            "profileSummaryText": _summary_from_profile(profile_data, profile),
+            "todayLearning": today_from_path or {
+                "title": "先完成基础画像",
+                "description": "你还有几项关键信息待确认。继续完成画像后，我会把今日学习建议和推荐内容补全到这里。",
+                "source": "等待画像生成",
+                "currentLearningCourse": None,
+                "currentCourseDetail": None,
+                "currentCourseOutline": None,
+                "followingCourses": [],
+            },
+            "recommendations": [],
+        }
+
     short_goal = _compact(profile.get("shortTermGoal"), "围绕近期目标拆解学习任务")
     weakness = _compact(profile.get("weaknesses"), "根据画像补齐能力短板")
     content_preference = _compact(profile.get("contentPreference"), "根据偏好推荐学习资源")
@@ -119,10 +204,14 @@ def _dashboard_from_profile(stored: UserProfile | None) -> dict:
         "profile": profile,
         "profileCompleteness": _profile_completeness(profile),
         "profileSummaryText": _summary_from_profile(stored.profile_data, profile),
-        "todayLearning": {
+        "todayLearning": today_from_path or {
             "title": "基于画像规划下一步",
             "description": f"优先处理「{short_goal}」，同时把「{weakness}」作为本阶段强化重点。",
             "source": "基础画像 Agent",
+            "currentLearningCourse": None,
+            "currentCourseDetail": None,
+            "currentCourseOutline": None,
+            "followingCourses": [],
         },
         "recommendations": [
             {
@@ -160,6 +249,14 @@ def create_profile_router(session_dependency: SessionDependency) -> APIRouter:
         session: Session = Depends(session_dependency),
     ) -> dict:
         stored = session.get(UserProfile, current_user.uid)
-        return _dashboard_from_profile(stored)
+        year_learning_paths = get_all_year_learning_paths(session, current_user.uid)
+        latest_grade_year = get_latest_grade_year(session, current_user.uid)
+        return _dashboard_from_profile(
+            session,
+            current_user.uid,
+            stored,
+            year_learning_paths,
+            latest_grade_year,
+        )
 
     return router

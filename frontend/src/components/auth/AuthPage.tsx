@@ -14,6 +14,7 @@ export interface AuthPageProps {
 }
 
 const oauthDelayMs = 620;
+const SPROUT_INIT_OVERLAY_KEY = 'mutiagent-sprout-init-overlay';
 
 export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
   const navigate = useNavigate();
@@ -32,6 +33,7 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
       const authResult = await action();
       setResult(authResult);
       auth.login(authResult);
+      window.sessionStorage.setItem(SPROUT_INIT_OVERLAY_KEY, '1');
       setTimeout(() => {
         navigate('/sprout', { state: { isFirstLogin: true } });
       }, 1500);

@@ -17,7 +17,7 @@ function AnimatedRoutes() {
       <Routes location={location} key={routeKey}>
         <Route path="/login" element={<AuthPage />} />
         <Route path="/onboarding" element={<IcebreakerFlow />} />
-        
+
         <Route element={<MainLayout />}>
           <Route path="/sprout" element={<SproutPage />} />
           <Route path="/branch" element={<BranchPage />} />
@@ -26,7 +26,7 @@ function AnimatedRoutes() {
           <Route path="/canopy" element={<BlankPage title="成森" />} />
           <Route path="/canvas" element={<div style={{ padding: 'var(--space-32)', color: 'var(--color-text-primary)' }}>Welcome to the Canvas!</div>} />
         </Route>
-        
+
         <Route path="*" element={<Navigate replace to="/login" />} />
       </Routes>
     </AnimatePresence>
@@ -38,7 +38,7 @@ import { GlobalAiWidget } from './components/onboarding/GlobalAiWidget';
 
 export function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AiWidgetProvider>
         <AnimatedRoutes />
         <GlobalAiWidget />

@@ -3,12 +3,17 @@
 Enforces hard rules (blocking) and provides soft hints for the supervisor LLM.
 Hard rules gate which worker agents can be called based on system state.
 Soft hints inject context into the supervisor's system prompt to guide LLM decisions.
+
+Updated for one-shot profile flow and year_learning_paths schema.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
+
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 # ── Agent keys ───────────────────────────────────────────────────────────
 AGENT_PROFILE = "profile_agent"
@@ -24,9 +29,48 @@ _NAVIGATION_QUERIES = {
 _COURSE_START_KEYWORDS = {
     "start_first_course", "开始第一门课", "开始课程", "开始学习", "生成课程",
 }
-_REVIEW_PLAN_KEYWORDS = {
-    "review_plan", "先看看学习路径", "看看路径", "回顾规划", "先看看",
+_COURSE_CHANGE_KEYWORDS = {
+    "换一门课", "生成一门新课", "新课",
 }
+_REVIEW_PLAN_KEYWORDS = {
+    "review_plan",
+    "先看看学习路径",
+    "看看路径",
+    "回顾规划",
+    "先看看",
+    "我的学习路径里面要学哪些课",
+    "学习路径里面要学哪些课",
+}
+_PATH_REFRESH_KEYWORDS = {
+    "继续生成学习路径",
+    "更新学习路径",
+}
+_PROFILE_UPDATE_KEYWORDS = {
+    "修改画像方向",
+    "更新个人画像",
+}
+_DEFAULT_PROFILE_COMMANDS = ("默认", "直接", "随便帮我填", "不确定的你随便帮我填", "帮我生成")
+_COMPLETED_REPLAN_RESPONSE_PREFIX = "当前所有任务已经完成。"
+_PROFILE_UPDATE_PROMPT_PREFIX = "可以。更新个人画像前，请先直接告诉我你想调整的具体信息。"
+_GRADE_PATTERN = re.compile(r"(大[一二三四]|大[1234]|[一二三四]年级|研[一二三])")
+_REQUIRED_CONFIRMED_INFO_KEYS = frozenset({
+    "current_grade",
+    "major",
+    "learning_stage",
+    "has_clear_goal",
+    "learning_method_preference",
+    "learning_pace_preference",
+    "content_preference",
+    "need_guidance",
+    "knowledge_foundation",
+    "strengths",
+    "weaknesses",
+    "experience",
+    "short_term_goal",
+    "long_term_goal",
+    "weekly_available_time",
+    "constraints",
+})
 
 
 @dataclass
@@ -42,22 +86,57 @@ class RuleResult:
 
 def is_navigation_query(query: str) -> bool:
     q = query.strip().lower()
-    return any(kw in q for kw in _NAVIGATION_QUERIES)
+    if not q:
+        return False
+    normalized = re.sub(r"[。！？!?,，、；：\s]+", "", q)
+    return normalized in _NAVIGATION_QUERIES or normalized in {"然后呢", "接下来呢", "下一步呢"}
 
 def is_course_start_query(query: str) -> bool:
     q = query.strip().lower()
     return any(kw in q for kw in _COURSE_START_KEYWORDS)
+
+def is_course_change_query(query: str) -> bool:
+    q = query.strip().lower()
+    if not q:
+        return False
+    has_change_signal = "不想要" in q or any(kw in q for kw in _COURSE_CHANGE_KEYWORDS)
+    return has_change_signal
 
 def is_review_plan_query(query: str) -> bool:
     q = query.strip().lower()
     return any(kw in q for kw in _REVIEW_PLAN_KEYWORDS)
 
 
+def is_learning_path_refresh_query(query: str) -> bool:
+    q = query.strip()
+    return any(keyword in q for keyword in _PATH_REFRESH_KEYWORDS)
+
+
+def is_profile_update_query(query: str) -> bool:
+    q = query.strip()
+    return any(keyword in q for keyword in _PROFILE_UPDATE_KEYWORDS)
+
+
+def is_default_profile_query(query: str) -> bool:
+    q = query.strip()
+    return any(kw in q for kw in _DEFAULT_PROFILE_COMMANDS)
+
+
+def is_profile_refinement_query(query: str) -> bool:
+    q = query.strip()
+    if not q:
+        return False
+    has_grade = bool(_GRADE_PATTERN.search(q))
+    has_major_or_topic = "专业" in q or "ai" in q.lower() or "前端" in q or "后端" in q
+    has_pace = "平时学习" in q or "周末集中" in q or "每天少量" in q or "高强度冲刺" in q
+    has_separators = any(mark in q for mark in ("，", ",", "、", ";", "；"))
+    return has_separators and (has_grade or has_major_or_topic or has_pace)
+
+
 # ── Error extraction ─────────────────────────────────────────────────────
 
 def _extract_last_error(state: dict) -> str:
     messages = state.get("messages", [])
-    from langchain_core.messages import ToolMessage
     for msg in reversed(messages):
         if isinstance(msg, ToolMessage):
             try:
@@ -74,7 +153,88 @@ def _extract_last_error(state: dict) -> str:
     return ""
 
 
+def _extract_last_tool_agent(state: dict) -> str:
+    messages = state.get("messages", [])
+
+    for index in range(len(messages) - 1, -1, -1):
+        msg = messages[index]
+        if isinstance(msg, ToolMessage):
+            tool_call_id = msg.tool_call_id
+            for previous in range(index - 1, -1, -1):
+                prev_msg = messages[previous]
+                if isinstance(prev_msg, AIMessage):
+                    for tool_call in reversed(prev_msg.tool_calls or []):
+                        if tool_call.get("id") == tool_call_id:
+                            return str(tool_call.get("name", ""))
+            return ""
+    return ""
+
+
+def _latest_ai_text(state: dict) -> str:
+    messages = state.get("messages", [])
+
+    for msg in reversed(messages):
+        if isinstance(msg, ToolMessage):
+            continue
+        if isinstance(msg, HumanMessage):
+            continue
+        if not isinstance(msg, AIMessage):
+            continue
+
+        content = msg.content
+        if not isinstance(content, str):
+            continue
+        text = content.strip()
+        if text:
+            return text
+
+    return ""
+
+
+def has_pending_profile_update_followup(state: dict) -> bool:
+    latest_ai_text = _latest_ai_text(state)
+    if not latest_ai_text:
+        return False
+    return latest_ai_text.startswith(_COMPLETED_REPLAN_RESPONSE_PREFIX) or latest_ai_text.startswith(
+        _PROFILE_UPDATE_PROMPT_PREFIX
+    )
+
+
+def should_auto_continue_learning_path_after_profile(state: dict) -> bool:
+    if _extract_last_tool_agent(state) != AGENT_PROFILE:
+        return False
+    if not has_pending_profile_update_followup(state):
+        return False
+    profile = state.get("profile", {})
+    return _is_complete_profile(profile)
+
+
 # ── Hard rule functions ──────────────────────────────────────────────────
+
+def _is_complete_profile(profile: dict) -> bool:
+    if not isinstance(profile, dict):
+        return False
+    if profile.get("type") != "basic_profile":
+        return False
+    summary_text = profile.get("summary_text")
+    if isinstance(summary_text, str) and summary_text.strip():
+        return True
+    text = profile.get("text")
+    if isinstance(text, str) and text.strip():
+        return True
+    confirmed_info = profile.get("confirmed_info")
+    if not isinstance(confirmed_info, dict):
+        return False
+    return _REQUIRED_CONFIRMED_INFO_KEYS.issubset(confirmed_info.keys())
+
+
+def _has_learning_paths(state: dict) -> bool:
+    year_learning_paths = state.get("year_learning_paths")
+    if isinstance(year_learning_paths, dict) and year_learning_paths:
+        return True
+    learning_path = state.get("learning_path")
+    return isinstance(learning_path, dict) and bool(learning_path)
+
 
 def _rule_no_profile(state: dict, profile: dict) -> RuleResult:
     """No completed profile → block path and course_knowledge agents."""
@@ -82,16 +242,19 @@ def _rule_no_profile(state: dict, profile: dict) -> RuleResult:
         blocked_agents={AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE},
         allowed_agents={AGENT_PROFILE},
     )
+    query = str(state.get("query", "")).strip()
 
     profile_type = profile.get("type", "") if isinstance(profile, dict) else ""
-    if profile_type == "collecting":
+    if is_default_profile_query(query):
         result.force_call = AGENT_PROFILE
         result.system_hints.append(
-            "[系统级强制指令] 当前正处于 profile_agent 的信息收集中。"
-            "无论用户说了什么（包括「直接生成」「跳过」「下一步」等），你都必须调用 profile_agent，"
-            "将用户的最新回答通过 query 参数传给它。千万不要自己直接回答用户。"
+            "[系统级强制指令] 用户明确要求按默认信息直接生成基础画像。"
+            "你必须立即调用 profile_agent 生成可编辑画像，"
+            "不要直接回复解释，也不要调用 learning_path_agent 或 course_knowledge_agent。"
         )
         return result
+    if profile_type == "collecting":
+        result.force_call = AGENT_PROFILE
 
     last_error = _extract_last_error(state)
     if last_error and any(kw in last_error for kw in ("profile", "画像", "生成失败", "无法被解析")):
@@ -102,7 +265,7 @@ def _rule_no_profile(state: dict, profile: dict) -> RuleResult:
     else:
         result.system_hints.append(
             "[系统级强制指令] 用户尚未完成基础画像。"
-            "你必须首先调用 profile_agent 收集画像信息，"
+            "你必须首先调用 profile_agent 生成画像，"
             "不要调用 learning_path_agent 或 course_knowledge_agent。"
         )
 
@@ -115,6 +278,43 @@ def _rule_has_profile_no_path(state: dict, profile: dict) -> RuleResult:
         allowed_agents={AGENT_PROFILE, AGENT_LEARNING_PATH},
         blocked_agents={AGENT_COURSE_KNOWLEDGE},
     )
+    query = str(state.get("query", "")).strip()
+    last_tool_agent = _extract_last_tool_agent(state)
+
+    if should_auto_continue_learning_path_after_profile(state):
+        result.force_call = AGENT_LEARNING_PATH
+        result.system_hints.append(
+            "[系统级强制指令] 用户刚完成画像更新，且上一轮要求在画像更新后重新生成学习路径。"
+            "你必须立即调用 learning_path_agent，基于最新画像刷新学习路径。"
+        )
+        return result
+
+    if last_tool_agent == AGENT_PROFILE:
+        result.blocked_agents = {AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
+        result.allowed_agents = {AGENT_PROFILE}
+        result.system_hints.append(
+            "[系统级强制指令] profile_agent 刚在本轮生成完画像。"
+            "这一轮不要继续调用 learning_path_agent。"
+            "请直接向用户展示画像结果，并询问是否继续生成学习路径。"
+        )
+        return result
+
+    if is_profile_refinement_query(query):
+        result.force_call = AGENT_PROFILE
+        result.system_hints.append(
+            "[系统级强制指令] 用户正在补充或修正画像字段。"
+            "你必须调用 profile_agent 更新画像，"
+            "不要直接生成学习路径。"
+        )
+        return result
+    if is_default_profile_query(query):
+        result.force_call = AGENT_LEARNING_PATH
+        result.system_hints.append(
+            "[系统级强制指令] 用户要求基于当前画像直接生成学习路径。"
+            "你必须调用 learning_path_agent，"
+            "不要再次回到画像收集。"
+        )
+        return result
 
     result.system_hints.append(
         "[系统级强制指令] 用户画像已完成但没有学习路径。"
@@ -131,15 +331,74 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
     result = RuleResult()
 
     query = state.get("query", "").strip().lower()
+    last_tool_agent = _extract_last_tool_agent(state)
+    pending_profile_followup = has_pending_profile_update_followup(state)
+
+    if should_auto_continue_learning_path_after_profile(state):
+        result.force_call = AGENT_LEARNING_PATH
+        result.system_hints.append(
+            "[系统级强制指令] 用户刚完成画像更新，且当前流程要求在画像更新后重新生成学习路径。"
+            "你必须立即调用 learning_path_agent，基于最新画像刷新学习路径。"
+        )
+        return result
+
+    if last_tool_agent == AGENT_LEARNING_PATH:
+        result.blocked_agents = {AGENT_PROFILE, AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
+        result.allowed_agents = set()
+        result.system_hints.append(
+            "[系统级强制指令] learning_path_agent 刚在本轮生成完学习路径。"
+            "这一轮不要再次调用任何 agent。"
+            "请直接向用户确认学习路径已生成，并引导用户开始第一门课程或先查看今日推荐。"
+        )
+        return result
+
+    if last_tool_agent == AGENT_COURSE_KNOWLEDGE:
+        result.blocked_agents = {AGENT_PROFILE, AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
+        result.allowed_agents = set()
+        result.system_hints.append(
+            "[系统级强制指令] course_knowledge_agent 刚在本轮生成完课程大纲。"
+            "这一轮不要再次调用任何 agent。"
+            "请直接向用户展示课程大纲结果，并引导用户进入下一步学习。"
+        )
+        return result
+
+    if pending_profile_followup and not (
+        is_navigation_query(query)
+        or is_review_plan_query(query)
+        or is_course_start_query(query)
+        or is_course_change_query(query)
+    ):
+        result.force_call = AGENT_PROFILE
+        result.system_hints.append(
+            "[系统级强制指令] 当前会话正在处理“先更新个人画像，再重新生成学习路径”的后续动作。"
+            "你必须先调用 profile_agent 更新画像；如果仍缺信息，直接向用户追问。"
+        )
+        return result
 
     if is_navigation_query(query):
         result.system_hints.append(
             "[系统级强制指令] 画像和学习路径均已完成。用户表达了继续意愿，"
             "询问用户是否要开始第一门课程。"
         )
-    elif is_course_start_query(query):
+    elif is_course_start_query(query) or is_course_change_query(query):
         result.force_call = AGENT_COURSE_KNOWLEDGE
+    elif is_profile_update_query(query) or is_profile_refinement_query(query):
+        result.force_call = AGENT_PROFILE
+        result.system_hints.append(
+            "[系统级强制指令] 用户要更新已有画像。"
+            "你必须调用 profile_agent 更新画像，"
+            "不要直接开始课程，也不要直接复述旧学习路径。"
+        )
+    elif is_learning_path_refresh_query(query):
+        result.force_call = AGENT_LEARNING_PATH
+        result.system_hints.append(
+            "[系统级强制指令] 用户要基于当前画像重新生成学习路径。"
+            "你必须调用 learning_path_agent，"
+            "不要直接开始课程。"
+        )
     elif is_review_plan_query(query):
+        result.blocked_agents = {AGENT_PROFILE, AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
+        result.allowed_agents = set()
         result.system_hints.append(
             "[系统级强制指令] 用户想回顾学习路径，直接回复概览信息即可，不要调用任何 agent。"
         )
@@ -159,19 +418,17 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
 def evaluate(state: dict) -> RuleResult:
     """Evaluate all hard rules against the current state."""
     profile = state.get("profile", {})
-    learning_path = state.get("learning_path")
 
-    profile_type = profile.get("type", "") if isinstance(profile, dict) else ""
-    has_completed_profile = profile_type == "basic_profile"
-    has_learning_path = learning_path is not None
+    has_completed_profile = _is_complete_profile(profile)
+    has_year_learning_paths = _has_learning_paths(state)
 
     if not has_completed_profile:
         return _rule_no_profile(state, profile)
 
-    if has_completed_profile and not has_learning_path:
+    if has_completed_profile and not has_year_learning_paths:
         return _rule_has_profile_no_path(state, profile)
 
-    if has_completed_profile and has_learning_path:
+    if has_completed_profile and has_year_learning_paths:
         return _rule_has_profile_and_path(state, profile)
 
     return RuleResult(

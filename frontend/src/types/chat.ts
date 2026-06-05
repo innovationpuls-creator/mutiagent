@@ -86,6 +86,27 @@ export interface LearningPathResult {
     update_triggers: string[];
     adjustment_strategy: string;
   };
+  current_learning_course: CurrentLearningCourse;
+}
+
+export interface CourseKnowledgeSection {
+  section_id: string;
+  parent_section_id: string | null;
+  depth: number;
+  title: string;
+  order_index: number;
+  description: string;
+  key_knowledge_points: string[];
+}
+
+export interface CourseKnowledgeResult {
+  course_id: string;
+  course_name: string;
+  grade_year: string;
+  personalization_summary: string;
+  sections: CourseKnowledgeSection[];
+  learning_sequence: string[];
+  total_estimated_hours: string;
 }
 
 function hasRecord(value: unknown): value is Record<string, unknown> {
@@ -110,8 +131,10 @@ export function isLearningPathResult(value: unknown): value is LearningPathResul
   const knowledgeGraph = value.knowledge_graph;
   const resourceContract = value.resource_generation_contract;
   const updateContract = value.dynamic_update_contract;
+  const currentLearningCourse = value.current_learning_course;
   if (!hasRecord(learningGoal) || !hasRecord(learnerBaseline) || !hasRecord(gradePlans)) return false;
   if (!hasRecord(knowledgeGraph) || !hasRecord(resourceContract) || !hasRecord(updateContract)) return false;
+  if (!hasRecord(currentLearningCourse)) return false;
 
   const hasGradePlan = (gradeId: GradeId) => {
     const gradePlan = gradePlans[gradeId];
@@ -142,7 +165,37 @@ export function isLearningPathResult(value: unknown): value is LearningPathResul
     && hasArray(resourceContract.resource_directions)
     && hasArray(updateContract.trackable_metrics)
     && hasArray(updateContract.update_triggers)
-    && hasString(updateContract.adjustment_strategy);
+    && hasString(updateContract.adjustment_strategy)
+    && hasString(currentLearningCourse.grade_id)
+    && hasString(currentLearningCourse.course_node_id)
+    && hasString(currentLearningCourse.course_or_chapter_theme)
+    && hasString(currentLearningCourse.course_goal)
+    && hasRecord(currentLearningCourse.time_arrangement)
+    && hasString(currentLearningCourse.current_focus)
+    && hasString(currentLearningCourse.progress_state)
+    && hasString(currentLearningCourse.next_action);
+}
+
+export function isCourseKnowledgeResult(value: unknown): value is CourseKnowledgeResult {
+  if (!hasRecord(value)) return false;
+  if (!hasString(value.course_id)) return false;
+  if (!hasString(value.course_name)) return false;
+  if (!hasString(value.grade_year)) return false;
+  if (!hasString(value.personalization_summary)) return false;
+  if (!hasArray(value.sections)) return false;
+  if (!hasArray(value.learning_sequence)) return false;
+  if (!hasString(value.total_estimated_hours)) return false;
+
+  return value.sections.every((section) =>
+    hasRecord(section)
+    && hasString(section.section_id)
+    && (section.parent_section_id === null || hasString(section.parent_section_id))
+    && typeof section.depth === 'number'
+    && typeof section.order_index === 'number'
+    && hasString(section.title)
+    && hasString(section.description)
+    && hasArray(section.key_knowledge_points),
+  ) && value.learning_sequence.every((item) => hasString(item));
 }
 
 export type GradeId = 'year_1' | 'year_2' | 'year_3' | 'year_4';
@@ -190,6 +243,17 @@ export interface CourseNode {
   knowledge_relations: KnowledgeRelation[];
   downstream_resource_direction_ids: string[];
   acceptance_criteria: string[];
+}
+
+export interface CurrentLearningCourse {
+  grade_id: GradeId;
+  course_node_id: string;
+  course_or_chapter_theme: string;
+  course_goal: string;
+  time_arrangement: TimeArrangement;
+  current_focus: string;
+  progress_state: 'not_started' | 'in_progress' | 'paused' | 'completed';
+  next_action: string;
 }
 
 export interface TimeArrangement {
@@ -290,6 +354,7 @@ export interface AgentRunStep {
   title: string;
   summary?: string;
   agent?: string | null;
+  startedAtMs?: number;
   durationMs?: number;
   dependsOn?: string[];
   parallelGroup?: string | null;
@@ -305,9 +370,11 @@ export interface ChatMessage {
   sessionMessage?: SessionMessage | null;
   agentAnswer?: AgentUserAnswer | null;
   learningPath?: LearningPathResult | null;
+  courseKnowledge?: CourseKnowledgeResult | null;
   runTrace?: AgentRunStep[];
   activeStepId?: string | null;
   error?: string;
+  retryAction?: 'retry_learning_path' | null;
   partialData?: PartialStructuredData | null;
 }
 

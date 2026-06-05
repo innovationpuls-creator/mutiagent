@@ -1,58 +1,67 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { AiGreetingInput } from './AiGreetingInput';
 import { useAiWidget } from '../../context/AiWidgetContext';
 import { useAuth } from '../../contexts/AuthContext';
 
+const CENTER_INPUT_OFFSET = 'min(25vh, calc(var(--space-120) + var(--space-96)))';
+
 export function GlobalAiWidget() {
   const { widgetState } = useAiWidget();
   const { token } = useAuth();
+  const reduceMotion = useReducedMotion();
 
   return (
     <>
       <AnimatePresence>
         {widgetState === 'EXPANDED' && (
           <motion.div
-            initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-            animate={{ opacity: 1, backdropFilter: 'blur(80px)' }}
-            exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-            transition={{ duration: 1.5, ease: 'easeInOut' }}
+            data-testid="global-ai-widget-overlay"
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.98, ease: [0.25, 1, 0.5, 1] }}
             style={{
               position: 'fixed',
               inset: 0,
               zIndex: 9998,
-              backgroundColor: 'oklch(var(--color-bg-glass, 98% 0.01 70) / 0.4)',
-              pointerEvents: 'auto'
+              backgroundColor: 'var(--color-overlay)',
+              backdropFilter: 'var(--glass-blur)',
+              pointerEvents: 'auto',
             }}
           />
         )}
       </AnimatePresence>
-      
+
       <AnimatePresence>
         {widgetState !== 'HIDDEN' && token && (
           <motion.div
-            initial={{ opacity: 0, y: 40 }}
+            data-testid="global-ai-widget-shell"
+            initial={reduceMotion ? false : { opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 40 }}
-            transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 40 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.98, ease: [0.64, 0, 0.35, 1] }}
             style={{
               position: 'fixed',
               inset: 0,
               pointerEvents: 'none',
               zIndex: 99999,
               display: 'flex',
-              // Base centering for both EXPANDED and CENTER_INPUT, flex-end for WIDGET
               justifyContent: widgetState === 'WIDGET' ? 'flex-end' : 'center',
               alignItems: widgetState === 'WIDGET' ? 'flex-end' : 'center',
-              padding: widgetState === 'WIDGET' ? '40px' : '0'
+              padding: widgetState === 'WIDGET' ? 'var(--space-40)' : '0',
             }}
           >
-            <div style={{ 
+            <div
+              data-testid="global-ai-widget-frame"
+              style={{
               pointerEvents: 'auto',
-              // Push it down by 25vh only in CENTER_INPUT state so it doesn't occlude text
-              marginTop: widgetState === 'CENTER_INPUT' ? '25vh' : '0',
-              transition: 'margin-top 1.2s cubic-bezier(0.16, 1, 0.3, 1)'
-            }}>
+                transform: widgetState === 'CENTER_INPUT' ? `translateY(${CENTER_INPUT_OFFSET})` : 'translateY(0)',
+                transition: reduceMotion
+                  ? 'none'
+                  : 'transform var(--duration-route) var(--ease-editorial)',
+              }}
+            >
               <AiGreetingInput />
             </div>
           </motion.div>

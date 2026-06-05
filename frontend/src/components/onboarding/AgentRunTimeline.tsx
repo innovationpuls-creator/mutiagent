@@ -5,6 +5,7 @@ import type { AgentRunStep, MessageStatus } from '../../types/chat';
 import { CollapsedBar } from './CollapsedBar';
 import { ExpandedLog } from './ExpandedLog';
 import { StatusBar } from './StatusBar';
+import { formatStepTitle } from './stepLabels';
 
 const COLLAPSE_DELAY_MS = 2000;
 
@@ -13,10 +14,55 @@ interface AgentRunTimelineProps {
   status: MessageStatus;
 }
 
+function getCollapsedLabel(steps: AgentRunStep[]): string {
+  const representativeStep =
+    [...steps].reverse().find((step) => step.kind === 'answer')
+    ?? [...steps].reverse().find((step) => step.kind === 'agent')
+    ?? [...steps].reverse().find((step) => step.status === 'running')
+    ?? steps[steps.length - 1];
+
+  return representativeStep ? formatStepTitle(representativeStep) : '多智能体流程';
+}
+
 export function AgentRunTimeline({ steps = [], status }: AgentRunTimelineProps) {
   const [expanded, setExpanded] = useState(false);
+  const [timelineNow, setTimelineNow] = useState(() =>
+    typeof performance !== 'undefined' ? performance.now() : Date.now(),
+  );
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualExpandedRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updatePreference = (event?: MediaQueryListEvent) => {
+      setPrefersReducedMotion(event?.matches ?? mediaQuery.matches);
+    };
+
+    updatePreference();
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', updatePreference);
+      return () => mediaQuery.removeEventListener('change', updatePreference);
+    }
+
+    mediaQuery.addListener(updatePreference);
+    return () => mediaQuery.removeListener(updatePreference);
+  }, []);
+
+  useEffect(() => {
+    if (status !== 'streaming' && status !== 'pending') return;
+
+    const updateNow = () => {
+      setTimelineNow(typeof performance !== 'undefined' ? performance.now() : Date.now());
+    };
+
+    updateNow();
+    const timer = setInterval(updateNow, 120);
+    return () => clearInterval(timer);
+  }, [status]);
 
   useEffect(() => {
     if (status === 'streaming' || status === 'pending') {
@@ -53,21 +99,34 @@ export function AgentRunTimeline({ steps = [], status }: AgentRunTimelineProps) 
     setExpanded(true);
   };
 
-  const agent = useMemo(
-    () => [...steps].reverse().find((s) => s.agent)?.agent || 'Agent',
-    [steps],
+  const timelineSteps = useMemo(
+    () => steps.map((step) => {
+      if (step.status !== 'running' || typeof step.startedAtMs !== 'number') return step;
+      return {
+        ...step,
+        durationMs: Math.max(timelineNow - step.startedAtMs, 0),
+      };
+    }),
+    [steps, timelineNow],
+  );
+
+  const collapsedLabel = useMemo(
+    () => getCollapsedLabel(timelineSteps),
+    [timelineSteps],
   );
 
   const runStatus = useMemo(() => {
-    const failed = steps.find((s) => s.status === 'error');
-    const running = steps.find((s) => s.status === 'running');
+    if (status === 'error') return 'failed';
+    const failed = timelineSteps.find((s) => s.status === 'error');
     if (failed) return 'failed';
+    if (status === 'streaming' || status === 'pending') return 'running';
+    const running = timelineSteps.find((s) => s.status === 'running');
     if (running) return 'running';
     return 'completed';
-  }, [steps]);
+  }, [status, timelineSteps]);
 
-  const stepCount = steps.length;
-  const totalMs = steps.reduce(
+  const stepCount = timelineSteps.length;
+  const totalMs = timelineSteps.reduce(
     (sum, s) => sum + (typeof s.durationMs === 'number' ? s.durationMs : 0),
     0,
   );
@@ -78,13 +137,9 @@ export function AgentRunTimeline({ steps = [], status }: AgentRunTimelineProps) 
         : `${(totalMs / 1000).toFixed(totalMs < 10000 ? 1 : 0)}s`
       : '';
 
-  const currentStep = [...steps].reverse().find((s) => s.status === 'running');
+  const currentStep = [...timelineSteps].reverse().find((s) => s.status === 'running');
   const statusText = currentStep
-    ? currentStep.kind === 'answer'
-      ? '正在生成回复'
-      : currentStep.kind === 'route'
-        ? '正在调度智能体'
-        : '智能体处理中'
+    ? currentStep.summary ?? currentStep.title
     : runStatus === 'running'
       ? '智能体处理中'
       : '';
@@ -92,17 +147,17 @@ export function AgentRunTimeline({ steps = [], status }: AgentRunTimelineProps) 
   if (steps.length === 0) return null;
 
   return (
-    <Shell aria-label="Agent run timeline">
+    <Shell aria-label="Agent run timeline" data-surface="warm-paper">
       <AnimatePresence mode="wait">
         {expanded ? (
           <motion.div
             key="expanded"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3, ease: [0.25, 1, 0.5, 1] }}
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 'calc(var(--space-4) * -1)' }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 'var(--space-4)' }}
+            transition={prefersReducedMotion ? { duration: 0.12 } : { duration: 0.3, ease: [0.25, 1, 0.5, 1] }}
           >
-            <ExpandedLog steps={steps} />
+            <ExpandedLog steps={timelineSteps} />
             <StatusBar
               text={statusText}
               time={runStatus === 'running' ? durationText : undefined}
@@ -116,13 +171,13 @@ export function AgentRunTimeline({ steps = [], status }: AgentRunTimelineProps) 
         ) : (
           <motion.div
             key="collapsed"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 'var(--space-4)' }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 'calc(var(--space-4) * -1)' }}
+            transition={prefersReducedMotion ? { duration: 0.12 } : { duration: 0.15, ease: [0.33, 1, 0.68, 1] }}
           >
             <CollapsedBar
-              agent={agent}
+              label={collapsedLabel}
               runStatus={runStatus}
               stepCount={stepCount}
               duration={durationText}
@@ -136,11 +191,11 @@ export function AgentRunTimeline({ steps = [], status }: AgentRunTimelineProps) 
 }
 
 const Shell = styled.section`
-  border: 1px solid oklch(78% 0.012 80 / 0.2);
+  border: 1px solid var(--dark-border);
   border-radius: var(--radius-md);
-  background: oklch(92% 0.02 75 / 0.3);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: var(--dark-surface);
+  box-shadow: var(--shadow-sm);
   margin-bottom: var(--space-8);
   overflow: hidden;
+  color: var(--dark-text-secondary);
 `;

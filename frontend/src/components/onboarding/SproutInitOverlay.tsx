@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { motionTokens, DURATION_INSTANT } from '../../styles/motion-tokens';
 import { useAiWidget } from '../../context/AiWidgetContext';
 
 interface Props {
@@ -9,8 +10,15 @@ interface Props {
 export function SproutInitOverlay({ onComplete }: Props) {
   const [phase, setPhase] = useState<number>(0);
   const { widgetState, setWidgetState } = useAiWidget();
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
+    if (reduceMotion) {
+      setPhase(10);
+      setWidgetState('EXPANDED');
+      return undefined;
+    }
+
     // Compressed timeline pacing for a snappier intro (Total ~7.5s)
     const schedule = [
       { delay: 400, phase: 1 },   // Blur in
@@ -22,20 +30,20 @@ export function SproutInitOverlay({ onComplete }: Props) {
       { delay: 5700, phase: 7 },  // "欢迎来到 one-tree" out (Stay 1.5s)
       { delay: 6300, phase: 8 },  // 正文 in (Interval 0.6s)
       { delay: 6900, phase: 9 },  // 附注 in
-      { delay: 7500, phase: 10 }  // Input in
+      { delay: 7500, phase: 10 }  // Chat panel in
     ];
 
     const timeouts = schedule.map(({ delay, phase: p }) => 
       setTimeout(() => {
         setPhase(p);
         if (p === 10) {
-          setWidgetState('CENTER_INPUT');
+          setWidgetState('EXPANDED');
         }
       }, delay)
     );
 
     return () => timeouts.forEach(clearTimeout);
-  }, [setWidgetState]);
+  }, [reduceMotion, setWidgetState]);
 
   useEffect(() => {
     if (widgetState === 'WIDGET' || widgetState === 'EXPANDED') {
@@ -45,10 +53,14 @@ export function SproutInitOverlay({ onComplete }: Props) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-      animate={{ opacity: 1, backdropFilter: 'blur(80px)' }}
-      exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-      transition={{ delay: 0.4, duration: 1.2, ease: 'easeInOut' }}
+      initial={reduceMotion ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={
+        reduceMotion
+          ? { duration: DURATION_INSTANT }
+          : { delay: 0.4, ...motionTokens.route }
+      }
       style={{
         position: 'fixed',
         inset: 0,
@@ -65,10 +77,10 @@ export function SproutInitOverlay({ onComplete }: Props) {
           {phase >= 2 && phase < 3 && (
             <motion.h1
               key="t1"
-              initial={{ opacity: 0, filter: 'blur(4px)' }}
-              animate={{ opacity: 1, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, filter: 'blur(4px)', transition: { duration: 0.5 } }}
-              transition={{ duration: 0.6, ease: 'easeInOut' }}
+              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8, transition: reduceMotion ? { duration: DURATION_INSTANT } : motionTokens.editorial }}
+              transition={reduceMotion ? { duration: DURATION_INSTANT } : motionTokens.editorial}
               style={{ fontFamily: 'var(--font-heading)', fontSize: '38px', fontWeight: 400, color: 'oklch(28% 0.01 60)', letterSpacing: '0.02em', margin: 0 }}
             >
               你好
@@ -77,10 +89,10 @@ export function SproutInitOverlay({ onComplete }: Props) {
           {phase >= 4 && phase < 5 && (
             <motion.h1
               key="t2"
-              initial={{ opacity: 0, filter: 'blur(4px)' }}
-              animate={{ opacity: 1, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, filter: 'blur(4px)', transition: { duration: 0.5 } }}
-              transition={{ duration: 0.6, ease: 'easeInOut' }}
+              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8, transition: reduceMotion ? { duration: DURATION_INSTANT } : motionTokens.editorial }}
+              transition={reduceMotion ? { duration: DURATION_INSTANT } : motionTokens.editorial}
               style={{ fontFamily: 'var(--font-heading)', fontSize: '38px', fontWeight: 400, color: 'oklch(28% 0.01 60)', letterSpacing: '0.02em', margin: 0 }}
             >
               Hello
@@ -89,13 +101,13 @@ export function SproutInitOverlay({ onComplete }: Props) {
           {phase >= 6 && phase < 7 && (
             <motion.h1
               key="t3"
-              initial={{ opacity: 0, filter: 'blur(4px)' }}
-              animate={{ opacity: 1, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, filter: 'blur(4px)', transition: { duration: 0.5 } }}
-              transition={{ duration: 0.6, ease: 'easeInOut' }}
+              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8, transition: reduceMotion ? { duration: DURATION_INSTANT } : motionTokens.editorial }}
+              transition={reduceMotion ? { duration: DURATION_INSTANT } : motionTokens.editorial}
               style={{ fontFamily: 'var(--font-heading)', fontSize: '38px', fontWeight: 400, color: 'oklch(28% 0.01 60)', letterSpacing: '0.02em', margin: 0 }}
             >
-              欢迎来到 <span style={{ fontFamily: 'Caveat, cursive', fontWeight: 600, color: 'oklch(70% 0.12 45)', marginLeft: '8px', fontSize: '42px', transform: 'translateY(2px)', display: 'inline-block' }}>one-tree</span>
+              欢迎来到 <span style={{ fontFamily: 'Caveat, cursive', fontWeight: 500, color: 'oklch(70% 0.12 45)', marginLeft: '8px', fontSize: '42px', transform: 'translateY(2px)', display: 'inline-block' }}>one-tree</span>
             </motion.h1>
           )}
         </AnimatePresence>
@@ -103,9 +115,9 @@ export function SproutInitOverlay({ onComplete }: Props) {
         {phase >= 8 && (
           <motion.div
             layout // smoothly transition height changes
-            initial={{ opacity: 0, y: 10 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: 'easeOut' }}
+            transition={reduceMotion ? { duration: DURATION_INSTANT } : motionTokens.editorial}
             style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-20)' }}
           >
             <motion.h2 
@@ -118,9 +130,9 @@ export function SproutInitOverlay({ onComplete }: Props) {
               {phase >= 9 && (
                 <motion.p
                   layout
-                  initial={{ opacity: 0, y: 5 }}
+                  initial={reduceMotion ? false : { opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.8, ease: 'easeOut' }}
+                  transition={reduceMotion ? { duration: DURATION_INSTANT } : motionTokens.editorial}
                   style={{ fontFamily: 'var(--font-body)', fontSize: '18px', color: 'oklch(55% 0.02 60)', margin: 0, letterSpacing: '0.04em' }}
                 >
                   关于你的专业、现在的状态，或是当下的困惑……随便聊聊。

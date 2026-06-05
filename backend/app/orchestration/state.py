@@ -29,3 +29,4 @@ class OrchestrationState(TypedDict, total=False):
     # Agent outputs for this turn
     response: Optional[str]
     grade_year: Optional[str]
+    latest_grade_year: Optional[str]

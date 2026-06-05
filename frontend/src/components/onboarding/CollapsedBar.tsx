@@ -4,7 +4,7 @@ import styled from 'styled-components';
 import { formatRunSummary } from './stepLabels';
 
 interface CollapsedBarProps {
-  agent: string;
+  label: string;
   runStatus: 'running' | 'completed' | 'failed';
   stepCount: number;
   duration: string;
@@ -12,20 +12,20 @@ interface CollapsedBarProps {
 }
 
 export function CollapsedBar({
-  agent,
+  label,
   runStatus,
   stepCount,
   duration,
   onClick,
 }: CollapsedBarProps) {
-  const summary = formatRunSummary({ agent, runStatus, stepCount, duration });
+  const summary = formatRunSummary({ label, runStatus, stepCount, duration });
 
   return (
     <CollapsedButton
       as={motion.button}
       type="button"
       onClick={onClick}
-      whileHover={{ background: 'rgba(245,240,232,0.25)' }}
+      whileHover={{ background: 'var(--color-hover-wash)' }}
       whileTap={{ scale: 0.99 }}
       transition={{ duration: 0.3, ease: [0.33, 1, 0.68, 1] }}
     >
@@ -41,27 +41,34 @@ const CollapsedButton = styled.button`
   display: flex;
   align-items: center;
   gap: var(--space-8);
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: var(--text-caption);
   color: var(--color-text-secondary);
   cursor: pointer;
   width: 100%;
   text-align: left;
-  padding: var(--space-8) var(--space-12);
+  padding: var(--space-12) var(--space-12);
   border-radius: var(--radius-md);
+  transition:
+    background var(--duration-lazy-hover) var(--ease-lazy),
+    opacity var(--duration-lazy-hover) var(--ease-lazy);
 
   &:hover {
-    background: oklch(90% 0.03 73 / 0.25);
+    background: var(--color-hover-wash);
   }
 
   .chevron {
     color: var(--color-text-muted);
-    font-size: 11px;
+    font-size: var(--text-caption);
     margin-left: auto;
     flex-shrink: 0;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    &:hover { background: oklch(90% 0.03 73 / 0.25); }
+    transition: none;
+
+    &:hover {
+      background: var(--color-hover-wash);
+    }
   }
 `;

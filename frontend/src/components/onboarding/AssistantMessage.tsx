@@ -36,6 +36,7 @@ export function SystemMessage({ message }: SystemMessageProps) {
 interface AssistantMessageProps {
   message: ChatMessage;
   onSendReply?: (text: string) => void;
+  onRetryLearningPath?: () => void;
   disabled?: boolean;
   showTimeline?: boolean;
 }
@@ -51,7 +52,13 @@ function normalizeQuestionOption(option: QuestionBoxOption | string): QuestionBo
   };
 }
 
-export function AssistantMessage({ message, onSendReply, disabled, showTimeline = true }: AssistantMessageProps) {
+export function AssistantMessage({
+  message,
+  onSendReply,
+  onRetryLearningPath,
+  disabled,
+  showTimeline = true,
+}: AssistantMessageProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
       {showTimeline && (message.runTrace && message.runTrace.length > 0) && (
@@ -104,19 +111,18 @@ export function AssistantMessage({ message, onSendReply, disabled, showTimeline 
       )}
 
       {message.status === 'error' && message.error && (
-        <div
-          style={{
-            borderRadius: 'var(--radius-md)',
-            padding: 'var(--space-8) var(--space-16)',
-            background: 'var(--color-error-bg)',
-            color: 'var(--color-error)',
-            fontFamily: 'var(--font-body)',
-            fontSize: 'var(--text-caption)',
-            lineHeight: 1.6,
-          }}
-        >
-          {message.error}
-        </div>
+        <ErrorBlock>
+          <div>{message.error}</div>
+          {message.retryAction === 'retry_learning_path' && onRetryLearningPath ? (
+            <RetryButton
+              type="button"
+              onClick={onRetryLearningPath}
+              disabled={disabled}
+            >
+              重试生成学习路径
+            </RetryButton>
+          ) : null}
+        </ErrorBlock>
       )}
     </div>
   );
@@ -191,5 +197,49 @@ const QuestionBoxPanel = styled.div`
       transition: opacity var(--duration-instant) ease;
       transform: none;
     }
+  }
+`;
+
+const ErrorBlock = styled.div`
+  display: grid;
+  gap: var(--space-12);
+  border-radius: var(--radius-md);
+  padding: var(--space-8) var(--space-16);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  line-height: 1.6;
+`;
+
+const RetryButton = styled.button`
+  inline-size: fit-content;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  padding: var(--space-12) var(--space-16);
+  font-family: var(--font-body);
+  font-size: var(--text-button);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform var(--duration-lazy-hover) var(--ease-lazy),
+    opacity var(--duration-lazy-hover) var(--ease-lazy);
+
+  &:hover:not(:disabled) {
+    transform: translateY(calc(var(--space-4) * -1));
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.64;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: opacity var(--duration-instant) ease;
+    transform: none;
   }
 `;

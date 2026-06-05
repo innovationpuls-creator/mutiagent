@@ -37,6 +37,10 @@ export const MOCK_PROFILE_DASHBOARD: ProfileDashboardData = {
       '结合你的项目经验，用真实场景理解 5 个最常用的设计模式。' +
       '每个模式配有可运行的代码示例，适合你偏好的实践驱动学习方式。',
     source: 'AI 个性化推荐',
+    currentLearningCourse: null,
+    currentCourseDetail: null,
+    currentCourseOutline: null,
+    followingCourses: [],
   },
 
   recommendations: [

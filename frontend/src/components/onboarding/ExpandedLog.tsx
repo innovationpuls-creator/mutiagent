@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import styled from 'styled-components';
 import type { AgentRunStep, ThoughtChunkEntry } from '../../types/chat';
@@ -17,11 +17,28 @@ function formatDuration(ms?: number): string {
 
 function StatusSymbol({ status }: { status: string }) {
   switch (status) {
-    case 'running': return <span>运行中</span>;
-    case 'success': return <span>已完成</span>;
-    case 'error': return <span>异常</span>;
+    case 'running': return <span className="console-cursor">_</span>;
+    case 'success': return <span className="console-check">✓</span>;
+    case 'error': return <span className="console-error">✗</span>;
+    case 'skipped': return <span className="console-skip">-</span>;
     default: return <span>{status}</span>;
   }
+}
+
+function getAgentKey(step: AgentRunStep): string | null {
+  return step.agent ?? null;
+}
+
+function getStepContextDetails(step: AgentRunStep): string[] {
+  const details: string[] = [];
+  if (step.parallelGroup) details.push(`并行组 ${step.parallelGroup}`);
+  if (step.dependsOn && step.dependsOn.length > 0) details.push(`依赖 ${step.dependsOn.join(' / ')}`);
+  return details;
+}
+
+function getKindLabel(step: AgentRunStep): string {
+  if (step.kind === 'agent') return '智能体';
+  return formatStepKind(step);
 }
 
 function ThoughtStream({ entries }: { entries: ThoughtChunkEntry[] }) {
@@ -29,79 +46,99 @@ function ThoughtStream({ entries }: { entries: ThoughtChunkEntry[] }) {
   if (!fullText.trim()) return null;
   return (
     <ThoughtStreamShell>
-      <span className="cursor" aria-hidden="true">▎</span>
       <span className="thought-text">{fullText}</span>
     </ThoughtStreamShell>
   );
 }
 
 const ThoughtStreamShell = styled.div`
-  padding: var(--space-4) 0 var(--space-8) 14px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--color-text-muted);
-  display: flex;
-  gap: 4px;
-
-  .cursor {
-    flex-shrink: 0;
-    color: var(--color-primary);
-    animation: thought-blink 1s ease-in-out infinite;
-  }
+  color: var(--dark-text-muted);
 
   .thought-text {
     word-break: break-word;
     white-space: pre-wrap;
   }
-
-  @keyframes thought-blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .cursor { animation: none; }
-  }
 `;
 
 export function ExpandedLog({ steps }: ExpandedLogProps) {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updatePreference = (event?: MediaQueryListEvent) => {
+      setPrefersReducedMotion(event?.matches ?? mediaQuery.matches);
+    };
+
+    updatePreference();
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', updatePreference);
+      return () => mediaQuery.removeEventListener('change', updatePreference);
+    }
+
+    mediaQuery.addListener(updatePreference);
+    return () => mediaQuery.removeListener(updatePreference);
+  }, []);
+
   return (
-    <Shell>
+    <Shell data-testid="agent-log-stream">
       {steps.map((step, idx) => {
-        const isLast = idx === steps.length - 1;
-        const branch = isLast ? '└─' : '├─';
+        const contextDetails = getStepContextDetails(step);
+        const showDetails = step.summary || contextDetails.length > 0 || (step.status === 'running' && step.thoughtLog && step.thoughtLog.length > 0);
 
         return (
           <StepRow
             key={step.stepId}
+            data-testid={`agent-log-row-${step.stepId}`}
             data-status={step.status}
+            data-kind={step.kind}
+            data-highlighted={step.status === 'running' ? 'true' : 'false'}
             as={motion.div}
-            initial={{ opacity: 0, x: -6 }}
+            initial={
+              prefersReducedMotion
+                ? { opacity: 0 }
+                : { opacity: 0, x: -4 }
+            }
             animate={{ opacity: 1, x: 0 }}
             transition={{
-              duration: 0.35,
+              duration: prefersReducedMotion ? 0.12 : 0.35,
               ease: [0.22, 0.61, 0.36, 1],
               delay: idx * 0.04,
             }}
           >
-            <div className="step-line">
-              <span className="branch">{branch}</span>
-              <span className="kind">【{formatStepKind(step)}】</span>
-              <span className="name">{formatStepTitle(step)}</span>
-              <span className={`status status-${step.status}`}>
-                <StatusSymbol status={step.status} />
-              </span>
-              {step.durationMs !== undefined && (
-                <span className="duration">{formatDuration(step.durationMs)}</span>
+            <div className="step-content">
+              <div className="step-first-line">
+                <span className="prompt" aria-hidden="true">&gt;</span>
+                {getAgentKey(step) && (
+                  <span className="agent-key">[{getAgentKey(step)}]</span>
+                )}
+                <span className="name">{formatStepTitle(step)}</span>
+                {step.durationMs !== undefined && (
+                  <span className="duration">({formatDuration(step.durationMs)})</span>
+                )}
+                <span className={`status status-${step.status}`}>
+                  <StatusSymbol status={step.status} />
+                </span>
+              </div>
+
+              {showDetails && (
+                <div className="step-details">
+                  {step.summary && <div className="summary">{step.summary}</div>}
+                  {contextDetails.length > 0 && (
+                    <div className="context">
+                      {contextDetails.map((detail) => (
+                        <span key={detail} className="context-item">{detail}</span>
+                      ))}
+                    </div>
+                  )}
+                  {step.status === 'running' && step.thoughtLog && step.thoughtLog.length > 0 && (
+                    <ThoughtStream entries={step.thoughtLog} />
+                  )}
+                </div>
               )}
             </div>
-            {step.summary && (
-              <div className="summary">{step.summary}</div>
-            )}
-            {step.status === 'running' && step.thoughtLog && step.thoughtLog.length > 0 && (
-              <ThoughtStream entries={step.thoughtLog} />
-            )}
           </StepRow>
         );
       })}
@@ -110,93 +147,106 @@ export function ExpandedLog({ steps }: ExpandedLogProps) {
 }
 
 const Shell = styled.div`
-  margin: 0 var(--space-12);
-  padding: var(--space-8) var(--space-12);
+  margin: 0;
+  padding: var(--space-12);
   background: transparent;
   font-family: var(--font-mono);
   font-size: var(--text-caption);
-  line-height: 1.7;
-  color: var(--color-text-secondary);
+  line-height: 1.4;
+  color: var(--dark-text-secondary);
 `;
 
 const StepRow = styled.div`
   position: relative;
-  margin-left: -4px;
-  padding-left: 4px;
-  border-left: 2px solid transparent;
-  transition:
-    border-color 0.5s var(--ease-editorial),
-    background 0.5s var(--ease-editorial);
+  transition: opacity var(--duration-reveal) var(--ease-editorial);
 
-  &[data-status='running'] {
-    border-left-color: var(--color-primary);
-    background: linear-gradient(90deg, oklch(74% 0.08 60 / 0.06) 0%, transparent 60%);
+  &[data-status='success'], &[data-status='skipped'] {
+    opacity: 0.8;
   }
 
-  &[data-status='error'] {
-    border-left-color: var(--color-error);
-    background: linear-gradient(90deg, oklch(60% 0.10 28 / 0.06) 0%, transparent 60%);
-  }
-
-  &[data-status='success'] {
-    border-left-color: var(--color-success);
-  }
-
-  .step-line {
+  .step-content {
     display: flex;
+    flex-direction: column;
+  }
+
+  .step-first-line {
+    display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 6px;
-    min-width: 0;
+    gap: var(--space-8);
   }
 
-  .branch {
-    color: var(--color-text-muted);
+  .prompt {
+    color: var(--dark-text-muted);
+    font-weight: var(--font-weight-medium);
     flex-shrink: 0;
+    width: 1.2ch;
   }
 
-  .kind {
-    color: var(--color-text-muted);
-    flex-shrink: 0;
+  .agent-key {
+    color: var(--dark-text-muted);
   }
 
   .name {
-    color: var(--color-text-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .status {
-    flex-shrink: 0;
-    font-size: var(--text-caption);
-  }
-
-  .status-running {
-    color: var(--color-primary);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .status-success {
-    color: var(--color-success);
-  }
-
-  .status-error {
-    color: var(--color-error);
+    color: var(--dark-text-primary);
   }
 
   .duration {
-    color: var(--color-text-muted);
-    margin-left: auto;
-    flex-shrink: 0;
+    color: var(--dark-text-muted);
+  }
+
+  .status {
+    display: flex;
+    align-items: center;
+  }
+
+  .status-running {
+    color: var(--status-running);
+  }
+
+  .status-success {
+    color: var(--status-running);
+  }
+
+  .status-error {
+    color: var(--status-error);
+  }
+
+  .step-details {
+    padding-left: calc(1.2ch + var(--space-8));
+    display: flex;
+    flex-direction: column;
   }
 
   .summary {
-    margin: 2px 0 var(--space-8) 18px;
-    color: var(--color-text-muted);
-    font-size: 11px;
+    color: var(--dark-text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .context {
+    color: var(--dark-text-muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-8);
+  }
+
+  .context-item {
+    white-space: pre-wrap;
+  }
+
+  .console-cursor {
+    animation: console-blink 1s step-end infinite;
+    font-weight: var(--font-weight-medium);
+  }
+
+  @keyframes console-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
   }
 
   @media (prefers-reduced-motion: reduce) {
     transition: none;
+    .console-cursor { animation: none; }
   }
 `;

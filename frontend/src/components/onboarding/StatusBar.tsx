@@ -13,11 +13,11 @@ export function StatusBar({ text, time, status = 'running', onClick }: StatusBar
   return (
     <>
       <Divider />
-      <Bar 
-        as={onClick ? motion.button : 'div'} 
+      <Bar
+        as={onClick ? motion.button : 'div'}
         type={onClick ? "button" : undefined}
         onClick={onClick}
-        whileHover={onClick ? { background: 'oklch(90% 0.03 73 / 0.25)' } : undefined}
+        whileHover={onClick ? { background: 'var(--dark-highlight)' } : undefined}
         whileTap={onClick ? { scale: 0.99 } : undefined}
         $clickable={!!onClick}
         $hasTime={!!time}
@@ -35,41 +35,49 @@ export function StatusBar({ text, time, status = 'running', onClick }: StatusBar
 
 const Divider = styled.div`
   margin: 0 var(--space-12) var(--space-4);
-  border-top: 1px solid oklch(78% 0.012 80 / 0.18);
+  border-top: 1px solid var(--dark-border);
 `;
 
 const Bar = styled.div<{ $clickable?: boolean; $hasTime?: boolean }>`
-  margin: 0 var(--space-12) var(--space-12);
-  padding: 6px var(--space-12);
+  margin: 0 var(--space-4) var(--space-4);
+  padding: var(--space-8) var(--space-8);
   display: flex;
   align-items: center;
   gap: var(--space-8);
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: var(--text-caption);
   background: transparent;
   border: none;
-  width: calc(100% - var(--space-24));
+  width: calc(100% - var(--space-8));
   text-align: left;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
+  transition:
+    background var(--duration-lazy-hover) var(--ease-lazy),
+    opacity var(--duration-lazy-hover) var(--ease-lazy);
   ${props => props.$clickable && `
     cursor: pointer;
   `}
 
   .text {
-    color: var(--color-text-secondary);
+    color: var(--dark-text-secondary);
   }
 
   .time {
-    color: var(--color-text-muted);
+    color: var(--dark-text-muted);
     margin-left: auto;
     flex-shrink: 0;
+    font-family: var(--font-mono);
   }
 
   .chevron {
-    color: var(--color-text-muted);
-    font-size: 11px;
+    color: var(--dark-text-muted);
+    font-size: var(--text-caption);
     margin-left: ${props => props.$hasTime ? 'var(--space-8)' : 'auto'};
     flex-shrink: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
   }
 `;
 
@@ -79,10 +87,10 @@ const Dot = styled.span`
   border-radius: var(--radius-full);
   flex-shrink: 0;
   position: relative;
-  background: var(--color-text-muted);
+  background: var(--dark-text-muted);
 
   &.dot-running {
-    background: var(--color-primary);
+    background: var(--status-running);
     animation: dotPulseRing 1.2s var(--ease-editorial) infinite;
 
     &::after {
@@ -90,14 +98,14 @@ const Dot = styled.span`
       position: absolute;
       inset: -3px;
       border-radius: var(--radius-full);
-      border: 1px solid var(--color-primary);
+      border: 1px solid var(--status-running);
       opacity: 0;
       animation: dotPulseRingExpand 1.2s var(--ease-editorial) infinite;
     }
   }
 
   &.dot-done {
-    background: var(--color-success);
+    background: var(--status-running);
   }
 
   @keyframes dotPulseRing {

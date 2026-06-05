@@ -103,7 +103,42 @@ class ChatResponse(BaseModel):
 class SessionStateResponse(BaseModel):
     session_id: str
     user_uid: str
+    messages: list[dict] = Field(default_factory=list)
     profile: dict | None = None
     year_learning_paths: dict | None = None
+    latest_grade_year: str | None = None
     course_knowledge: dict | None = None
     updated_at: datetime
+
+
+# ── Learning Path ──
+
+class YearLearningPathsReadResponse(BaseModel):
+    year_learning_paths: dict[str, dict]
+    updated_at: datetime | None = None
+
+
+BranchCourseStatus = Literal["completed", "current", "locked"]
+
+
+class BranchCourseNodeRead(BaseModel):
+    course_node_id: str
+    course_or_chapter_theme: str
+    course_goal: str
+    status: BranchCourseStatus
+    has_outline: bool
+
+
+class BranchYearRead(BaseModel):
+    grade_id: str
+    grade_name: str
+    has_courses: bool
+    has_outline_content: bool
+    is_clickable: bool
+    current_course_id: str | None = None
+    courses: list[BranchCourseNodeRead]
+
+
+class BranchOverviewReadResponse(BaseModel):
+    years: dict[str, BranchYearRead]
+    updated_at: datetime | None = None

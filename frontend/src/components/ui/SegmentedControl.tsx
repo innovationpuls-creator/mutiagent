@@ -1,13 +1,16 @@
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { motionTokens } from '../../styles/motion-tokens';
 
 interface Props {
   options: string[];
   active: string;
   onChange: (val: string) => void;
+  disabledOptions?: string[];
 }
 
-export function SegmentedControl({ options, active, onChange }: Props) {
+export function SegmentedControl({ options, active, onChange, disabledOptions = [] }: Props) {
+  const reduceMotion = useReducedMotion();
+
   return (
     <div 
       style={{ 
@@ -25,10 +28,22 @@ export function SegmentedControl({ options, active, onChange }: Props) {
     >
       {options.map((option) => {
         const isActive = active === option;
+        const isDisabled = disabledOptions.includes(option);
         return (
-          <button
+          <motion.button
             key={option}
-            onClick={() => onChange(option)}
+            type="button"
+            onClick={() => {
+              if (!isDisabled) {
+                onChange(option);
+              }
+            }}
+            disabled={isDisabled}
+            aria-disabled={isDisabled}
+            aria-pressed={isActive}
+            whileHover={reduceMotion || isDisabled ? undefined : { y: -2, scale: 1.015 }}
+            whileTap={reduceMotion || isDisabled ? undefined : { y: 0, scale: 0.992 }}
+            transition={motionTokens.lazy}
             style={{ 
               position: 'relative',
               zIndex: 10,
@@ -38,13 +53,16 @@ export function SegmentedControl({ options, active, onChange }: Props) {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              cursor: 'pointer',
+              cursor: isDisabled ? 'not-allowed' : 'pointer',
               border: 'none',
               background: 'transparent',
               color: isActive ? 'var(--color-text-inverse)' : 'var(--color-text-whisper)',
               fontFamily: 'var(--font-heading)',
               fontWeight: 'var(--font-weight-medium)',
-              transition: 'color 300ms ease'
+              transformOrigin: 'center',
+              opacity: isDisabled ? 0.5 : 1,
+              boxShadow: isActive ? '0 8px 20px oklch(49% 0.05 235 / 0.16)' : 'none',
+              transition: 'color 300ms ease, opacity 300ms ease, box-shadow 300ms ease'
             }}
           >
             {isActive && (
@@ -62,7 +80,7 @@ export function SegmentedControl({ options, active, onChange }: Props) {
               />
             )}
             <span style={{ position: 'relative', zIndex: 10, fontSize: 'var(--text-body-sm)' }}>{option}</span>
-          </button>
+          </motion.button>
         );
       })}
     </div>

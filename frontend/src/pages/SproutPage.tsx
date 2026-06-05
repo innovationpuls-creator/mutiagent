@@ -5,11 +5,24 @@ import { SproutHero } from '../components/home/SproutHero';
 import { SproutInitOverlay } from '../components/onboarding/SproutInitOverlay';
 import '../components/home/BlankPage.css';
 
+const SPROUT_INIT_OVERLAY_KEY = 'mutiagent-sprout-init-overlay';
+
 export function SproutPage() {
   const location = useLocation();
   const reduceMotion = useReducedMotion();
   const isFirstLogin = location.state?.isFirstLogin === true;
-  const [showOverlay, setShowOverlay] = useState(isFirstLogin);
+  const [showOverlay, setShowOverlay] = useState(() => {
+    if (isFirstLogin) return true;
+    if (typeof window === 'undefined') return false;
+    return window.sessionStorage.getItem(SPROUT_INIT_OVERLAY_KEY) === '1';
+  });
+
+  const handleOverlayComplete = () => {
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem(SPROUT_INIT_OVERLAY_KEY);
+    }
+    setShowOverlay(false);
+  };
 
   return (
     <>
@@ -20,7 +33,7 @@ export function SproutPage() {
         exit={
           reduceMotion
             ? { opacity: 0 }
-            : { opacity: 0, filter: 'blur(10px)', transition: { duration: 0.4 } }
+            : { opacity: 0, transition: { duration: 0.4 } }
         }
       >
         {/* 背景层 — 保留 BlankPage 的暖色环境 */}
@@ -33,7 +46,7 @@ export function SproutPage() {
 
       <AnimatePresence>
         {showOverlay && (
-          <SproutInitOverlay onComplete={() => setShowOverlay(false)} />
+          <SproutInitOverlay onComplete={handleOverlayComplete} />
         )}
       </AnimatePresence>
     </>

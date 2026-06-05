@@ -23,6 +23,18 @@ def list_user_course_outlines(session: Session, user_uid: str) -> list[UserCours
     return list(session.exec(stmt).all())
 
 
+def get_latest_user_course_knowledge_outline(session: Session, user_uid: str) -> dict | None:
+    stmt = (
+        select(UserCourseKnowledgeOutline)
+        .where(UserCourseKnowledgeOutline.user_uid == user_uid)
+        .order_by(UserCourseKnowledgeOutline.updated_at.desc())
+    )
+    row = session.exec(stmt).first()
+    if row is None:
+        return None
+    return row.outline_data
+
+
 def upsert_user_course_knowledge_outline(
     session: Session,
     user_uid: str,

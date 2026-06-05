@@ -17,6 +17,7 @@ export const initialChatStore: ChatStore = {
 export type ChatAction =
   | { type: 'ADD_USER_MESSAGE'; id: string; content: string }
   | { type: 'ADD_ASSISTANT_MESSAGE'; id: string }
+  | { type: 'SET_SESSION_ID'; sessionId: string }
   | { type: 'STEP'; messageId: string; step: AgentRunStep }
   | {
     type: 'RUN_DONE';
@@ -26,8 +27,15 @@ export type ChatAction =
     sessionId?: string;
     agentAnswer?: ChatMessage['agentAnswer'];
     learningPath?: ChatMessage['learningPath'];
+    courseKnowledge?: ChatMessage['courseKnowledge'];
   }
-  | { type: 'RUN_ERROR'; messageId: string; message: string }
+  | {
+    type: 'RUN_ERROR';
+    messageId: string;
+    message: string;
+    sessionId?: string;
+    retryAction?: 'retry_learning_path' | null;
+  }
   | { type: 'CONNECTING' }
   | { type: 'STREAMING_STARTED' }
   | { type: 'TEXT_CHUNK'; messageId: string; chunk: string }
@@ -50,6 +58,33 @@ function updateAssistantById(
   if (messageIndex < 0) return messages;
 
   return messages.map((msg, index) => (index === messageIndex ? updater(msg) : msg));
+}
+
+function mergeRunStep(existingStep: AgentRunStep, nextStep: AgentRunStep): AgentRunStep {
+  return {
+    ...existingStep,
+    ...nextStep,
+    thoughtLog: nextStep.thoughtLog ?? existingStep.thoughtLog,
+  };
+}
+
+function normalizeLoadedMessages(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((message) => {
+    if (message.role !== 'assistant') return message;
+    return {
+      ...message,
+      activeStepId: null,
+      runTrace: (message.runTrace ?? []).map((step) => (
+        step.status === 'running'
+          ? {
+            ...step,
+            status: 'success',
+            durationMs: step.durationMs ?? 0,
+          }
+          : step
+      )),
+    };
+  });
 }
 
 export function chatReducer(state: ChatStore, action: ChatAction): ChatStore {
@@ -85,6 +120,12 @@ export function chatReducer(state: ChatStore, action: ChatAction): ChatStore {
         errorMessage: null,
       };
     }
+
+    case 'SET_SESSION_ID':
+      return {
+        ...state,
+        currentSessionId: action.sessionId,
+      };
 
     case 'CONNECTING':
       return { ...state, state: 'connecting' };
@@ -208,7 +249,7 @@ export function chatReducer(state: ChatStore, action: ChatAction): ChatStore {
           const trace = [...(msg.runTrace ?? [])];
           const existingIdx = trace.findIndex((s) => s.stepId === step.stepId);
           if (existingIdx >= 0) {
-            trace[existingIdx] = step;
+            trace[existingIdx] = mergeRunStep(trace[existingIdx], step);
           } else {
             trace.push(step);
           }
@@ -234,8 +275,18 @@ export function chatReducer(state: ChatStore, action: ChatAction): ChatStore {
           sessionMessage: action.sessionMessage,
           agentAnswer: action.agentAnswer ?? null,
           learningPath: action.learningPath ?? null,
+          courseKnowledge: action.courseKnowledge ?? null,
           status: 'completed',
           activeStepId: null,
+          runTrace: (msg.runTrace ?? []).map((step) => (
+            step.status === 'running'
+              ? {
+                ...step,
+                status: 'success',
+                durationMs: step.durationMs ?? 0,
+              }
+              : step
+          )),
         })),
       };
     }
@@ -244,11 +295,13 @@ export function chatReducer(state: ChatStore, action: ChatAction): ChatStore {
       return {
         ...state,
         state: 'error',
+        currentSessionId: action.sessionId ?? state.currentSessionId,
         errorMessage: action.message,
         messages: updateAssistantById(state.messages, action.messageId, (msg) => ({
           ...msg,
           status: 'error',
           error: action.message,
+          retryAction: action.retryAction ?? null,
           activeStepId: null,
         })),
       };
@@ -267,7 +320,7 @@ export function chatReducer(state: ChatStore, action: ChatAction): ChatStore {
       return {
         ...state,
         state: 'idle',
-        messages: action.messages,
+        messages: normalizeLoadedMessages(action.messages),
         currentSessionId: action.sessionId,
         errorMessage: null,
       };

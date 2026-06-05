@@ -4,6 +4,22 @@ CLAUDE.md
 .superpowers
 docs/superpowers
 opencode.json
+.codex-artifacts
+.codex-logs
+.gemini
+.github
+.kiro/steering
+.qoder
+.mcp.json
+.opencode.json
+.windsurfrules
+.claude
+.vscode
+.cursorrules
+AGENTS.md
+GEMINI.md
+QODER.md
+
 
 backend/.venv/
 backend/.pytest_cache/
@@ -19,3 +35,5 @@ frontend/tsconfig.tsbuildinfo
 
 .playwright-mcp/
 mutiagent-auth-desktop.png
+# Added by code-review-graph
+.code-review-graph/

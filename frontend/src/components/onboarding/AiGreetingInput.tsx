@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import styled from 'styled-components';
-import { streamSession, type SessionAgentEvent } from '../../api/orchestration';
+import { fetchSessionState, streamSession, type SessionAgentEvent } from '../../api/orchestration';
 import { useAiWidget } from '../../context/AiWidgetContext';
 import { useAuth } from '../../contexts/AuthContext';
 import type { AgentRunStep, AgentRunStepKind, ChatMessage, SessionMessage } from '../../types/chat';
 import { chatReducer, initialChatStore, nextMessageId } from '../../onboarding/chatReducer';
 import { useChatSession } from '../../onboarding/hooks/useChatSession';
+import { CourseKnowledgeCard } from '../learning/CourseKnowledgeCard';
 import { LearningPathCard } from '../learning/LearningPathCard';
 import { AiEyes } from './AiEyes';
 import { AgentRunTimeline } from './AgentRunTimeline';
@@ -50,6 +51,19 @@ const DEFAULT_AGENT_STEPS: AgentStepStatus[] = [
 
 const MIN_VISIBLE_DURATION_MS = 0.1;
 
+function isLoadedDataUpdate(updateType: string | undefined): boolean {
+  return updateType === 'learning_path_loaded' || updateType === 'course_knowledge_loaded';
+}
+
+function getDataUpdateLabel(updateType: string | undefined, label: string | undefined): string {
+  if (label) return label;
+  if (updateType === 'learning_path_loaded') return '学习路径';
+  if (updateType === 'course_knowledge_loaded') return '课程大纲';
+  if (updateType === 'profile_loaded') return '学习画像';
+  if (updateType === 'paths_loaded') return '学习路径';
+  return updateType ?? '数据更新';
+}
+
 function getTimelineNow(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
@@ -69,11 +83,11 @@ function updateStep(steps: AgentStepStatus[], id: string, status: AgentStepStatu
 }
 
 function getSessionEventAgent(event: SessionAgentEvent): string | undefined {
-  return event.agentKey ?? event.agent;
+  return event.agent;
 }
 
 function getSessionEventStepId(event: SessionAgentEvent): string {
-  return event.stepId ?? getSessionEventAgent(event) ?? event.sessionId ?? event.event;
+  return event.stepId ?? getSessionEventAgent(event) ?? event.session_id ?? event.event;
 }
 
 function getSessionEventTitle(event: SessionAgentEvent): string {
@@ -82,7 +96,7 @@ function getSessionEventTitle(event: SessionAgentEvent): string {
 }
 
 function getSessionEventDetail(event: SessionAgentEvent): string {
-  return event.error ?? event.message ?? event.phase ?? '等待下一步结果';
+  return event.error ?? event.message ?? event.summary ?? event.reason ?? '等待下一步结果';
 }
 
 function getTimelineSummary(event: SessionAgentEvent, fallback: string): string {
@@ -105,7 +119,7 @@ function upsertPanelStep(
 }
 
 function mergeSessionAgentStep(current: AgentStepStatus[], event: SessionAgentEvent): AgentStepStatus[] {
-  if (event.event === 'agent_step_started' || event.event === 'agent_step_progress') {
+  if (event.event === 'agent_calling' || event.event === 'agent_progress') {
     return upsertPanelStep(
       updateStep(current, 'context', 'completed', '已读取本轮输入与历史对话'),
       {
@@ -118,17 +132,18 @@ function mergeSessionAgentStep(current: AgentStepStatus[], event: SessionAgentEv
     );
   }
 
-  if (event.event === 'agent_step_completed') {
+  if (event.event === 'agent_result') {
+    const status = event.success === false ? 'error' : 'completed';
     return upsertPanelStep(current, {
       id: getSessionEventStepId(event),
       title: getSessionEventTitle(event),
-      status: 'completed',
+      status,
       detail: getSessionEventDetail(event),
       agentType: 'write',
     });
   }
 
-  if (event.event === 'agent_step_failed' || event.event === 'orchestration_failed') {
+  if (event.event === 'error') {
     return upsertPanelStep(current, {
       id: getSessionEventStepId(event),
       title: getSessionEventTitle(event),
@@ -138,27 +153,21 @@ function mergeSessionAgentStep(current: AgentStepStatus[], event: SessionAgentEv
     });
   }
 
-  if (event.event === 'data_schema_started') {
+  if (event.event === 'data_update') {
+    const label = getDataUpdateLabel(event.update_type, event.label);
+    const isLoaded = isLoadedDataUpdate(event.update_type);
     return upsertPanelStep(current, {
       id: getSessionEventStepId(event),
-      title: event.schemaName ? `生成 ${event.schemaName}` : '结构化数据生成中',
+      title: isLoaded ? `读取 ${label}` : event.schemaName ? `生成 ${event.schemaName}` : '结构化数据处理中',
       status: 'running',
-      detail: `正在生成 ${event.label ?? '结构化数据'}...`,
+      detail: isLoaded ? `正在读取已保存的${label}...` : `正在处理 ${label}...`,
       agentType: 'write',
     });
   }
 
-  if (event.event === 'data_completed') {
-    return upsertPanelStep(current, {
-      id: getSessionEventStepId(event),
-      title: event.label ?? '数据生成完成',
-      status: 'completed',
-      detail: '结构化数据已生成',
-      agentType: 'write',
-    });
-  }
 
-  if (event.event === 'orchestration_completed') {
+
+  if (event.event === 'session_completed') {
     return current.map((step) =>
       step.status === 'running' || step.status === 'routed'
         ? { ...step, status: 'completed' as const, detail: '本轮内容已生成' }
@@ -172,6 +181,8 @@ function mergeSessionAgentStep(current: AgentStepStatus[], event: SessionAgentEv
 function currentProgressLabel(steps: AgentStepStatus[]): string {
   const active = steps.find((step) => step.status === 'running' || step.status === 'routed');
   if (active) return `${active.title}：${active.detail}`;
+  const failed = steps.find((step) => step.status === 'error');
+  if (failed) return `${failed.title}：${failed.detail}`;
   const completedCount = steps.filter((step) => step.status === 'completed').length;
   if (completedCount > 0) return '本轮智能体调用已完成';
   return '等待你输入学习线索';
@@ -197,7 +208,12 @@ function AssistantMessageFrame({ message, children }: AssistantMessageFrameProps
 }
 
 export function AiGreetingInput() {
-  const { widgetState, setWidgetState } = useAiWidget();
+  const {
+    widgetState,
+    setWidgetState,
+    pendingMessage,
+    clearPendingMessage,
+  } = useAiWidget();
   const { token } = useAuth();
   const cardRef = useRef<HTMLDivElement>(null);
   const [store, dispatch] = useReducer(chatReducer, initialChatStore);
@@ -212,15 +228,19 @@ export function AiGreetingInput() {
   const runStartTimeRef = useRef(0);
   const lastEventTimeRef = useRef(0);
   const executionIdRef = useRef<string | null>(null);
-  const isCompletedRef = useRef(false);
+  const hasCompleteProfileRef = useRef(false);
+  const finalTextRef = useRef('');
+  const accumulatedTextRef = useRef('');
+  const retryActionRef = useRef<'retry_learning_path' | null>(null);
+  const consumedPendingMessageIdRef = useRef<number | null>(null);
 
   const isPending = store.state === 'connecting' || store.state === 'streaming';
   const aiMood = store.state === 'error' ? 'error' : isPending ? 'thinking' : store.messages.some((m) => m.role === 'assistant' && m.status === 'completed') ? 'happy' : 'idle';
 
-  const { persistSession } = useChatSession(store.currentSessionId, (messages, sessionId) => {
+  const { persistSession } = useChatSession(store.currentSessionId, token, (messages, sessionId) => {
     dispatch({ type: 'LOAD_SESSION', messages, sessionId });
     executionIdRef.current = sessionId;
-    isCompletedRef.current = messages.some(
+    hasCompleteProfileRef.current = messages.some(
       (m) => m.role === 'assistant' && m.sessionMessage?.stage === 'generated',
     );
     window.dispatchEvent(new CustomEvent('mutiagent-profile-updated'));
@@ -259,10 +279,10 @@ export function AiGreetingInput() {
     const label = getSessionEventTitle(event);
     const kind: AgentRunStepKind = (event.kind as AgentRunStepKind) || 'agent';
 
-    if (event.event === 'agent_step_started' || event.event === 'agent_step_progress') {
+    if (event.event === 'agent_calling' || event.event === 'agent_progress') {
       const stepId = getSessionEventStepId(event);
-      if (event.event === 'agent_step_started') {
-          startTimeRef.current[stepId] = now;
+      if (event.event === 'agent_calling') {
+        startTimeRef.current[stepId] = now;
       }
       return {
         step: {
@@ -272,23 +292,27 @@ export function AiGreetingInput() {
           title: label,
           summary: getTimelineSummary(event, event.message ?? '正在执行...'),
           agent: agent ?? null,
+          startedAtMs: startTimeRef.current[stepId] ?? now,
           dependsOn: event.dependsOn,
           parallelGroup: event.parallelGroup,
         },
       };
     }
 
-    if (event.event === 'agent_step_completed') {
+    if (event.event === 'agent_result') {
       const stepId = getSessionEventStepId(event);
       const startTime = startTimeRef.current[stepId] ?? (lastEventTimeRef.current || runStartTimeRef.current || now);
+      const status = event.success === false ? 'error' : 'success';
+      const fallbackSummary = event.success === false ? '这一步没有正常完成' : '完成';
       return {
         step: {
           stepId,
           kind,
-          status: 'success',
+          status,
           title: label,
-          summary: getTimelineSummary(event, event.message ?? '完成'),
+          summary: getTimelineSummary(event, event.summary ?? event.error ?? event.message ?? fallbackSummary),
           agent: agent ?? null,
+          startedAtMs: startTime,
           durationMs: getVisibleDuration(startTime, now),
           dependsOn: event.dependsOn,
           parallelGroup: event.parallelGroup,
@@ -296,7 +320,7 @@ export function AiGreetingInput() {
       };
     }
 
-    if (event.event === 'agent_step_failed' || event.event === 'orchestration_failed') {
+    if (event.event === 'error') {
       const stepId = getSessionEventStepId(event);
       const startTime = startTimeRef.current[stepId] ?? (lastEventTimeRef.current || runStartTimeRef.current || now);
       return {
@@ -307,6 +331,7 @@ export function AiGreetingInput() {
           title: label,
           summary: getTimelineSummary(event, event.error ?? event.message ?? '这一步没有正常完成'),
           agent: agent ?? null,
+          startedAtMs: startTime,
           durationMs: getVisibleDuration(startTime, now),
           dependsOn: event.dependsOn,
           parallelGroup: event.parallelGroup,
@@ -314,8 +339,8 @@ export function AiGreetingInput() {
       };
     }
 
-    if (event.event === 'tool_call_started') {
-      const stepId = event.stepId ?? getSessionEventStepId(event);
+    if (event.event === 'supervisor_plan') {
+      const stepId = getSessionEventStepId(event);
       const toolStepId = `tool-${event.toolName ?? stepId}`;
       return {
         step: {
@@ -325,37 +350,22 @@ export function AiGreetingInput() {
           title: event.label ?? `调用 ${event.toolName ?? '工具'}`,
           summary: getTimelineSummary(event, event.message ?? '正在调用...'),
           agent: agent ?? null,
+          startedAtMs: now,
         },
       };
     }
 
-    if (event.event === 'tool_call_completed') {
-      const stepId = event.stepId ?? getSessionEventStepId(event);
-      const toolStepId = `tool-${event.toolName ?? stepId}`;
+    if (event.event === 'session_completed') {
       const startTime = lastEventTimeRef.current || runStartTimeRef.current || now;
       return {
         step: {
-          stepId: toolStepId,
-          kind: 'tool_call' as AgentRunStepKind,
-          status: 'success',
-          title: event.label ?? `${event.toolName ?? '工具'} 完成`,
-          summary: getTimelineSummary(event, event.output ?? event.message ?? '完成'),
-          agent: agent ?? null,
-          durationMs: getVisibleDuration(startTime, now),
-        },
-      };
-    }
-
-    if (event.event === 'orchestration_completed') {
-      const startTime = lastEventTimeRef.current || runStartTimeRef.current || now;
-      return {
-        step: {
-          stepId: `step-answer-${event.sessionId ?? now}`,
+          stepId: `step-answer-${event.session_id ?? now}`,
           kind: 'answer',
           status: 'success',
           title: '生成回复',
           summary: event.message ?? '本轮内容已生成',
           agent: agent ?? null,
+          startedAtMs: startTime,
           durationMs: getVisibleDuration(startTime, now),
         },
       };
@@ -391,41 +401,50 @@ export function AiGreetingInput() {
       const runStartedAt = getTimelineNow();
       runStartTimeRef.current = runStartedAt;
       lastEventTimeRef.current = runStartedAt;
+      retryActionRef.current = null;
+      let finalSessionId: string | undefined;
 
       try {
-        let finalSessionId: string | undefined;
+        let finalTurnText = '';
+        let finalTurnHasPaths = false;
+        let finalTurnHasOutline = false;
+        let generatedProfileThisTurn = false;
+        let generatedLearningPathThisTurn = false;
+        let generatedCourseOutlineThisTurn = false;
+        let loadedLearningPathThisTurn = false;
+        let loadedCourseOutlineThisTurn = false;
 
-        await streamSession(
+        const turn = await streamSession(
           token,
           query,
-          executionIdRef.current && !isCompletedRef.current ? executionIdRef.current : null,
+          executionIdRef.current,
           (event) => {
             if (runIdRef.current !== runId) return;
             setAgentSteps((current) => mergeSessionAgentStep(current, event));
             setAgentEvents((current) => [...current, event]);
 
-            if (event.event === 'message_started') {
+            if (event.event === 'supervisor_thinking') {
               dispatch({ type: 'MESSAGE_STARTED', messageId: assistantMsgId });
               return;
             }
 
+            if (event.event === 'session_started') {
+              finalSessionId = event.session_id ?? finalSessionId;
+              executionIdRef.current = event.session_id ?? executionIdRef.current;
+              if (event.session_id) {
+                dispatch({ type: 'SET_SESSION_ID', sessionId: event.session_id });
+              }
+              return;
+            }
+
             if (event.event === 'text_chunk' && event.chunk) {
+              accumulatedTextRef.current += event.chunk;
               dispatch({ type: 'TEXT_CHUNK', messageId: assistantMsgId, chunk: event.chunk });
               return;
             }
 
-            if (event.event === 'thought_chunk' && event.chunk) {
-              dispatch({
-                type: 'THOUGHT_CHUNK',
-                messageId: assistantMsgId,
-                stepId: event.stepId ?? 'supervisor',
-                text: event.chunk,
-              });
-              return;
-            }
-
-            if (event.event === 'tool_call_started' || event.event === 'tool_call_completed') {
-              if (event.event === 'tool_call_started') {
+            if (event.event === 'supervisor_plan') {
+              if (event.event === 'supervisor_plan') {
                 dispatch({ type: 'STREAMING_STARTED' });
               }
               const { step } = eventToStep(event, getTimelineNow());
@@ -436,36 +455,36 @@ export function AiGreetingInput() {
               return;
             }
 
-            if (event.event === 'data_schema_started' && event.schemaName) {
-              dispatch({ type: 'DATA_SCHEMA_STARTED', messageId: assistantMsgId, schemaName: event.schemaName });
-              return;
-            }
-
-            if (event.event === 'data_chunk' && event.partialData) {
+            if (event.event === 'data_update') {
+              if (event.update_type === 'learning_path_loaded') {
+                loadedLearningPathThisTurn = true;
+              }
+              if (event.update_type === 'course_knowledge_loaded') {
+                loadedCourseOutlineThisTurn = true;
+              }
               dispatch({
-                type: 'DATA_CHUNK',
+                type: 'DATA_SCHEMA_STARTED',
                 messageId: assistantMsgId,
-                raw: typeof event.partialData === 'string' ? event.partialData : JSON.stringify(event.partialData),
+                schemaName: getDataUpdateLabel(event.update_type, event.label),
               });
               return;
             }
 
-            if (event.event === 'data_completed') {
-              dispatch({ type: 'DATA_COMPLETED', messageId: assistantMsgId, finalData: event.finalData });
+            if (event.event === 'message_completed' && event.full_text) {
+              finalTextRef.current = event.full_text;
               return;
             }
 
             const now = getTimelineNow();
 
             if (
-              event.event === 'agent_step_started'
-              || event.event === 'agent_step_progress'
-              || event.event === 'agent_step_completed'
-              || event.event === 'agent_step_failed'
-              || event.event === 'orchestration_completed'
-              || event.event === 'orchestration_failed'
+              event.event === 'agent_calling'
+              || event.event === 'agent_progress'
+              || event.event === 'agent_result'
+              || event.event === 'error'
+              || event.event === 'session_completed'
             ) {
-              if (event.event === 'agent_step_started') {
+              if (event.event === 'agent_calling') {
                 dispatch({ type: 'STREAMING_STARTED' });
               }
               const { step } = eventToStep(event, now);
@@ -475,32 +494,50 @@ export function AiGreetingInput() {
               lastEventTimeRef.current = now;
             }
 
-            if (event.event === 'orchestration_completed') {
-              const text = event.answer?.userMessage ?? '';
-              executionIdRef.current = event.sessionId ?? null;
-              isCompletedRef.current = event.completed ?? false;
-              finalSessionId = event.sessionId ?? undefined;
-
-              if (event.error) {
-                dispatch({ type: 'RUN_ERROR', messageId: assistantMsgId, message: event.error });
-                setGlobalError(event.error);
-                return;
+            if (event.event === 'agent_result' && event.success) {
+              if (event.agent === 'profile_agent') {
+                generatedProfileThisTurn = true;
               }
+              if (event.agent === 'learning_path_agent') {
+                generatedLearningPathThisTurn = true;
+              }
+              if (event.agent === 'course_knowledge_agent') {
+                generatedCourseOutlineThisTurn = true;
+              }
+            }
+
+            if (event.event === 'session_completed') {
+              const text = finalTextRef.current || accumulatedTextRef.current || '';
+              finalTurnText = text;
+              finalTurnHasPaths = event.has_paths ?? false;
+              finalTurnHasOutline = event.has_outline ?? false;
+              executionIdRef.current = event.session_id ?? null;
+              hasCompleteProfileRef.current = event.has_profile ?? false;
+              finalSessionId = event.session_id ?? undefined;
 
               dispatch({
                 type: 'RUN_DONE',
                 messageId: assistantMsgId,
                 content: text,
-                sessionMessage: event.profile,
-                agentAnswer: event.answer ?? null,
-                learningPath: event.learningPath ?? null,
-                sessionId: event.sessionId ?? undefined,
+                sessionMessage: null,
+                agentAnswer: null,
+                learningPath: null,
+                sessionId: event.session_id ?? undefined,
               });
+              finalTextRef.current = '';
+              accumulatedTextRef.current = '';
+              retryActionRef.current = null;
             }
 
-            if (event.event === 'agent_step_failed' || event.event === 'orchestration_failed') {
+            if (event.event === 'error') {
+              retryActionRef.current = event.retryAction ?? null;
               const message = event.error ?? event.message ?? '对话请求失败，请稍后重试';
-              dispatch({ type: 'RUN_ERROR', messageId: assistantMsgId, message });
+              dispatch({
+                type: 'RUN_ERROR',
+                messageId: assistantMsgId,
+                message,
+                retryAction: retryActionRef.current,
+              });
               setGlobalError(message);
             }
           },
@@ -508,17 +545,51 @@ export function AiGreetingInput() {
 
         if (runIdRef.current !== runId) return;
 
+        finalSessionId = finalSessionId ?? turn.sessionId;
+        finalTurnText = finalTurnText || turn.text;
+        finalTurnHasPaths = finalTurnHasPaths || turn.hasPaths;
+        finalTurnHasOutline = finalTurnHasOutline || turn.hasOutline;
+
         if (finalSessionId) {
           executionIdRef.current = finalSessionId;
         }
 
-        if (isCompletedRef.current) {
+        const shouldFetchLearningPath = generatedLearningPathThisTurn || loadedLearningPathThisTurn;
+        const shouldFetchCourseOutline = generatedCourseOutlineThisTurn || loadedCourseOutlineThisTurn;
+        const shouldFetchProfile = generatedProfileThisTurn;
+
+        if (finalSessionId && (shouldFetchProfile || shouldFetchLearningPath || shouldFetchCourseOutline)) {
+          try {
+            const structuredData = await fetchSessionState(token, finalSessionId);
+            if (runIdRef.current !== runId) return;
+            dispatch({
+              type: 'RUN_DONE',
+              messageId: assistantMsgId,
+              content: finalTurnText,
+              sessionMessage: shouldFetchProfile ? structuredData.profile : null,
+              agentAnswer: null,
+              learningPath: shouldFetchLearningPath ? structuredData.learningPath : null,
+              courseKnowledge: shouldFetchCourseOutline ? structuredData.courseKnowledge : null,
+              sessionId: finalSessionId,
+            });
+          } catch {
+            // Ignore structured follow-up errors and keep text result visible.
+          }
+        }
+
+        if (hasCompleteProfileRef.current) {
           window.dispatchEvent(new CustomEvent('mutiagent-profile-updated'));
         }
       } catch (err) {
         if (runIdRef.current !== runId) return;
         const message = err instanceof Error ? err.message : '对话请求失败，请稍后重试';
-        dispatch({ type: 'RUN_ERROR', messageId: assistantMsgId, message });
+        dispatch({
+          type: 'RUN_ERROR',
+          messageId: assistantMsgId,
+          message,
+          sessionId: finalSessionId,
+          retryAction: retryActionRef.current,
+        });
         setGlobalError(message);
         setAgentSteps((current) =>
           current.map((step) =>
@@ -532,8 +603,27 @@ export function AiGreetingInput() {
     [isPending, token, eventToStep],
   );
 
+  const retryLearningPath = useCallback(() => {
+    void sendMessage('重试生成学习路径');
+  }, [sendMessage]);
+
   useEffect(() => {
-    if (store.state === 'idle' && store.currentSessionId && store.messages.length > 0) {
+    if (widgetState !== 'EXPANDED') return;
+    if (!pendingMessage) return;
+    if (isPending) return;
+    if (consumedPendingMessageIdRef.current === pendingMessage.id) return;
+
+    consumedPendingMessageIdRef.current = pendingMessage.id;
+    clearPendingMessage();
+    void sendMessage(pendingMessage.text);
+  }, [clearPendingMessage, isPending, pendingMessage, sendMessage, widgetState]);
+
+  useEffect(() => {
+    if (
+      (store.state === 'idle' || store.state === 'error' || store.state === 'streaming')
+      && store.currentSessionId
+      && store.messages.length > 0
+    ) {
       persistSession(store.currentSessionId, store.messages);
     }
   }, [store.state, store.currentSessionId, store.messages, persistSession]);
@@ -562,8 +652,17 @@ export function AiGreetingInput() {
     if (message.role === 'assistant') {
       let assistantContent: React.ReactNode;
 
-      if (message.learningPath) {
+      if (message.learningPath && message.courseKnowledge) {
+        assistantContent = (
+          <div className="assistant-structured-stack">
+            <LearningPathCard path={message.learningPath} />
+            <CourseKnowledgeCard outline={message.courseKnowledge} />
+          </div>
+        );
+      } else if (message.learningPath) {
         assistantContent = <LearningPathCard path={message.learningPath} />;
+      } else if (message.courseKnowledge) {
+        assistantContent = <CourseKnowledgeCard outline={message.courseKnowledge} />;
       } else if (message.sessionMessage && isStructuredMessage(message.sessionMessage)) {
         assistantContent = (
           <ChatCard
@@ -578,6 +677,9 @@ export function AiGreetingInput() {
           <AssistantMessage
             message={message}
             onSendReply={isLatestInteractive ? sendMessage : undefined}
+            onRetryLearningPath={
+              message.retryAction === 'retry_learning_path' ? retryLearningPath : undefined
+            }
             disabled={!isLatestInteractive || isPending}
             showTimeline={false}
           />
@@ -680,7 +782,7 @@ export function AiGreetingInput() {
                 >
                   <textarea
                     rows={1}
-                    placeholder={isCompletedRef.current ? '画像已生成，可以继续补充或追问...' : '输入你的学习情况...'}
+                    placeholder={hasCompleteProfileRef.current ? '画像已生成，可以继续补充或追问...' : '输入你的学习情况...'}
                     value={inputValue}
                     disabled={isPending}
                     onChange={(event) => setInputValue(event.target.value)}
@@ -774,7 +876,7 @@ export function AiGreetingInput() {
                       {agentEvents.map((event, index) => (
                         <p key={`${event.event}-${index}`}>
                           <strong>{event.label || getSessionEventAgent(event) || event.event}</strong>
-                          <span>{event.message || event.intent || event.phase || event.event}</span>
+                          <span>{event.message || event.summary || event.reason || event.intent || event.event}</span>
                         </p>
                       ))}
                     </div>
