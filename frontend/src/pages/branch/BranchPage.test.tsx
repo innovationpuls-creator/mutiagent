@@ -577,7 +577,7 @@ describe('BranchPage', () => {
     expect(centerNode?.textContent).toContain('已完成');
   });
 
-  it('renders the full course rail for one academic year and switches focus when a course is selected', async () => {
+  it('uses the upper course nodes instead of rendering a lower course rail', async () => {
     fetchProfileDashboardMock.mockResolvedValue({
       profile: {
         currentGrade: '大三',
@@ -681,9 +681,10 @@ describe('BranchPage', () => {
       expect(screen.getByText('这一学年共 3 门课程，按顺序慢慢推进。')).toBeTruthy();
     });
 
-    expect(screen.getByText('第 1 门 · AI 应用开发基础能力搭建')).toBeTruthy();
-    expect(screen.getByText('第 2 门 · AI 应用开发项目实战')).toBeTruthy();
-    expect(screen.getByText('第 3 门 · AI 应用部署与监控实战')).toBeTruthy();
+    expect(screen.queryByText('第 1 门 · AI 应用开发基础能力搭建')).toBeNull();
+    expect(screen.queryByText('第 2 门 · AI 应用开发项目实战')).toBeNull();
+    expect(screen.queryByText('第 3 门 · AI 应用部署与监控实战')).toBeNull();
+    expect(container.querySelector('.branch-course-rail')).toBeNull();
 
     let centerNode = container.querySelector('.branch-node-center');
     expect(centerNode?.textContent).toContain('AI 应用开发项目实战');

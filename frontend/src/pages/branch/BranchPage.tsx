@@ -138,10 +138,6 @@ function stageLabel(courseCount: number): string {
   return `这一学年共 ${courseCount} 门课程，按顺序慢慢推进。`;
 }
 
-function railTitle(index: number, theme: string): string {
-  return `第 ${index + 1} 门 · ${theme}`;
-}
-
 function railAriaLabel(gradeName: string, index: number, course: BranchCourseNode): string {
   return `${gradeName}第 ${index + 1} 门课程：${course.course_or_chapter_theme}，${statusLabel(course.status)}`;
 }
@@ -246,6 +242,24 @@ function PathSession({
   const stageCourses = pickStageCourses(courses, currentCourseId, focusedCourseId);
   const stage = toStageCourseSet(stageCourses);
 
+  function courseIndex(course: BranchCourseNode): number {
+    return courses.findIndex((item) => item.course_node_id === course.course_node_id);
+  }
+
+  function courseButtonLabel(course: BranchCourseNode): string {
+    return railAriaLabel(gradeName, courseIndex(course), course);
+  }
+
+  function handleCourseClick(course: BranchCourseNode): void {
+    setFocusedCourseId(course.course_node_id);
+    if (course.status === 'completed' || course.status === 'current') {
+      setLockedCourseHint(null);
+      onOpenCourse(course);
+      return;
+    }
+    setLockedCourseHint(`「${course.course_or_chapter_theme}」还未开放，先完成前面的课程。`);
+  }
+
   return (
     <section className="branch-session" aria-label={`${gradeName}课程路径`}>
       <div className="branch-session-header">
@@ -274,11 +288,15 @@ function PathSession({
             <div className="branch-stage-layout">
               {stage.left ? (
                 <div className="branch-stage-slot branch-stage-slot-left">
-                  <motion.article
+                  <motion.button
                     className={`branch-blob-card branch-blob-card-${iconLabel(stage.left.status)}`}
+                    type="button"
+                    aria-label={courseButtonLabel(stage.left)}
+                    aria-pressed={stage.left.course_node_id === focusedCourseId}
                     whileHover={reduceMotion ? undefined : { y: -5, scale: 1.05 }}
                     whileTap={reduceMotion ? undefined : { y: -1, scale: 1.01 }}
                     transition={motionTokens.lazy}
+                    onClick={() => handleCourseClick(stage.left as BranchCourseNode)}
                   >
                     <div className={`branch-blob-icon branch-blob-icon-${iconLabel(stage.left.status)}`} aria-hidden="true">
                       <StageIcon kind={iconLabel(stage.left.status)} />
@@ -287,7 +305,7 @@ function PathSession({
                       <h2 className="branch-blob-title">{stage.left.course_or_chapter_theme}</h2>
                       <p className={`branch-blob-status branch-blob-status-${iconLabel(stage.left.status)}`}>{statusLabel(stage.left.status)}</p>
                     </div>
-                  </motion.article>
+                  </motion.button>
                 </div>
               ) : null}
 
@@ -298,19 +316,17 @@ function PathSession({
                   </div>
                   <motion.article
                     className="branch-blob-card-shell branch-blob-card-shell-current"
-                    animate={reduceMotion ? undefined : { scale: [1, 1.05, 1] }}
-                    transition={reduceMotion ? undefined : {
-                      duration: 4,
-                      repeat: Number.POSITIVE_INFINITY,
-                      ease: 'easeInOut',
-                    }}
                   >
                     <div className="branch-current-glow" aria-hidden="true" />
-                    <motion.div
+                    <motion.button
                       className="branch-blob-card branch-blob-card-current"
+                      type="button"
+                      aria-label={courseButtonLabel(stage.center)}
+                      aria-pressed={stage.center.course_node_id === focusedCourseId}
                       whileHover={reduceMotion ? undefined : { y: -5, scale: 1.02 }}
                       whileTap={reduceMotion ? undefined : { y: -1, scale: 1.005 }}
                       transition={motionTokens.lazy}
+                      onClick={() => handleCourseClick(stage.center as BranchCourseNode)}
                     >
                       <div className="branch-blob-copy-current">
                         <div className="branch-blob-icon branch-blob-icon-current" aria-hidden="true">
@@ -323,9 +339,8 @@ function PathSession({
                           </h2>
                         </div>
                       </div>
-                      <motion.button
+                      <motion.span
                         className="branch-focus-button"
-                        type="button"
                         whileHover={reduceMotion ? undefined : { y: -2 }}
                         whileTap={reduceMotion ? undefined : { y: 0, scale: 0.992 }}
                         transition={motionTokens.lazy}
@@ -339,18 +354,23 @@ function PathSession({
                         >
                           →
                         </motion.span>
-                      </motion.button>
-                    </motion.div>
+                      </motion.span>
+                    </motion.button>
                   </motion.article>
                 </div>
               ) : null}
 
               {stage.right ? (
                 <div className="branch-stage-slot branch-stage-slot-right">
-                  <motion.article
+                  <motion.button
                     className={`branch-blob-card branch-blob-card-${iconLabel(stage.right.status)}`}
+                    type="button"
+                    aria-label={courseButtonLabel(stage.right)}
+                    aria-pressed={stage.right.course_node_id === focusedCourseId}
                     whileHover={reduceMotion ? undefined : { y: -3, scale: 1.02 }}
+                    whileTap={reduceMotion ? undefined : { y: -1, scale: 0.995 }}
                     transition={motionTokens.lazy}
+                    onClick={() => handleCourseClick(stage.right as BranchCourseNode)}
                   >
                     <div className={`branch-blob-icon branch-blob-icon-${iconLabel(stage.right.status)}`} aria-hidden="true">
                       <StageIcon kind={iconLabel(stage.right.status)} />
@@ -359,7 +379,7 @@ function PathSession({
                       <h2 className="branch-blob-title">{stage.right.course_or_chapter_theme}</h2>
                       <p className={`branch-blob-status branch-blob-status-${iconLabel(stage.right.status)}`}>{statusLabel(stage.right.status)}</p>
                     </div>
-                  </motion.article>
+                  </motion.button>
                 </div>
               ) : null}
             </div>
@@ -371,54 +391,6 @@ function PathSession({
           </div>
         )}
       </div>
-
-      {courses.length > 0 ? (
-        <div className="branch-course-rail" aria-label={`${gradeName}整学年课程脉络`}>
-          {courses.map((course, index) => {
-            const isFocused = course.course_node_id === focusedCourseId;
-            const isCurrentCourse = course.course_node_id === currentCourseId || course.status === 'current';
-
-            return (
-              <motion.button
-                key={course.course_node_id}
-                className={`branch-course-rail-card${isFocused ? ' branch-course-rail-card-focused' : ''}`}
-                type="button"
-                aria-label={railAriaLabel(gradeName, index, course)}
-                aria-pressed={isFocused}
-                whileHover={reduceMotion ? undefined : { y: -3, scale: 1.01 }}
-                whileTap={reduceMotion ? undefined : { y: -1, scale: 0.995 }}
-                transition={motionTokens.lazy}
-                onClick={() => {
-                  setFocusedCourseId(course.course_node_id);
-                  if (course.status === 'completed' || course.status === 'current') {
-                    setLockedCourseHint(null);
-                    onOpenCourse(course);
-                    return;
-                  }
-                  setLockedCourseHint(`「${course.course_or_chapter_theme}」还未开放，先完成前面的课程。`);
-                }}
-              >
-                <div className="branch-course-rail-copy">
-                  <span className="branch-course-rail-index">{`第 ${index + 1} 门`}</span>
-                  <h3 className="branch-course-rail-title">{railTitle(index, course.course_or_chapter_theme)}</h3>
-                  <p className="branch-course-rail-goal">{course.course_goal}</p>
-                </div>
-                <div className="branch-course-rail-meta">
-                  <span className={`branch-course-rail-status branch-course-rail-status-${iconLabel(course.status)}`}>
-                    {statusLabel(course.status)}
-                  </span>
-                  {isCurrentCourse ? (
-                    <span className="branch-course-rail-badge">当前推进</span>
-                  ) : null}
-                  {course.has_outline ? (
-                    <span className="branch-course-rail-badge">已生成章节</span>
-                  ) : null}
-                </div>
-              </motion.button>
-            );
-          })}
-        </div>
-      ) : null}
 
       {lockedCourseHint ? (
         <p className="branch-course-rail-hint" role="status">{lockedCourseHint}</p>

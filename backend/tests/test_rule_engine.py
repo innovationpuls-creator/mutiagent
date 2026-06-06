@@ -50,6 +50,7 @@ class TestIntentDetection:
         assert is_navigation_query("下一步")
         assert is_navigation_query("下一步是什么？")
         assert is_navigation_query("然后呢")
+        assert is_navigation_query("现在我应该干嘛")
         assert is_navigation_query("好的")
         assert is_navigation_query("ok")
         assert not is_navigation_query("我想学Python")
@@ -607,6 +608,19 @@ def test_course_resource_generation_query_keywords() -> None:
     assert is_course_resource_generation_query("生成第一章内容")
     assert is_course_resource_generation_query("开始学习这门课")
     assert not is_course_resource_generation_query("先看看学习路径")
+
+
+def test_profile_path_and_outline_forces_course_knowledge_for_outline_regeneration() -> None:
+    state = {
+        "query": "重新生成该课程的大纲",
+        "profile": _complete_profile(),
+        "year_learning_paths": {"year_3": {"grade_plans": {"year_3": {"course_nodes": []}}}},
+        "course_knowledge": {"course_id": "year_3_course_1", "sections": [{"section_id": "1"}]},
+        "messages": [],
+    }
+    result = evaluate(state)
+
+    assert result.force_call == AGENT_COURSE_KNOWLEDGE
 
 
 def test_profile_and_path_without_outline_forces_course_knowledge_for_resources() -> None:

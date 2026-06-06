@@ -130,7 +130,11 @@ from sqlmodel import Session
 from app.database import build_engine, init_db, set_engine
 from app.models import User, UserCourseKnowledgeOutline
 from app.orchestration.agents.course_resources import run_section_markdown_agent
-from app.orchestration.agents.models import SectionMarkdownOutput
+from app.orchestration.agents.models import (
+    SectionHtmlAnimationOutput,
+    SectionMarkdownOutput,
+    SectionVideoSearchOutput,
+)
 
 
 def test_run_section_markdown_agent_writes_each_first_chapter_child_section(tmp_path) -> None:
@@ -207,8 +211,220 @@ def test_run_section_markdown_agent_writes_each_first_chapter_child_section(tmp_
     assert set(row.outline_data["section_markdowns"]) == {"1.1", "1.2", "1.3"}
 
 
+def test_run_section_markdown_agent_uses_local_fallback_when_llm_fails(tmp_path) -> None:
+    class FailingLlm:
+        def with_structured_output(self, schema, *_args, **_kwargs):
+            captured["schema"] = schema
+            return object()
+
+    class FailingChain:
+        async def ainvoke(self, _payload):
+            raise RuntimeError("structured generation timeout")
+
+    class MarkdownPrompt:
+        def __or__(self, _other):
+            return FailingChain()
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return MarkdownPrompt()
+
+    captured = {"schema": None}
+    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-fallback.db'}")
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(User(uid="user-1", username="课程用户", identifier="course@example.com"))
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid="user-1",
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name="AI 应用开发",
+                outline_data=_outline(),
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+    original_factory = module.ChatPromptTemplate
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(
+            run_section_markdown_agent(
+                {
+                    "user_id": "user-1",
+                    "course_knowledge": _outline(),
+                    "messages": [],
+                },
+                FailingLlm(),
+                {"course_id": "year_3_course_1", "section_id": "1", "scope": "chapter_sections"},
+            )
+        )
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert captured["schema"] is SectionMarkdownOutput
+    assert "error" not in result
+    markdowns = result["course_knowledge"]["section_markdowns"]
+    assert set(markdowns) == {"1.1", "1.2", "1.3"}
+    assert markdowns["1.1"]["markdown"].startswith("# 学习目标")
+    assert "<!-- video:id=video_1 -->" in markdowns["1.1"]["markdown"]
+    with Session(engine) as session:
+        row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
+    assert row is not None
+    assert set(row.outline_data["section_markdowns"]) == {"1.1", "1.2", "1.3"}
+
+
+def test_run_section_markdown_agent_generates_child_sections_concurrently(tmp_path) -> None:
+    class RecordingLlm:
+        def with_structured_output(self, schema, *_args, **_kwargs):
+            captured["schema"] = schema
+            return object()
+
+    class MarkdownChain:
+        async def ainvoke(self, payload):
+            captured["active"] += 1
+            captured["max_active"] = max(captured["max_active"], captured["active"])
+            try:
+                await asyncio.sleep(0.01)
+                section_id = "1.1" if "学习目标" in payload["query"] else "1.2" if "任务拆解" in payload["query"] else "1.3"
+                title = "学习目标" if section_id == "1.1" else "任务拆解" if section_id == "1.2" else "检查点"
+                return SectionMarkdownOutput(
+                    section_id=section_id,
+                    parent_section_id="1",
+                    title=title,
+                    markdown=f"# {title}\n\n完整教学内容",
+                    animation_briefs=[],
+                )
+            finally:
+                captured["active"] -= 1
+
+    class MarkdownPrompt:
+        def __or__(self, _other):
+            return MarkdownChain()
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return MarkdownPrompt()
+
+    captured = {"schema": None, "active": 0, "max_active": 0}
+    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-concurrent.db'}")
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(User(uid="user-1", username="课程用户", identifier="course@example.com"))
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid="user-1",
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name="AI 应用开发",
+                outline_data=_outline(),
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+    original_factory = module.ChatPromptTemplate
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(
+            run_section_markdown_agent(
+                {
+                    "user_id": "user-1",
+                    "course_knowledge": _outline(),
+                    "messages": [],
+                },
+                RecordingLlm(),
+                {"course_id": "year_3_course_1", "section_id": "1", "scope": "chapter_sections"},
+            )
+        )
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert captured["schema"] is SectionMarkdownOutput
+    assert captured["max_active"] == 3
+    assert set(result["course_knowledge"]["section_markdowns"]) == {"1.1", "1.2", "1.3"}
+
+
+def test_stream_chapter_resource_generation_completes_when_resource_llm_fails(tmp_path) -> None:
+    class FailingLlm:
+        def with_structured_output(self, schema, *_args, **_kwargs):
+            captured["schemas"].append(schema)
+            return object()
+
+    class FailingChain:
+        async def ainvoke(self, _payload):
+            raise RuntimeError("resource generation timeout")
+
+    class ResourcePrompt:
+        def __or__(self, _other):
+            return FailingChain()
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return ResourcePrompt()
+
+    captured = {"schemas": []}
+    engine = build_engine(f"sqlite:///{tmp_path / 'section-stream-fallback.db'}")
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(User(uid="user-1", username="课程用户", identifier="course@example.com"))
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid="user-1",
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name="AI 应用开发",
+                outline_data=_outline(),
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+    original_factory = module.ChatPromptTemplate
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        async def collect_events():
+            return [
+                event
+                async for event in module.stream_chapter_resource_generation(
+                    {
+                        "user_id": "user-1",
+                        "session_id": "session-1",
+                        "course_knowledge": _outline(),
+                        "profile": {},
+                        "year_learning_paths": {},
+                    },
+                    FailingLlm(),
+                    FailingLlm(),
+                    course_id="year_3_course_1",
+                    chapter_section_id="1",
+                )
+            ]
+
+        events = asyncio.run(collect_events())
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert SectionMarkdownOutput in captured["schemas"]
+    assert SectionVideoSearchOutput in captured["schemas"]
+    assert SectionHtmlAnimationOutput in captured["schemas"]
+    assert not any(event["event"] == "error" for event in events)
+    assert any(event["event"] == "message_completed" for event in events)
+    assert any(event["event"] == "session_completed" for event in events)
+    with Session(engine) as session:
+        row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
+    assert row is not None
+    assert set(row.outline_data["section_composed_markdowns"]) == {"1.1", "1.2", "1.3"}
+
+
 from app.orchestration.agents.course_resources import run_section_video_search_agent
-from app.orchestration.agents.models import SectionVideoSearchOutput
 
 
 def test_run_section_video_search_agent_writes_url_and_fallback_cover(tmp_path) -> None:
@@ -388,7 +604,6 @@ def test_run_section_video_search_agent_retries_transient_failure(tmp_path) -> N
 
 
 from app.orchestration.agents.course_resources import run_section_html_animation_agent
-from app.orchestration.agents.models import SectionHtmlAnimationOutput
 
 
 def test_run_section_html_animation_agent_uses_animation_briefs(tmp_path) -> None:

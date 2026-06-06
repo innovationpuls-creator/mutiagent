@@ -40,6 +40,13 @@ _NAVIGATION_QUERIES = {
 _COURSE_START_KEYWORDS = {
     "start_first_course", "开始第一门课", "开始课程", "开始学习", "生成课程",
 }
+_COURSE_OUTLINE_REGENERATION_KEYWORDS = {
+    "重新生成该课程的大纲",
+    "重新生成该课程大纲",
+    "重新生成这门课的大纲",
+    "重新生成这门课大纲",
+    "重新生成课程大纲",
+}
 _COURSE_RESOURCE_GENERATION_KEYWORDS = {
     "生成当前课程教学内容",
     "生成课程教学内容",
@@ -122,11 +129,22 @@ def is_navigation_query(query: str) -> bool:
         "下一步呢",
         "下一步是什么",
         "下一步是什么呢",
+        "现在我应该干嘛",
+        "我应该干嘛",
+        "现在该做什么",
+        "接下来我该做什么",
     }
 
 def is_course_start_query(query: str) -> bool:
     q = query.strip().lower()
     return any(kw in q for kw in _COURSE_START_KEYWORDS)
+
+
+def is_course_outline_regeneration_query(query: str) -> bool:
+    q = query.strip().lower()
+    if not q:
+        return False
+    return any(keyword in q for keyword in _COURSE_OUTLINE_REGENERATION_KEYWORDS)
 
 
 def is_course_resource_generation_query(query: str) -> bool:
@@ -486,6 +504,15 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
         result.system_hints.append(
             "[系统级强制指令] 当前会话正在处理“先更新个人画像，再重新生成学习路径”的后续动作。"
             "你必须先调用 profile_agent 更新画像；如果仍缺信息，直接向用户追问。"
+        )
+        return result
+
+    if is_course_outline_regeneration_query(query):
+        result.force_call = AGENT_COURSE_KNOWLEDGE
+        result.system_hints.append(
+            "[系统级强制指令] 用户明确要求重新生成当前课程大纲。"
+            "你必须调用 course_knowledge_agent 刷新课程大纲，"
+            "不要直接复述已有课程大纲。"
         )
         return result
 

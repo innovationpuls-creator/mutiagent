@@ -33,6 +33,9 @@ from app.services.course_knowledge_service import upsert_user_course_knowledge_o
 logger = logging.getLogger(__name__)
 
 _RESOURCE_TIMEOUT_SECONDS = 60.0
+_MARKDOWN_TIMEOUT_SECONDS = 30.0
+_VIDEO_TIMEOUT_SECONDS = 20.0
+_ANIMATION_TIMEOUT_SECONDS = 20.0
 
 
 def _now_iso() -> str:
@@ -75,10 +78,16 @@ async def _run_with_retries(
     return fallback
 
 
-async def _invoke_resource_chain(chain: Any, query: str, output_schema: Any) -> dict:
+async def _invoke_resource_chain(
+    chain: Any,
+    query: str,
+    output_schema: Any,
+    *,
+    timeout_seconds: float = _RESOURCE_TIMEOUT_SECONDS,
+) -> dict:
     output = await asyncio.wait_for(
         chain.ainvoke({"query": query}),
-        timeout=_RESOURCE_TIMEOUT_SECONDS,
+        timeout=timeout_seconds,
     )
     if hasattr(output, "model_dump"):
         return output.model_dump()
@@ -290,6 +299,55 @@ def _markdown_input(outline: dict, section: dict) -> str:
     )
 
 
+def _text_items(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [_clean_text(item) for item in value if _clean_text(item)]
+
+
+def _local_section_markdown(outline: dict, section: dict) -> dict:
+    section_id = _clean_text(section.get("section_id"))
+    title = _clean_text(section.get("title")) or section_id
+    course_name = _clean_text(outline.get("course_name")) or "当前课程"
+    description = _clean_text(section.get("description")) or f"围绕「{title}」完成本小节学习。"
+    knowledge_points = _text_items(section.get("key_knowledge_points"))
+    knowledge_lines = "\n".join(f"- {item}" for item in knowledge_points) or "- 明确核心概念\n- 完成可检查的学习产出"
+    markdown = "\n\n".join([
+        f"# {title}",
+        f"## 学习目标\n围绕《{course_name}》的 {section_id} 小节，先理解本节目标，再把目标落到可执行任务。",
+        f"## 核心概念\n{knowledge_lines}",
+        f"## 步骤讲解\n1. 阅读小节说明：{description}\n2. 对照核心概念整理自己的理解。\n3. 把理解转成一个最小练习或交付物。",
+        "<!-- video:id=video_1 -->",
+        "## 练习任务\n用 10 到 15 分钟写下本节的输入、输出、完成标准，并补充一个你最容易卡住的问题。",
+        "<!-- animation:id=anim_1 -->",
+        "## 检查标准\n- 能用自己的话解释本节目标。\n- 能列出本节至少 2 个关键知识点。\n- 能给出一个可以验证完成度的小产出。",
+    ])
+    return {
+        "section_id": section_id,
+        "parent_section_id": section.get("parent_section_id"),
+        "title": title,
+        "markdown": markdown,
+        "video_briefs": [
+            {
+                "video_id": "video_1",
+                "title": f"{title}导入视频",
+                "purpose": "用短视频建立本节直觉，再回到文档完成练习。",
+            }
+        ],
+        "animation_briefs": [
+            {
+                "animation_id": "anim_1",
+                "title": f"{title}流程动画",
+                "concept": f"展示「{title}」从目标到练习再到检查标准的推进关系。",
+                "visual_elements": ["学习目标", "练习任务", "检查标准"],
+                "motion": "三个节点依次淡入，并用连线表示递进关系。",
+                "space": "正文宽度的 100%，高度 320px。",
+                "placement_hint": "练习任务之后",
+            }
+        ],
+    }
+
+
 def _section_title(outline: dict, section: dict) -> str:
     section_id = _clean_text(section.get("section_id"))
     section_markdowns = outline.get("section_markdowns")
@@ -473,25 +531,28 @@ async def run_section_markdown_agent(
         _clean_text(section.get("section_id"))
         for section in target_sections
     ]
-    section_markdowns: dict[str, dict] = {}
-    for section in target_sections:
+    async def generate_markdown(section: dict) -> tuple[str, dict]:
         target_section_id = _clean_text(section.get("section_id"))
         if not target_section_id:
-            continue
+            return "", {}
         markdown_data = await _run_with_retries(
             lambda: _invoke_resource_chain(
                 chain,
                 _markdown_input(outline, section),
                 SectionMarkdownOutput,
+                timeout_seconds=_MARKDOWN_TIMEOUT_SECONDS,
             ),
-            fallback={"error": "小节文档生成失败，请稍后重试。"},
+            fallback=_local_section_markdown(outline, section),
+            attempts=1,
         )
         if _clean_text(markdown_data.get("error")):
-            return {"error": _clean_text(markdown_data.get("error")), "hard_error": True}
+            return target_section_id, {"error": _clean_text(markdown_data.get("error"))}
+        if not _clean_text(markdown_data.get("markdown")):
+            markdown_data = _local_section_markdown(outline, section)
 
         animation_briefs = markdown_data.get("animation_briefs")
         video_briefs = markdown_data.get("video_briefs")
-        section_markdowns[target_section_id] = {
+        return target_section_id, {
             "section_id": target_section_id,
             "parent_section_id": section.get("parent_section_id"),
             "title": _clean_text(section.get("title")) or _clean_text(markdown_data.get("title")),
@@ -500,6 +561,15 @@ async def run_section_markdown_agent(
             "animation_briefs": animation_briefs if isinstance(animation_briefs, list) else [],
             "generated_at": _now_iso(),
         }
+
+    section_markdowns: dict[str, dict] = {}
+    markdown_results = await asyncio.gather(*(generate_markdown(section) for section in target_sections))
+    for target_section_id, markdown_value in markdown_results:
+        if not target_section_id:
+            continue
+        if _clean_text(markdown_value.get("error")):
+            return {"error": _clean_text(markdown_value.get("error")), "hard_error": True}
+        section_markdowns[target_section_id] = markdown_value
 
     updated_outline = _merge_course_resource_data(outline, "section_markdowns", section_markdowns)
     try:
@@ -566,22 +636,23 @@ async def run_section_video_search_agent(
     ])
     chain = prompt | structured_llm
 
-    section_video_links: dict[str, dict] = {}
-    for section in target_sections:
+    async def generate_video_links(section: dict) -> tuple[str, dict]:
         target_section_id = _clean_text(section.get("section_id"))
         if not target_section_id:
-            continue
+            return "", {}
 
         video_data = await _run_with_retries(
             lambda: _invoke_resource_chain(
                 chain,
                 _video_input(outline, section),
                 SectionVideoSearchOutput,
+                timeout_seconds=_VIDEO_TIMEOUT_SECONDS,
             ),
             fallback={"query": "", "videos": []},
+            attempts=2,
         )
 
-        section_video_links[target_section_id] = {
+        return target_section_id, {
             "section_id": target_section_id,
             "parent_section_id": section.get("parent_section_id"),
             "title": _section_title(outline, section),
@@ -589,6 +660,12 @@ async def run_section_video_search_agent(
             "videos": _normalize_videos(video_data.get("videos")),
             "generated_at": _now_iso(),
         }
+
+    section_video_links: dict[str, dict] = {}
+    video_results = await asyncio.gather(*(generate_video_links(section) for section in target_sections))
+    for target_section_id, video_value in video_results:
+        if target_section_id:
+            section_video_links[target_section_id] = video_value
 
     updated_outline = _merge_course_resource_data(outline, "section_video_links", section_video_links)
     try:
@@ -652,12 +729,11 @@ async def run_section_html_animation_agent(
     ])
     chain = prompt | structured_llm
 
-    section_html_animations: dict[str, dict] = {}
     section_markdowns = outline.get("section_markdowns")
-    for section in target_sections:
+    async def generate_html_animations(section: dict) -> tuple[str, dict]:
         target_section_id = _clean_text(section.get("section_id"))
         if not target_section_id:
-            continue
+            return "", {}
 
         section_markdown = {}
         if isinstance(section_markdowns, dict):
@@ -673,17 +749,25 @@ async def run_section_html_animation_agent(
                     chain,
                     _animation_input(outline, section),
                     SectionHtmlAnimationOutput,
+                    timeout_seconds=_ANIMATION_TIMEOUT_SECONDS,
                 ),
                 fallback={"animations": []},
+                attempts=1,
             )
 
-        section_html_animations[target_section_id] = {
+        return target_section_id, {
             "section_id": target_section_id,
             "parent_section_id": section.get("parent_section_id"),
             "title": _section_title(outline, section),
             "animations": _normalize_animations(animation_data.get("animations"), animation_briefs),
             "generated_at": _now_iso(),
         }
+
+    section_html_animations: dict[str, dict] = {}
+    animation_results = await asyncio.gather(*(generate_html_animations(section) for section in target_sections))
+    for target_section_id, animation_value in animation_results:
+        if target_section_id:
+            section_html_animations[target_section_id] = animation_value
 
     updated_outline = _merge_course_resource_data(outline, "section_html_animations", section_html_animations)
     section_composed_markdowns: dict[str, dict] = {}

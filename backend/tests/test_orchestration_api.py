@@ -753,6 +753,131 @@ class TestChatEndpoints:
                 assert row.messages[1]["type"] == "ai"
                 assert "第一章：需求拆解" in row.messages[1]["data"]["content"]
 
+    @patch("app.api.orchestration.stream_orchestration_events")
+    def test_send_message_regenerates_outline_instead_of_reusing_existing_outline(self, mock_stream, tmp_path: Path) -> None:
+        async def regenerated_events(state):
+            assert state["query"] == "重新生成该课程的大纲"
+            yield {"event": "agent_calling", "agent": "course_knowledge_agent", "label": "课程大纲智能体"}
+            yield {"event": "message_completed", "full_text": "课程大纲已重新生成。"}
+            yield {
+                "event": "session_completed",
+                "session_id": state["session_id"],
+                "has_profile": True,
+                "has_paths": True,
+                "has_outline": True,
+            }
+
+        mock_stream.side_effect = regenerated_events
+        identifier = "outline-regenerate@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, identifier, "outline123456")
+            _seed_existing_learning_data(database_url, identifier)
+            start_resp = client.post(
+                "/api/chat/start",
+                json={"query": "开始"},
+                headers=_auth_header(token),
+            )
+            session_id = start_resp.json()["session_id"]
+
+            response = client.post(
+                "/api/chat/message",
+                json={"session_id": session_id, "message": "重新生成该课程的大纲"},
+                headers=_auth_header(token),
+            )
+
+            assert response.status_code == 200
+            assert "course_knowledge_agent" in response.text
+            assert "课程大纲已重新生成。" in response.text
+            assert "course_knowledge_loaded" not in response.text
+            assert mock_stream.called
+
+    @patch("app.api.orchestration.stream_orchestration_events")
+    def test_send_message_returns_detailed_outline_for_section_detail_query(self, mock_stream, tmp_path: Path) -> None:
+        mock_stream.side_effect = AssertionError("已有课程大纲细节应直接从数据库返回")
+        identifier = "outline-detail@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, identifier, "outline123456")
+            _seed_existing_learning_data(database_url, identifier)
+            engine = build_engine(database_url)
+            with Session(engine) as session:
+                user = session.exec(select(User).where(User.identifier == identifier)).one()
+                row = session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1"))
+                assert row is not None
+                outline_data = dict(row.outline_data)
+                outline_data["sections"] = [
+                    {
+                        "section_id": "1",
+                        "parent_section_id": None,
+                        "depth": 1,
+                        "title": "需求拆解",
+                        "order_index": 1,
+                        "description": "确认功能边界与验收标准。",
+                        "key_knowledge_points": ["功能边界", "验收标准"],
+                    },
+                    {
+                        "section_id": "1.1",
+                        "parent_section_id": "1",
+                        "depth": 2,
+                        "title": "学习目标",
+                        "order_index": 1,
+                        "description": "明确本章完成后的交付物。",
+                        "key_knowledge_points": ["OpenAI-compatible API 调用"],
+                    },
+                ]
+                row.outline_data = outline_data
+                session.add(row)
+                session.commit()
+
+            start_resp = client.post(
+                "/api/chat/start",
+                json={"query": "开始"},
+                headers=_auth_header(token),
+            )
+            session_id = start_resp.json()["session_id"]
+
+            response = client.post(
+                "/api/chat/message",
+                json={"session_id": session_id, "message": "查看这门课的具体章节大纲细节"},
+                headers=_auth_header(token),
+            )
+
+            assert response.status_code == 200
+            assert "1.1 学习目标" in response.text
+            assert "明确本章完成后的交付物。" in response.text
+            assert "核心知识点：OpenAI-compatible API 调用" in response.text
+            assert "course_knowledge_agent" not in response.text
+
+    @patch("app.api.orchestration.stream_orchestration_events")
+    def test_send_message_returns_current_course_next_step_for_now_query(self, mock_stream, tmp_path: Path) -> None:
+        mock_stream.side_effect = AssertionError("已有课程大纲时下一步提示应直接由当前课程状态生成")
+        identifier = "outline-next-step@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, identifier, "outline123456")
+            _seed_existing_learning_data(database_url, identifier)
+            start_resp = client.post(
+                "/api/chat/start",
+                json={"query": "开始"},
+                headers=_auth_header(token),
+            )
+            session_id = start_resp.json()["session_id"]
+
+            response = client.post(
+                "/api/chat/message",
+                json={"session_id": session_id, "message": "现在我应该干嘛"},
+                headers=_auth_header(token),
+            )
+
+            assert response.status_code == 200
+            assert "下一步：进入《AI Agent 开发基础能力搭建》的第一章：需求拆解。" in response.text
+            assert "直接发送：开始学习这门课" in response.text
+            assert "course_knowledge_agent" not in response.text
+
     def test_send_message_generates_section_resources_from_chat(self, tmp_path: Path) -> None:
         identifier = "resource-chat@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"

@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronRight, Share2, Lock, PanelLeftClose } from 'lucide-react';
 import type { LeafCourseResponse, LeafSection } from '../../types/leaf';
 import {
   getLeafChildSections,
@@ -95,57 +96,58 @@ function LeafMarkmapNode({
   const hasComposedContent = hasLeafComposedContent(response, section.section_id);
 
   return (
-    <li className="leaf-markmap-item">
-      <div className="leaf-markmap-row" data-selected={isSelected ? 'true' : 'false'}>
-        {hasChildren ? (
+    <div className="relative mb-2">
+      <div
+        className={`px-4 py-2 rounded-full inline-flex items-center gap-2 border cursor-pointer transition-all transform ${
+          isSelected
+            ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary)] border-[var(--color-primary)] -translate-y-[1px] shadow-sm font-medium'
+            : 'bg-[var(--color-surface-raised)] text-[var(--color-text-primary)] border-[var(--glass-border)] hover:border-[var(--color-primary-soft)] hover:-translate-y-[1px]'
+        }`}
+        onClick={() => onSelectSection(section.section_id)}
+      >
+        {isSelected ? (
+          <span className="w-2 h-2 rounded-full bg-[var(--color-primary)] shrink-0"></span>
+        ) : hasComposedContent ? (
+          <span className="w-2 h-2 rounded-full bg-[var(--color-success)] shrink-0"></span>
+        ) : null}
+        <span className="text-sm">{getLeafSectionHeading(section)}</span>
+        {hasChildren && (
           <button
             type="button"
-            className="leaf-markmap-collapse"
-            aria-label={isCollapsed ? '展开章节' : '折叠章节'}
-            aria-expanded={!isCollapsed}
-            onClick={() => toggleCollapsedSection(
-              section.section_id,
-              collapsedSectionIds,
-              onCollapsedSectionIdsChange,
-            )}
+            className="p-1 hover:bg-[var(--color-surface-inset)] rounded-full transition-colors ml-1"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleCollapsedSection(
+                section.section_id,
+                collapsedSectionIds,
+                onCollapsedSectionIdsChange,
+              );
+            }}
           >
-            {isCollapsed ? '+' : '−'}
+            {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           </button>
-        ) : (
-          <span className="leaf-markmap-spacer" aria-hidden="true" />
         )}
-
-        <button
-          type="button"
-          className="leaf-markmap-node"
-          onClick={() => onSelectSection(section.section_id)}
-        >
-          <span className="leaf-markmap-node-label">{getLeafSectionLabel(section.section_id)}</span>
-          <span className="leaf-markmap-node-title">{getLeafSectionHeading(section)}</span>
-          <span className="leaf-markmap-node-description">{getLeafSectionDescription(section)}</span>
-        </button>
-
-        {hasComposedContent ? (
-          <span className="leaf-markmap-status" aria-label="已生成内容">*</span>
-        ) : null}
       </div>
 
-      {hasChildren && !isCollapsed ? (
-        <ol className="leaf-markmap-children">
+      {hasChildren && !isCollapsed && (
+        <div className="ml-6 mt-3 pl-3 border-l-2 border-[var(--color-border)] flex flex-col gap-3">
           {childSections.map((childSection) => (
-            <LeafMarkmapNode
-              key={childSection.section_id}
-              response={response}
-              section={childSection}
-              selectedSectionId={selectedSectionId}
-              collapsedSectionIds={collapsedSectionIds}
-              onCollapsedSectionIdsChange={onCollapsedSectionIdsChange}
-              onSelectSection={onSelectSection}
-            />
+            <div className="relative" key={childSection.section_id}>
+              {/* Branch connection visual simulation via before pseudo element on parent wrapper */}
+              <div className="absolute -left-[14px] top-1/2 w-[12px] h-[2px] bg-[var(--color-border)] rounded-sm"></div>
+              <LeafMarkmapNode
+                response={response}
+                section={childSection}
+                selectedSectionId={selectedSectionId}
+                collapsedSectionIds={collapsedSectionIds}
+                onCollapsedSectionIdsChange={onCollapsedSectionIdsChange}
+                onSelectSection={onSelectSection}
+              />
+            </div>
           ))}
-        </ol>
-      ) : null}
-    </li>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -161,52 +163,64 @@ export function LeafMarkmap({
   const topLevelSections = getLeafChildSections(response.sections, null);
 
   if (markmapCollapsed) {
-    return (
-      <button
-        type="button"
-        className="leaf-markmap-handle"
-        aria-label="展开章节导航"
-        onClick={onToggleMarkmapCollapsed}
-      >
-        <span aria-hidden="true">{'>'}</span>
-      </button>
-    );
+    return null;
   }
 
   return (
-    <aside className="leaf-markmap" aria-label="章节导航">
-      <div className="leaf-markmap-head">
+    <aside className="hidden md:flex flex-col fixed left-6 bottom-6 w-[320px] bg-[var(--glass-bg)] backdrop-blur-xl rounded-xl shadow-[var(--shadow-md)] p-6 z-40 top-6 border border-[var(--glass-border)]">
+      <div className="flex justify-between items-center mb-8">
         <div>
-          <span className="leaf-eyebrow">// markmap</span>
-          <h2>章节叶脉</h2>
+          <p className="text-lg font-medium text-[var(--color-text-primary)]">{response.course.course_or_chapter_theme}</p>
+          <p className="text-sm text-[var(--color-text-muted)] mt-1">章节导航</p>
         </div>
         <button
+          aria-hidden="true"
+          tabIndex={-1}
           type="button"
-          className="leaf-markmap-toggle"
-          aria-label="收起章节导航"
+          className="p-2 bg-[var(--color-surface-raised)] rounded-full hover:bg-[var(--color-surface-inset)] transition-colors shadow-sm"
           onClick={onToggleMarkmapCollapsed}
         >
-          //
+          <PanelLeftClose className="w-5 h-5 text-[var(--color-text-secondary)]" />
         </button>
       </div>
 
-      {topLevelSections.length > 0 ? (
-        <ol className="leaf-markmap-list">
-          {topLevelSections.map((section) => (
-            <LeafMarkmapNode
-              key={section.section_id}
-              response={response}
-              section={section}
-              selectedSectionId={selectedSectionId}
-              collapsedSectionIds={collapsedSectionIds}
-              onCollapsedSectionIdsChange={onCollapsedSectionIdsChange}
-              onSelectSection={onSelectSection}
-            />
-          ))}
-        </ol>
-      ) : (
-        <p className="leaf-empty-text">课程章节还在整理中。</p>
-      )}
+      <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+        {topLevelSections.length > 0 ? (
+          <div className="flex flex-col gap-4">
+            <div className="bg-[var(--color-primary-soft)] text-[var(--color-primary)] px-4 py-2 rounded-full inline-flex items-center gap-2 shadow-sm w-fit mb-4">
+              <Share2 className="w-4 h-4" />
+              <span className="font-medium text-sm">Course Structure</span>
+            </div>
+
+            <div className="ml-6 pl-2 border-l-2 border-[var(--color-border)] flex flex-col gap-3">
+              {topLevelSections.map((section) => (
+                <div className="relative" key={section.section_id}>
+                  <div className="absolute -left-[10px] top-1/2 w-[8px] h-[2px] bg-[var(--color-border)] rounded-sm"></div>
+                  <LeafMarkmapNode
+                    response={response}
+                    section={section}
+                    selectedSectionId={selectedSectionId}
+                    collapsedSectionIds={collapsedSectionIds}
+                    onCollapsedSectionIdsChange={onCollapsedSectionIdsChange}
+                    onSelectSection={onSelectSection}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {response.locked_reason && (
+              <div className="mt-8 relative opacity-60">
+                <div className="bg-[var(--color-surface-raised)] border-2 border-dashed border-[var(--color-border)] text-[var(--color-text-secondary)] px-4 py-2 rounded-full inline-flex items-center gap-2 cursor-not-allowed w-fit">
+                  <Lock className="w-4 h-4" />
+                  <span className="font-medium text-sm">Waiting for content</span>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-[var(--color-text-muted)] text-sm">课程章节还在整理中。</p>
+        )}
+      </div>
     </aside>
   );
 }

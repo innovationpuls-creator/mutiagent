@@ -120,7 +120,7 @@ describe('LeafPage', () => {
 
     renderLeaf();
 
-    await waitFor(() => expect(screen.getByText('AI Agent 开发')).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'AI Agent 开发', level: 1 })).toBeTruthy());
     expect(screen.getByText('学习目标')).toBeTruthy();
     expect(screen.getByText('正文内容')).toBeTruthy();
     expect(screen.getByText('视频资源暂时不可用')).toBeTruthy();
@@ -149,7 +149,7 @@ describe('LeafPage', () => {
 
     renderLeaf();
 
-    await waitFor(() => expect(screen.getByText('AI Agent 开发')).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'AI Agent 开发', level: 1 })).toBeTruthy());
     expect(screen.queryByText('让 AI 生成本章内容')).toBeNull();
   });
 
@@ -160,7 +160,7 @@ describe('LeafPage', () => {
 
     renderLeaf();
 
-    await waitFor(() => expect(screen.getByText('AI Agent 开发')).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'AI Agent 开发', level: 1 })).toBeTruthy());
 
     window.dispatchEvent(new CustomEvent('mutiagent-leaf-generation-event', {
       detail: {

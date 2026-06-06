@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 @font-face {
   font-family: 'LXGW WenKai';
   src: url('../../node_modules/@fontsource/lxgw-wenkai/files/lxgw-wenkai-latin-300-normal.woff2') format('woff2');

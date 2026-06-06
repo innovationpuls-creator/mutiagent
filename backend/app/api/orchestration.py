@@ -14,6 +14,8 @@ from app.models import User, UserProfile
 from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.graph import build_orchestration_graph, stream_orchestration_events
 from app.orchestration.rule_engine import (
+    is_navigation_query,
+    is_course_outline_regeneration_query,
     is_course_start_query,
     is_review_plan_query,
     parse_leaf_regeneration_pending_marker,
@@ -250,6 +252,8 @@ def _section_display_title(section: dict) -> str:
     if not isinstance(title, str) or not title.strip():
         return ""
     if not isinstance(section_id, str) or "." in section_id:
+        if isinstance(section_id, str) and section_id.strip() and not title.strip().startswith(section_id.strip()):
+            return f"{section_id.strip()} {title.strip()}"
         return title.strip()
     if title.startswith("第"):
         return title.strip()
@@ -283,6 +287,11 @@ def _format_course_outline_text(course_knowledge: dict) -> str:
                 lines.append(f"{display_title}：{description.strip()}")
             else:
                 lines.append(display_title)
+            key_points = section.get("key_knowledge_points")
+            if isinstance(key_points, list):
+                joined_points = "、".join(str(item).strip() for item in key_points if str(item).strip())
+                if joined_points:
+                    lines.append(f"核心知识点：{joined_points}")
 
     section_markdowns = course_knowledge.get("section_markdowns")
     if isinstance(section_markdowns, dict) and section_markdowns:
@@ -299,6 +308,30 @@ def _format_course_outline_text(course_knowledge: dict) -> str:
         lines.extend(["", "已生成动画资源"])
         lines.extend(sorted(str(section_id) for section_id in section_html_animations.keys()))
     return "\n".join(line for line in lines if line is not None)
+
+
+def _format_course_next_step_text(course_knowledge: dict) -> str:
+    course_name = str(course_knowledge.get("course_name", "")).strip() or "当前课程"
+    sections = course_knowledge.get("sections")
+    first_section_title = ""
+    if isinstance(sections, list):
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+            parent_section_id = section.get("parent_section_id")
+            depth = section.get("depth")
+            if parent_section_id is not None and depth != 1:
+                continue
+            first_section_title = _section_display_title(section)
+            if first_section_title:
+                break
+
+    target = f"的{first_section_title}" if first_section_title else ""
+    return "\n".join([
+        f"下一步：进入《{course_name}》{target}。",
+        "先生成第一章教学内容，再按小节完成练习与检查点。",
+        "直接发送：开始学习这门课",
+    ])
 
 
 async def _stream_chat_events(
@@ -504,7 +537,30 @@ async def _stream_chat_events(
             )
             return
 
-        if course_knowledge and (_is_outline_review_query(user_message) or is_course_start_query(user_message)):
+        if course_knowledge and is_navigation_query(user_message):
+            completed_text = _format_course_next_step_text(course_knowledge)
+            _append_turn_with_user_fallback(
+                db_session,
+                session_id,
+                current_user_message,
+                completed_text,
+            )
+            yield _sse("message_completed", {"full_text": completed_text})
+            yield _sse(
+                "session_completed",
+                {
+                    "session_id": session_id,
+                    "has_profile": is_complete_profile_data(profile),
+                    "has_paths": bool(year_paths),
+                    "has_outline": True,
+                },
+            )
+            return
+
+        if course_knowledge and (
+            (_is_outline_review_query(user_message) and not is_course_outline_regeneration_query(user_message))
+            or is_course_start_query(user_message)
+        ):
             completed_text = _format_course_outline_text(course_knowledge)
             yield _sse(
                 "data_update",
