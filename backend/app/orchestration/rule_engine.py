@@ -458,6 +458,15 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
         )
         return result
 
+    if last_tool_agent == AGENT_COURSE_KNOWLEDGE and is_course_resource_generation_query(query) and _has_course_knowledge(state):
+        result.force_call = AGENT_SECTION_MARKDOWN
+        result.system_hints.append(
+            "[系统级强制指令] course_knowledge_agent 已为本轮资源请求生成课程大纲。"
+            "你必须继续调用 section_markdown_agent，生成小节教学文档，"
+            "后续由图自动串联视频搜索和 HTML 动画。"
+        )
+        return result
+
     if last_tool_agent == AGENT_COURSE_KNOWLEDGE:
         result.blocked_agents = {AGENT_PROFILE, AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
         result.allowed_agents = set()

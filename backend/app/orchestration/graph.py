@@ -23,7 +23,11 @@ from app.orchestration.llm import (
     get_thinking_worker_llm,
     get_worker_llm,
 )
-from app.orchestration.rule_engine import should_auto_continue_learning_path_after_profile
+from app.orchestration.rule_engine import (
+    _extract_last_tool_agent,
+    is_course_resource_generation_query,
+    should_auto_continue_learning_path_after_profile,
+)
 from app.orchestration.state import OrchestrationState
 from app.services.learning_path_service import get_preferred_year_learning_path
 
@@ -63,6 +67,14 @@ def route_after_supervisor(state: OrchestrationState) -> str:
 
 def route_after_worker(state: OrchestrationState) -> str:
     """Allow profile update to hand off to learning-path refresh when required."""
+    last_agent = _extract_last_tool_agent(state)
+    if (
+        last_agent == "course_knowledge_agent"
+        and is_course_resource_generation_query(str(state.get("query", "")))
+        and isinstance(state.get("course_knowledge"), dict)
+    ):
+        return SUPERVISOR_NODE
+
     resource_plan = state.get("course_resource_plan")
     if isinstance(resource_plan, dict) and not isinstance(state.get("course_resource_result"), dict):
         target_section_ids = resource_plan.get("target_section_ids")

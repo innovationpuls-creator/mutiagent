@@ -636,3 +636,30 @@ def test_profile_path_and_outline_forces_section_markdown_for_resources() -> Non
     result = evaluate(state)
 
     assert result.force_call == AGENT_SECTION_MARKDOWN
+
+
+def test_resource_query_after_course_knowledge_forces_section_markdown() -> None:
+    state = {
+        "query": "生成当前课程教学内容",
+        "profile": _complete_profile(),
+        "year_learning_paths": {"year_3": {"grade_plans": {"year_3": {"course_nodes": []}}}},
+        "course_knowledge": {"course_id": "year_3_course_1", "sections": [{"section_id": "1"}]},
+        "messages": [
+            HumanMessage(content="生成当前课程教学内容"),
+            AIMessage(
+                content="",
+                tool_calls=[{
+                    "name": AGENT_COURSE_KNOWLEDGE,
+                    "args": {"course_id": "year_3_course_1"},
+                    "id": "force_course_knowledge_agent",
+                }],
+            ),
+            ToolMessage(
+                content='{"course_id": "year_3_course_1"}',
+                tool_call_id="force_course_knowledge_agent",
+            ),
+        ],
+    }
+    result = evaluate(state)
+
+    assert result.force_call == AGENT_SECTION_MARKDOWN

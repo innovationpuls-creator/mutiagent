@@ -209,6 +209,92 @@ def test_leaf_course_returns_current_course_with_outline_and_composed_content(tm
     assert body["generation_status"] is None
 
 
+def test_leaf_course_composes_agent_resource_fields_when_composed_content_missing(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'leaf-resource-fields.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    token = _seed(client, database_url, "leaf-resource-fields@example.com")
+
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.identifier == "leaf-resource-fields@example.com")).one()
+        row = session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_2"))
+        assert row is not None
+        outline_data = dict(row.outline_data)
+        outline_data.pop("section_composed_markdowns", None)
+        outline_data["section_markdowns"] = {
+            "1.1": {
+                "section_id": "1.1",
+                "parent_section_id": "1",
+                "title": "学习目标",
+                "markdown": "# 学习目标\n\n正文内容\n\n<!-- video:id=video_1 -->\n\n<!-- animation:id=anim_1 -->",
+                "video_briefs": [
+                    {"video_id": "video_1", "title": "导入视频", "purpose": "建立直觉"}
+                ],
+                "animation_briefs": [
+                    {
+                        "animation_id": "anim_1",
+                        "title": "目标动画",
+                        "concept": "目标收敛",
+                        "visual_elements": ["目标卡片"],
+                        "motion": "淡入",
+                        "space": "高度 320px",
+                        "placement_hint": "正文中段",
+                    }
+                ],
+                "generated_at": "2026-06-06T00:00:00Z",
+            }
+        }
+        outline_data["section_video_links"] = {
+            "1.1": {
+                "section_id": "1.1",
+                "parent_section_id": "1",
+                "title": "学习目标",
+                "videos": [
+                    {
+                        "brief_id": "video_1",
+                        "title": "导入视频",
+                        "url": "https://example.com/video",
+                        "cover_url": "https://example.com/cover.png",
+                        "cover_status": "provided",
+                        "source": "example.com",
+                    }
+                ],
+            }
+        }
+        outline_data["section_html_animations"] = {
+            "1.1": {
+                "section_id": "1.1",
+                "parent_section_id": "1",
+                "title": "学习目标",
+                "animations": [
+                    {
+                        "brief_id": "anim_1",
+                        "animation_id": "anim_1",
+                        "title": "目标动画",
+                        "html": "<section class=\"section-animation\"></section>",
+                    }
+                ],
+            }
+        }
+        row.outline_data = outline_data
+        session.add(row)
+        session.commit()
+
+    response = client.get(
+        "/api/leaf/courses/year_3_course_2",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    composed = body["section_composed_markdowns"]["1.1"]
+    assert composed["markdown"].startswith("# 学习目标")
+    assert composed["blocks"][1]["type"] == "video"
+    assert composed["blocks"][1]["status"] == "available"
+    assert composed["blocks"][2]["type"] == "animation"
+    assert composed["blocks"][2]["status"] == "available"
+
+
 def test_leaf_course_returns_completed_view_only(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'leaf-completed.db'}"
     client = TestClient(create_app(database_url=database_url))

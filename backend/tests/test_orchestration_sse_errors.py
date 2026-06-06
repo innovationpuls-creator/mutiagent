@@ -628,5 +628,32 @@ def test_route_after_worker_returns_supervisor_for_completed_tasks_profile_follo
     ) == "supervisor"
 
 
+def test_route_after_course_knowledge_resource_request_returns_supervisor() -> None:
+    assert route_after_worker(
+        {
+            "query": "生成当前课程教学内容",
+            "course_knowledge": {
+                "course_id": "year_3_course_1",
+                "sections": [{"section_id": "1", "parent_section_id": None, "depth": 1}],
+            },
+            "messages": [
+                HumanMessage(content="生成当前课程教学内容"),
+                AIMessage(
+                    content="",
+                    tool_calls=[{
+                        "name": "course_knowledge_agent",
+                        "args": {"course_id": "year_3_course_1"},
+                        "id": "force_course_knowledge_agent",
+                    }],
+                ),
+                ToolMessage(
+                    content='{"course_id": "year_3_course_1"}',
+                    tool_call_id="force_course_knowledge_agent",
+                ),
+            ],
+        }
+    ) == "supervisor"
+
+
 def test_route_after_worker_ends_without_followup() -> None:
     assert route_after_worker({}) == "__end__"
