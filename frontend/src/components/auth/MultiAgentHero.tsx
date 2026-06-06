@@ -37,9 +37,9 @@ export function MultiAgentHero() {
           {/* Brand Header — Logo + 品牌名 + 系统定义 */}
           <motion.div
             className="hero-brand-header"
-            initial={{ opacity: 0, filter: "blur(8px)" }}
-            animate={{ opacity: 1, filter: "blur(0px)" }}
-            transition={{ duration: 1.5, delay: 2.5, ease: "easeOut" }}
+            initial={reduceMotion ? false : { opacity: 0, filter: "blur(8px)" }}
+            animate={reduceMotion ? undefined : { opacity: 1, filter: "blur(0px)" }}
+            transition={reduceMotion ? undefined : { duration: 1.5, delay: 2.5, ease: "easeOut" }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -72,15 +72,15 @@ export function MultiAgentHero() {
           {/* Prelude — 主标题 */}
           <motion.h2 
             className="hero-prelude"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1.2, delay: 0.3, ease: "easeOut" }}
+            initial={reduceMotion ? false : { opacity: 0, y: 20 }}
+            animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+            transition={reduceMotion ? undefined : { duration: 1.2, delay: 0.3, ease: "easeOut" }}
             style={{ fontFamily: 'var(--font-heading)', margin: 0 }}
           >
             从一句轻声的提问，到一张<motion.span 
-              initial={{ opacity: 0, filter: "blur(8px)" }}
-              animate={{ opacity: 1, filter: "blur(0px)" }}
-              transition={{ duration: 1.5, delay: 0.9, ease: "easeOut" }}
+              initial={reduceMotion ? false : { opacity: 0, filter: "blur(8px)" }}
+              animate={reduceMotion ? undefined : { opacity: 1, filter: "blur(0px)" }}
+              transition={reduceMotion ? undefined : { duration: 1.5, delay: 0.9, ease: "easeOut" }}
               style={{ color: 'oklch(70% 0.08 60)' }}
             >自然舒展</motion.span>的学习地图。
           </motion.h2>
@@ -89,18 +89,18 @@ export function MultiAgentHero() {
         {/* Bottom Area: Dynamic Choreography for Multi-Agent Features */}
         <motion.div
           style={{ paddingTop: 'var(--hero-sandtable-gap, var(--space-24))', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 'var(--hero-stage-gap, var(--space-24))' }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 1, delay: 2.6 }}
+          initial={reduceMotion ? false : { opacity: 0 }}
+          animate={reduceMotion ? undefined : { opacity: 1 }}
+          transition={reduceMotion ? undefined : { duration: 1, delay: 2.6 }}
         >
           <div style={{ minHeight: 'var(--hero-stage-header-height, var(--space-64))', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={stageIndex}
-                initial={{ opacity: 0, y: 15, filter: "blur(4px)" }}
-                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                exit={{ opacity: 0, y: -15, filter: "blur(4px)" }}
-                transition={{ duration: 0.8, ease: "easeOut" }}
+                initial={reduceMotion ? false : { opacity: 0, y: 15, filter: "blur(4px)" }}
+                animate={reduceMotion ? undefined : { opacity: 1, y: 0, filter: "blur(0px)" }}
+                exit={reduceMotion ? undefined : { opacity: 0, y: -15, filter: "blur(4px)" }}
+                transition={reduceMotion ? undefined : { duration: 0.8, ease: "easeOut" }}
                 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-16)' }}
               >
                 <div style={{ 

@@ -3,8 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from copy import deepcopy
 from datetime import datetime, timezone
+from typing import Any
 from urllib.parse import quote
 
 from langchain_core.language_models import BaseChatModel
@@ -41,6 +44,152 @@ def _clean_text(value: object) -> str:
     if not text or text.lower() in {"none", "null"}:
         return ""
     return text
+
+
+_RESOURCE_PLACEHOLDER_PATTERN = re.compile(
+    r"<!--\s*(?P<kind>video|animation):id=(?P<id>[A-Za-z0-9_.:-]+)\s*-->"
+)
+
+
+def _extract_brief_ids_from_markdown(markdown: str, kind: str) -> list[str]:
+    ids: list[str] = []
+    for match in _RESOURCE_PLACEHOLDER_PATTERN.finditer(markdown):
+        if match.group("kind") != kind:
+            continue
+        ids.append(match.group("id"))
+    return ids
+
+
+async def _run_with_retries(
+    action: Callable[[], Awaitable[dict]],
+    *,
+    fallback: dict,
+    attempts: int = 3,
+) -> dict:
+    for attempt in range(attempts):
+        try:
+            return await action()
+        except Exception as exc:
+            if attempt + 1 >= attempts:
+                logger.warning("Resource action failed after %s attempts: %s", attempts, exc)
+    return fallback
+
+
+async def _invoke_resource_chain(chain: Any, query: str, output_schema: Any) -> dict:
+    output = await asyncio.wait_for(
+        chain.ainvoke({"query": query}),
+        timeout=_RESOURCE_TIMEOUT_SECONDS,
+    )
+    if hasattr(output, "model_dump"):
+        return output.model_dump()
+    if isinstance(output, dict):
+        return dict(output)
+    return output_schema.model_validate(output).model_dump()
+
+
+def _brief_by_id(briefs: object, id_field: str) -> dict[str, dict]:
+    if not isinstance(briefs, list):
+        return {}
+    result: dict[str, dict] = {}
+    for brief in briefs:
+        if not isinstance(brief, dict):
+            continue
+        brief_id = _clean_text(brief.get(id_field))
+        if brief_id:
+            result[brief_id] = brief
+    return result
+
+
+def _video_by_brief_id(video_links: dict) -> dict[str, dict]:
+    videos = video_links.get("videos")
+    if not isinstance(videos, list):
+        return {}
+    result: dict[str, dict] = {}
+    for video in videos:
+        if not isinstance(video, dict):
+            continue
+        brief_id = _clean_text(video.get("brief_id")) or _clean_text(video.get("video_id"))
+        title = _clean_text(video.get("title"))
+        if brief_id and title:
+            result[brief_id] = video
+    return result
+
+
+def _animation_by_brief_id(animation_data: dict) -> dict[str, dict]:
+    animations = animation_data.get("animations")
+    if not isinstance(animations, list):
+        return {}
+    result: dict[str, dict] = {}
+    for animation in animations:
+        if not isinstance(animation, dict):
+            continue
+        brief_id = _clean_text(animation.get("brief_id")) or _clean_text(animation.get("animation_id"))
+        html = _clean_text(animation.get("html"))
+        if brief_id and html:
+            result[brief_id] = animation
+    return result
+
+
+def _append_markdown_block(blocks: list[dict], markdown: str) -> None:
+    text = markdown.strip()
+    if text:
+        blocks.append({"type": "markdown", "markdown": text})
+
+
+def _video_block(brief_id: str, brief: dict, video: dict | None) -> dict:
+    video_title = _clean_text(video.get("title")) if isinstance(video, dict) else ""
+    return {
+        "type": "video",
+        "brief_id": brief_id,
+        "title": _clean_text(brief.get("title")) or video_title,
+        "purpose": _clean_text(brief.get("purpose")),
+        "status": "available" if isinstance(video, dict) else "unavailable",
+        "videos": [video] if isinstance(video, dict) else [],
+    }
+
+
+def _animation_block(brief_id: str, brief: dict, animation: dict | None) -> dict:
+    animation_title = _clean_text(animation.get("title")) if isinstance(animation, dict) else ""
+    return {
+        "type": "animation",
+        "brief_id": brief_id,
+        "title": _clean_text(brief.get("title")) or animation_title,
+        "status": "available" if isinstance(animation, dict) else "unavailable",
+        "html": _clean_text(animation.get("html")) if isinstance(animation, dict) else "",
+    }
+
+
+def _compose_section_content(
+    section_markdown: dict,
+    video_links: dict,
+    animation_data: dict,
+) -> dict:
+    markdown = _clean_text(section_markdown.get("markdown"))
+    video_briefs = _brief_by_id(section_markdown.get("video_briefs"), "video_id")
+    animation_briefs = _brief_by_id(section_markdown.get("animation_briefs"), "animation_id")
+    videos = _video_by_brief_id(video_links)
+    animations = _animation_by_brief_id(animation_data)
+
+    blocks: list[dict] = []
+    cursor = 0
+    for match in _RESOURCE_PLACEHOLDER_PATTERN.finditer(markdown):
+        _append_markdown_block(blocks, markdown[cursor:match.start()])
+        brief_id = match.group("id")
+        if match.group("kind") == "video":
+            blocks.append(_video_block(brief_id, video_briefs.get(brief_id, {}), videos.get(brief_id)))
+        else:
+            blocks.append(_animation_block(brief_id, animation_briefs.get(brief_id, {}), animations.get(brief_id)))
+        cursor = match.end()
+    _append_markdown_block(blocks, markdown[cursor:])
+
+    return {
+        "section_id": _clean_text(section_markdown.get("section_id")),
+        "parent_section_id": section_markdown.get("parent_section_id"),
+        "title": _clean_text(section_markdown.get("title")),
+        "markdown": markdown,
+        "blocks": blocks,
+        "generated_at": _now_iso(),
+    }
 
 
 def _sections(outline: dict) -> list[dict]:
@@ -203,9 +352,11 @@ def _normalize_videos(videos: object) -> list[dict]:
         cover_status = "provided" if cover_url else "fallback"
         if not cover_url:
             cover_url = _fallback_cover_data_url(title)
+        brief_id = _clean_text(video_data.get("brief_id")) or _clean_text(video_data.get("video_id"))
 
         normalized.append(
             {
+                "brief_id": brief_id,
                 "title": title,
                 "url": url,
                 "cover_url": cover_url,
@@ -274,6 +425,7 @@ def _normalize_animations(animations: object, animation_briefs: object) -> list[
 
         normalized.append(
             {
+                "brief_id": animation_id,
                 "animation_id": animation_id,
                 "title": _clean_text(animation_data.get("title")) or brief_titles[animation_id],
                 "html": html,
@@ -326,35 +478,25 @@ async def run_section_markdown_agent(
         target_section_id = _clean_text(section.get("section_id"))
         if not target_section_id:
             continue
-        try:
-            markdown_output = await asyncio.wait_for(
-                chain.ainvoke({"query": _markdown_input(outline, section)}),
-                timeout=_RESOURCE_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "SectionMarkdownAgent timed out after %.1fs for section %s",
-                _RESOURCE_TIMEOUT_SECONDS,
-                target_section_id,
-            )
-            return {"error": "小节文档生成超时，请稍后重试。", "hard_error": True}
-        except Exception as exc:
-            logger.warning("SectionMarkdownAgent failed for section %s: %s", target_section_id, exc)
-            return {"error": "小节文档生成失败，请稍后重试。", "hard_error": True}
-
-        if hasattr(markdown_output, "model_dump"):
-            markdown_data = markdown_output.model_dump()
-        elif isinstance(markdown_output, dict):
-            markdown_data = dict(markdown_output)
-        else:
-            markdown_data = SectionMarkdownOutput.model_validate(markdown_output).model_dump()
+        markdown_data = await _run_with_retries(
+            lambda: _invoke_resource_chain(
+                chain,
+                _markdown_input(outline, section),
+                SectionMarkdownOutput,
+            ),
+            fallback={"error": "小节文档生成失败，请稍后重试。"},
+        )
+        if _clean_text(markdown_data.get("error")):
+            return {"error": _clean_text(markdown_data.get("error")), "hard_error": True}
 
         animation_briefs = markdown_data.get("animation_briefs")
+        video_briefs = markdown_data.get("video_briefs")
         section_markdowns[target_section_id] = {
             "section_id": target_section_id,
             "parent_section_id": section.get("parent_section_id"),
             "title": _clean_text(section.get("title")) or _clean_text(markdown_data.get("title")),
             "markdown": _clean_text(markdown_data.get("markdown")),
+            "video_briefs": video_briefs if isinstance(video_briefs, list) else [],
             "animation_briefs": animation_briefs if isinstance(animation_briefs, list) else [],
             "generated_at": _now_iso(),
         }
@@ -430,20 +572,14 @@ async def run_section_video_search_agent(
         if not target_section_id:
             continue
 
-        video_data = {"query": "", "videos": []}
-        try:
-            video_output = await asyncio.wait_for(
-                chain.ainvoke({"query": _video_input(outline, section)}),
-                timeout=_RESOURCE_TIMEOUT_SECONDS,
-            )
-            if hasattr(video_output, "model_dump"):
-                video_data = video_output.model_dump()
-            elif isinstance(video_output, dict):
-                video_data = dict(video_output)
-            else:
-                video_data = SectionVideoSearchOutput.model_validate(video_output).model_dump()
-        except Exception as exc:
-            logger.warning("SectionVideoSearchAgent failed for section %s: %s", target_section_id, exc)
+        video_data = await _run_with_retries(
+            lambda: _invoke_resource_chain(
+                chain,
+                _video_input(outline, section),
+                SectionVideoSearchOutput,
+            ),
+            fallback={"query": "", "videos": []},
+        )
 
         section_video_links[target_section_id] = {
             "section_id": target_section_id,
@@ -532,19 +668,14 @@ async def run_section_html_animation_agent(
 
         animation_data = {"animations": []}
         if isinstance(animation_briefs, list) and animation_briefs:
-            try:
-                animation_output = await asyncio.wait_for(
-                    chain.ainvoke({"query": _animation_input(outline, section)}),
-                    timeout=_RESOURCE_TIMEOUT_SECONDS,
-                )
-                if hasattr(animation_output, "model_dump"):
-                    animation_data = animation_output.model_dump()
-                elif isinstance(animation_output, dict):
-                    animation_data = dict(animation_output)
-                else:
-                    animation_data = SectionHtmlAnimationOutput.model_validate(animation_output).model_dump()
-            except Exception as exc:
-                logger.warning("SectionHtmlAnimationAgent failed for section %s: %s", target_section_id, exc)
+            animation_data = await _run_with_retries(
+                lambda: _invoke_resource_chain(
+                    chain,
+                    _animation_input(outline, section),
+                    SectionHtmlAnimationOutput,
+                ),
+                fallback={"animations": []},
+            )
 
         section_html_animations[target_section_id] = {
             "section_id": target_section_id,
@@ -555,6 +686,25 @@ async def run_section_html_animation_agent(
         }
 
     updated_outline = _merge_course_resource_data(outline, "section_html_animations", section_html_animations)
+    section_composed_markdowns: dict[str, dict] = {}
+    section_video_links = updated_outline.get("section_video_links")
+    if isinstance(section_markdowns, dict):
+        for section_id in target_section_ids:
+            markdown_value = section_markdowns.get(section_id)
+            video_value = section_video_links.get(section_id) if isinstance(section_video_links, dict) else {}
+            animation_value = section_html_animations.get(section_id, {})
+            if isinstance(markdown_value, dict):
+                section_composed_markdowns[section_id] = _compose_section_content(
+                    markdown_value,
+                    video_value if isinstance(video_value, dict) else {},
+                    animation_value if isinstance(animation_value, dict) else {},
+                )
+    if section_composed_markdowns:
+        updated_outline = _merge_course_resource_data(
+            updated_outline,
+            "section_composed_markdowns",
+            section_composed_markdowns,
+        )
     try:
         _persist_outline(str(state.get("user_id", "")), updated_outline)
     except Exception as exc:
@@ -676,3 +826,136 @@ def create_section_html_animation_agent_node(llm: BaseChatModel):
         return result
 
     return section_html_animation_node
+
+
+async def stream_chapter_resource_generation(
+    state: OrchestrationState,
+    llm,
+    search_llm,
+    *,
+    course_id: str,
+    chapter_section_id: str,
+    regeneration_focus: str = "",
+) -> AsyncGenerator[dict, None]:
+    outline = state.get("course_knowledge")
+    if not isinstance(outline, dict):
+        yield {"event": "error", "message": "请先生成课程大纲。", "recoverable": True}
+        return
+
+    try:
+        target_sections = _target_sections_for_scope(outline, chapter_section_id, "chapter_sections")
+    except ValueError as exc:
+        yield {"event": "error", "message": str(exc), "recoverable": True}
+        return
+
+    section_ids = [
+        _clean_text(section.get("section_id"))
+        for section in target_sections
+        if _clean_text(section.get("section_id"))
+    ]
+    yield {
+        "event": "agent_calling",
+        "stepId": f"leaf-chapter-{chapter_section_id}",
+        "kind": "course_resource_chapter",
+        "agent": "leaf_resource_orchestrator",
+        "label": "章节资源调度智能体",
+        "message": f"正在为第 {chapter_section_id} 章准备 {len(section_ids)} 个小节智能体",
+        "course_id": course_id,
+        "chapter_section_id": chapter_section_id,
+        "section_ids": section_ids,
+    }
+
+    for section_id in section_ids:
+        yield {
+            "event": "agent_progress",
+            "stepId": f"leaf-section-{section_id}",
+            "kind": "course_resource_section",
+            "agent": "section_markdown_agent",
+            "label": f"{section_id} 小节智能体",
+            "message": "正在生成文案，并写入视频与动画占位要求",
+            "course_id": course_id,
+            "chapter_section_id": chapter_section_id,
+            "section_id": section_id,
+            "phase": "markdown",
+            "status": "running",
+        }
+
+    markdown_args = {"course_id": course_id, "section_id": chapter_section_id, "scope": "chapter_sections"}
+    if regeneration_focus:
+        markdown_args["regeneration_focus"] = regeneration_focus
+    markdown_result = await run_section_markdown_agent(state, llm, markdown_args)
+    if markdown_result.get("error"):
+        yield {"event": "error", "message": str(markdown_result["error"]), "recoverable": True}
+        return
+
+    state = {**state, **markdown_result}
+    for section_id in section_ids:
+        yield {
+            "event": "agent_result",
+            "stepId": f"leaf-section-{section_id}-markdown",
+            "kind": "course_resource_section",
+            "agent": "section_markdown_agent",
+            "label": f"{section_id} 文案",
+            "summary": "文案与资源 brief 已生成，正在交接给视频和动画智能体",
+            "course_id": course_id,
+            "chapter_section_id": chapter_section_id,
+            "section_id": section_id,
+            "phase": "markdown",
+            "status": "completed",
+            "success": True,
+        }
+
+    for section_id in section_ids:
+        yield {
+            "event": "agent_progress",
+            "stepId": f"leaf-section-{section_id}-resources",
+            "kind": "course_resource_section",
+            "agent": "section_resource_agents",
+            "label": f"{section_id} 资源并行",
+            "message": "视频检索和 HTML 动画生成正在并行推进",
+            "course_id": course_id,
+            "chapter_section_id": chapter_section_id,
+            "section_id": section_id,
+            "phase": "resources",
+            "status": "running",
+            "parallelGroup": f"leaf-section-{section_id}-resources",
+        }
+
+    video_result = await run_section_video_search_agent(state, search_llm)
+    if video_result.get("error"):
+        yield {"event": "error", "message": str(video_result["error"]), "recoverable": True}
+        return
+    state = {**state, **video_result}
+    animation_result = await run_section_html_animation_agent(state, llm)
+    if animation_result.get("error"):
+        yield {"event": "error", "message": str(animation_result["error"]), "recoverable": True}
+        return
+    state = {**state, **animation_result}
+
+    for section_id in section_ids:
+        yield {
+            "event": "agent_result",
+            "stepId": f"leaf-section-{section_id}-resources",
+            "kind": "course_resource_section",
+            "agent": "section_resource_agents",
+            "label": f"{section_id} 资源",
+            "summary": "视频、动画与正文已拼装保存",
+            "course_id": course_id,
+            "chapter_section_id": chapter_section_id,
+            "section_id": section_id,
+            "phase": "compose",
+            "status": "completed",
+            "success": True,
+        }
+
+    yield {
+        "event": "message_completed",
+        "full_text": "本章教学内容已生成。",
+    }
+    yield {
+        "event": "session_completed",
+        "session_id": str(state.get("session_id", "")),
+        "has_profile": isinstance(state.get("profile"), dict),
+        "has_paths": isinstance(state.get("year_learning_paths"), dict),
+        "has_outline": True,
+    }

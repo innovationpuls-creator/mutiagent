@@ -19,13 +19,6 @@
   font-display: swap;
 }
 
-@font-face {
-  font-family: 'LXGW WenKai Mono';
-  src: url('/fonts/LXGWWenKaiMono-Regular.ttf') format('truetype');
-  font-weight: 400;
-  font-display: swap;
-}
-
 *,
 *::before,
 *::after {
@@ -75,7 +68,7 @@ h1, h2, h3, h4, h5, h6 {
   *::before,
   *::after {
     animation: none !important;
-    transition: opacity var(--duration-instant) ease !important;
+    transition: none !important;
     transform: none !important;
     scroll-behavior: auto !important;
   }

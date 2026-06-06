@@ -23,6 +23,7 @@ import { MessageBubble } from './MessageBubble';
 import { AssistantMessage } from './AssistantMessage';
 import { SystemMessage } from './AssistantMessage';
 import { hasCompleteBasicProfileSessionMessage } from '../../lib/profileContract';
+import { dispatchLeafGenerationCompleted, dispatchLeafGenerationEvent } from '../../pages/leaf/leafGenerationEvents';
 
 const AGENT_LABELS: Record<string, string> = {
   main_agent: '主智能体',
@@ -243,6 +244,7 @@ export function AiGreetingInput() {
   const retryActionRef = useRef<'retry_learning_path' | null>(null);
   const consumedPendingMessageIdRef = useRef<number | null>(null);
   const resetConversationOnNextSendRef = useRef(false);
+  const leafCourseIdRef = useRef<string | null>(null);
 
   const isPending = store.state === 'connecting' || store.state === 'streaming';
   const aiMood = store.state === 'error' ? 'error' : isPending ? 'thinking' : store.messages.some((m) => m.role === 'assistant' && m.status === 'completed') ? 'happy' : 'idle';
@@ -454,6 +456,10 @@ export function AiGreetingInput() {
             if (runIdRef.current !== runId) return;
             setAgentSteps((current) => mergeSessionAgentStep(current, event));
             setAgentEvents((current) => [...current, event]);
+            dispatchLeafGenerationEvent(event);
+            if (event.course_id) {
+              leafCourseIdRef.current = event.course_id;
+            }
 
             if (event.event === 'supervisor_thinking') {
               dispatch({ type: 'MESSAGE_STARTED', messageId: assistantMsgId });
@@ -545,6 +551,10 @@ export function AiGreetingInput() {
             }
 
             if (event.event === 'session_completed') {
+              if (leafCourseIdRef.current) {
+                dispatchLeafGenerationCompleted(leafCourseIdRef.current);
+                leafCourseIdRef.current = null;
+              }
               const text = finalTextRef.current || accumulatedTextRef.current || '';
               finalTurnText = text;
               finalTurnHasPaths = event.has_paths ?? false;
@@ -663,7 +673,11 @@ export function AiGreetingInput() {
     if (consumedPendingMessageIdRef.current === pendingMessage.id) return;
 
     consumedPendingMessageIdRef.current = pendingMessage.id;
-    clearPendingMessage();
+            clearPendingMessage();
+    if (pendingMessage.mode === 'draft') {
+      setInputValue(pendingMessage.text);
+      return;
+    }
     void sendMessage(pendingMessage.text);
   }, [clearPendingMessage, isPending, pendingMessage, sendMessage, widgetState]);
 

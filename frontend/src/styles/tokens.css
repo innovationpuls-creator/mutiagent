@@ -159,7 +159,7 @@
   --font-brand: 'Caveat', 'LXGW WenKai', cursive;
   --font-heading: 'LXGW WenKai', serif;
   --font-body: 'LXGW WenKai', serif;
-  --font-mono: 'LXGW WenKai Mono', monospace;
+  --font-mono: 'LXGW WenKai', serif;
 
   /* Whisper Typography */
   --font-whisper-caps: uppercase;

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import '../../components/home/BlankPage.css';
 import './branch.css';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -215,15 +216,18 @@ function PathSession({
   gradeName,
   courses,
   currentCourseId,
+  onOpenCourse,
 }: {
   gradeName: string;
   courses: BranchCourseNode[];
   currentCourseId: string | null;
+  onOpenCourse: (course: BranchCourseNode) => void;
 }) {
   const reduceMotion = useReducedMotion();
   const [focusedCourseId, setFocusedCourseId] = useState<string | null>(
     defaultFocusCourseId(courses, currentCourseId),
   );
+  const [lockedCourseHint, setLockedCourseHint] = useState<string | null>(null);
 
   useEffect(() => {
     const nextDefaultFocusCourseId = defaultFocusCourseId(courses, currentCourseId);
@@ -236,6 +240,7 @@ function PathSession({
       }
       return nextDefaultFocusCourseId;
     });
+    setLockedCourseHint(null);
   }, [courses, currentCourseId]);
 
   const stageCourses = pickStageCourses(courses, currentCourseId, focusedCourseId);
@@ -385,6 +390,12 @@ function PathSession({
                 transition={motionTokens.lazy}
                 onClick={() => {
                   setFocusedCourseId(course.course_node_id);
+                  if (course.status === 'completed' || course.status === 'current') {
+                    setLockedCourseHint(null);
+                    onOpenCourse(course);
+                    return;
+                  }
+                  setLockedCourseHint(`「${course.course_or_chapter_theme}」还未开放，先完成前面的课程。`);
                 }}
               >
                 <div className="branch-course-rail-copy">
@@ -409,12 +420,17 @@ function PathSession({
         </div>
       ) : null}
 
+      {lockedCourseHint ? (
+        <p className="branch-course-rail-hint" role="status">{lockedCourseHint}</p>
+      ) : null}
+
     </section>
   );
 }
 
 export function BranchPage() {
   const reduceMotion = useReducedMotion();
+  const navigate = useNavigate();
   const { token, isAuthReady } = useAuth();
   const [overview, setOverview] = useState<BranchOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -539,6 +555,9 @@ export function BranchPage() {
                 gradeName={activeYearData?.grade_name ?? YEAR_LABELS[activeYear]}
                 courses={activeYearData?.courses ?? []}
                 currentCourseId={activeYearData?.current_course_id ?? null}
+                onOpenCourse={(course) => {
+                  navigate(`/leaf/${encodeURIComponent(course.course_node_id)}`);
+                }}
               />
             </motion.div>
           )}

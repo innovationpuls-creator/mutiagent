@@ -5,6 +5,7 @@ export type WidgetState = 'HIDDEN' | 'CENTER_INPUT' | 'PROCESSING' | 'EXPANDED' 
 export interface PendingWidgetMessage {
   id: number;
   text: string;
+  mode: 'auto_send' | 'draft';
 }
 
 interface AiWidgetContextType {
@@ -12,6 +13,7 @@ interface AiWidgetContextType {
   setWidgetState: (state: WidgetState) => void;
   pendingMessage: PendingWidgetMessage | null;
   openWithMessage: (text: string) => void;
+  openWithDraft: (text: string) => void;
   clearPendingMessage: () => void;
 }
 
@@ -24,7 +26,13 @@ export function AiWidgetProvider({ children }: { children: ReactNode }) {
 
   const openWithMessage = useCallback((text: string) => {
     pendingMessageIdRef.current += 1;
-    setPendingMessage({ id: pendingMessageIdRef.current, text });
+    setPendingMessage({ id: pendingMessageIdRef.current, text, mode: 'auto_send' });
+    setWidgetState('EXPANDED');
+  }, []);
+
+  const openWithDraft = useCallback((text: string) => {
+    pendingMessageIdRef.current += 1;
+    setPendingMessage({ id: pendingMessageIdRef.current, text, mode: 'draft' });
     setWidgetState('EXPANDED');
   }, []);
 
@@ -39,6 +47,7 @@ export function AiWidgetProvider({ children }: { children: ReactNode }) {
         setWidgetState,
         pendingMessage,
         openWithMessage,
+        openWithDraft,
         clearPendingMessage,
       }}
     >

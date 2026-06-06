@@ -13,12 +13,21 @@ from app.core.security import create_get_current_user
 from app.models import User, UserProfile
 from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.graph import build_orchestration_graph, stream_orchestration_events
-from app.orchestration.rule_engine import is_course_start_query, is_review_plan_query
+from app.orchestration.rule_engine import (
+    is_course_start_query,
+    is_review_plan_query,
+    parse_leaf_regeneration_pending_marker,
+    parse_leaf_resource_generation_request,
+)
 from app.schemas import (
     ChatMessageRequest,
     ChatResponse,
     ChatStartRequest,
     SessionStateResponse,
+)
+from app.services.course_generation_status_service import (
+    finish_course_generation,
+    start_course_generation,
 )
 
 SessionDependency = Callable[[], Generator[Session, None, None]]
@@ -393,6 +402,107 @@ async def _stream_chat_events(
                 summary="历史对话、用户画像、学习路径与课程大纲已完成状态组装",
             ),
         )
+
+        generation_request = parse_leaf_resource_generation_request(user_message)
+        if generation_request is None:
+            latest_ai = ""
+            for message in reversed(history_messages):
+                content = getattr(message, "content", "")
+                if isinstance(content, str) and content.strip():
+                    latest_ai = content.strip()
+                    break
+            pending_regeneration = parse_leaf_regeneration_pending_marker(latest_ai)
+            if pending_regeneration is not None:
+                generation_request = {
+                    "course_node_id": pending_regeneration["course_node_id"],
+                    "chapter_section_id": pending_regeneration["chapter_section_id"],
+                    "scope": "chapter_sections",
+                    "mode": "regenerate",
+                }
+
+        if generation_request is not None:
+            from app.orchestration.agents.course_resources import stream_chapter_resource_generation
+            from app.orchestration.llm import get_search_worker_llm, get_thinking_worker_llm
+
+            requested_course_id = generation_request["course_node_id"]
+            requested_chapter_id = generation_request["chapter_section_id"]
+            current_course_id = get_current_course_id_from_year_learning_paths(year_paths, latest_grade_year)
+            if requested_course_id != current_course_id:
+                completed_text = "只能为当前课程生成教学内容。"
+                _append_turn_with_user_fallback(db_session, session_id, current_user_message, completed_text)
+                yield _sse("message_completed", {"full_text": completed_text})
+                yield _sse(
+                    "session_completed",
+                    {
+                        "session_id": session_id,
+                        "has_profile": is_complete_profile_data(profile),
+                        "has_paths": bool(year_paths),
+                        "has_outline": bool(course_knowledge),
+                    },
+                )
+                return
+            if requested_chapter_id != "1":
+                completed_text = "通过章节测验后会开放下一章内容生成。"
+                _append_turn_with_user_fallback(db_session, session_id, current_user_message, completed_text)
+                yield _sse("message_completed", {"full_text": completed_text})
+                yield _sse(
+                    "session_completed",
+                    {
+                        "session_id": session_id,
+                        "has_profile": is_complete_profile_data(profile),
+                        "has_paths": bool(year_paths),
+                        "has_outline": bool(course_knowledge),
+                    },
+                )
+                return
+            composed = course_knowledge.get("section_composed_markdowns") if isinstance(course_knowledge, dict) else None
+            if generation_request["mode"] == "generate" and isinstance(composed, dict) and composed:
+                completed_text = (
+                    "重新生成本章前，请告诉我下一版需要侧重哪里。\n\n"
+                    "[LEAF_REGEN_PENDING]\n"
+                    f"course_node_id: {requested_course_id}\n"
+                    f"chapter_section_id: {requested_chapter_id}\n"
+                    "[/LEAF_REGEN_PENDING]"
+                )
+                _append_turn_with_user_fallback(db_session, session_id, current_user_message, completed_text)
+                yield _sse("message_completed", {"full_text": completed_text})
+                yield _sse(
+                    "session_completed",
+                    {
+                        "session_id": session_id,
+                        "has_profile": is_complete_profile_data(profile),
+                        "has_paths": bool(year_paths),
+                        "has_outline": bool(course_knowledge),
+                    },
+                )
+                return
+
+            try:
+                start_course_generation(user_uid, requested_course_id, requested_chapter_id)
+            except ValueError as exc:
+                yield _sse("error", {"message": str(exc), "recoverable": True})
+                return
+            try:
+                async for event in stream_chapter_resource_generation(
+                    state,
+                    get_thinking_worker_llm(),
+                    get_search_worker_llm(),
+                    course_id=requested_course_id,
+                    chapter_section_id=requested_chapter_id,
+                    regeneration_focus=user_message if generation_request["mode"] == "regenerate" else "",
+                ):
+                    event_name = str(event.get("event", "message"))
+                    payload = {k: v for k, v in event.items() if k != "event"}
+                    yield _sse(event_name, payload)
+            finally:
+                finish_course_generation(user_uid, requested_course_id, requested_chapter_id)
+            _append_turn_with_user_fallback(
+                db_session,
+                session_id,
+                current_user_message,
+                "本章教学内容已生成。",
+            )
+            return
 
         if course_knowledge and (_is_outline_review_query(user_message) or is_course_start_query(user_message)):
             completed_text = _format_course_outline_text(course_knowledge)

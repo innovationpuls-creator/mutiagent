@@ -106,16 +106,21 @@ SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT = """\
 - 必须输出 JSON，且只能输出 JSON 对象。
 - section_id、parent_section_id、title 必须与输入小节一致。
 - markdown 必须是完整教学内容，包含标题、学习目标、核心概念、步骤讲解、练习任务、检查标准。
-- animation_briefs 只列出确实需要 HTML 动画解释的内容；不需要动画时输出空列表。
+- markdown 中需要视频的位置只写短占位符：`<!-- video:id=video_1 -->`。
+- markdown 中需要 HTML 动画的位置只写短占位符：`<!-- animation:id=anim_1 -->`。
+- video_briefs 必须为每个视频占位符提供 video_id、title、purpose。
+- animation_briefs 必须为每个动画占位符提供 animation_id、title、concept、visual_elements、motion、space、placement_hint。
+- 动画 brief 要像 UI 动画设计师写给动画 agent 的要求：明确出现什么内容、如何运动、占多大空间。
 - 不要为一级大章生成文档，只处理输入中的二级或更深小节。
 """
 
 SECTION_VIDEO_SEARCH_AGENT_SYSTEM_PROMPT = """\
-你是课程视频搜索智能体。你必须基于输入的小节教学内容联网搜索视频资源。
+你是课程视频搜索智能体。你必须基于输入的小节教学内容和 video_briefs 联网搜索视频资源。
 
 ## 输出要求
 - 必须输出 JSON，且只能输出 JSON 对象。
 - 每条 videos 必须包含 title、url、cover_url、source。
+- 每条 videos 的 title 必须服务于对应 video_briefs 的 title 和 purpose。
 - url 必须是可直接打开的视频页面 URL。
 - cover_url 拿不到时输出空字符串，后端会生成降级封面。
 - 只返回与输入小节相关的视频，不返回泛泛的课程首页。
@@ -128,6 +133,7 @@ SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT = """\
 - 必须输出 JSON，且只能输出 JSON 对象。
 - animations 中的 animation_id 必须来自输入 animation_briefs。
 - html 必须是单段可嵌入 HTML 字符串，根节点使用 class="section-animation"。
+- 必须遵守 brief 中的 visual_elements、motion、space、placement_hint。
 - 只使用内联 HTML、CSS 和少量 JavaScript，不依赖外部资源。
 - 没有 animation_briefs 时输出 animations 空列表。
 """

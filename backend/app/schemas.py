@@ -142,3 +142,65 @@ class BranchYearRead(BaseModel):
 class BranchOverviewReadResponse(BaseModel):
     years: dict[str, BranchYearRead]
     updated_at: datetime | None = None
+
+
+LeafAccessState = Literal["available", "locked"]
+
+
+class LeafCourseRead(BaseModel):
+    course_node_id: str
+    grade_id: str
+    course_or_chapter_theme: str
+    course_goal: str
+    status: BranchCourseStatus
+    has_outline: bool
+
+
+class LeafGenerationStatusRead(BaseModel):
+    course_node_id: str
+    chapter_section_id: str
+    status: Literal["running"]
+    message: str
+
+
+class LeafCourseReadResponse(BaseModel):
+    access_state: LeafAccessState
+    course: LeafCourseRead
+    outline: dict | None = None
+    sections: list[dict] = Field(default_factory=list)
+    section_composed_markdowns: dict[str, dict] = Field(default_factory=dict)
+    generation_status: LeafGenerationStatusRead | None = None
+    can_generate: bool
+    first_generatable_chapter_id: str | None = None
+    locked_reason: str | None = None
+
+
+LeafAccessState = Literal["available", "locked"]
+
+
+class LeafCourseRead(BaseModel):
+    course_node_id: str
+    grade_id: str
+    course_or_chapter_theme: str
+    course_goal: str
+    status: BranchCourseStatus
+    has_outline: bool
+
+
+class LeafGenerationStatusRead(BaseModel):
+    course_node_id: str
+    chapter_section_id: str
+    status: Literal["running"]
+    message: str
+
+
+class LeafCourseReadResponse(BaseModel):
+    access_state: LeafAccessState
+    course: LeafCourseRead
+    outline: dict | None = None
+    sections: list[dict] = Field(default_factory=list)
+    section_composed_markdowns: dict[str, dict] = Field(default_factory=dict)
+    generation_status: LeafGenerationStatusRead | None = None
+    can_generate: bool
+    first_generatable_chapter_id: str | None = None
+    locked_reason: str | None = None

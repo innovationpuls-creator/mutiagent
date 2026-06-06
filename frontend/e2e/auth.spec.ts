@@ -17,8 +17,10 @@ for (const viewport of viewports) {
 
     await page.setViewportSize(viewport);
     await page.goto('/');
-    await expect(page.getByText('把混乱目标安静整理成学习地图。')).toBeVisible();
+    await expect(page.getByRole('heading', { name: '从一句轻声的提问，到一张自然舒展的学习地图。' })).toBeVisible();
+    await expect(page.getByText('one-tree')).toBeVisible();
     await expect(page.getByRole('button', { name: '进入系统' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '学习通登录' })).toBeVisible();
     await page.screenshot({ path: `test-results/auth-${viewport.name}.png`, fullPage: true });
     expect(consoleIssues).toEqual([]);
   });
@@ -34,7 +36,7 @@ test('mock oauth flow shows authorization panel then success', async ({ page }) 
 test('reduced motion disables active animations', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
-  const animationCount = await page.locator('.agent-hero').evaluate((element) => {
+  const animationCount = await page.locator('.auth-page').evaluate((element) => {
     return element.getAnimations({ subtree: true }).length;
   });
 
@@ -44,10 +46,17 @@ test('reduced motion disables active animations', async ({ page }) => {
 test('dark mode uses dark material tokens', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('/');
-  const glassToken = await page.evaluate(() => {
-    return getComputedStyle(document.documentElement).getPropertyValue('--glass-bg').trim();
+  const surfaceTokens = await page.locator('.auth-right-surface').evaluate((element) => {
+    const styles = getComputedStyle(element);
+    return {
+      inset: styles.getPropertyValue('--auth-dark-inset').trim(),
+      text: styles.getPropertyValue('--auth-dark-text').trim(),
+    };
   });
 
-  expect(glassToken).toContain('21%');
+  expect(surfaceTokens).toEqual({
+    inset: 'oklch(18% 0.018 248)',
+    text: 'oklch(94% 0.02 75)',
+  });
   await expect(page.getByText('欢迎回来')).toBeVisible();
 });

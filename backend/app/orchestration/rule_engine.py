@@ -90,6 +90,14 @@ _REQUIRED_CONFIRMED_INFO_KEYS = frozenset({
     "weekly_available_time",
     "constraints",
 })
+_LEAF_RESOURCE_BLOCK_PATTERN = re.compile(
+    r"\[LEAF_RESOURCE_GENERATION\](?P<body>.*?)\[/LEAF_RESOURCE_GENERATION\]",
+    re.DOTALL,
+)
+_LEAF_REGEN_PENDING_PATTERN = re.compile(
+    r"\[LEAF_REGEN_PENDING\](?P<body>.*?)\[/LEAF_REGEN_PENDING\]",
+    re.DOTALL,
+)
 
 
 @dataclass
@@ -152,6 +160,48 @@ def is_profile_update_query(query: str) -> bool:
 def is_default_profile_query(query: str) -> bool:
     q = query.strip()
     return any(kw in q for kw in _DEFAULT_PROFILE_COMMANDS)
+
+
+def _parse_key_value_block(body: str, allowed_keys: set[str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if not line or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        normalized_key = key.strip()
+        if normalized_key not in allowed_keys:
+            continue
+        result[normalized_key] = value.strip()
+    return result
+
+
+def parse_leaf_resource_generation_request(query: str) -> dict[str, str] | None:
+    match = _LEAF_RESOURCE_BLOCK_PATTERN.search(query)
+    if match is None:
+        return None
+    parsed = _parse_key_value_block(
+        match.group("body"),
+        {"course_node_id", "chapter_section_id", "scope", "mode"},
+    )
+    required = {"course_node_id", "chapter_section_id", "scope", "mode"}
+    if not required.issubset(parsed.keys()):
+        return None
+    return parsed
+
+
+def parse_leaf_regeneration_pending_marker(text: str) -> dict[str, str] | None:
+    match = _LEAF_REGEN_PENDING_PATTERN.search(text)
+    if match is None:
+        return None
+    parsed = _parse_key_value_block(
+        match.group("body"),
+        {"course_node_id", "chapter_section_id"},
+    )
+    required = {"course_node_id", "chapter_section_id"}
+    if not required.issubset(parsed.keys()):
+        return None
+    return parsed
 
 
 def _has_explicit_profile_field_update(query: str) -> bool:

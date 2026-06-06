@@ -6,6 +6,7 @@ import { BlankPage } from './components/home/BlankPage';
 import { MainLayout } from './components/layout/MainLayout';
 import { SproutPage } from './pages/SproutPage';
 import { BranchPage } from './pages/branch/BranchPage';
+import { LeafPage } from './pages/leaf/LeafPage';
 import { useAuth } from './contexts/AuthContext';
 
 function ProtectedRoute() {
@@ -25,7 +26,9 @@ function ProtectedRoute() {
 function AnimatedRoutes() {
   const location = useLocation();
   const reduceMotion = useReducedMotion();
-  const isAppRoute = ['/sprout', '/branch', '/leaf', '/forest', '/canopy', '/canvas'].includes(location.pathname);
+  const isAppRoute = ['/sprout', '/branch', '/leaf', '/forest', '/canopy', '/canvas'].some((path) => (
+    location.pathname === path || location.pathname.startsWith(`${path}/`)
+  ));
   const routeKey = isAppRoute ? 'app' : location.pathname;
 
   return (
@@ -47,7 +50,9 @@ function AnimatedRoutes() {
               <Route path="/sprout" element={<SproutPage />} />
               <Route path="/branch" element={<BranchPage />} />
               <Route path="/leaf" element={<BlankPage title="叶茂" />} />
+              <Route path="/leaf/:courseNodeId" element={<LeafPage />} />
               <Route path="/forest" element={<BlankPage title="成林" />} />
+              <Route path="/forest/:courseNodeId" element={<BlankPage title="成林" />} />
               <Route path="/canopy" element={<BlankPage title="成森" />} />
               <Route path="/canvas" element={<div style={{ padding: 'var(--space-32)', color: 'var(--color-text-primary)' }}>Welcome to the Canvas!</div>} />
             </Route>

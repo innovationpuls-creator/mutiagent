@@ -17,6 +17,10 @@ vi.mock('./pages/branch/BranchPage', () => ({
   BranchPage: () => <div>Branch Page</div>,
 }));
 
+vi.mock('./pages/leaf/LeafPage', () => ({
+  LeafPage: () => <div>Leaf Page</div>,
+}));
+
 vi.mock('./components/onboarding/GlobalAiWidget', () => ({
   GlobalAiWidget: () => null,
 }));
@@ -109,6 +113,18 @@ describe('App routing', () => {
     await waitFor(() => {
       expect(screen.queryByText('Sprout Page')).toBeNull();
       expect(screen.getByText('Branch Page')).toBeTruthy();
+    });
+  });
+
+  it('renders leaf route for authenticated users', async () => {
+    stubStoredAuth(true);
+    window.history.replaceState({}, '', '/leaf/year_3_course_1');
+
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByText('Main Layout')).toBeTruthy();
+      expect(screen.getByText('Leaf Page')).toBeTruthy();
     });
   });
 

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BranchPage } from './BranchPage';
 import { AuthProvider } from '../../contexts/AuthContext';
@@ -48,6 +48,24 @@ function renderBranchPage() {
     <AuthProvider>
       <MemoryRouter>
         <BranchPage />
+      </MemoryRouter>
+    </AuthProvider>,
+  );
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname}</div>;
+}
+
+function renderBranchWithLeafRoute() {
+  return render(
+    <AuthProvider>
+      <MemoryRouter initialEntries={['/branch']}>
+        <Routes>
+          <Route path="/branch" element={<><LocationProbe /><BranchPage /></>} />
+          <Route path="/leaf/:courseNodeId" element={<LocationProbe />} />
+        </Routes>
       </MemoryRouter>
     </AuthProvider>,
   );
@@ -679,6 +697,91 @@ describe('BranchPage', () => {
 
     centerNode = container.querySelector('.branch-node-center');
     expect(centerNode?.textContent).toContain('AI 应用开发基础能力搭建');
+  });
+
+  it('navigates completed and current courses to leaf while locked courses stay on branch', async () => {
+    fetchProfileDashboardMock.mockResolvedValue({
+      profile: {
+        currentGrade: '大三',
+        major: '软件工程',
+        learningStage: '项目实践',
+        hasClearGoal: '是',
+        learningMethodPreference: '项目驱动',
+        learningPacePreference: '周末集中',
+        contentPreference: ['实践'],
+        needGuidance: '需要',
+        knowledgeFoundation: '有基础',
+        strengths: '执行力强',
+        weaknesses: '部署经验不足',
+        experience: '做过课程项目',
+        shortTermGoal: '完成 AI 项目',
+        longTermGoal: '成为 AI 应用开发者',
+        weeklyAvailableTime: '每周 8 小时',
+        constraints: '周末集中',
+      },
+      profileCompleteness: 100,
+      profileSummaryText: '测试摘要',
+      todayLearning: {
+        title: '今日学习',
+        description: '测试',
+        source: '学习路径智能体',
+        currentLearningCourse: null,
+        currentCourseDetail: null,
+        currentCourseOutline: null,
+        followingCourses: [],
+      },
+      recommendations: [],
+    });
+    fetchBranchOverviewMock.mockResolvedValue({
+      years: {
+        year_1: { grade_id: 'year_1', grade_name: '大一', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+        year_2: { grade_id: 'year_2', grade_name: '大二', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+        year_3: {
+          grade_id: 'year_3',
+          grade_name: '大三',
+          has_courses: true,
+          has_outline_content: true,
+          is_clickable: true,
+          current_course_id: 'year_3_course_2',
+          courses: [
+            { course_node_id: 'year_3_course_1', course_or_chapter_theme: '已完成课程', course_goal: '复习', status: 'completed', has_outline: true },
+            { course_node_id: 'year_3_course_2', course_or_chapter_theme: '当前课程', course_goal: '学习', status: 'current', has_outline: true },
+            { course_node_id: 'year_3_course_3', course_or_chapter_theme: '锁定课程', course_goal: '以后学习', status: 'locked', has_outline: false },
+          ],
+        },
+        year_4: { grade_id: 'year_4', grade_name: '大四', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+      },
+      updatedAt: '2026-06-05T00:00:00Z',
+    });
+
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn((key: string) => key === 'mutiagent-auth'
+        ? JSON.stringify({
+          token: 'token-1',
+          user: { uid: 'user-1', username: '测试用户', identifier: 'user@example.com', provider: 'password', is_active: true, created_at: '2026-06-02T00:00:00Z', last_login_at: null },
+        })
+        : null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    });
+
+    const completedView = renderBranchWithLeafRoute();
+    await waitFor(() => expect(screen.getByText('当前课程')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /大三第 1 门课程：已完成课程，已完成/ }));
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/leaf/year_3_course_1'));
+    completedView.unmount();
+
+    const currentView = renderBranchWithLeafRoute();
+    await waitFor(() => expect(screen.getByText('当前课程')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /大三第 2 门课程：当前课程，进行中/ }));
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/leaf/year_3_course_2'));
+    currentView.unmount();
+
+    renderBranchWithLeafRoute();
+    await waitFor(() => expect(screen.getByText('当前课程')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /大三第 3 门课程：锁定课程，未开放/ }));
+    expect(screen.getByTestId('location').textContent).toBe('/branch');
+    expect(screen.getByRole('status').textContent).toBe('「锁定课程」还未开放，先完成前面的课程。');
   });
 
   it('switches the stage content when the user selects another clickable year', async () => {

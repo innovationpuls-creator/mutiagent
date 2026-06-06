@@ -21,6 +21,10 @@ from app.models import (
     UserProfile,
     UserYearLearningPath,
 )
+from app.orchestration.rule_engine import (
+    parse_leaf_regeneration_pending_marker,
+    parse_leaf_resource_generation_request,
+)
 
 ORIGINAL_APPEND_MESSAGES = conversation_session_service.append_messages
 
@@ -269,6 +273,57 @@ def _course_outline() -> dict:
         ],
         "learning_sequence": ["第一章：需求拆解"],
         "total_estimated_hours": "8 小时",
+    }
+
+
+def _leaf_generation_prompt(course_node_id: str = "year_3_course_1", chapter_section_id: str = "1") -> str:
+    return "\n".join([
+        "帮我生成《AI Agent 开发》第一章教学内容。",
+        "",
+        "[LEAF_RESOURCE_GENERATION]",
+        f"course_node_id: {course_node_id}",
+        f"chapter_section_id: {chapter_section_id}",
+        "scope: chapter_sections",
+        "mode: generate",
+        "[/LEAF_RESOURCE_GENERATION]",
+    ])
+
+
+def test_parse_leaf_resource_generation_request_reads_exact_prompt_block() -> None:
+    text = """帮我生成《AI Agent 开发》第一章教学内容。
+
+[LEAF_RESOURCE_GENERATION]
+course_node_id: year_3_course_1
+chapter_section_id: 1
+scope: chapter_sections
+mode: generate
+[/LEAF_RESOURCE_GENERATION]
+"""
+
+    parsed = parse_leaf_resource_generation_request(text)
+
+    assert parsed == {
+        "course_node_id": "year_3_course_1",
+        "chapter_section_id": "1",
+        "scope": "chapter_sections",
+        "mode": "generate",
+    }
+
+
+def test_parse_leaf_regeneration_pending_marker_reads_context() -> None:
+    text = """重新生成《AI Agent 开发》第一章前，请告诉我下一版需要侧重哪里。
+
+[LEAF_REGEN_PENDING]
+course_node_id: year_3_course_1
+chapter_section_id: 1
+[/LEAF_REGEN_PENDING]
+"""
+
+    parsed = parse_leaf_regeneration_pending_marker(text)
+
+    assert parsed == {
+        "course_node_id": "year_3_course_1",
+        "chapter_section_id": "1",
     }
 
 
@@ -790,6 +845,195 @@ class TestChatEndpoints:
 
         assert "1.1" in row.outline_data["section_markdowns"]
         assert row.outline_data["section_video_links"]["1.1"]["videos"][0]["url"] == "https://example.com/video"
+
+    def test_send_message_streams_leaf_generation_events_from_prompt_block(self, tmp_path: Path) -> None:
+        identifier = "leaf-stream@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        captured = {}
+
+        async def leaf_events(state, _llm, _search_llm, *, course_id, chapter_section_id, regeneration_focus=""):
+            captured["user_id"] = state["user_id"]
+            captured["course_id"] = course_id
+            captured["chapter_section_id"] = chapter_section_id
+            captured["regeneration_focus"] = regeneration_focus
+            yield {
+                "event": "agent_progress",
+                "course_id": course_id,
+                "chapter_section_id": chapter_section_id,
+                "section_id": "1.1",
+                "phase": "markdown",
+                "status": "running",
+                "kind": "course_resource_section",
+            }
+            yield {"event": "message_completed", "full_text": "本章教学内容已生成。"}
+            yield {
+                "event": "session_completed",
+                "session_id": state["session_id"],
+                "has_profile": True,
+                "has_paths": True,
+                "has_outline": True,
+            }
+
+        with patch("app.orchestration.llm.get_thinking_worker_llm", return_value=object()):
+            with patch("app.orchestration.llm.get_search_worker_llm", return_value=object()):
+                with patch(
+                    "app.orchestration.agents.course_resources.stream_chapter_resource_generation",
+                    side_effect=leaf_events,
+                ):
+                    with chat_app(tmp_path) as client:
+                        token = _register_user(client, identifier, "leaf123456")
+                        _seed_existing_learning_data(database_url, identifier)
+                        start_resp = client.post(
+                            "/api/chat/start",
+                            json={"query": "开始"},
+                            headers=_auth_header(token),
+                        )
+                        session_id = start_resp.json()["session_id"]
+
+                        response = client.post(
+                            "/api/chat/message",
+                            json={"session_id": session_id, "message": _leaf_generation_prompt()},
+                            headers=_auth_header(token),
+                        )
+
+        assert response.status_code == 200
+        assert "\"course_id\": \"year_3_course_1\"" in response.text
+        assert "\"chapter_section_id\": \"1\"" in response.text
+        assert "\"section_id\": \"1.1\"" in response.text
+        assert "\"phase\": \"markdown\"" in response.text
+        assert "\"status\": \"running\"" in response.text
+        assert "\"kind\": \"course_resource_section\"" in response.text
+        assert captured["course_id"] == "year_3_course_1"
+        assert captured["chapter_section_id"] == "1"
+        assert captured["regeneration_focus"] == ""
+
+    def test_send_message_leaf_generation_rejects_non_current_course(self, tmp_path: Path) -> None:
+        identifier = "leaf-non-current@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+
+        with patch(
+            "app.orchestration.agents.course_resources.stream_chapter_resource_generation",
+            side_effect=AssertionError("非当前课程不应触发叶子资源生成"),
+        ):
+            with chat_app(tmp_path) as client:
+                token = _register_user(client, identifier, "leaf123456")
+                _seed_existing_learning_data(database_url, identifier)
+                start_resp = client.post(
+                    "/api/chat/start",
+                    json={"query": "开始"},
+                    headers=_auth_header(token),
+                )
+                session_id = start_resp.json()["session_id"]
+
+                response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": _leaf_generation_prompt("year_3_course_2", "1")},
+                    headers=_auth_header(token),
+                )
+
+        assert response.status_code == 200
+        assert "只能为当前课程生成教学内容。" in response.text
+
+    def test_send_message_leaf_generation_rejects_non_first_chapter(self, tmp_path: Path) -> None:
+        identifier = "leaf-non-first@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+
+        with patch(
+            "app.orchestration.agents.course_resources.stream_chapter_resource_generation",
+            side_effect=AssertionError("非第一章不应触发叶子资源生成"),
+        ):
+            with chat_app(tmp_path) as client:
+                token = _register_user(client, identifier, "leaf123456")
+                _seed_existing_learning_data(database_url, identifier)
+                start_resp = client.post(
+                    "/api/chat/start",
+                    json={"query": "开始"},
+                    headers=_auth_header(token),
+                )
+                session_id = start_resp.json()["session_id"]
+
+                response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": _leaf_generation_prompt("year_3_course_1", "2")},
+                    headers=_auth_header(token),
+                )
+
+        assert response.status_code == 200
+        assert "通过章节测验后会开放下一章内容生成。" in response.text
+
+    def test_send_message_leaf_generation_asks_focus_before_regenerating_existing_content(self, tmp_path: Path) -> None:
+        identifier = "leaf-regen@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        captured = {}
+
+        async def leaf_events(state, _llm, _search_llm, *, course_id, chapter_section_id, regeneration_focus=""):
+            captured["course_id"] = course_id
+            captured["chapter_section_id"] = chapter_section_id
+            captured["regeneration_focus"] = regeneration_focus
+            yield {"event": "message_completed", "full_text": "本章教学内容已生成。"}
+            yield {
+                "event": "session_completed",
+                "session_id": state["session_id"],
+                "has_profile": True,
+                "has_paths": True,
+                "has_outline": True,
+            }
+
+        with patch("app.orchestration.llm.get_thinking_worker_llm", return_value=object()):
+            with patch("app.orchestration.llm.get_search_worker_llm", return_value=object()):
+                with patch(
+                    "app.orchestration.agents.course_resources.stream_chapter_resource_generation",
+                    side_effect=leaf_events,
+                ):
+                    with chat_app(tmp_path) as client:
+                        token = _register_user(client, identifier, "leaf123456")
+                        _seed_existing_learning_data(database_url, identifier)
+                        engine = build_engine(database_url)
+                        with Session(engine) as session:
+                            user = session.exec(select(User).where(User.identifier == identifier)).one()
+                            row = session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1"))
+                            assert row is not None
+                            outline_data = dict(row.outline_data)
+                            outline_data["section_composed_markdowns"] = {
+                                "1.1": {
+                                    "section_id": "1.1",
+                                    "parent_section_id": "1",
+                                    "title": "学习目标",
+                                    "markdown": "# 学习目标",
+                                    "blocks": [{"type": "markdown", "markdown": "# 学习目标"}],
+                                    "generated_at": "2026-06-06T00:00:00Z",
+                                }
+                            }
+                            row.outline_data = outline_data
+                            session.add(row)
+                            session.commit()
+
+                        start_resp = client.post(
+                            "/api/chat/start",
+                            json={"query": "开始"},
+                            headers=_auth_header(token),
+                        )
+                        session_id = start_resp.json()["session_id"]
+
+                        first_response = client.post(
+                            "/api/chat/message",
+                            json={"session_id": session_id, "message": _leaf_generation_prompt()},
+                            headers=_auth_header(token),
+                        )
+                        second_response = client.post(
+                            "/api/chat/message",
+                            json={"session_id": session_id, "message": "请更关注实践任务和检查标准"},
+                            headers=_auth_header(token),
+                        )
+
+        assert first_response.status_code == 200
+        assert "重新生成本章前，请告诉我下一版需要侧重哪里。" in first_response.text
+        assert "[LEAF_REGEN_PENDING]" in first_response.text
+        assert second_response.status_code == 200
+        assert "本章教学内容已生成。" in second_response.text
+        assert captured["course_id"] == "year_3_course_1"
+        assert captured["chapter_section_id"] == "1"
+        assert captured["regeneration_focus"] == "请更关注实践任务和检查标准"
 
     @patch("app.services.conversation_session_service.append_messages")
     @patch("app.api.orchestration.stream_orchestration_events")

@@ -103,6 +103,10 @@ export interface SessionAgentEvent {
   intent?: string;
   status?: string;
   kind?: string;
+  course_id?: string;
+  chapter_section_id?: string;
+  section_id?: string;
+  phase?: string;
 }
 
 export interface SessionTurn {
@@ -491,6 +495,10 @@ function normalizeSessionEvent(rawEvent: string, payload: UnknownRecord): Sessio
     intent: getString(payload.intent),
     status: getString(payload.status),
     kind: getString(payload.kind),
+    course_id: getString(payload.course_id),
+    chapter_section_id: getString(payload.chapter_section_id),
+    section_id: getString(payload.section_id),
+    phase: getString(payload.phase),
   };
 }
 
