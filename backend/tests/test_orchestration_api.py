@@ -2058,7 +2058,7 @@ class TestChatEndpoints:
 
                 assert refresh_response.status_code == 200
                 assert "学习路径已生成" in refresh_response.text
-                assert "AI 应用开发基础能力搭建" in refresh_response.text
+                assert "AI 应用开发工程化服务编排与部署监控" in refresh_response.text
                 assert "profile_agent" in refresh_response.text
                 assert "learning_path_agent" in refresh_response.text
 
@@ -2076,7 +2076,7 @@ class TestChatEndpoints:
                         )
                     ).one()
                     assert year_3_path.path_data["learner_baseline"]["major"] == "计算机科学"
-                    assert year_3_path.path_data["current_learning_course"]["course_node_id"] == "year_3_course_1"
+                    assert year_3_path.path_data["current_learning_course"]["course_node_id"] == "year_3_course_3"
 
         graph_module._graph = None
 
@@ -2441,7 +2441,7 @@ class TestChatEndpoints:
 
                 assert refresh_response.status_code == 200
                 assert "学习路径已生成" in refresh_response.text
-                assert "AI 应用开发基础能力搭建" in refresh_response.text
+                assert "AI 应用开发工程化服务编排与部署监控" in refresh_response.text
                 assert "profile_agent" in refresh_response.text
                 assert "learning_path_agent" in refresh_response.text
 
@@ -2466,7 +2466,7 @@ class TestChatEndpoints:
                     ).one()
                     assert year_3_path.path_data["learner_baseline"]["major"] == "计算机科学"
                     assert year_3_path.path_data["learner_baseline"]["constraints"] == ["周末集中"]
-                    assert year_3_path.path_data["current_learning_course"]["course_node_id"] == "year_3_course_1"
+                    assert year_3_path.path_data["current_learning_course"]["course_node_id"] == "year_3_course_3"
 
                 dashboard_response = client.get(
                     "/api/profile/dashboard",

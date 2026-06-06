@@ -432,6 +432,34 @@ def test_run_profile_agent_prefers_latest_explicit_profile_update_from_history(t
     )
 
 
+def test_run_profile_agent_prefers_latest_implicit_grade_and_major_from_history(tmp_path: Path) -> None:
+    class ExplodingLlm:
+        def with_structured_output(self, *_args, **_kwargs):
+            raise AssertionError("local profile update path should not call structured llm")
+
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-implicit-history-latest.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000000016",
+        "query": "大四，计算机科学，AI，周末集中",
+        "profile": _profile(),
+        "messages": [
+            HumanMessage(content="大三，软件工程，AI，周末集中"),
+            HumanMessage(content="继续生成学习路径"),
+            HumanMessage(content="我不想要当前这门课了，现在帮我生成一门新课"),
+            HumanMessage(content="大四，计算机科学，AI，周末集中"),
+        ],
+    }
+
+    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+
+    assert result["profile"]["confirmed_info"]["current_grade"] == "大四"
+    assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
+    assert result["profile"]["confirmed_info"]["constraints"] == "周末集中"
+
+
 def test_run_profile_agent_first_profile_requests_missing_major_in_collecting_mode(tmp_path: Path) -> None:
     class ExplodingLlm:
         def with_structured_output(self, *_args, **_kwargs):

@@ -504,6 +504,126 @@
   line-height: 1.8;
 }
 
+.branch-course-rail {
+  width: min(100%, 1080px);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-16);
+}
+
+.branch-course-rail-card {
+  min-width: 0;
+  padding: var(--space-24);
+  display: grid;
+  gap: var(--space-16);
+  text-align: left;
+  border: 1px solid oklch(100% 0 0 / 0.5);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(circle at top right, oklch(84% 0.08 58 / 0.16), transparent 42%),
+    oklch(100% 0 0 / 0.62);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  transition:
+    transform var(--duration-lazy-hover) var(--ease-lazy),
+    box-shadow var(--duration-lazy-hover) var(--ease-lazy),
+    border-color var(--duration-lazy-hover) var(--ease-lazy),
+    background var(--duration-lazy-hover) var(--ease-lazy);
+  cursor: pointer;
+}
+
+.branch-course-rail-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.branch-course-rail-card-focused {
+  border-color: oklch(78% 0.08 58 / 0.5);
+  background:
+    radial-gradient(circle at top right, oklch(84% 0.08 58 / 0.24), transparent 46%),
+    oklch(100% 0 0 / 0.82);
+  box-shadow: var(--shadow-md);
+}
+
+.branch-course-rail-card:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: var(--space-4);
+}
+
+.branch-course-rail-copy {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-8);
+}
+
+.branch-course-rail-index {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+}
+
+.branch-course-rail-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-heading);
+  font-size: 1.12rem;
+  font-weight: var(--font-weight-medium);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.branch-course-rail-goal {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-body-sm);
+  line-height: 1.8;
+  text-wrap: pretty;
+}
+
+.branch-course-rail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  align-items: center;
+}
+
+.branch-course-rail-status,
+.branch-course-rail-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  padding: 0 var(--space-12);
+  border-radius: var(--radius-full);
+  font-size: 0.68rem;
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.branch-course-rail-status-current {
+  background: oklch(92% 0.08 58 / 0.5);
+  color: oklch(58% 0.1 38);
+}
+
+.branch-course-rail-status-completed {
+  background: oklch(92% 0.04 135 / 0.72);
+  color: oklch(46% 0.08 145);
+}
+
+.branch-course-rail-status-locked {
+  background: oklch(94% 0.01 80 / 0.7);
+  color: oklch(35% 0.005 80 / 0.56);
+}
+
+.branch-course-rail-badge {
+  border: 1px solid oklch(100% 0 0 / 0.48);
+  background: oklch(100% 0 0 / 0.4);
+  color: var(--color-text-secondary);
+}
+
 @keyframes branch-float {
   0%,
   100% {
@@ -570,6 +690,10 @@
 }
 
 @media (max-width: 960px) {
+  .branch-course-rail {
+    grid-template-columns: 1fr;
+  }
+
   .branch-stage {
     min-height: 680px;
   }
@@ -682,6 +806,10 @@
     padding: var(--space-24);
   }
 
+  .branch-course-rail-card {
+    padding: var(--space-20);
+  }
+
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -702,7 +830,8 @@
   .branch-blob-card,
   .branch-blob-card-shell,
   .branch-focus-button,
-  .branch-focus-button-arrow {
+  .branch-focus-button-arrow,
+  .branch-course-rail-card {
     transition: opacity var(--duration-instant) ease;
   }
 }

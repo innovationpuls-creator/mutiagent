@@ -46,8 +46,15 @@ vi.mock('framer-motion', () => {
 });
 
 function WidgetStateProbe() {
-  const { widgetState } = useAiWidget();
-  return <div data-testid="widget-state">{widgetState}</div>;
+  const { widgetState, setWidgetState } = useAiWidget();
+  return (
+    <>
+      <div data-testid="widget-state">{widgetState}</div>
+      <button type="button" onClick={() => setWidgetState('WIDGET')}>
+        set-widget
+      </button>
+    </>
+  );
 }
 
 afterEach(() => {
@@ -56,10 +63,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-test('expands immediately when reduced motion is enabled', async () => {
+test('shows the center input immediately when reduced motion is enabled', async () => {
   reduceMotionValue = true;
 
-  render(
+  const { container } = render(
     <AiWidgetProvider>
       <WidgetStateProbe />
       <SproutInitOverlay />
@@ -67,9 +74,11 @@ test('expands immediately when reduced motion is enabled', async () => {
   );
 
   await waitFor(() => {
-    expect(screen.getByTestId('widget-state').textContent).toBe('EXPANDED');
+    expect(screen.getByTestId('widget-state').textContent).toBe('CENTER_INPUT');
   });
 
+  const rootOverlay = container.querySelector('[data-animate]');
+  expect(rootOverlay).toBeTruthy();
   expect(screen.getByText('在开启旅程之前，想先听听你的声音。')).toBeTruthy();
 });
 
@@ -93,11 +102,36 @@ test('uses opacity and transform motion props instead of filter-based animation'
   expect(rootOverlay?.getAttribute('data-initial')).toBe(JSON.stringify({ opacity: 0 }));
   expect(rootOverlay?.getAttribute('data-animate')).toBe(JSON.stringify({ opacity: 1 }));
   expect(rootOverlay?.getAttribute('data-exit')).toBe(JSON.stringify({ opacity: 0 }));
+  expect(rootOverlay?.style.backdropFilter).toBe('blur(56px)');
 
   expect(introHeading.getAttribute('data-initial')).toBe(JSON.stringify({ opacity: 0, y: 8 }));
   expect(introHeading.getAttribute('data-animate')).toBe(JSON.stringify({ opacity: 1, y: 0 }));
   expect(introHeading.getAttribute('data-exit')).toContain('"y":-8');
   expect(introHeading.getAttribute('data-initial')).not.toContain('filter');
-  expect(rootOverlay?.getAttribute('data-initial')).not.toContain('backdropFilter');
   expect(rootOverlay).toBeTruthy();
+});
+
+test('keeps the blur overlay mounted through center input and completes only when collapsed to widget', async () => {
+  const onComplete = vi.fn();
+
+  render(
+    <AiWidgetProvider>
+      <WidgetStateProbe />
+      <SproutInitOverlay onComplete={onComplete} />
+    </AiWidgetProvider>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByTestId('widget-state').textContent).toBe('HIDDEN');
+  });
+
+  expect(onComplete).not.toHaveBeenCalled();
+
+  act(() => {
+    screen.getByRole('button', { name: 'set-widget' }).click();
+  });
+
+  await waitFor(() => {
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
 });

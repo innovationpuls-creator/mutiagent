@@ -137,6 +137,14 @@ function stageLabel(courseCount: number): string {
   return `这一学年共 ${courseCount} 门课程，按顺序慢慢推进。`;
 }
 
+function railTitle(index: number, theme: string): string {
+  return `第 ${index + 1} 门 · ${theme}`;
+}
+
+function railAriaLabel(gradeName: string, index: number, course: BranchCourseNode): string {
+  return `${gradeName}第 ${index + 1} 门课程：${course.course_or_chapter_theme}，${statusLabel(course.status)}`;
+}
+
 function toStageCourseSet(stageCourses: StageCourse[]): StageCourseSet {
   let left: BranchCourseNode | null = null;
   let center: BranchCourseNode | null = null;
@@ -213,7 +221,23 @@ function PathSession({
   currentCourseId: string | null;
 }) {
   const reduceMotion = useReducedMotion();
-  const focusedCourseId = defaultFocusCourseId(courses, currentCourseId);
+  const [focusedCourseId, setFocusedCourseId] = useState<string | null>(
+    defaultFocusCourseId(courses, currentCourseId),
+  );
+
+  useEffect(() => {
+    const nextDefaultFocusCourseId = defaultFocusCourseId(courses, currentCourseId);
+    setFocusedCourseId((currentFocusedCourseId) => {
+      if (
+        currentFocusedCourseId
+        && courses.some((course) => course.course_node_id === currentFocusedCourseId)
+      ) {
+        return currentFocusedCourseId;
+      }
+      return nextDefaultFocusCourseId;
+    });
+  }, [courses, currentCourseId]);
+
   const stageCourses = pickStageCourses(courses, currentCourseId, focusedCourseId);
   const stage = toStageCourseSet(stageCourses);
 
@@ -342,6 +366,48 @@ function PathSession({
           </div>
         )}
       </div>
+
+      {courses.length > 0 ? (
+        <div className="branch-course-rail" aria-label={`${gradeName}整学年课程脉络`}>
+          {courses.map((course, index) => {
+            const isFocused = course.course_node_id === focusedCourseId;
+            const isCurrentCourse = course.course_node_id === currentCourseId || course.status === 'current';
+
+            return (
+              <motion.button
+                key={course.course_node_id}
+                className={`branch-course-rail-card${isFocused ? ' branch-course-rail-card-focused' : ''}`}
+                type="button"
+                aria-label={railAriaLabel(gradeName, index, course)}
+                aria-pressed={isFocused}
+                whileHover={reduceMotion ? undefined : { y: -3, scale: 1.01 }}
+                whileTap={reduceMotion ? undefined : { y: -1, scale: 0.995 }}
+                transition={motionTokens.lazy}
+                onClick={() => {
+                  setFocusedCourseId(course.course_node_id);
+                }}
+              >
+                <div className="branch-course-rail-copy">
+                  <span className="branch-course-rail-index">{`第 ${index + 1} 门`}</span>
+                  <h3 className="branch-course-rail-title">{railTitle(index, course.course_or_chapter_theme)}</h3>
+                  <p className="branch-course-rail-goal">{course.course_goal}</p>
+                </div>
+                <div className="branch-course-rail-meta">
+                  <span className={`branch-course-rail-status branch-course-rail-status-${iconLabel(course.status)}`}>
+                    {statusLabel(course.status)}
+                  </span>
+                  {isCurrentCourse ? (
+                    <span className="branch-course-rail-badge">当前推进</span>
+                  ) : null}
+                  {course.has_outline ? (
+                    <span className="branch-course-rail-badge">已生成章节</span>
+                  ) : null}
+                </div>
+              </motion.button>
+            );
+          })}
+        </div>
+      ) : null}
 
     </section>
   );

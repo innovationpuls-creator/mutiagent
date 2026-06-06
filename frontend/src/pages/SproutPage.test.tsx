@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, waitForElementToBeRemoved } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SproutPage } from './SproutPage';
@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 describe('SproutPage', () => {
-  it('opens the onboarding chat panel on first login', async () => {
+  it('shows the center input after the intro and waits for the user to expand it on first login', async () => {
     vi.stubGlobal('scrollTo', vi.fn());
     const sessionStorageGetItem = vi.fn(() => null);
     const sessionStorageRemoveItem = vi.fn();
@@ -63,9 +63,31 @@ describe('SproutPage', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText('AI 基础画像对话')).toBeTruthy();
+      expect(screen.getByText('在开启旅程之前，想先听听你的声音。')).toBeTruthy();
     }, { timeout: 12000 });
 
+    let centerInputCard: Element | null = null;
+    await waitFor(() => {
+      centerInputCard = document.querySelector('.card.initial');
+      expect(centerInputCard).toBeTruthy();
+    }, { timeout: 4000 });
+
+    expect(screen.getByText('在开启旅程之前，想先听听你的声音。')).toBeTruthy();
+
+    fireEvent.click(centerInputCard as Element);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('AI 基础画像对话')).toBeTruthy();
+    });
+
+    expect(sessionStorageRemoveItem).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '收起 AI 对话' }));
+
+    await waitFor(() => {
+      expect(sessionStorageRemoveItem).toHaveBeenCalledWith('mutiagent-sprout-init-overlay');
+    });
+
     expect(sessionStorageRemoveItem).toHaveBeenCalledWith('mutiagent-sprout-init-overlay');
-  }, 15000);
+  }, 22000);
 });

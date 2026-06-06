@@ -15,7 +15,7 @@ export function SproutInitOverlay({ onComplete }: Props) {
   useEffect(() => {
     if (reduceMotion) {
       setPhase(10);
-      setWidgetState('EXPANDED');
+      setWidgetState('CENTER_INPUT');
       return undefined;
     }
 
@@ -37,7 +37,7 @@ export function SproutInitOverlay({ onComplete }: Props) {
       setTimeout(() => {
         setPhase(p);
         if (p === 10) {
-          setWidgetState('EXPANDED');
+          setWidgetState('CENTER_INPUT');
         }
       }, delay)
     );
@@ -46,7 +46,7 @@ export function SproutInitOverlay({ onComplete }: Props) {
   }, [reduceMotion, setWidgetState]);
 
   useEffect(() => {
-    if (widgetState === 'WIDGET' || widgetState === 'EXPANDED') {
+    if (widgetState === 'WIDGET') {
       onComplete?.();
     }
   }, [widgetState, onComplete]);
@@ -65,7 +65,9 @@ export function SproutInitOverlay({ onComplete }: Props) {
         position: 'fixed',
         inset: 0,
         zIndex: 9999,
-        backgroundColor: 'oklch(var(--color-bg-glass, 98% 0.01 70) / 0.4)',
+        backgroundColor: 'oklch(97% 0.02 75 / 0.36)',
+        backdropFilter: 'blur(56px)',
+        WebkitBackdropFilter: 'blur(56px)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',

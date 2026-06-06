@@ -178,12 +178,12 @@ def _topic_from_segment(segment: str) -> str:
 
 
 def _extract_topic(texts: list[str], segments: list[str]) -> str:
-    for segment in segments:
+    for segment in reversed(segments):
         topic = _topic_from_segment(segment)
         if topic:
             return topic
 
-    lowered_texts = [text.lower() for text in texts]
+    lowered_texts = [text.lower() for text in reversed(texts)]
     if any("ai" in text for text in lowered_texts):
         return DEFAULT_TOPIC
     if any("前端" in text for text in texts):
@@ -274,12 +274,8 @@ def _major_from_segment(segment: str) -> str:
     return value if _looks_like_major(value) else ""
 
 
-def _major_from_segments(segments: list[str], grade_indexes: list[int]) -> str:
-    start_index = min(grade_indexes) + 1 if grade_indexes else 0
-    ordered_segments = segments[start_index:]
-    if start_index:
-        ordered_segments = ordered_segments + segments[:start_index]
-    for segment in ordered_segments:
+def _major_from_segments(segments: list[str]) -> str:
+    for segment in reversed(segments):
         major = _major_from_segment(segment)
         if major:
             return major
@@ -330,17 +326,13 @@ def _extract_profile_updates(state: OrchestrationState, *, include_defaults: boo
     segments = _normalize_segments(texts)
     updates = _extract_explicit_profile_updates(texts)
     topic = _extract_topic(texts, segments)
-    grade_indexes: list[int] = []
     detected_goal = ""
 
-    for index, segment in enumerate(segments):
+    for segment in reversed(segments):
         grade_match = GRADE_PATTERN.search(segment)
         if "current_grade" not in updates and grade_match:
             updates["current_grade"] = grade_match.group(1)
-            grade_indexes.append(index)
             continue
-        if grade_match:
-            grade_indexes.append(index)
 
         if "constraints" not in updates and segment in PACE_SEGMENTS:
             updates["constraints"] = segment
@@ -357,7 +349,7 @@ def _extract_profile_updates(state: OrchestrationState, *, include_defaults: boo
             detected_goal = _goal_from_segment(segment)
 
     if "major" not in updates:
-        major = _major_from_segments(segments, grade_indexes)
+        major = _major_from_segments(segments)
         if major:
             updates["major"] = major
 
