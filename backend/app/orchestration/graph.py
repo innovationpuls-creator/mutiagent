@@ -12,7 +12,13 @@ from app.orchestration.agents.supervisor import create_supervisor_node
 from app.orchestration.agents.profile import create_profile_agent_node, is_complete_profile_data
 from app.orchestration.agents.learning_path import create_learning_path_agent_node
 from app.orchestration.agents.course_knowledge import create_course_knowledge_agent_node
+from app.orchestration.agents.course_resources import (
+    create_section_html_animation_agent_node,
+    create_section_markdown_agent_node,
+    create_section_video_search_agent_node,
+)
 from app.orchestration.llm import (
+    get_search_worker_llm,
     get_supervisor_llm,
     get_thinking_worker_llm,
     get_worker_llm,
@@ -27,9 +33,19 @@ AGENT_LABELS = {
     "profile_agent": "画像智能体",
     "learning_path_agent": "学习路径智能体",
     "course_knowledge_agent": "课程大纲智能体",
+    "section_markdown_agent": "小节文档智能体",
+    "section_video_search_agent": "视频搜索智能体",
+    "section_html_animation_agent": "HTML 动画智能体",
 }
 
-WORKER_AGENTS = {"profile_agent", "learning_path_agent", "course_knowledge_agent"}
+WORKER_AGENTS = {
+    "profile_agent",
+    "learning_path_agent",
+    "course_knowledge_agent",
+    "section_markdown_agent",
+    "section_video_search_agent",
+    "section_html_animation_agent",
+}
 SUPERVISOR_NODE = "supervisor"
 
 _graph = None
@@ -47,6 +63,19 @@ def route_after_supervisor(state: OrchestrationState) -> str:
 
 def route_after_worker(state: OrchestrationState) -> str:
     """Allow profile update to hand off to learning-path refresh when required."""
+    resource_plan = state.get("course_resource_plan")
+    if isinstance(resource_plan, dict) and not isinstance(state.get("course_resource_result"), dict):
+        target_section_ids = resource_plan.get("target_section_ids")
+        video_section_ids = resource_plan.get("video_section_ids")
+        animation_section_ids = resource_plan.get("animation_section_ids")
+        if isinstance(target_section_ids, list) and target_section_ids and not video_section_ids:
+            return "section_video_search_agent"
+        if isinstance(target_section_ids, list) and target_section_ids and video_section_ids and not animation_section_ids:
+            return "section_html_animation_agent"
+
+    if isinstance(state.get("course_resource_result"), dict):
+        return END
+
     if should_auto_continue_learning_path_after_profile(state):
         return SUPERVISOR_NODE
     return END
@@ -61,11 +90,15 @@ def build_orchestration_graph():
     supervisor_llm = get_supervisor_llm()
     worker_llm = get_worker_llm()
     thinking_worker_llm = get_thinking_worker_llm()
+    search_worker_llm = get_search_worker_llm()
 
     supervisor_node = create_supervisor_node(supervisor_llm)
     profile_node = create_profile_agent_node(supervisor_llm)
     learning_path_node = create_learning_path_agent_node(thinking_worker_llm)
     course_knowledge_node = create_course_knowledge_agent_node(thinking_worker_llm)
+    section_markdown_node = create_section_markdown_agent_node(thinking_worker_llm)
+    section_video_search_node = create_section_video_search_agent_node(search_worker_llm)
+    section_html_animation_node = create_section_html_animation_agent_node(thinking_worker_llm)
 
     builder = StateGraph(OrchestrationState)
 
@@ -73,6 +106,9 @@ def build_orchestration_graph():
     builder.add_node("profile_agent", profile_node)
     builder.add_node("learning_path_agent", learning_path_node)
     builder.add_node("course_knowledge_agent", course_knowledge_node)
+    builder.add_node("section_markdown_agent", section_markdown_node)
+    builder.add_node("section_video_search_agent", section_video_search_node)
+    builder.add_node("section_html_animation_agent", section_html_animation_node)
 
     builder.add_edge("__start__", SUPERVISOR_NODE)
 
@@ -83,6 +119,9 @@ def build_orchestration_graph():
             "profile_agent": "profile_agent",
             "learning_path_agent": "learning_path_agent",
             "course_knowledge_agent": "course_knowledge_agent",
+            "section_markdown_agent": "section_markdown_agent",
+            "section_video_search_agent": "section_video_search_agent",
+            "section_html_animation_agent": "section_html_animation_agent",
             END: END,
         },
     )
@@ -93,6 +132,8 @@ def build_orchestration_graph():
             route_after_worker,
             {
                 SUPERVISOR_NODE: SUPERVISOR_NODE,
+                "section_video_search_agent": "section_video_search_agent",
+                "section_html_animation_agent": "section_html_animation_agent",
                 END: END,
             },
         )

@@ -30,3 +30,5 @@ class OrchestrationState(TypedDict, total=False):
     response: Optional[str]
     grade_year: Optional[str]
     latest_grade_year: Optional[str]
+    course_resource_plan: Optional[dict]
+    course_resource_result: Optional[dict]

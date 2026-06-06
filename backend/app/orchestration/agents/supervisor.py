@@ -13,6 +13,9 @@ from app.orchestration.rule_engine import (
     AGENT_COURSE_KNOWLEDGE,
     AGENT_LEARNING_PATH,
     AGENT_PROFILE,
+    AGENT_SECTION_HTML_ANIMATION,
+    AGENT_SECTION_MARKDOWN,
+    AGENT_SECTION_VIDEO_SEARCH,
     build_blocked_agents_hint,
     evaluate as evaluate_rules,
     has_pending_profile_update_followup,
@@ -157,7 +160,47 @@ def create_tools_for_llm() -> list:
         """
         return ""
 
-    return [profile_agent, learning_path_agent, course_knowledge_agent]
+    @tool
+    async def section_markdown_agent(
+        course_id: str = "",
+        section_id: str = "",
+        scope: str = "default_first_chapter",
+    ) -> str:
+        """为当前课程的小节生成 Markdown 教学文档。
+
+        Args:
+            course_id: 课程 ID，留空时使用当前课程
+            section_id: 小节或一级章节 ID
+            scope: default_first_chapter/single_section/chapter_sections/course_sections
+        """
+        return ""
+
+    @tool
+    async def section_video_search_agent(
+        course_id: str = "",
+        section_id: str = "",
+        scope: str = "default_first_chapter",
+    ) -> str:
+        """为当前课程小节联网搜索教学视频链接和封面。"""
+        return ""
+
+    @tool
+    async def section_html_animation_agent(
+        course_id: str = "",
+        section_id: str = "",
+        scope: str = "default_first_chapter",
+    ) -> str:
+        """为当前课程小节生成 HTML 动画资源。"""
+        return ""
+
+    return [
+        profile_agent,
+        learning_path_agent,
+        course_knowledge_agent,
+        section_markdown_agent,
+        section_video_search_agent,
+        section_html_animation_agent,
+    ]
 
 
 # ── Force call helper ────────────────────────────────────────────────────
@@ -247,6 +290,17 @@ def _learning_path_force_args(state: OrchestrationState) -> dict[str, str]:
     }
 
 
+def _section_markdown_force_args(state: OrchestrationState) -> dict[str, str]:
+    query = str(state.get("query", "")).strip()
+    course_knowledge = state.get("course_knowledge")
+    course_id = course_knowledge.get("course_id", "") if isinstance(course_knowledge, dict) else ""
+    if "当前课程" in query or "整门课" in query:
+        return {"course_id": course_id, "section_id": "", "scope": "course_sections"}
+    if "第一章" in query:
+        return {"course_id": course_id, "section_id": "1", "scope": "chapter_sections"}
+    return {"course_id": course_id, "section_id": "", "scope": "default_first_chapter"}
+
+
 def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
     """When the rule engine mandates a forced agent call."""
     if agent_key == AGENT_PROFILE:
@@ -325,6 +379,20 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
                         "name": AGENT_COURSE_KNOWLEDGE,
                         "args": {"course_id": course_id},
                         "id": f"force_{AGENT_COURSE_KNOWLEDGE}",
+                    }],
+                )
+            ],
+        }
+
+    elif agent_key == AGENT_SECTION_MARKDOWN:
+        return {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[{
+                        "name": AGENT_SECTION_MARKDOWN,
+                        "args": _section_markdown_force_args(state),
+                        "id": f"force_{AGENT_SECTION_MARKDOWN}",
                     }],
                 )
             ],

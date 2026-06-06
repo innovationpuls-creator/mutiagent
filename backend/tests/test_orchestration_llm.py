@@ -58,6 +58,7 @@ def test_graph_routes_learning_and_outline_agents_to_thinking_worker(monkeypatch
     supervisor_llm = object()
     worker_llm = object()
     thinking_llm = object()
+    search_llm = object()
     received: dict[str, object] = {}
 
     async def dummy_node(_state):
@@ -67,6 +68,7 @@ def test_graph_routes_learning_and_outline_agents_to_thinking_worker(monkeypatch
     monkeypatch.setattr(graph_module, "get_supervisor_llm", lambda: supervisor_llm)
     monkeypatch.setattr(graph_module, "get_worker_llm", lambda: worker_llm)
     monkeypatch.setattr(graph_module, "get_thinking_worker_llm", lambda: thinking_llm)
+    monkeypatch.setattr(graph_module, "get_search_worker_llm", lambda: search_llm)
 
     def profile_factory(llm):
         received["profile_agent"] = llm
@@ -84,10 +86,25 @@ def test_graph_routes_learning_and_outline_agents_to_thinking_worker(monkeypatch
         received["supervisor"] = llm
         return dummy_node
 
+    def section_markdown_factory(llm):
+        received["section_markdown_agent"] = llm
+        return dummy_node
+
+    def section_video_search_factory(llm):
+        received["section_video_search_agent"] = llm
+        return dummy_node
+
+    def section_html_animation_factory(llm):
+        received["section_html_animation_agent"] = llm
+        return dummy_node
+
     monkeypatch.setattr(graph_module, "create_supervisor_node", supervisor_factory)
     monkeypatch.setattr(graph_module, "create_profile_agent_node", profile_factory)
     monkeypatch.setattr(graph_module, "create_learning_path_agent_node", learning_path_factory)
     monkeypatch.setattr(graph_module, "create_course_knowledge_agent_node", course_knowledge_factory)
+    monkeypatch.setattr(graph_module, "create_section_markdown_agent_node", section_markdown_factory)
+    monkeypatch.setattr(graph_module, "create_section_video_search_agent_node", section_video_search_factory)
+    monkeypatch.setattr(graph_module, "create_section_html_animation_agent_node", section_html_animation_factory)
 
     graph_module.build_orchestration_graph()
 
@@ -95,5 +112,27 @@ def test_graph_routes_learning_and_outline_agents_to_thinking_worker(monkeypatch
     assert received["profile_agent"] is supervisor_llm
     assert received["learning_path_agent"] is thinking_llm
     assert received["course_knowledge_agent"] is thinking_llm
+    assert received["section_markdown_agent"] is thinking_llm
+    assert received["section_video_search_agent"] is search_llm
+    assert received["section_html_animation_agent"] is thinking_llm
     assert received["learning_path_agent"] is not worker_llm
     assert received["course_knowledge_agent"] is not worker_llm
+
+
+def test_search_worker_llm_enables_search(monkeypatch) -> None:
+    import app.orchestration.llm as llm_module
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(llm_module, "ChatOpenAI", FakeChatOpenAI)
+    llm_module._search_worker_llm = None
+
+    search_worker = llm_module.get_search_worker_llm()
+
+    extra_body = search_worker.kwargs["model_kwargs"]["extra_body"]
+    assert extra_body["enable_thinking"] is True
+    assert extra_body["enable_search"] is True
+    assert extra_body["search_options"]["forced_search"] is True
+    assert extra_body["search_options"]["search_strategy"] == "turbo"

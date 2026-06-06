@@ -698,6 +698,99 @@ class TestChatEndpoints:
                 assert row.messages[1]["type"] == "ai"
                 assert "第一章：需求拆解" in row.messages[1]["data"]["content"]
 
+    def test_send_message_generates_section_resources_from_chat(self, tmp_path: Path) -> None:
+        identifier = "resource-chat@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+
+        async def resource_events(state):
+            course_knowledge = dict(state["course_knowledge"])
+            course_knowledge["section_markdowns"] = {
+                "1.1": {
+                    "section_id": "1.1",
+                    "parent_section_id": "1",
+                    "title": "学习目标",
+                    "markdown": "# 学习目标\n\n完整教学内容",
+                    "animation_briefs": [],
+                    "generated_at": "2026-06-06T00:00:00Z",
+                }
+            }
+            course_knowledge["section_video_links"] = {
+                "1.1": {
+                    "section_id": "1.1",
+                    "parent_section_id": "1",
+                    "query": "AI 应用开发 学习目标 视频教程",
+                    "videos": [
+                        {
+                            "title": "学习目标视频",
+                            "url": "https://example.com/video",
+                            "cover_url": "data:image/svg+xml;utf8,<svg></svg>",
+                            "cover_status": "fallback",
+                            "source": "example.com",
+                        }
+                    ],
+                    "generated_at": "2026-06-06T00:00:00Z",
+                }
+            }
+            course_knowledge["section_html_animations"] = {
+                "1.1": {
+                    "section_id": "1.1",
+                    "parent_section_id": "1",
+                    "animations": [],
+                    "generated_at": "2026-06-06T00:00:00Z",
+                }
+            }
+            from app.services.course_knowledge_service import upsert_user_course_knowledge_outline
+
+            with Session(build_engine(database_url)) as session:
+                upsert_user_course_knowledge_outline(session, state["user_id"], course_knowledge)
+            yield {"event": "message_completed", "full_text": "《AI Agent 开发基础能力搭建》的 1.1 教学内容已生成：每个小节都有 Markdown 文档，视频与动画资源已同步保存。"}
+            yield {
+                "event": "session_completed",
+                "session_id": state["session_id"],
+                "has_profile": True,
+                "has_paths": True,
+                "has_outline": True,
+            }
+
+        with patch("app.api.orchestration.stream_orchestration_events", side_effect=resource_events):
+            with chat_app(tmp_path) as client:
+                token = _register_user(client, identifier, "resource123456")
+                _seed_existing_learning_data(database_url, identifier)
+                start_resp = client.post(
+                    "/api/chat/start",
+                    json={"query": "开始"},
+                    headers=_auth_header(token),
+                )
+                session_id = start_resp.json()["session_id"]
+
+                response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "请根据课程大纲生成教学内容"},
+                    headers=_auth_header(token),
+                )
+
+                assert response.status_code == 200
+                assert "教学内容已生成" in response.text
+
+                summary_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "查看课程大纲"},
+                    headers=_auth_header(token),
+                )
+
+                assert summary_response.status_code == 200
+                assert "已生成教学文档" in summary_response.text
+                assert "已生成视频资源" in summary_response.text
+                assert "已生成动画资源" in summary_response.text
+                assert "1.1" in summary_response.text
+
+        engine = build_engine(database_url)
+        with Session(engine) as session:
+            row = session.exec(select(UserCourseKnowledgeOutline)).one()
+
+        assert "1.1" in row.outline_data["section_markdowns"]
+        assert row.outline_data["section_video_links"]["1.1"]["videos"][0]["url"] == "https://example.com/video"
+
     @patch("app.services.conversation_session_service.append_messages")
     @patch("app.api.orchestration.stream_orchestration_events")
     def test_send_message_keeps_only_user_message_when_outline_shortcut_persistence_fails(

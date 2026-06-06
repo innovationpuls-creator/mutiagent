@@ -131,8 +131,16 @@ def _memory_event(
     return payload
 
 
+def _is_course_resource_generation_query(query: str) -> bool:
+    from app.orchestration.rule_engine import is_course_resource_generation_query
+
+    return is_course_resource_generation_query(query)
+
+
 def _is_outline_review_query(query: str) -> bool:
     text = query.strip()
+    if _is_course_resource_generation_query(text):
+        return False
     return "大纲" in text and ("课" in text or "课程" in text)
 
 
@@ -266,6 +274,21 @@ def _format_course_outline_text(course_knowledge: dict) -> str:
                 lines.append(f"{display_title}：{description.strip()}")
             else:
                 lines.append(display_title)
+
+    section_markdowns = course_knowledge.get("section_markdowns")
+    if isinstance(section_markdowns, dict) and section_markdowns:
+        lines.extend(["", "已生成教学文档"])
+        lines.extend(sorted(str(section_id) for section_id in section_markdowns.keys()))
+
+    section_video_links = course_knowledge.get("section_video_links")
+    if isinstance(section_video_links, dict) and section_video_links:
+        lines.extend(["", "已生成视频资源"])
+        lines.extend(sorted(str(section_id) for section_id in section_video_links.keys()))
+
+    section_html_animations = course_knowledge.get("section_html_animations")
+    if isinstance(section_html_animations, dict) and section_html_animations:
+        lines.extend(["", "已生成动画资源"])
+        lines.extend(sorted(str(section_id) for section_id in section_html_animations.keys()))
     return "\n".join(line for line in lines if line is not None)
 
 

@@ -592,3 +592,47 @@ class TestHardRules:
         assert result.force_call is None
         assert result.blocked_agents == {AGENT_PROFILE, AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
         assert result.allowed_agents == set()
+
+
+from app.orchestration.rule_engine import (
+    AGENT_SECTION_MARKDOWN,
+    AGENT_SECTION_VIDEO_SEARCH,
+    AGENT_SECTION_HTML_ANIMATION,
+    is_course_resource_generation_query,
+)
+
+
+def test_course_resource_generation_query_keywords() -> None:
+    assert is_course_resource_generation_query("生成当前课程教学内容")
+    assert is_course_resource_generation_query("生成第一章内容")
+    assert is_course_resource_generation_query("开始学习这门课")
+    assert not is_course_resource_generation_query("先看看学习路径")
+
+
+def test_profile_and_path_without_outline_forces_course_knowledge_for_resources() -> None:
+    state = {
+        "query": "生成当前课程教学内容",
+        "profile": _complete_profile(),
+        "year_learning_paths": {"year_3": {"grade_plans": {"year_3": {"course_nodes": []}}}},
+        "course_knowledge": None,
+        "messages": [],
+    }
+    result = evaluate(state)
+
+    assert result.force_call == AGENT_COURSE_KNOWLEDGE
+    assert AGENT_SECTION_MARKDOWN in result.blocked_agents
+    assert AGENT_SECTION_VIDEO_SEARCH in result.blocked_agents
+    assert AGENT_SECTION_HTML_ANIMATION in result.blocked_agents
+
+
+def test_profile_path_and_outline_forces_section_markdown_for_resources() -> None:
+    state = {
+        "query": "生成当前课程教学内容",
+        "profile": _complete_profile(),
+        "year_learning_paths": {"year_3": {"grade_plans": {"year_3": {"course_nodes": []}}}},
+        "course_knowledge": {"course_id": "year_3_course_1", "sections": []},
+        "messages": [],
+    }
+    result = evaluate(state)
+
+    assert result.force_call == AGENT_SECTION_MARKDOWN

@@ -9,7 +9,12 @@ from app.orchestration.agents.supervisor import (
     build_system_prompt,
     create_supervisor_node,
 )
-from app.orchestration.rule_engine import AGENT_COURSE_KNOWLEDGE, AGENT_LEARNING_PATH, AGENT_PROFILE
+from app.orchestration.rule_engine import (
+    AGENT_COURSE_KNOWLEDGE,
+    AGENT_LEARNING_PATH,
+    AGENT_PROFILE,
+    AGENT_SECTION_MARKDOWN,
+)
 
 
 def _complete_profile(summary_text: str = "Test") -> dict:
@@ -130,6 +135,24 @@ def test_force_call_response_uses_specific_requirements_for_detailed_path_refres
         "grade_year": "",
         "learning_topic": "",
         "specific_requirements": "更新学习路径，我想加强部署与监控",
+    }
+
+
+def test_force_call_response_uses_section_markdown_for_course_resources() -> None:
+    response = _force_call_response(
+        AGENT_SECTION_MARKDOWN,
+        {
+            "query": "生成第一章内容",
+            "course_knowledge": {"course_id": "year_3_course_1"},
+        },
+    )
+
+    tool_call = response["messages"][0].tool_calls[0]
+    assert tool_call["name"] == AGENT_SECTION_MARKDOWN
+    assert tool_call["args"] == {
+        "course_id": "year_3_course_1",
+        "section_id": "1",
+        "scope": "chapter_sections",
     }
 
 

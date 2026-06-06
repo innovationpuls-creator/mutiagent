@@ -331,3 +331,44 @@ class CourseKnowledgeDraftOutput(BaseModel):
     sections: list[SectionDraftItem] = Field(default_factory=list, description="章节列表，允许字段不完整")
     learning_sequence: list[str] = Field(default_factory=list, description="推荐学习步骤，可返回章节编号或面向用户的自然语言短句")
     total_estimated_hours: str | int | None = Field(default=None, description="预计总学时")
+
+
+# ── Section Resource Agents ──────────────────────────────────────────────
+
+class SectionAnimationBriefOutput(BaseModel):
+    animation_id: str = Field(description="动画 ID")
+    title: str = Field(description="动画标题")
+    concept: str = Field(description="需要动画解释的概念")
+    placement_hint: str = Field(default="", description="建议插入位置")
+
+
+class SectionMarkdownOutput(BaseModel):
+    section_id: str = Field(description="小节 ID")
+    parent_section_id: str | None = Field(description="父章节 ID")
+    title: str = Field(description="小节标题")
+    markdown: str = Field(description="完整 Markdown 教学内容")
+    animation_briefs: list[SectionAnimationBriefOutput] = Field(default_factory=list)
+
+
+class SectionVideoItemOutput(BaseModel):
+    title: str = Field(description="视频标题")
+    url: str = Field(description="视频页面 URL")
+    cover_url: str = Field(default="", description="视频封面 URL")
+    source: str = Field(default="", description="视频来源站点")
+
+
+class SectionVideoSearchOutput(BaseModel):
+    section_id: str = Field(description="小节 ID")
+    query: str = Field(description="实际搜索查询")
+    videos: list[SectionVideoItemOutput] = Field(default_factory=list)
+
+
+class SectionHtmlAnimationItemOutput(BaseModel):
+    animation_id: str = Field(description="动画 ID")
+    title: str = Field(description="动画标题")
+    html: str = Field(description="可嵌入 HTML 片段")
+
+
+class SectionHtmlAnimationOutput(BaseModel):
+    section_id: str = Field(description="小节 ID")
+    animations: list[SectionHtmlAnimationItemOutput] = Field(default_factory=list)

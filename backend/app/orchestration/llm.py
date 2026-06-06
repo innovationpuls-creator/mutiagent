@@ -22,9 +22,27 @@ _WORKER_TIMEOUT = 180
 _supervisor_llm: ChatOpenAI | None = None
 _worker_llm: ChatOpenAI | None = None
 _thinking_worker_llm: ChatOpenAI | None = None
+_search_worker_llm: ChatOpenAI | None = None
 
 
-def _build(timeout: int, *, enable_thinking: bool, max_retries: int = 1) -> ChatOpenAI:
+def _build(
+    timeout: int,
+    *,
+    enable_thinking: bool,
+    enable_search: bool = False,
+    max_retries: int = 1,
+) -> ChatOpenAI:
+    extra_body = {"enable_thinking": enable_thinking}
+    if enable_search:
+        extra_body.update(
+            {
+                "enable_search": True,
+                "search_options": {
+                    "forced_search": True,
+                    "search_strategy": "turbo",
+                },
+            }
+        )
     return ChatOpenAI(
         base_url=_BASE_URL,
         api_key=_API_KEY,
@@ -33,7 +51,7 @@ def _build(timeout: int, *, enable_thinking: bool, max_retries: int = 1) -> Chat
         timeout=timeout,
         max_retries=max_retries,
         streaming=True,
-        model_kwargs={"extra_body": {"enable_thinking": enable_thinking}},
+        model_kwargs={"extra_body": extra_body},
     )
 
 
@@ -62,3 +80,11 @@ def get_thinking_worker_llm() -> ChatOpenAI:
         _thinking_worker_llm = _build(_WORKER_TIMEOUT, enable_thinking=True)
         logger.info("Thinking worker LLM initialized (timeout=%ds)", _WORKER_TIMEOUT)
     return _thinking_worker_llm
+
+
+def get_search_worker_llm() -> ChatOpenAI:
+    global _search_worker_llm
+    if _search_worker_llm is None:
+        _search_worker_llm = _build(_WORKER_TIMEOUT, enable_thinking=True, enable_search=True)
+        logger.info("Search worker LLM initialized (timeout=%ds)", _WORKER_TIMEOUT)
+    return _search_worker_llm

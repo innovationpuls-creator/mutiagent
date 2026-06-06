@@ -20,8 +20,18 @@ from app.orchestration.agents.profile import EXPLICIT_PROFILE_FIELD_PREFIXES, is
 AGENT_PROFILE = "profile_agent"
 AGENT_LEARNING_PATH = "learning_path_agent"
 AGENT_COURSE_KNOWLEDGE = "course_knowledge_agent"
+AGENT_SECTION_MARKDOWN = "section_markdown_agent"
+AGENT_SECTION_VIDEO_SEARCH = "section_video_search_agent"
+AGENT_SECTION_HTML_ANIMATION = "section_html_animation_agent"
 
-ALL_WORKER_AGENTS = {AGENT_PROFILE, AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
+ALL_WORKER_AGENTS = {
+    AGENT_PROFILE,
+    AGENT_LEARNING_PATH,
+    AGENT_COURSE_KNOWLEDGE,
+    AGENT_SECTION_MARKDOWN,
+    AGENT_SECTION_VIDEO_SEARCH,
+    AGENT_SECTION_HTML_ANIMATION,
+}
 
 # Keywords for intent detection
 _NAVIGATION_QUERIES = {
@@ -29,6 +39,15 @@ _NAVIGATION_QUERIES = {
 }
 _COURSE_START_KEYWORDS = {
     "start_first_course", "开始第一门课", "开始课程", "开始学习", "生成课程",
+}
+_COURSE_RESOURCE_GENERATION_KEYWORDS = {
+    "生成当前课程教学内容",
+    "生成课程教学内容",
+    "生成第一章内容",
+    "生成章节内容",
+    "开始学习这门课",
+    "开始学习当前课程",
+    "根据课程大纲生成教学内容",
 }
 _COURSE_CHANGE_KEYWORDS = {
     "换一门课", "生成一门新课", "新课",
@@ -100,6 +119,13 @@ def is_navigation_query(query: str) -> bool:
 def is_course_start_query(query: str) -> bool:
     q = query.strip().lower()
     return any(kw in q for kw in _COURSE_START_KEYWORDS)
+
+
+def is_course_resource_generation_query(query: str) -> bool:
+    q = query.strip().lower()
+    if not q:
+        return False
+    return any(keyword in q for keyword in _COURSE_RESOURCE_GENERATION_KEYWORDS)
 
 def is_course_change_query(query: str) -> bool:
     q = query.strip().lower()
@@ -242,6 +268,11 @@ def _has_learning_paths(state: dict) -> bool:
         return True
     learning_path = state.get("learning_path")
     return isinstance(learning_path, dict) and bool(learning_path)
+
+
+def _has_course_knowledge(state: dict) -> bool:
+    value = state.get("course_knowledge")
+    return isinstance(value, dict) and bool(value.get("course_id"))
 
 
 def _rule_no_profile(state: dict, profile: dict) -> RuleResult:
@@ -397,6 +428,16 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
             "[系统级强制指令] 当前会话正在处理“先更新个人画像，再重新生成学习路径”的后续动作。"
             "你必须先调用 profile_agent 更新画像；如果仍缺信息，直接向用户追问。"
         )
+        return result
+
+    if is_course_resource_generation_query(query):
+        if _has_course_knowledge(state):
+            result.force_call = AGENT_SECTION_MARKDOWN
+        else:
+            result.force_call = AGENT_COURSE_KNOWLEDGE
+            result.blocked_agents.add(AGENT_SECTION_MARKDOWN)
+            result.blocked_agents.add(AGENT_SECTION_VIDEO_SEARCH)
+            result.blocked_agents.add(AGENT_SECTION_HTML_ANIMATION)
         return result
 
     if is_navigation_query(query):
