@@ -75,6 +75,14 @@
   font-style: italic;
 }
 
+.branch-session-caption {
+  margin: 0;
+  max-width: var(--container-narrow);
+  color: var(--color-text-secondary);
+  font-size: var(--text-body-sm);
+  line-height: 1.8;
+}
+
 .branch-stage {
   position: relative;
   width: 100%;
@@ -673,6 +681,7 @@
   .branch-stage-empty {
     padding: var(--space-24);
   }
+
 }
 
 @media (prefers-reduced-motion: reduce) {

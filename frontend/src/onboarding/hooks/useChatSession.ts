@@ -1,13 +1,41 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import { fetchSessionRecoveryData } from '../../api/orchestration';
 import type { ChatMessage } from '../../types/chat';
+import { hasCompleteBasicProfileSessionMessage } from '../../lib/profileContract';
 
 const SESSION_PARAM = 'session_id';
+
+export interface SessionRecoveryMeta {
+  hasCompleteProfile: boolean;
+}
+
+function hasInFlightAssistantSnapshot(messages: ChatMessage[]): boolean {
+  return messages.some((message) => {
+    if (message.role !== 'assistant') return false;
+    if (message.status === 'pending' || message.status === 'streaming') return true;
+    if (message.activeStepId) return true;
+    return (message.runTrace ?? []).some((step) => step.status === 'running');
+  });
+}
+
+function inferRecoveredHasCompleteProfile(messages: ChatMessage[]): boolean | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== 'assistant' || !message.sessionMessage) continue;
+    if (message.sessionMessage.type === 'collecting') return false;
+    if (message.sessionMessage.type === 'basic_profile') {
+      return hasCompleteBasicProfileSessionMessage(message.sessionMessage);
+    }
+  }
+  return null;
+}
 
 export function useChatSession(
   storeSessionId: string | null,
   token: string | null,
+  userUid: string | null,
   onSessionRecovered: (messages: ChatMessage[], sessionId: string) => void,
+  recoveryMetaRef?: MutableRefObject<SessionRecoveryMeta | null>,
 ) {
   const recoveredSessionIdRef = useRef<string | null>(null);
 
@@ -37,15 +65,35 @@ export function useChatSession(
     let cancelled = false;
 
     async function recoverSession() {
+      let cachedMessages: ChatMessage[] | null = null;
+      let cachedHasCompleteProfile: boolean | null = null;
+      let cachedHasInFlightAssistant = false;
       try {
         const raw = localStorage.getItem(`session-${recoveredSessionId}`);
         if (raw) {
-          const parsed = JSON.parse(raw) as { messages: ChatMessage[] };
-          if (Array.isArray(parsed.messages)) {
-            if (cancelled) return;
-            recoveredSessionIdRef.current = recoveredSessionId;
-            onSessionRecovered(parsed.messages, recoveredSessionId);
-            return;
+          const parsed = JSON.parse(raw) as {
+            messages: ChatMessage[];
+            userUid?: unknown;
+            hasCompleteProfile?: unknown;
+          };
+          const cachedUserUid = typeof parsed.userUid === 'string' ? parsed.userUid : null;
+          if (Array.isArray(parsed.messages) && cachedUserUid !== null && cachedUserUid === userUid) {
+            cachedMessages = parsed.messages;
+            cachedHasInFlightAssistant = hasInFlightAssistantSnapshot(parsed.messages);
+            const explicitHasCompleteProfile = typeof parsed.hasCompleteProfile === 'boolean'
+              ? parsed.hasCompleteProfile
+              : null;
+            const inferredHasCompleteProfile = inferRecoveredHasCompleteProfile(parsed.messages);
+            cachedHasCompleteProfile = inferredHasCompleteProfile ?? explicitHasCompleteProfile;
+            if (cachedHasCompleteProfile !== null && !cachedHasInFlightAssistant) {
+              if (cancelled) return;
+              recoveredSessionIdRef.current = recoveredSessionId;
+              if (recoveryMetaRef) {
+                recoveryMetaRef.current = { hasCompleteProfile: cachedHasCompleteProfile };
+              }
+              onSessionRecovered(parsed.messages, recoveredSessionId);
+              return;
+            }
           }
         }
       } catch {
@@ -59,13 +107,32 @@ export function useChatSession(
       try {
         const recovered = await fetchSessionRecoveryData(token, recoveredSessionId);
         if (cancelled) return;
-        if (recovered.messages.length > 0) {
+        if (recovered.messages.length === 0 && cachedMessages) {
           recoveredSessionIdRef.current = recoveredSessionId;
-          onSessionRecovered(recovered.messages, recoveredSessionId);
+          if (recoveryMetaRef) {
+            recoveryMetaRef.current = { hasCompleteProfile: cachedHasCompleteProfile ?? false };
+          }
+          onSessionRecovered(cachedMessages, recoveredSessionId);
           return;
         }
+        recoveredSessionIdRef.current = recoveredSessionId;
+        if (recoveryMetaRef) {
+          recoveryMetaRef.current = { hasCompleteProfile: recovered.hasCompleteProfile };
+        }
+        onSessionRecovered(recovered.messages, recoveredSessionId);
+        return;
       } catch {
-        // Ignore and clear stale URL below.
+        // Fall through to local cache fallback or stale URL cleanup below.
+      }
+
+      if (cachedMessages) {
+        if (cancelled) return;
+        recoveredSessionIdRef.current = recoveredSessionId;
+        if (recoveryMetaRef) {
+          recoveryMetaRef.current = { hasCompleteProfile: cachedHasCompleteProfile ?? false };
+        }
+        onSessionRecovered(cachedMessages, recoveredSessionId);
+        return;
       }
 
       if (cancelled) return;
@@ -78,7 +145,7 @@ export function useChatSession(
     return () => {
       cancelled = true;
     };
-  }, [storeSessionId, token, onSessionRecovered, clearSessionFromUrl]);
+  }, [storeSessionId, token, userUid, onSessionRecovered, clearSessionFromUrl]);
 
   useEffect(() => {
     if (!storeSessionId) return;
@@ -87,18 +154,27 @@ export function useChatSession(
   }, [storeSessionId, writeSessionToUrl]);
 
   const persistSession = useCallback(
-    (sessionId: string, messages: ChatMessage[]) => {
+    (sessionId: string, messages: ChatMessage[], hasCompleteProfile: boolean) => {
+      if (!userUid) return;
       try {
         localStorage.setItem(
           `session-${sessionId}`,
-          JSON.stringify({ messages, savedAt: Date.now() }),
+          JSON.stringify({ userUid, messages, hasCompleteProfile, savedAt: Date.now() }),
         );
       } catch {
         // localStorage full or unavailable — silently fail
       }
     },
-    [],
+    [userUid],
   );
 
-  return { writeSessionToUrl, clearSessionFromUrl, persistSession };
+  const clearPersistedSession = useCallback((sessionId: string) => {
+    try {
+      localStorage.removeItem(`session-${sessionId}`);
+    } catch {
+      // localStorage unavailable — silently fail
+    }
+  }, []);
+
+  return { writeSessionToUrl, clearSessionFromUrl, persistSession, clearPersistedSession };
 }

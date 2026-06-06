@@ -20,9 +20,35 @@ from app.orchestration.rule_engine import (
 )
 
 
+def _complete_profile(summary_text: str = "Test") -> dict:
+    return {
+        "type": "basic_profile",
+        "summary_text": summary_text,
+        "confirmed_info": {
+            "current_grade": "大三",
+            "major": "软件工程",
+            "learning_stage": "项目实践",
+            "has_clear_goal": "是",
+            "learning_method_preference": "项目驱动",
+            "learning_pace_preference": "周末集中",
+            "content_preference": ["实践"],
+            "need_guidance": "需要",
+            "knowledge_foundation": "有 Python 基础",
+            "strengths": "执行力强",
+            "weaknesses": "部署经验不足",
+            "experience": "做过课程项目",
+            "short_term_goal": "完成 AI 功能模块",
+            "long_term_goal": "完成 AI 应用开发项目",
+            "weekly_available_time": "每周 8 小时",
+            "constraints": "周末集中",
+        },
+    }
+
+
 class TestIntentDetection:
     def test_navigation_query_keywords(self):
         assert is_navigation_query("下一步")
+        assert is_navigation_query("下一步是什么？")
         assert is_navigation_query("然后呢")
         assert is_navigation_query("好的")
         assert is_navigation_query("ok")
@@ -41,6 +67,7 @@ class TestIntentDetection:
         assert is_review_plan_query("先看看学习路径")
         assert is_review_plan_query("回顾规划")
         assert is_review_plan_query("我的学习路径里面要学哪些课？")
+        assert not is_review_plan_query("我先看看我的个人画像，你推荐什么？")
         assert not is_review_plan_query("开始学习")
 
 
@@ -51,6 +78,20 @@ class TestHardRules:
         result = evaluate(state)
 
         assert AGENT_PROFILE in result.allowed_agents
+        assert AGENT_LEARNING_PATH in result.blocked_agents
+        assert AGENT_COURSE_KNOWLEDGE in result.blocked_agents
+
+    def test_no_profile_with_profile_details_forces_profile(self):
+        state = {
+            "query": "大三、软件工程、找工作、喜欢自己摸索，学习vibecoding",
+            "profile": None,
+            "learning_path": None,
+            "messages": [HumanMessage(content="大三、软件工程、找工作、喜欢自己摸索，学习vibecoding")],
+        }
+
+        result = evaluate(state)
+
+        assert result.force_call == AGENT_PROFILE
         assert AGENT_LEARNING_PATH in result.blocked_agents
         assert AGENT_COURSE_KNOWLEDGE in result.blocked_agents
 
@@ -67,11 +108,25 @@ class TestHardRules:
         assert result.force_call == AGENT_PROFILE
         assert AGENT_LEARNING_PATH in result.blocked_agents
 
+    def test_summary_only_basic_profile_is_not_treated_as_completed(self):
+        state = {
+            "query": "hello",
+            "profile": {"type": "basic_profile", "summary_text": "Test"},
+            "learning_path": None,
+            "messages": [],
+        }
+
+        result = evaluate(state)
+
+        assert AGENT_PROFILE in result.allowed_agents
+        assert AGENT_LEARNING_PATH in result.blocked_agents
+        assert AGENT_COURSE_KNOWLEDGE in result.blocked_agents
+
     def test_basic_profile_no_path_blocks_course(self):
         """Rule 2: Has profile but no path → course_knowledge blocked."""
         state = {
             "query": "hello",
-            "profile": {"type": "basic_profile", "summary_text": "Test"},
+            "profile": _complete_profile(),
             "learning_path": None,
             "messages": [],
         }
@@ -81,11 +136,39 @@ class TestHardRules:
         assert AGENT_LEARNING_PATH in result.allowed_agents
         assert AGENT_PROFILE in result.allowed_agents
 
+    def test_basic_profile_no_path_navigation_forces_learning_path(self):
+        state = {
+            "query": "下一步是什么？",
+            "profile": _complete_profile("大三软件工程，想学习vibecoding。"),
+            "learning_path": None,
+            "year_learning_paths": None,
+            "messages": [],
+        }
+
+        result = evaluate(state)
+
+        assert result.force_call == AGENT_LEARNING_PATH
+        assert AGENT_COURSE_KNOWLEDGE in result.blocked_agents
+
+    def test_basic_profile_no_path_refresh_query_forces_learning_path(self):
+        state = {
+            "query": "继续生成学习路径",
+            "profile": _complete_profile("大三软件工程，想学习vibecoding。"),
+            "learning_path": None,
+            "year_learning_paths": None,
+            "messages": [],
+        }
+
+        result = evaluate(state)
+
+        assert result.force_call == AGENT_LEARNING_PATH
+        assert AGENT_COURSE_KNOWLEDGE in result.blocked_agents
+
     def test_has_profile_and_path_allows_all(self):
         """Rule 3: Profile completed + path exists → all agents allowed."""
         state = {
             "query": "hello",
-            "profile": {"type": "basic_profile", "summary_text": "Test"},
+            "profile": _complete_profile(),
             "learning_path": {"grade_year": "year_1", "courses": []},
             "year_learning_paths": {"year_1": {"courses": []}},
             "messages": [],
@@ -99,7 +182,7 @@ class TestHardRules:
         """Explicit course start query forces course_knowledge_agent."""
         state = {
             "query": "开始学习",
-            "profile": {"type": "basic_profile", "summary_text": "Test"},
+            "profile": _complete_profile(),
             "learning_path": {"grade_year": "year_1", "courses": []},
             "year_learning_paths": {"year_1": {"courses": []}},
             "messages": [],
@@ -111,7 +194,7 @@ class TestHardRules:
     def test_course_change_query_forces_course_knowledge(self):
         state = {
             "query": "我不想要《AI Agent 开发基础能力搭建》了，现在帮我生成一门新课",
-            "profile": {"type": "basic_profile", "summary_text": "Test"},
+            "profile": _complete_profile(),
             "learning_path": {"grade_year": "year_3", "courses": []},
             "year_learning_paths": {
                 "year_3": {
@@ -138,7 +221,7 @@ class TestHardRules:
     def test_profile_refinement_query_with_existing_path_forces_profile(self):
         state = {
             "query": "大3，软件工程，ai，周末集中",
-            "profile": {"type": "basic_profile", "summary_text": "Test"},
+            "profile": _complete_profile(),
             "learning_path": {"grade_year": "year_3", "courses": []},
             "year_learning_paths": {
                 "year_3": {
@@ -165,7 +248,34 @@ class TestHardRules:
     def test_profile_update_query_with_existing_path_forces_profile(self):
         state = {
             "query": "更新个人画像",
-            "profile": {"type": "basic_profile", "summary_text": "Test"},
+            "profile": _complete_profile(),
+            "learning_path": {"grade_year": "year_3", "courses": []},
+            "year_learning_paths": {
+                "year_3": {
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_1",
+                    },
+                    "grade_plans": {
+                        "year_3": {
+                            "course_nodes": [
+                                {"course_node_id": "year_3_course_1"},
+                            ],
+                        },
+                    },
+                },
+            },
+            "messages": [],
+        }
+
+        result = evaluate(state)
+
+        assert result.force_call == AGENT_PROFILE
+
+    def test_single_field_profile_update_with_existing_path_forces_profile(self):
+        state = {
+            "query": "专业改成计算机科学",
+            "profile": _complete_profile(),
             "learning_path": {"grade_year": "year_3", "courses": []},
             "year_learning_paths": {
                 "year_3": {
@@ -192,7 +302,7 @@ class TestHardRules:
     def test_completed_tasks_followup_with_profile_details_forces_profile(self):
         state = {
             "query": "大三，软件工程，AI，周末集中",
-            "profile": {"type": "basic_profile", "summary_text": "Test"},
+            "profile": _complete_profile(),
             "learning_path": {"grade_year": "year_3", "courses": []},
             "year_learning_paths": {
                 "year_3": {
@@ -213,6 +323,102 @@ class TestHardRules:
             "messages": [
                 AIMessage(content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"),
                 HumanMessage(content="大三，软件工程，AI，周末集中"),
+            ],
+        }
+
+        result = evaluate(state)
+
+        assert has_pending_profile_update_followup(state) is True
+        assert result.force_call == AGENT_PROFILE
+
+    def test_completed_tasks_followup_with_navigation_query_stays_in_profile_update_flow(self):
+        state = {
+            "query": "下一步",
+            "profile": _complete_profile(),
+            "learning_path": {"grade_year": "year_3", "courses": []},
+            "year_learning_paths": {
+                "year_3": {
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_2",
+                    },
+                    "grade_plans": {
+                        "year_3": {
+                            "course_nodes": [
+                                {"course_node_id": "year_3_course_1"},
+                                {"course_node_id": "year_3_course_2"},
+                            ],
+                        },
+                    },
+                },
+            },
+            "messages": [
+                AIMessage(content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"),
+                HumanMessage(content="下一步"),
+            ],
+        }
+
+        result = evaluate(state)
+
+        assert has_pending_profile_update_followup(state) is True
+        assert result.force_call == AGENT_PROFILE
+
+    def test_completed_tasks_followup_with_generic_path_refresh_stays_in_profile_update_flow(self):
+        state = {
+            "query": "更新学习路径",
+            "profile": _complete_profile(),
+            "learning_path": {"grade_year": "year_3", "courses": []},
+            "year_learning_paths": {
+                "year_3": {
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_2",
+                    },
+                    "grade_plans": {
+                        "year_3": {
+                            "course_nodes": [
+                                {"course_node_id": "year_3_course_1"},
+                                {"course_node_id": "year_3_course_2"},
+                            ],
+                        },
+                    },
+                },
+            },
+            "messages": [
+                AIMessage(content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"),
+                HumanMessage(content="更新学习路径"),
+            ],
+        }
+
+        result = evaluate(state)
+
+        assert has_pending_profile_update_followup(state) is True
+        assert result.force_call == AGENT_PROFILE
+
+    def test_completed_tasks_followup_with_pause_query_stays_in_profile_update_flow(self):
+        state = {
+            "query": "先不用了",
+            "profile": _complete_profile(),
+            "learning_path": {"grade_year": "year_3", "courses": []},
+            "year_learning_paths": {
+                "year_3": {
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_2",
+                    },
+                    "grade_plans": {
+                        "year_3": {
+                            "course_nodes": [
+                                {"course_node_id": "year_3_course_1"},
+                                {"course_node_id": "year_3_course_2"},
+                            ],
+                        },
+                    },
+                },
+            },
+            "messages": [
+                AIMessage(content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"),
+                HumanMessage(content="先不用了"),
             ],
         }
 
@@ -275,7 +481,7 @@ class TestHardRules:
                     }],
                 ),
                 ToolMessage(
-                    content=json.dumps({"profile": {"type": "basic_profile"}}, ensure_ascii=False),
+                    content=json.dumps({"profile": _complete_profile("大三软件工程学生，继续强化 AI 应用开发。")}, ensure_ascii=False),
                     tool_call_id="force_profile_agent",
                 ),
             ],
@@ -289,7 +495,7 @@ class TestHardRules:
     def test_learning_path_refresh_query_with_existing_path_forces_learning_path(self):
         state = {
             "query": "继续生成学习路径",
-            "profile": {"type": "basic_profile", "summary_text": "Test"},
+            "profile": _complete_profile(),
             "learning_path": {"grade_year": "year_3", "courses": []},
             "year_learning_paths": {
                 "year_3": {
@@ -317,7 +523,7 @@ class TestHardRules:
         """Navigation query when profile completed but no path should produce hints."""
         state = {
             "query": "下一步",
-            "profile": {"type": "basic_profile", "summary_text": "Test"},
+            "profile": _complete_profile(),
             "learning_path": None,
             "messages": [],
         }
@@ -329,7 +535,7 @@ class TestHardRules:
     def test_review_plan_query_with_existing_path_blocks_all_agents(self):
         state = {
             "query": "我的学习路径里面要学哪些课？",
-            "profile": {"type": "basic_profile", "summary_text": "Test"},
+            "profile": _complete_profile(),
             "year_learning_paths": {
                 "year_3": {
                     "schema_version": "learning_path.v2.course_node",
@@ -362,7 +568,7 @@ class TestHardRules:
     def test_course_knowledge_completion_blocks_repeated_course_call_in_same_turn(self):
         state = {
             "query": "开始第一门课",
-            "profile": {"type": "basic_profile", "summary_text": "Test"},
+            "profile": _complete_profile(),
             "learning_path": {"grade_year": "year_1", "courses": []},
             "year_learning_paths": {"year_1": {"courses": []}},
             "messages": [

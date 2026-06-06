@@ -95,7 +95,7 @@ def _learning_path() -> dict:
             "course_goal": "完成一个 AI 功能模块并接入 Web 应用",
             "time_arrangement": {"semester_scope": "上学期", "duration": "6 周", "pace_reason": "围绕平时学习节奏安排"},
             "current_focus": "正在学习 AI 应用开发项目课",
-            "progress_state": "not_started",
+            "progress_state": "in_progress",
             "next_action": "开始第一章需求拆解",
         },
     }
@@ -149,5 +149,12 @@ def test_learning_path_rejects_invalid_current_learning_course_progress_state() 
     with pytest.raises(ValidationError):
         LearningPathResultOutput(**payload)
 
+
+def test_learning_path_rejects_current_learning_course_not_started_state() -> None:
+    payload = _learning_path()
+    payload["current_learning_course"]["progress_state"] = "not_started"
+
+    with pytest.raises(ValidationError):
+        LearningPathResultOutput(**payload)
 
 

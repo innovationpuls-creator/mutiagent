@@ -13,7 +13,7 @@ from app.core.security import create_get_current_user
 from app.models import User, UserProfile
 from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.graph import build_orchestration_graph, stream_orchestration_events
-from app.orchestration.rule_engine import is_review_plan_query
+from app.orchestration.rule_engine import is_course_start_query, is_review_plan_query
 from app.schemas import (
     ChatMessageRequest,
     ChatResponse,
@@ -32,6 +32,74 @@ def _completed_user_profile(session: Session, user_uid: str) -> dict | None:
     if not is_complete_profile_data(profile_data):
         return None
     return profile_data
+
+
+def _load_owned_session(session: Session, session_id: str, user_uid: str):
+    from app.services.conversation_session_service import load_session
+
+    conv_session = load_session(session, session_id)
+    if conv_session is None or conv_session.user_uid != user_uid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在")
+    return conv_session
+
+
+def _stream_error_message(session: Session, session_id: str, user_uid: str, exc: Exception) -> str:
+    if isinstance(exc, HTTPException):
+        detail = exc.detail
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+        return "对话请求失败，请稍后重试。"
+
+    from app.services.conversation_session_service import load_session
+
+    conv_session = load_session(session, session_id)
+    if conv_session is None or conv_session.user_uid != user_uid:
+        return "会话不存在"
+
+    return str(exc) or "对话请求失败，请稍后重试。"
+
+
+def _append_turn_with_user_fallback(
+    session: Session,
+    session_id: str,
+    current_user_message: HumanMessage,
+    completed_text: str,
+) -> None:
+    from app.services.conversation_session_service import append_messages
+
+    try:
+        append_messages(
+            session,
+            session_id,
+            messages_to_dict([current_user_message, AIMessage(content=completed_text)]),
+        )
+    except Exception:
+        try:
+            append_messages(
+                session,
+                session_id,
+                messages_to_dict([current_user_message]),
+            )
+        except Exception:
+            pass
+        raise
+
+
+def _append_user_message_safely(
+    session: Session,
+    session_id: str,
+    current_user_message: HumanMessage,
+) -> None:
+    from app.services.conversation_session_service import append_messages
+
+    try:
+        append_messages(
+            session,
+            session_id,
+            messages_to_dict([current_user_message]),
+        )
+    except Exception:
+        pass
 
 
 def _sse(event: str, payload: dict) -> str:
@@ -92,18 +160,12 @@ def _grade_name_from_path(year: str, path: dict) -> str:
     return year
 
 
-def _course_nodes_from_path(path: dict) -> list[dict]:
+def _course_nodes_from_path(year: str, path: dict) -> list[dict]:
+    from app.services.learning_path_service import get_grade_courses
+
     grade_plans = path.get("grade_plans")
     if isinstance(grade_plans, dict):
-        nodes: list[dict] = []
-        for grade_plan in grade_plans.values():
-            if not isinstance(grade_plan, dict):
-                continue
-            course_nodes = grade_plan.get("course_nodes")
-            if not isinstance(course_nodes, list):
-                continue
-            nodes.extend(node for node in course_nodes if isinstance(node, dict))
-        return nodes
+        return get_grade_courses(path, year)
 
     courses = path.get("courses")
     if isinstance(courses, list):
@@ -121,12 +183,17 @@ def _course_title(course: dict) -> str:
 
 
 def _format_learning_path_text(year_paths: dict[str, dict], latest_grade_year: str = "") -> str:
+    from app.services.learning_path_service import YEAR_ORDER
+
     lines = ["你的学习路径里已经有这些课程："]
-    for year, path in year_paths.items():
+    ordered_years = [year for year in YEAR_ORDER if year in year_paths]
+    ordered_years.extend(year for year in year_paths if year not in ordered_years)
+    for year in ordered_years:
+        path = year_paths.get(year)
         if not isinstance(path, dict):
             continue
         grade_name = _grade_name_from_path(year, path)
-        courses = _course_nodes_from_path(path)
+        courses = _course_nodes_from_path(year, path)
         lines.append(f"{grade_name}（{year}）：{len(courses)} 门课")
         for index, course in enumerate(courses, start=1):
             title = _course_title(course)
@@ -218,181 +285,197 @@ async def _stream_chat_events(
     from app.services.course_knowledge_service import (
         get_user_course_knowledge_outline,
     )
-    from app.services.conversation_session_service import append_messages, load_or_create_session
-
-    yield _sse("session_started", {"session_id": session_id, "query": user_message})
-
-    yield _sse("agent_calling", _memory_event("memory-history-load", "正在读取历史对话记录"))
-    conv_session = load_or_create_session(db_session, session_id, user_uid)
-    history_messages = messages_from_dict(conv_session.messages) if conv_session.messages else []
-    yield _sse(
-        "agent_result",
-        _memory_event(
-            "memory-history-load",
-            "历史对话记录已装入本轮上下文",
-            success=True,
-            summary="历史对话记录已装入本轮上下文",
-        ),
-    )
-
-    yield _sse("agent_calling", _memory_event("memory-profile-load", "正在提取用户画像数据"))
-    profile = get_user_profile(db_session, user_uid)
-    yield _sse(
-        "agent_result",
-        _memory_event(
-            "memory-profile-load",
-            "用户画像数据已提取",
-            success=True,
-            summary="用户画像数据已提取",
-        ),
-    )
-
-    yield _sse("agent_calling", _memory_event("memory-path-load", "正在提取学习路径数据"))
-    year_paths = get_all_year_learning_paths(db_session, user_uid)
-    latest_grade_year = get_latest_grade_year(db_session, user_uid)
-    yield _sse(
-        "agent_result",
-        _memory_event(
-            "memory-path-load",
-            "学习路径数据已提取",
-            success=True,
-            summary="学习路径数据已提取",
-        ),
-    )
-
-    yield _sse("agent_calling", _memory_event("memory-outline-load", "正在提取课程大纲数据"))
-    current_course_id = get_current_course_id_from_year_learning_paths(year_paths, latest_grade_year)
-    course_knowledge = (
-        get_user_course_knowledge_outline(db_session, user_uid, current_course_id)
-        if current_course_id
-        else None
-    )
-    yield _sse(
-        "agent_result",
-        _memory_event(
-            "memory-outline-load",
-            "课程大纲数据已提取",
-            success=True,
-            summary="课程大纲数据已提取",
-        ),
-    )
-
-    current_user_message = HumanMessage(content=user_message)
-
-    # Build state
-    state = {
-        "user_id": user_uid,
-        "session_id": session_id,
-        "query": user_message,
-        "messages": [*history_messages, current_user_message],
-    }
-
-    if profile:
-        state["profile"] = profile
-    if year_paths:
-        state["year_learning_paths"] = year_paths
-    if latest_grade_year:
-        state["latest_grade_year"] = latest_grade_year
-    if course_knowledge:
-        state["course_knowledge"] = course_knowledge
-
-    yield _sse(
-        "agent_result",
-        _memory_event(
-            "memory-context-load",
-            "历史对话、用户画像、学习路径与课程大纲已完成状态组装",
-            success=True,
-            summary="历史对话、用户画像、学习路径与课程大纲已完成状态组装",
-        ),
-    )
-
-    if course_knowledge and _is_outline_review_query(user_message):
-        completed_text = _format_course_outline_text(course_knowledge)
-        yield _sse(
-            "data_update",
-            {
-                "update_type": "course_knowledge_loaded",
-                "label": "课程大纲",
-                "course_id": course_knowledge.get("course_id", ""),
-                "grade_year": course_knowledge.get("grade_year", ""),
-                "summary": "已从数据库读取课程大纲",
-            },
-        )
-        yield _sse("message_completed", {"full_text": completed_text})
-        yield _sse(
-            "session_completed",
-            {
-                "session_id": session_id,
-                "has_profile": is_complete_profile_data(profile),
-                "has_paths": bool(year_paths),
-                "has_outline": True,
-            },
-        )
-        append_messages(
-            db_session,
-            session_id,
-            messages_to_dict([current_user_message, AIMessage(content=completed_text)]),
-        )
-        return
-
-    if year_paths and _is_learning_path_review_query(user_message):
-        completed_text = _format_learning_path_text(year_paths, latest_grade_year)
-        yield _sse(
-            "data_update",
-            {
-                "update_type": "learning_path_loaded",
-                "label": "学习路径",
-                "years": list(year_paths.keys()),
-                "summary": "已从数据库读取学习路径",
-            },
-        )
-        yield _sse("message_completed", {"full_text": completed_text})
-        yield _sse(
-            "session_completed",
-            {
-                "session_id": session_id,
-                "has_profile": is_complete_profile_data(profile),
-                "has_paths": True,
-                "has_outline": bool(course_knowledge),
-            },
-        )
-        append_messages(
-            db_session,
-            session_id,
-            messages_to_dict([current_user_message, AIMessage(content=completed_text)]),
-        )
-        return
-
-    completed_text = ""
-    had_error = False
     try:
-        async for event in stream_orchestration_events(state):
-            event_name = str(event.get("event", "message"))
-            if event_name == "message_completed":
-                completed_text = str(event.get("full_text", ""))
-            if event_name == "error":
-                had_error = True
-            # For 'message' events, use the generic onmessage handler
-            if event_name in {"session_started"}:
-                continue
-            if event_name in {"text_chunk", "supervisor_thinking", "supervisor_plan"}:
-                payload = {k: v for k, v in event.items() if k != "event"}
-                yield _sse("message", {**payload, "type": event_name})
-            else:
-                payload = {k: v for k, v in event.items() if k != "event"}
-                yield _sse(event_name, payload)
-        new_messages = [current_user_message]
-        if completed_text and not had_error:
-            new_messages.append(AIMessage(content=completed_text))
-        append_messages(db_session, session_id, messages_to_dict(new_messages))
-    except Exception as exc:
-        append_messages(
-            db_session,
-            session_id,
-            messages_to_dict([current_user_message]),
+        conv_session = _load_owned_session(db_session, session_id, user_uid)
+        yield _sse("session_started", {"session_id": session_id, "query": user_message})
+
+        yield _sse("agent_calling", _memory_event("memory-history-load", "正在读取历史对话记录"))
+        history_messages = messages_from_dict(conv_session.messages) if conv_session.messages else []
+        yield _sse(
+            "agent_result",
+            _memory_event(
+                "memory-history-load",
+                "历史对话记录已装入本轮上下文",
+                success=True,
+                summary="历史对话记录已装入本轮上下文",
+            ),
         )
+
+        yield _sse("agent_calling", _memory_event("memory-profile-load", "正在提取用户画像数据"))
+        profile = get_user_profile(db_session, user_uid)
+        yield _sse(
+            "agent_result",
+            _memory_event(
+                "memory-profile-load",
+                "用户画像数据已提取",
+                success=True,
+                summary="用户画像数据已提取",
+            ),
+        )
+
+        yield _sse("agent_calling", _memory_event("memory-path-load", "正在提取学习路径数据"))
+        year_paths = get_all_year_learning_paths(db_session, user_uid)
+        latest_grade_year = get_latest_grade_year(db_session, user_uid)
+        yield _sse(
+            "agent_result",
+            _memory_event(
+                "memory-path-load",
+                "学习路径数据已提取",
+                success=True,
+                summary="学习路径数据已提取",
+            ),
+        )
+
+        yield _sse("agent_calling", _memory_event("memory-outline-load", "正在提取课程大纲数据"))
+        current_course_id = get_current_course_id_from_year_learning_paths(year_paths, latest_grade_year)
+        course_knowledge = (
+            get_user_course_knowledge_outline(db_session, user_uid, current_course_id)
+            if current_course_id
+            else None
+        )
+        yield _sse(
+            "agent_result",
+            _memory_event(
+                "memory-outline-load",
+                "课程大纲数据已提取",
+                success=True,
+                summary="课程大纲数据已提取",
+            ),
+        )
+
+        current_user_message = HumanMessage(content=user_message)
+
+        state = {
+            "user_id": user_uid,
+            "session_id": session_id,
+            "query": user_message,
+            "messages": [*history_messages, current_user_message],
+        }
+
+        if profile:
+            state["profile"] = profile
+        if year_paths:
+            state["year_learning_paths"] = year_paths
+        if latest_grade_year:
+            state["latest_grade_year"] = latest_grade_year
+        if course_knowledge:
+            state["course_knowledge"] = course_knowledge
+
+        yield _sse(
+            "agent_result",
+            _memory_event(
+                "memory-context-load",
+                "历史对话、用户画像、学习路径与课程大纲已完成状态组装",
+                success=True,
+                summary="历史对话、用户画像、学习路径与课程大纲已完成状态组装",
+            ),
+        )
+
+        if course_knowledge and (_is_outline_review_query(user_message) or is_course_start_query(user_message)):
+            completed_text = _format_course_outline_text(course_knowledge)
+            yield _sse(
+                "data_update",
+                {
+                    "update_type": "course_knowledge_loaded",
+                    "label": "课程大纲",
+                    "course_id": course_knowledge.get("course_id", ""),
+                    "grade_year": course_knowledge.get("grade_year", ""),
+                    "summary": "已从数据库读取课程大纲",
+                },
+            )
+            _append_turn_with_user_fallback(
+                db_session,
+                session_id,
+                current_user_message,
+                completed_text,
+            )
+            yield _sse("message_completed", {"full_text": completed_text})
+            yield _sse(
+                "session_completed",
+                {
+                    "session_id": session_id,
+                    "has_profile": is_complete_profile_data(profile),
+                    "has_paths": bool(year_paths),
+                    "has_outline": True,
+                },
+            )
+            return
+
+        if year_paths and _is_learning_path_review_query(user_message):
+            completed_text = _format_learning_path_text(year_paths, latest_grade_year)
+            yield _sse(
+                "data_update",
+                {
+                    "update_type": "learning_path_loaded",
+                    "label": "学习路径",
+                    "years": list(year_paths.keys()),
+                    "summary": "已从数据库读取学习路径",
+                },
+            )
+            _append_turn_with_user_fallback(
+                db_session,
+                session_id,
+                current_user_message,
+                completed_text,
+            )
+            yield _sse("message_completed", {"full_text": completed_text})
+            yield _sse(
+                "session_completed",
+                {
+                    "session_id": session_id,
+                    "has_profile": is_complete_profile_data(profile),
+                    "has_paths": True,
+                    "has_outline": bool(course_knowledge),
+                },
+            )
+            return
+
+        completed_text = ""
+        had_error = False
+        completed_event_payload: dict | None = None
+        session_completed_payload: dict | None = None
+        try:
+            async for event in stream_orchestration_events(state):
+                event_name = str(event.get("event", "message"))
+                if event_name == "message_completed":
+                    completed_text = str(event.get("full_text", ""))
+                    completed_event_payload = {k: v for k, v in event.items() if k != "event"}
+                    continue
+                if event_name == "session_completed":
+                    session_completed_payload = {k: v for k, v in event.items() if k != "event"}
+                    continue
+                if event_name == "error":
+                    had_error = True
+                if event_name in {"session_started"}:
+                    continue
+                if event_name in {"text_chunk", "supervisor_thinking", "supervisor_plan"}:
+                    payload = {k: v for k, v in event.items() if k != "event"}
+                    yield _sse("message", {**payload, "type": event_name})
+                else:
+                    payload = {k: v for k, v in event.items() if k != "event"}
+                    yield _sse(event_name, payload)
+            new_messages = [current_user_message]
+            if completed_text and not had_error:
+                new_messages.append(AIMessage(content=completed_text))
+            from app.services.conversation_session_service import append_messages
+            append_messages(db_session, session_id, messages_to_dict(new_messages))
+            if completed_event_payload is not None:
+                yield _sse("message_completed", completed_event_payload)
+            if session_completed_payload is not None:
+                yield _sse("session_completed", session_completed_payload)
+        except Exception as exc:
+            _append_user_message_safely(
+                db_session,
+                session_id,
+                current_user_message,
+            )
+            yield _sse("error", {
+                "message": _stream_error_message(db_session, session_id, user_uid, exc),
+                "recoverable": True,
+            })
+    except Exception as exc:
         yield _sse("error", {
-            "message": str(exc) or "对话请求失败，请稍后重试。",
+            "message": _stream_error_message(db_session, session_id, user_uid, exc),
             "recoverable": True,
         })
 
@@ -425,6 +508,8 @@ def create_orchestration_router(session_dependency: SessionDependency) -> APIRou
         session: Session = Depends(session_dependency),
     ) -> StreamingResponse:
         """Send a message and receive SSE-streamed agent responses."""
+        _load_owned_session(session, payload.session_id, current_user.uid)
+
         return StreamingResponse(
             _stream_chat_events(
                 session_id=payload.session_id,

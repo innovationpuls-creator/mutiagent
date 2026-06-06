@@ -18,6 +18,31 @@ from app.orchestration.agents.models import CourseKnowledgeDraftOutput, CourseKn
 from app.orchestration.agents.prompts import COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
 
 
+def _complete_profile(summary_text: str = "【基础学习画像总结】大三软件工程，当前以AI 应用开发为主线。") -> dict:
+    return {
+        "type": "basic_profile",
+        "summary_text": summary_text,
+        "confirmed_info": {
+            "current_grade": "大三",
+            "major": "软件工程",
+            "learning_stage": "项目实践",
+            "has_clear_goal": "是",
+            "learning_method_preference": "项目驱动学习",
+            "learning_pace_preference": "按项目里程碑推进",
+            "content_preference": ["代码实践", "项目案例"],
+            "need_guidance": "需要轻量提醒",
+            "knowledge_foundation": "有 Python 和前端基础",
+            "strengths": "能完成小型功能",
+            "weaknesses": "异步工程经验不足",
+            "experience": "做过课程项目",
+            "short_term_goal": "完成 AI 功能模块",
+            "long_term_goal": "成为全栈 AI 开发者",
+            "weekly_available_time": "每周 8 小时",
+            "constraints": "时间有限",
+        },
+    }
+
+
 def test_select_course_for_outline_uses_current_learning_course() -> None:
     path = {
         "current_learning_course": {"grade_id": "year_3", "course_node_id": "year_3_course_1"},
@@ -230,14 +255,7 @@ def test_run_course_knowledge_agent_uses_structured_llm_input_analysis(tmp_path)
             run_course_knowledge_agent(
                 {
                     "user_id": "user-1",
-                    "profile": {
-                        "type": "basic_profile",
-                        "confirmed_info": {
-                            "current_grade": "大三",
-                            "weekly_available_time": "每周 6-10 小时",
-                            "constraints": "平时学习节奏",
-                        },
-                    },
+                    "profile": _complete_profile(),
                     "year_learning_paths": {
                         "year_3": {
                             "current_learning_course": {"grade_id": "year_3", "course_node_id": "year_3_course_1"},
@@ -284,6 +302,60 @@ def test_run_course_knowledge_agent_uses_structured_llm_input_analysis(tmp_path)
     assert result["course_knowledge"]["learning_sequence"] == ["第一章：需求拆解"]
 
 
+def test_run_course_knowledge_agent_rejects_incomplete_basic_profile(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'course-knowledge-incomplete-profile.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    with Session(engine) as session:
+        session.add(User(uid="user-1", username="课程用户", identifier="course@example.com"))
+        session.commit()
+
+    result = asyncio.run(
+        run_course_knowledge_agent(
+            {
+                "user_id": "user-1",
+                "profile": {"type": "basic_profile", "summary_text": "旧画像摘要"},
+                "year_learning_paths": {
+                    "year_3": {
+                        "current_learning_course": {"grade_id": "year_3", "course_node_id": "year_3_course_1"},
+                        "grade_plans": {
+                            "year_3": {
+                                "course_nodes": [
+                                    {
+                                        "course_node_id": "year_3_course_1",
+                                        "course_or_chapter_theme": "AI 应用开发",
+                                        "grade_id": "year_3",
+                                        "course_goal": "完成 AI 应用开发基础能力搭建",
+                                        "time_arrangement": {
+                                            "semester_scope": "上学期",
+                                            "duration": "6 周",
+                                            "pace_reason": "围绕平时学习安排",
+                                        },
+                                        "key_points": ["Prompt 设计", "前后端联调"],
+                                        "difficult_points": ["错误处理与重试"],
+                                        "learning_sequence": ["需求拆解", "接口接入", "最小闭环演示"],
+                                        "prerequisite_node_ids": [],
+                                        "chapter_nodes": [],
+                                        "core_knowledge_points": [],
+                                        "knowledge_relations": [],
+                                        "downstream_resource_direction_ids": [],
+                                        "acceptance_criteria": ["完成一个可运行的 AI 功能模块并接入 Web 应用"],
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                },
+                "messages": [],
+            },
+            object(),
+        )
+    )
+
+    assert result == {"error": "请先完成基础画像。"}
+
+
 def test_run_course_knowledge_agent_falls_back_to_local_outline_and_persists(tmp_path: Path) -> None:
     class ExplodingStructuredLlm:
         def with_structured_output(self, *_args, **_kwargs):
@@ -306,7 +378,7 @@ def test_run_course_knowledge_agent_falls_back_to_local_outline_and_persists(tmp
 
     state = {
         "user_id": "user-1",
-        "profile": {"type": "basic_profile"},
+        "profile": _complete_profile(),
         "year_learning_paths": {
             "year_3": {
                 "current_learning_course": {"grade_id": "year_3", "course_node_id": "year_3_course_1"},
@@ -361,6 +433,94 @@ def test_run_course_knowledge_agent_falls_back_to_local_outline_and_persists(tmp
     assert result["course_knowledge"]["grade_year"] == "year_3"
     assert result["course_knowledge"]["sections"]
     assert result["course_knowledge"]["learning_sequence"]
+    assert result["course_knowledge"]["learning_sequence"][0] == "第一章：需求拆解"
+
+    with Session(engine) as session:
+        row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
+
+    assert row is not None
+    assert row.outline_data["course_name"] == "AI 应用开发"
+
+
+def test_run_course_knowledge_agent_falls_back_after_timeout_and_persists(tmp_path: Path) -> None:
+    class HangingStructuredLlm:
+        def with_structured_output(self, *_args, **_kwargs):
+            return object()
+
+    class HangingChain:
+        async def ainvoke(self, _payload):
+            await asyncio.sleep(0.1)
+            raise AssertionError("timeout fallback should return before the chain finishes")
+
+    class HangingPrompt:
+        def __or__(self, _other):
+            return HangingChain()
+
+    engine = build_engine(f"sqlite:///{tmp_path / 'course-knowledge-timeout.db'}")
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(User(uid="user-1", username="课程用户", identifier="course@example.com"))
+        session.commit()
+
+    state = {
+        "user_id": "user-1",
+        "profile": _complete_profile(),
+        "year_learning_paths": {
+            "year_3": {
+                "current_learning_course": {"grade_id": "year_3", "course_node_id": "year_3_course_1"},
+                "grade_plans": {
+                    "year_3": {
+                        "course_nodes": [
+                            {
+                                "course_node_id": "year_3_course_1",
+                                "course_or_chapter_theme": "AI 应用开发",
+                                "grade_id": "year_3",
+                                "course_goal": "完成 AI 应用开发基础能力搭建",
+                                "time_arrangement": {
+                                    "semester_scope": "上学期",
+                                    "duration": "6 周",
+                                    "pace_reason": "围绕平时学习安排",
+                                },
+                                "key_points": ["Prompt 设计", "前后端联调"],
+                                "difficult_points": ["错误处理与重试"],
+                                "learning_sequence": ["需求拆解", "接口接入", "最小闭环演示"],
+                                "prerequisite_node_ids": [],
+                                "chapter_nodes": [],
+                                "core_knowledge_points": [],
+                                "knowledge_relations": [],
+                                "downstream_resource_direction_ids": [],
+                                "acceptance_criteria": ["完成一个可运行的 AI 功能模块并接入 Web 应用"],
+                            },
+                        ],
+                    },
+                },
+            },
+        },
+        "messages": [],
+    }
+
+    module = __import__("app.orchestration.agents.course_knowledge", fromlist=["ChatPromptTemplate"])
+    original_factory = module.ChatPromptTemplate
+    original_timeout = module._STRUCTURED_OUTLINE_TIMEOUT_SECONDS
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return HangingPrompt()
+
+    module.ChatPromptTemplate = PromptFactory
+    module._STRUCTURED_OUTLINE_TIMEOUT_SECONDS = 0.01
+    try:
+        result = asyncio.run(run_course_knowledge_agent(state, HangingStructuredLlm()))
+    finally:
+        module.ChatPromptTemplate = original_factory
+        module._STRUCTURED_OUTLINE_TIMEOUT_SECONDS = original_timeout
+
+    assert "course_knowledge" in result
+    assert result["course_knowledge"]["course_id"] == "year_3_course_1"
+    assert result["course_knowledge"]["course_name"] == "AI 应用开发"
+    assert result["course_knowledge"]["sections"]
     assert result["course_knowledge"]["learning_sequence"][0] == "第一章：需求拆解"
 
     with Session(engine) as session:
@@ -471,14 +631,7 @@ def test_run_course_knowledge_agent_normalizes_partial_structured_outline(tmp_pa
             run_course_knowledge_agent(
                 {
                     "user_id": "user-1",
-                    "profile": {
-                        "type": "basic_profile",
-                        "confirmed_info": {
-                            "current_grade": "大三",
-                            "weekly_available_time": "每周 6-10 小时",
-                            "constraints": "缺少项目练习",
-                        },
-                    },
+                    "profile": _complete_profile("【基础学习画像总结】大三软件工程，当前重点是补齐项目练习。"),
                     "year_learning_paths": {
                         "year_3": {
                             "current_learning_course": {"grade_id": "year_3", "course_node_id": "year_3_course_2"},

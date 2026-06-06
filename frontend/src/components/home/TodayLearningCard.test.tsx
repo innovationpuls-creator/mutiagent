@@ -24,7 +24,7 @@ const todayLearning: TodayLearning = {
       pace_reason: '围绕平时学习节奏安排',
     },
     current_focus: '正在学习 AI 应用开发项目课',
-    progress_state: 'not_started',
+    progress_state: 'in_progress',
     next_action: '开始第一章需求拆解',
   },
   currentCourseDetail: {
@@ -134,5 +134,11 @@ describe('TodayLearningCard', () => {
 
     expect(onStartLearning).toHaveBeenCalledTimes(1);
     expect(onClick).toHaveBeenCalledTimes(0);
+  });
+
+  it('does not render a start button when no start action is available', () => {
+    render(<TodayLearningCard data={todayLearning} />);
+
+    expect(screen.queryByRole('button', { name: '开始学习' })).toBeNull();
   });
 });

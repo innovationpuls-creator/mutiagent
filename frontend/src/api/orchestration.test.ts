@@ -230,6 +230,67 @@ describe('startSession', () => {
     expect(turn.hasProfile).toBe(false);
   });
 
+  it('does not mark summary-only legacy basic_profile as completed on start response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        session_id: 'sess-summary-only',
+        reply_text: null,
+        profile: {
+          type: 'basic_profile',
+          summary_text: '【基础学习画像总结】大三软件工程，当前以 AI 应用开发为主线。',
+        },
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    }));
+
+    const turn = await startSession('token-1', '你好');
+
+    expect(turn.hasProfile).toBe(false);
+    expect(turn.hasPaths).toBe(false);
+    expect(turn.hasOutline).toBe(false);
+  });
+
+  it('does not mark unsupported postgraduate basic_profile as completed on start response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        session_id: 'sess-postgraduate-profile',
+        reply_text: null,
+        profile: {
+          ...makeCompleteProfile(),
+          confirmed_info: {
+            ...makeCompleteProfile().confirmed_info,
+            current_grade: '研一',
+          },
+        },
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    }));
+
+    const turn = await startSession('token-1', '你好');
+
+    expect(turn.hasProfile).toBe(false);
+    expect(turn.hasPaths).toBe(false);
+    expect(turn.hasOutline).toBe(false);
+  });
+
+  it('rejects malformed start response shell', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        reply_text: '你好！请告诉我你的基本情况。',
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    }));
+
+    await expect(startSession('token-1', '你好')).rejects.toThrow('会话数据格式不正确');
+  });
+
   it('throws on non-OK response', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
@@ -339,6 +400,31 @@ describe('streamSession', () => {
     )));
 
     await expect(streamSession('t', 'q', null, () => {})).rejects.toThrow('服务出错');
+  });
+
+  it('keeps the started session_id when an error arrives before session_started', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'sess-error-before-started',
+        reply_text: '',
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    }).mockResolvedValueOnce(new Response(
+      makeSseStream([
+        'event: supervisor_thinking\ndata: {"message":"正在分析..."}\n\n',
+        'event: error\ndata: {"message":"服务出错","recoverable":true}\n\n',
+      ]),
+      { status: 200 },
+    )));
+
+    await expect(streamSession('t', 'q', null, () => {})).rejects.toMatchObject({
+      name: 'SessionStreamError',
+      message: '服务出错',
+      sessionId: 'sess-error-before-started',
+    });
   });
 
   it('preserves retry metadata from SSE error events', async () => {
@@ -521,6 +607,33 @@ describe('fetchSessionState', () => {
     expect(result.profile?.type).toBe('basic_profile');
     expect(result.learningPath?.current_learning_course.course_node_id).toBe('year_3_course_1');
     expect(result.courseKnowledge?.course_id).toBe('year_3_course_1');
+  });
+
+  it('drops learning path from session state when current progress_state is unsupported', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        session_id: 'sess-invalid-progress',
+        user_uid: 'user-1',
+        profile: null,
+        year_learning_paths: {
+          year_3: {
+            ...makeLearningPath(),
+            current_learning_course: {
+              ...makeLearningPath().current_learning_course,
+              progress_state: 'paused',
+            },
+          },
+        },
+        course_knowledge: null,
+        updated_at: '2026-06-04T10:00:00Z',
+      }),
+    }));
+
+    const result = await fetchSessionState('token-1', 'sess-invalid-progress');
+
+    expect(result.learningPath).toBeNull();
+    expect(result.courseKnowledge).toBeNull();
   });
 
   it('returns a structured learning path when session state contains multiple year paths', async () => {
@@ -951,5 +1064,228 @@ describe('fetchSessionState', () => {
         text: '【基础学习画像总结】大三软件工程，当前以 AI 应用开发为主线。',
       }),
     });
+  });
+
+  it('does not mark summary-only legacy basic_profile as completed during recovery', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        session_id: 'sess-recover-summary-only',
+        user_uid: 'user-1',
+        messages: [
+          { type: 'human', data: { content: '继续恢复我的画像' } },
+          { type: 'ai', data: { content: '【基础学习画像总结】大三软件工程，当前以 AI 应用开发为主线。' } },
+        ],
+        profile: {
+          type: 'basic_profile',
+          summary_text: '【基础学习画像总结】大三软件工程，当前以 AI 应用开发为主线。',
+        },
+        year_learning_paths: null,
+        course_knowledge: null,
+        updated_at: '2026-06-05T10:00:00Z',
+      }),
+    }));
+
+    const result = await fetchSessionRecoveryData('token-1', 'sess-recover-summary-only');
+
+    expect(result.hasCompleteProfile).toBe(false);
+    expect(result.profile).toBeNull();
+    expect(result.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '【基础学习画像总结】大三软件工程，当前以 AI 应用开发为主线。',
+    });
+    expect(result.messages[1]?.sessionMessage).toBeUndefined();
+  });
+
+  it('does not mark unsupported postgraduate basic_profile as completed during recovery', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        session_id: 'sess-recover-postgraduate-profile',
+        user_uid: 'user-1',
+        messages: [
+          { type: 'human', data: { content: '继续恢复我的画像' } },
+          { type: 'ai', data: { content: '基础画像已完成' } },
+        ],
+        profile: {
+          ...makeCompleteProfile(),
+          confirmed_info: {
+            ...makeCompleteProfile().confirmed_info,
+            current_grade: '研一',
+          },
+          text: '当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。',
+          summary_text: '当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。',
+        },
+        year_learning_paths: null,
+        course_knowledge: null,
+        updated_at: '2026-06-05T10:00:00Z',
+      }),
+    }));
+
+    const result = await fetchSessionRecoveryData('token-1', 'sess-recover-postgraduate-profile');
+
+    expect(result.hasCompleteProfile).toBe(false);
+    expect(result.profile).toBeNull();
+    expect(result.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '基础画像已完成',
+    });
+    expect(result.messages[1]?.sessionMessage).toBeUndefined();
+  });
+
+  it('attaches recovered learning path to the matching assistant message instead of only the last assistant message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        session_id: 'sess-recover-nonterminal-structured',
+        user_uid: 'user-1',
+        messages: [
+          { type: 'human', data: { content: '先帮我生成学习路径' } },
+          { type: 'ai', data: { content: '学习路径已生成，当前建议先学习《AI Agent 开发基础能力搭建》。' } },
+          { type: 'human', data: { content: '我先看看，再继续' } },
+          { type: 'ai', data: { content: '好的，我们可以继续调整。' } },
+        ],
+        profile: null,
+        year_learning_paths: {
+          year_3: makeLearningPath(),
+        },
+        course_knowledge: null,
+        updated_at: '2026-06-05T10:00:00Z',
+      }),
+    }));
+
+    const result = await fetchSessionRecoveryData('token-1', 'sess-recover-nonterminal-structured');
+
+    expect(result.messages).toHaveLength(4);
+    expect(result.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '学习路径已生成，当前建议先学习《AI Agent 开发基础能力搭建》。',
+      learningPath: expect.objectContaining({
+        current_learning_course: expect.objectContaining({ course_node_id: 'year_3_course_1' }),
+      }),
+    });
+    expect(result.messages[3]).toMatchObject({
+      role: 'assistant',
+      content: '好的，我们可以继续调整。',
+    });
+    expect(result.messages[3].learningPath ?? null).toBeNull();
+  });
+
+  it('recovers both learning path and course outline when the persisted assistant text is 学习路径和课程大纲已生成', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        session_id: 'sess-recover-combined-structured',
+        user_uid: 'user-1',
+        messages: [
+          { type: 'human', data: { content: '继续恢复我的学习结果' } },
+          { type: 'ai', data: { content: '学习路径和课程大纲已生成' } },
+        ],
+        profile: null,
+        year_learning_paths: {
+          year_3: makeLearningPath(),
+        },
+        course_knowledge: makeCourseKnowledge(),
+        updated_at: '2026-06-05T10:00:00Z',
+      }),
+    }));
+
+    const result = await fetchSessionRecoveryData('token-1', 'sess-recover-combined-structured');
+
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '学习路径和课程大纲已生成',
+      learningPath: expect.objectContaining({
+        current_learning_course: expect.objectContaining({ course_node_id: 'year_3_course_1' }),
+      }),
+      courseKnowledge: expect.objectContaining({
+        course_id: 'year_3_course_1',
+        course_name: 'AI Agent 开发基础能力搭建',
+      }),
+    });
+  });
+
+  it('recovers course outline when the persisted assistant text is 课程大纲已生成', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        session_id: 'sess-recover-generic-outline',
+        user_uid: 'user-1',
+        messages: [
+          { type: 'human', data: { content: '开始第一门课' } },
+          { type: 'ai', data: { content: '课程大纲已生成' } },
+        ],
+        profile: null,
+        year_learning_paths: {
+          year_3: makeLearningPath(),
+        },
+        course_knowledge: makeCourseKnowledge(),
+        updated_at: '2026-06-05T10:00:00Z',
+      }),
+    }));
+
+    const result = await fetchSessionRecoveryData('token-1', 'sess-recover-generic-outline');
+
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '课程大纲已生成',
+      courseKnowledge: expect.objectContaining({
+        course_id: 'year_3_course_1',
+        course_name: 'AI Agent 开发基础能力搭建',
+      }),
+    });
+    expect(result.messages[1].learningPath ?? null).toBeNull();
+  });
+
+  it('does not attach learning path when the persisted assistant text is 课程大纲已生成：《...》', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        session_id: 'sess-recover-titled-outline',
+        user_uid: 'user-1',
+        messages: [
+          { type: 'human', data: { content: '开始第一门课' } },
+          { type: 'ai', data: { content: '课程大纲已生成：《AI Agent 开发基础能力搭建》。' } },
+        ],
+        profile: null,
+        year_learning_paths: {
+          year_3: makeLearningPath(),
+        },
+        course_knowledge: makeCourseKnowledge(),
+        updated_at: '2026-06-05T10:00:00Z',
+      }),
+    }));
+
+    const result = await fetchSessionRecoveryData('token-1', 'sess-recover-titled-outline');
+
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '课程大纲已生成：《AI Agent 开发基础能力搭建》。',
+      courseKnowledge: expect.objectContaining({
+        course_id: 'year_3_course_1',
+        course_name: 'AI Agent 开发基础能力搭建',
+      }),
+    });
+    expect(result.messages[1].learningPath ?? null).toBeNull();
+  });
+
+  it('rejects malformed session state shell during recovery', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        session_id: 'sess-recover-malformed',
+        user_uid: 'user-1',
+        messages: {},
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: null,
+        updated_at: '2026-06-05T10:00:00Z',
+      }),
+    }));
+
+    await expect(fetchSessionRecoveryData('token-1', 'sess-recover-malformed')).rejects.toThrow('会话数据格式不正确');
   });
 });

@@ -35,7 +35,7 @@ PROFILE_AGENT_SYSTEM_PROMPT = """\
 - question_box.options 至少包含两个选项：label/value 为「继续生成学习路径」和「修改画像方向」
 - text 用自然语言总结用户画像，包含：基本情况、学习偏好、能力基础、目标、时间约束
 - 所有 confirmed_info 字段必须填写，没有信息的填 "未知" 或空列表
-- current_grade：大一、大二、大三、大四、研一、研二、研三
+- current_grade：当前学习路径只支持大一、大二、大三、大四；如果用户提供研一、研二、研三，需要先追问并确认对应的本科年级
 - learning_stage：刚入门、有基础、项目实践、准备就业、课外拓展
 - has_clear_goal：是、否、大致有方向
 - learning_method_preference：AI 交互式学习、项目驱动学习、系统课程学习、刷题巩固、案例拆解学习

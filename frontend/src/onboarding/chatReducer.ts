@@ -17,7 +17,7 @@ export const initialChatStore: ChatStore = {
 export type ChatAction =
   | { type: 'ADD_USER_MESSAGE'; id: string; content: string }
   | { type: 'ADD_ASSISTANT_MESSAGE'; id: string }
-  | { type: 'SET_SESSION_ID'; sessionId: string }
+  | { type: 'SET_SESSION_ID'; sessionId: string | null }
   | { type: 'STEP'; messageId: string; step: AgentRunStep }
   | {
     type: 'RUN_DONE';
@@ -71,8 +71,14 @@ function mergeRunStep(existingStep: AgentRunStep, nextStep: AgentRunStep): Agent
 function normalizeLoadedMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((message) => {
     if (message.role !== 'assistant') return message;
+    const normalizedStatus = (
+      message.status === 'streaming' || message.status === 'pending'
+        ? 'completed'
+        : message.status
+    );
     return {
       ...message,
+      status: normalizedStatus,
       activeStepId: null,
       runTrace: (message.runTrace ?? []).map((step) => (
         step.status === 'running'

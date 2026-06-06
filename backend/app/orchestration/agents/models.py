@@ -249,7 +249,7 @@ class CurrentLearningCourse(BaseModel):
     course_goal: str = Field(description="课程目标")
     time_arrangement: TimeArrangementOutput = Field(description="时间安排")
     current_focus: str = Field(description="当前学习焦点")
-    progress_state: Literal["not_started", "in_progress", "paused", "completed"] = Field(description="进度状态")
+    progress_state: Literal["in_progress", "completed"] = Field(description="进度状态")
     next_action: str = Field(description="下一步行动")
 
 
@@ -275,6 +275,8 @@ class LearningPathResultOutput(BaseModel):
             current_courses = [self.current_learning_course]
 
         first_course = current_courses[0]
+        if first_course.progress_state not in {"in_progress", "completed"}:
+            raise ValueError("current_learning_course.progress_state must be in_progress or completed")
         if self.current_learning_course != first_course:
             self.current_learning_course = first_course
         self.current_learning_courses = current_courses

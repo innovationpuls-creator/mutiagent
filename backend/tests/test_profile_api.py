@@ -86,6 +86,55 @@ def test_profile_dashboard_reads_saved_profile(tmp_path: Path) -> None:
     assert body["todayLearning"]["source"] == "基础画像 Agent"
 
 
+def test_profile_dashboard_marks_unsupported_postgraduate_grade_as_needing_revision(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'profile-unsupported-grade.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    token, uid = _register(client)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+
+    with Session(engine) as session:
+        session.add(
+            UserProfile(
+                user_uid=uid,
+                profile_data={
+                    "type": "basic_profile",
+                    "stage": "generated",
+                    "confirmed_info": {
+                        "current_grade": "研一",
+                        "major": "软件工程",
+                        "learning_stage": "项目实践",
+                        "has_clear_goal": "是",
+                        "learning_method_preference": "项目驱动学习",
+                        "learning_pace_preference": "按项目里程碑推进",
+                        "content_preference": ["代码实践"],
+                        "need_guidance": "需要轻量提醒",
+                        "knowledge_foundation": "软件工程基础",
+                        "strengths": "工程实现",
+                        "weaknesses": "部署经验不足",
+                        "experience": "做过课程项目",
+                        "short_term_goal": "完成 AI 功能模块",
+                        "long_term_goal": "形成 AI 应用开发能力",
+                        "weekly_available_time": "每周 8 小时",
+                        "constraints": "时间有限",
+                    },
+                    "text": "当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。",
+                },
+                profile_text="当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。",
+            )
+        )
+        session.commit()
+
+    response = client.get("/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["profile"]["currentGrade"] == "研一"
+    assert "当前学习路径只支持大一到大四" in body["profileSummaryText"]
+    assert body["todayLearning"]["source"] == "等待画像修正"
+    assert body["todayLearning"]["currentLearningCourse"] is None
+    assert body["recommendations"] == []
+
+
 def test_profile_dashboard_treats_collecting_profile_as_incomplete(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'profile-collecting.db'}"
     client = TestClient(create_app(database_url=database_url))
@@ -228,7 +277,7 @@ def test_profile_dashboard_prefers_current_learning_course_from_path(tmp_path: P
                             "pace_reason": "围绕平时学习节奏安排",
                         },
                         "current_focus": "正在学习 AI 应用开发项目课",
-                        "progress_state": "not_started",
+                        "progress_state": "in_progress",
                         "next_action": "开始第一章需求拆解",
                     },
                 },
@@ -361,7 +410,7 @@ def test_profile_dashboard_keeps_learning_path_visible_when_profile_is_collectin
                             "pace_reason": "围绕平时学习节奏安排",
                         },
                         "current_focus": "正在学习 AI 应用开发项目课",
-                        "progress_state": "not_started",
+                        "progress_state": "in_progress",
                         "next_action": "开始第一章需求拆解",
                     },
                 },
@@ -518,3 +567,123 @@ def test_profile_dashboard_prefers_latest_updated_learning_path_when_multiple_ye
     assert body["todayLearning"]["currentLearningCourse"]["course_node_id"] == "year_4_course_1"
     assert body["todayLearning"]["currentCourseDetail"]["course_node_id"] == "year_4_course_1"
     assert body["todayLearning"]["title"] == "最新路径课程"
+
+
+def test_profile_dashboard_falls_back_to_next_valid_path_when_latest_path_is_invalid(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'profile-fallback-valid-path.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    token, uid = _register(client)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+
+    with Session(engine) as session:
+        session.add(
+            UserProfile(
+                user_uid=uid,
+                profile_data={
+                    "type": "basic_profile",
+                    "stage": "generated",
+                    "confirmed_info": {
+                        "current_grade": "大四",
+                        "major": "软件工程",
+                    },
+                    "text": "【用户基础信息】\n大四软件工程。",
+                },
+                profile_text="【用户基础信息】\n大四软件工程。",
+            )
+        )
+        session.add(
+            UserYearLearningPath(
+                user_uid=uid,
+                grade_year="year_3",
+                learning_topic="AI 应用开发",
+                path_data={
+                    "schema_version": "learning_path.v2.course_node",
+                    "grade_plans": {
+                        "year_3": {
+                            "grade_id": "year_3",
+                            "grade_name": "大三",
+                            "grade_goal": "完成 AI Web 项目",
+                            "course_nodes": [
+                                {
+                                    "course_node_id": "year_3_course_1",
+                                    "grade_id": "year_3",
+                                    "course_or_chapter_theme": "有效路径课程",
+                                    "time_arrangement": {
+                                        "semester_scope": "上学期",
+                                        "duration": "6 周",
+                                        "pace_reason": "围绕平时学习节奏安排",
+                                    },
+                                    "course_goal": "完成有效路径课程",
+                                    "prerequisite_node_ids": [],
+                                    "chapter_nodes": [],
+                                    "core_knowledge_points": [],
+                                    "key_points": ["有效知识点"],
+                                    "difficult_points": ["有效难点"],
+                                    "learning_sequence": ["有效步骤"],
+                                    "knowledge_relations": [],
+                                    "downstream_resource_direction_ids": [],
+                                    "acceptance_criteria": ["有效验收"],
+                                },
+                            ],
+                        },
+                    },
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_1",
+                        "course_or_chapter_theme": "有效路径课程",
+                        "course_goal": "完成有效路径课程",
+                        "time_arrangement": {
+                            "semester_scope": "上学期",
+                            "duration": "6 周",
+                            "pace_reason": "围绕平时学习节奏安排",
+                        },
+                        "current_focus": "继续有效路径课程",
+                        "progress_state": "in_progress",
+                        "next_action": "继续有效路径课程",
+                    },
+                },
+                updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            )
+        )
+        session.add(
+            UserYearLearningPath(
+                user_uid=uid,
+                grade_year="year_4",
+                learning_topic="AI 应用开发",
+                path_data={
+                    "schema_version": "learning_path.v2.course_node",
+                    "grade_plans": {
+                        "year_4": {
+                            "grade_id": "year_4",
+                            "grade_name": "大四",
+                            "grade_goal": "完成毕业项目",
+                            "course_nodes": [],
+                        },
+                    },
+                    "current_learning_course": {
+                        "grade_id": "year_4",
+                        "course_node_id": "year_4_course_missing",
+                        "course_or_chapter_theme": "损坏路径课程",
+                        "course_goal": "完成损坏路径课程",
+                        "time_arrangement": {
+                            "semester_scope": "下学期",
+                            "duration": "8 周",
+                            "pace_reason": "围绕毕业项目推进",
+                        },
+                        "current_focus": "这条路径无法定位到课程节点",
+                        "progress_state": "in_progress",
+                        "next_action": "等待回退到下一条有效路径",
+                    },
+                },
+                updated_at=datetime(2026, 6, 5, tzinfo=timezone.utc),
+            )
+        )
+        session.commit()
+
+    response = client.get("/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["todayLearning"]["currentLearningCourse"]["course_node_id"] == "year_3_course_1"
+    assert body["todayLearning"]["currentCourseDetail"]["course_node_id"] == "year_3_course_1"
+    assert body["todayLearning"]["title"] == "有效路径课程"

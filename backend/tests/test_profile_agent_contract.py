@@ -51,6 +51,13 @@ def test_complete_profile_requires_session_message_shape() -> None:
     assert _is_complete_profile({"current_grade": "大三", "major": "软件工程"}) is False
 
 
+def test_complete_profile_rejects_unsupported_postgraduate_grade() -> None:
+    profile = _profile()
+    profile["confirmed_info"]["current_grade"] = "研一"
+
+    assert _is_complete_profile(profile) is False
+
+
 def test_build_profile_input_includes_history_and_default_instruction() -> None:
     state = {
         "query": "直接帮我生成，不确定的你随便帮我填",
@@ -229,6 +236,7 @@ def test_run_profile_agent_default_profile_ignores_greeting_as_major(tmp_path: P
 
     result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
 
+    assert result["profile"]["confirmed_info"]["current_grade"] == "大三"
     assert result["profile"]["confirmed_info"]["major"] == "软件工程"
     assert "你好" not in result["profile"]["summary_text"]
 
@@ -256,6 +264,39 @@ def test_run_profile_agent_keeps_pace_segment_out_of_major(tmp_path: Path) -> No
     assert result["profile"]["confirmed_info"]["constraints"] == "周末集中"
 
 
+def test_run_profile_agent_returns_collecting_for_unsupported_postgraduate_grade(tmp_path: Path) -> None:
+    class ExplodingLlm:
+        def with_structured_output(self, *_args, **_kwargs):
+            raise AssertionError("local profile path should not call structured llm")
+
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-unsupported-grade.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000000015",
+        "query": "研一，软件工程，AI，周末集中",
+        "messages": [HumanMessage(content="研一，软件工程，AI，周末集中")],
+    }
+
+    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+
+    assert result["profile"]["type"] == "collecting"
+    assert result["profile"]["stage"] == "basic_info"
+    assert result["profile"]["confirmed_info"]["current_grade"] == "研一"
+    assert result["profile"]["confirmed_info"]["major"] == "软件工程"
+    assert result["response"] == result["profile"]["text"]
+    assert "当前学习路径只支持大一到大四" in result["response"]
+    assert "本科年级" in result["response"]
+
+    with Session(engine) as session:
+        row = session.get(UserProfile, state["user_id"])
+
+    assert row is not None
+    assert row.profile_data["type"] == "collecting"
+    assert row.profile_data["confirmed_info"]["current_grade"] == "研一"
+
+
 def test_run_profile_agent_updates_explicit_major_field_without_treating_whole_sentence_as_major(tmp_path: Path) -> None:
     class ExplodingLlm:
         def with_structured_output(self, *_args, **_kwargs):
@@ -277,6 +318,63 @@ def test_run_profile_agent_updates_explicit_major_field_without_treating_whole_s
     assert result["profile"]["confirmed_info"]["current_grade"] == "大三"
     assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
     assert "专业改成计算机科学" not in result["profile"]["summary_text"]
+
+
+def test_run_profile_agent_rewrites_system_generated_knowledge_foundation_after_major_update(tmp_path: Path) -> None:
+    class ExplodingLlm:
+        def with_structured_output(self, *_args, **_kwargs):
+            raise AssertionError("local profile update path should not call structured llm")
+
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-generated-knowledge-foundation.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    profile = _profile()
+    profile["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000000012",
+        "query": "专业改成计算机科学",
+        "profile": profile,
+        "messages": [HumanMessage(content="专业改成计算机科学")],
+    }
+
+    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+
+    assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
+    assert (
+        result["profile"]["confirmed_info"]["knowledge_foundation"]
+        == "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
+    )
+
+
+def test_run_profile_agent_restores_generated_knowledge_foundation_when_existing_complete_profile_field_is_empty(tmp_path: Path) -> None:
+    class ExplodingLlm:
+        def with_structured_output(self, *_args, **_kwargs):
+            raise AssertionError("local profile update path should not call structured llm")
+
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-empty-generated-knowledge-foundation.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    profile = _profile()
+    profile["confirmed_info"]["knowledge_foundation"] = ""
+
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000000014",
+        "query": "专业改成计算机科学，当前限制改成周末集中",
+        "profile": profile,
+        "messages": [HumanMessage(content="专业改成计算机科学，当前限制改成周末集中")],
+    }
+
+    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+
+    assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
+    assert result["profile"]["confirmed_info"]["constraints"] == "周末集中"
+    assert (
+        result["profile"]["confirmed_info"]["knowledge_foundation"]
+        == "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
+    )
 
 
 def test_run_profile_agent_updates_multiple_explicit_fields_in_one_sentence(tmp_path: Path) -> None:
@@ -301,6 +399,37 @@ def test_run_profile_agent_updates_multiple_explicit_fields_in_one_sentence(tmp_
     assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
     assert result["profile"]["confirmed_info"]["constraints"] == "周末集中"
     assert "当前限制改成周末集中" not in result["profile"]["summary_text"]
+
+
+def test_run_profile_agent_prefers_latest_explicit_profile_update_from_history(tmp_path: Path) -> None:
+    class ExplodingLlm:
+        def with_structured_output(self, *_args, **_kwargs):
+            raise AssertionError("local profile update path should not call structured llm")
+
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-explicit-history-latest.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    profile = _profile()
+    profile["confirmed_info"]["knowledge_foundation"] = "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000000013",
+        "query": "专业改成人工智能，当前限制改成每天少量",
+        "profile": profile,
+        "messages": [
+            HumanMessage(content="专业改成计算机科学，当前限制改成周末集中"),
+            HumanMessage(content="专业改成人工智能，当前限制改成每天少量"),
+        ],
+    }
+
+    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+
+    assert result["profile"]["confirmed_info"]["major"] == "人工智能"
+    assert result["profile"]["confirmed_info"]["constraints"] == "每天少量"
+    assert (
+        result["profile"]["confirmed_info"]["knowledge_foundation"]
+        == "已具备人工智能基础，AI 应用开发方向可从入门到基础逐步补全"
+    )
 
 
 def test_run_profile_agent_first_profile_requests_missing_major_in_collecting_mode(tmp_path: Path) -> None:
@@ -425,3 +554,29 @@ def test_run_profile_agent_maps_user_delimited_profile_without_fake_fields(tmp_p
     assert confirmed["weekly_available_time"] == ""
     assert result["profile"]["defaulted_fields"] == []
     assert "喜欢自己摸索" not in result["profile"]["summary_text"].split("软件工程", 1)[0]
+
+
+def test_run_profile_agent_maps_major_before_grade_in_delimited_profile(tmp_path: Path) -> None:
+    class ExplodingLlm:
+        def with_structured_output(self, *_args, **_kwargs):
+            raise AssertionError("local profile path should not call structured llm")
+
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-delimited-major-before-grade.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    user_text = "软件工程、大三、找工作、喜欢自己摸索，学习vibecoding"
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000000005",
+        "query": user_text,
+        "messages": [HumanMessage(content=user_text)],
+    }
+
+    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+
+    confirmed = result["profile"]["confirmed_info"]
+    assert result["profile"]["type"] == "basic_profile"
+    assert confirmed["current_grade"] == "大三"
+    assert confirmed["major"] == "软件工程"
+    assert confirmed["short_term_goal"] == "找工作，学习vibecoding"
+    assert confirmed["learning_method_preference"] == "喜欢自己摸索"

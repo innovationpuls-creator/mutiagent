@@ -14,6 +14,7 @@ import re
 from dataclasses import dataclass, field
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from app.orchestration.agents.profile import EXPLICIT_PROFILE_FIELD_PREFIXES, is_complete_profile_data
 
 # ── Agent keys ───────────────────────────────────────────────────────────
 AGENT_PROFILE = "profile_agent"
@@ -37,7 +38,6 @@ _REVIEW_PLAN_KEYWORDS = {
     "先看看学习路径",
     "看看路径",
     "回顾规划",
-    "先看看",
     "我的学习路径里面要学哪些课",
     "学习路径里面要学哪些课",
 }
@@ -89,7 +89,13 @@ def is_navigation_query(query: str) -> bool:
     if not q:
         return False
     normalized = re.sub(r"[。！？!?,，、；：\s]+", "", q)
-    return normalized in _NAVIGATION_QUERIES or normalized in {"然后呢", "接下来呢", "下一步呢"}
+    return normalized in _NAVIGATION_QUERIES or normalized in {
+        "然后呢",
+        "接下来呢",
+        "下一步呢",
+        "下一步是什么",
+        "下一步是什么呢",
+    }
 
 def is_course_start_query(query: str) -> bool:
     q = query.strip().lower()
@@ -122,10 +128,25 @@ def is_default_profile_query(query: str) -> bool:
     return any(kw in q for kw in _DEFAULT_PROFILE_COMMANDS)
 
 
+def _has_explicit_profile_field_update(query: str) -> bool:
+    clauses = [clause.strip() for clause in re.split(r"[，,、；;]+", query) if clause.strip()]
+    for clause in clauses:
+        for prefixes in EXPLICIT_PROFILE_FIELD_PREFIXES.values():
+            for prefix in prefixes:
+                if not clause.startswith(prefix):
+                    continue
+                value = clause[len(prefix):].strip("：:，,。！？!?；; ")
+                if value:
+                    return True
+    return False
+
+
 def is_profile_refinement_query(query: str) -> bool:
     q = query.strip()
     if not q:
         return False
+    if _has_explicit_profile_field_update(q):
+        return True
     has_grade = bool(_GRADE_PATTERN.search(q))
     has_major_or_topic = "专业" in q or "ai" in q.lower() or "前端" in q or "后端" in q
     has_pace = "平时学习" in q or "周末集中" in q or "每天少量" in q or "高强度冲刺" in q
@@ -212,20 +233,7 @@ def should_auto_continue_learning_path_after_profile(state: dict) -> bool:
 # ── Hard rule functions ──────────────────────────────────────────────────
 
 def _is_complete_profile(profile: dict) -> bool:
-    if not isinstance(profile, dict):
-        return False
-    if profile.get("type") != "basic_profile":
-        return False
-    summary_text = profile.get("summary_text")
-    if isinstance(summary_text, str) and summary_text.strip():
-        return True
-    text = profile.get("text")
-    if isinstance(text, str) and text.strip():
-        return True
-    confirmed_info = profile.get("confirmed_info")
-    if not isinstance(confirmed_info, dict):
-        return False
-    return _REQUIRED_CONFIRMED_INFO_KEYS.issubset(confirmed_info.keys())
+    return is_complete_profile_data(profile)
 
 
 def _has_learning_paths(state: dict) -> bool:
@@ -251,6 +259,14 @@ def _rule_no_profile(state: dict, profile: dict) -> RuleResult:
             "[系统级强制指令] 用户明确要求按默认信息直接生成基础画像。"
             "你必须立即调用 profile_agent 生成可编辑画像，"
             "不要直接回复解释，也不要调用 learning_path_agent 或 course_knowledge_agent。"
+        )
+        return result
+    if is_profile_refinement_query(query):
+        result.force_call = AGENT_PROFILE
+        result.system_hints.append(
+            "[系统级强制指令] 用户正在提供基础画像信息。"
+            "你必须立即调用 profile_agent 解析并保存画像，"
+            "不要调用 learning_path_agent 或 course_knowledge_agent。"
         )
         return result
     if profile_type == "collecting":
@@ -296,6 +312,15 @@ def _rule_has_profile_no_path(state: dict, profile: dict) -> RuleResult:
             "[系统级强制指令] profile_agent 刚在本轮生成完画像。"
             "这一轮不要继续调用 learning_path_agent。"
             "请直接向用户展示画像结果，并询问是否继续生成学习路径。"
+        )
+        return result
+
+    if is_navigation_query(query) or is_learning_path_refresh_query(query):
+        result.force_call = AGENT_LEARNING_PATH
+        result.system_hints.append(
+            "[系统级强制指令] 用户画像已完成但尚无学习路径，且用户正在请求下一步学习安排。"
+            "你必须调用 learning_path_agent 生成学习路径，"
+            "不要再次调用 profile_agent。"
         )
         return result
 
@@ -363,8 +388,7 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
         return result
 
     if pending_profile_followup and not (
-        is_navigation_query(query)
-        or is_review_plan_query(query)
+        is_review_plan_query(query)
         or is_course_start_query(query)
         or is_course_change_query(query)
     ):

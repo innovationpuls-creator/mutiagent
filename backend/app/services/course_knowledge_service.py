@@ -23,6 +23,35 @@ def list_user_course_outlines(session: Session, user_uid: str) -> list[UserCours
     return list(session.exec(stmt).all())
 
 
+def delete_user_course_outlines(session: Session, user_uid: str) -> int:
+    stmt = select(UserCourseKnowledgeOutline).where(
+        UserCourseKnowledgeOutline.user_uid == user_uid
+    )
+    rows = list(session.exec(stmt).all())
+    for row in rows:
+        session.delete(row)
+    if rows:
+        session.commit()
+    return len(rows)
+
+
+def delete_user_course_outlines_by_grade_year(
+    session: Session,
+    user_uid: str,
+    grade_year: str,
+) -> int:
+    stmt = select(UserCourseKnowledgeOutline).where(
+        UserCourseKnowledgeOutline.user_uid == user_uid,
+        UserCourseKnowledgeOutline.grade_year == grade_year,
+    )
+    rows = list(session.exec(stmt).all())
+    for row in rows:
+        session.delete(row)
+    if rows:
+        session.commit()
+    return len(rows)
+
+
 def get_latest_user_course_knowledge_outline(session: Session, user_uid: str) -> dict | None:
     stmt = (
         select(UserCourseKnowledgeOutline)

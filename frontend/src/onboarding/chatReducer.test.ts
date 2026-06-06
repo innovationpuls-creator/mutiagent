@@ -330,4 +330,45 @@ describe('chatReducer', () => {
     expect(next.messages[0].retryAction).toBe('retry_learning_path');
     expect(next.messages[0].status).toBe('error');
   });
+
+  it('normalizes recovered streaming assistant messages to completed when loading a cached session', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2000);
+    const state: ChatStore = {
+      state: 'idle',
+      messages: [],
+      currentSessionId: null,
+      errorMessage: null,
+    };
+
+    const next = chatReducer(state, {
+      type: 'LOAD_SESSION',
+      sessionId: 'session-recovered-streaming',
+      messages: [
+        {
+          id: 'assistant-streaming',
+          role: 'assistant',
+          content: '学习路径已生成',
+          status: 'streaming',
+          timestamp: 1000,
+          activeStepId: 'learning_path_agent',
+          runTrace: [
+            {
+              stepId: 'learning_path_agent',
+              kind: 'agent',
+              status: 'running',
+              title: '学习路径智能体',
+              summary: '学习路径智能体结果已生成',
+              agent: 'learning_path_agent',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(next.state).toBe('idle');
+    expect(next.currentSessionId).toBe('session-recovered-streaming');
+    expect(next.messages[0].status).toBe('completed');
+    expect(next.messages[0].activeStepId).toBeNull();
+    expect(next.messages[0].runTrace?.[0].status).toBe('success');
+  });
 });

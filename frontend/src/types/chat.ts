@@ -121,6 +121,10 @@ function hasArray(value: unknown): value is unknown[] {
   return Array.isArray(value);
 }
 
+function isCurrentLearningProgressState(value: unknown): value is CurrentLearningCourse['progress_state'] {
+  return value === 'in_progress' || value === 'completed';
+}
+
 export function isLearningPathResult(value: unknown): value is LearningPathResult {
   if (!hasRecord(value)) return false;
   if (value.schema_version !== 'learning_path.v2.course_node') return false;
@@ -172,7 +176,7 @@ export function isLearningPathResult(value: unknown): value is LearningPathResul
     && hasString(currentLearningCourse.course_goal)
     && hasRecord(currentLearningCourse.time_arrangement)
     && hasString(currentLearningCourse.current_focus)
-    && hasString(currentLearningCourse.progress_state)
+    && isCurrentLearningProgressState(currentLearningCourse.progress_state)
     && hasString(currentLearningCourse.next_action);
 }
 
@@ -252,7 +256,7 @@ export interface CurrentLearningCourse {
   course_goal: string;
   time_arrangement: TimeArrangement;
   current_focus: string;
-  progress_state: 'not_started' | 'in_progress' | 'paused' | 'completed';
+  progress_state: 'in_progress' | 'completed';
   next_action: string;
 }
 

@@ -23,6 +23,7 @@ interface TodayLearningCardProps {
 export function TodayLearningCard({ data, onClick, onStartLearning }: TodayLearningCardProps) {
   const reduceMotion = useReducedMotion();
   const hasDetailAction = typeof onClick === 'function';
+  const hasStartAction = typeof onStartLearning === 'function';
   const outlineSectionCount = data.currentCourseOutline?.sections.length ?? 0;
   const topLevelSections = data.currentCourseOutline
     ? getTopLevelSections(data.currentCourseOutline).slice(0, 2)
@@ -78,16 +79,18 @@ export function TodayLearningCard({ data, onClick, onStartLearning }: TodayLearn
 
       <div className="today-card-footer">
         <div className="today-card-actions">
-          <button
-            className="today-play-btn"
-            type="button"
-            aria-label="开始学习"
-            onClick={() => {
-              onStartLearning?.();
-            }}
-          >
-            <span className="today-play-icon" aria-hidden="true" />
-          </button>
+          {hasStartAction && (
+            <button
+              className="today-play-btn"
+              type="button"
+              aria-label="开始学习"
+              onClick={() => {
+                onStartLearning();
+              }}
+            >
+              <span className="today-play-icon" aria-hidden="true" />
+            </button>
+          )}
           {hasDetailAction && (
             <button
               className="today-detail-btn"

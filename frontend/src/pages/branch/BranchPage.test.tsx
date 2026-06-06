@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BranchPage } from './BranchPage';
@@ -155,10 +155,204 @@ describe('BranchPage', () => {
     expect(screen.queryByText('编程基础')).toBeNull();
   });
 
+  it('falls back to the first clickable year when profile.currentGrade maps to a locked year', async () => {
+    fetchProfileDashboardMock.mockResolvedValue({
+      profile: {
+        currentGrade: '大三',
+        major: '软件工程',
+        learningStage: '项目实践',
+        hasClearGoal: '是',
+        learningMethodPreference: '项目驱动',
+        learningPacePreference: '周末集中',
+        contentPreference: ['实践'],
+        needGuidance: '需要',
+        knowledgeFoundation: '有基础',
+        strengths: '执行力强',
+        weaknesses: '部署经验不足',
+        experience: '做过课程项目',
+        shortTermGoal: '完成 AI 项目',
+        longTermGoal: '成为 AI 应用开发者',
+        weeklyAvailableTime: '每周 8 小时',
+        constraints: '周末集中',
+      },
+      profileCompleteness: 100,
+      profileSummaryText: '测试摘要',
+      todayLearning: {
+        title: '今日学习',
+        description: '测试',
+        source: '学习路径智能体',
+        currentLearningCourse: null,
+        currentCourseDetail: null,
+        currentCourseOutline: null,
+        followingCourses: [],
+      },
+      recommendations: [],
+    });
+
+    fetchBranchOverviewMock.mockResolvedValue({
+      years: {
+        year_1: {
+          grade_id: 'year_1',
+          grade_name: '大一',
+          has_courses: true,
+          has_outline_content: false,
+          is_clickable: true,
+          current_course_id: 'year_1_course_1',
+          courses: [
+            {
+              course_node_id: 'year_1_course_1',
+              course_or_chapter_theme: '编程基础',
+              course_goal: '打基础',
+              status: 'current',
+              has_outline: false,
+            },
+          ],
+        },
+        year_2: {
+          grade_id: 'year_2',
+          grade_name: '大二',
+          has_courses: false,
+          has_outline_content: false,
+          is_clickable: false,
+          current_course_id: null,
+          courses: [],
+        },
+        year_3: {
+          grade_id: 'year_3',
+          grade_name: '大三',
+          has_courses: false,
+          has_outline_content: false,
+          is_clickable: false,
+          current_course_id: null,
+          courses: [],
+        },
+        year_4: {
+          grade_id: 'year_4',
+          grade_name: '大四',
+          has_courses: false,
+          has_outline_content: false,
+          is_clickable: false,
+          current_course_id: null,
+          courses: [],
+        },
+      },
+      updatedAt: '2026-06-05T00:00:00Z',
+    });
+
+    renderBranchPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('编程基础')).toBeTruthy();
+    });
+
+    expect(screen.queryByText('这个年级还没有课程路径')).toBeNull();
+  });
+
   it('falls back to the first clickable year when profile.currentGrade cannot be mapped', async () => {
     fetchProfileDashboardMock.mockResolvedValue({
       profile: {
         currentGrade: '暂未确认',
+        major: '软件工程',
+        learningStage: '项目实践',
+        hasClearGoal: '是',
+        learningMethodPreference: '项目驱动',
+        learningPacePreference: '周末集中',
+        contentPreference: ['实践'],
+        needGuidance: '需要',
+        knowledgeFoundation: '有基础',
+        strengths: '执行力强',
+        weaknesses: '部署经验不足',
+        experience: '做过课程项目',
+        shortTermGoal: '完成 AI 项目',
+        longTermGoal: '成为 AI 应用开发者',
+        weeklyAvailableTime: '每周 8 小时',
+        constraints: '周末集中',
+      },
+      profileCompleteness: 100,
+      profileSummaryText: '测试摘要',
+      todayLearning: {
+        title: '今日学习',
+        description: '测试',
+        source: '学习路径智能体',
+        currentLearningCourse: null,
+        currentCourseDetail: null,
+        currentCourseOutline: null,
+        followingCourses: [],
+      },
+      recommendations: [],
+    });
+
+    fetchBranchOverviewMock.mockResolvedValue({
+      years: {
+        year_1: {
+          grade_id: 'year_1',
+          grade_name: '大一',
+          has_courses: false,
+          has_outline_content: false,
+          is_clickable: false,
+          current_course_id: null,
+          courses: [],
+        },
+        year_2: {
+          grade_id: 'year_2',
+          grade_name: '大二',
+          has_courses: true,
+          has_outline_content: false,
+          is_clickable: true,
+          current_course_id: 'year_2_course_1',
+          courses: [
+            {
+              course_node_id: 'year_2_course_1',
+              course_or_chapter_theme: '工程化 Web 开发基础',
+              course_goal: '建立工程能力',
+              status: 'current',
+              has_outline: false,
+            },
+          ],
+        },
+        year_3: {
+          grade_id: 'year_3',
+          grade_name: '大三',
+          has_courses: true,
+          has_outline_content: false,
+          is_clickable: true,
+          current_course_id: 'year_3_course_1',
+          courses: [
+            {
+              course_node_id: 'year_3_course_1',
+              course_or_chapter_theme: 'AI 应用开发项目课',
+              course_goal: '完成项目',
+              status: 'current',
+              has_outline: false,
+            },
+          ],
+        },
+        year_4: {
+          grade_id: 'year_4',
+          grade_name: '大四',
+          has_courses: false,
+          has_outline_content: false,
+          is_clickable: false,
+          current_course_id: null,
+          courses: [],
+        },
+      },
+      updatedAt: '2026-06-05T00:00:00Z',
+    });
+
+    renderBranchPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('工程化 Web 开发基础')).toBeTruthy();
+    });
+
+    expect(screen.queryByText('AI 应用开发项目课')).toBeNull();
+  });
+
+  it('falls back to the first clickable year when profile.currentGrade is unsupported postgraduate grade', async () => {
+    fetchProfileDashboardMock.mockResolvedValue({
+      profile: {
+        currentGrade: '研一',
         major: '软件工程',
         learningStage: '项目实践',
         hasClearGoal: '是',
@@ -363,5 +557,266 @@ describe('BranchPage', () => {
     const centerNode = container.querySelector('.branch-node-center');
     expect(centerNode?.textContent).toContain('后端接口实战');
     expect(centerNode?.textContent).toContain('已完成');
+  });
+
+  it('renders the full course rail for one academic year and switches focus when a course is selected', async () => {
+    fetchProfileDashboardMock.mockResolvedValue({
+      profile: {
+        currentGrade: '大三',
+        major: '软件工程',
+        learningStage: '项目实践',
+        hasClearGoal: '是',
+        learningMethodPreference: '项目驱动',
+        learningPacePreference: '周末集中',
+        contentPreference: ['实践'],
+        needGuidance: '需要',
+        knowledgeFoundation: '有基础',
+        strengths: '执行力强',
+        weaknesses: '部署经验不足',
+        experience: '做过课程项目',
+        shortTermGoal: '完成 AI 项目',
+        longTermGoal: '成为 AI 应用开发者',
+        weeklyAvailableTime: '每周 8 小时',
+        constraints: '周末集中',
+      },
+      profileCompleteness: 100,
+      profileSummaryText: '测试摘要',
+      todayLearning: {
+        title: '今日学习',
+        description: '测试',
+        source: '学习路径智能体',
+        currentLearningCourse: null,
+        currentCourseDetail: null,
+        currentCourseOutline: null,
+        followingCourses: [],
+      },
+      recommendations: [],
+    });
+
+    fetchBranchOverviewMock.mockResolvedValue({
+      years: {
+        year_1: {
+          grade_id: 'year_1',
+          grade_name: '大一',
+          has_courses: false,
+          has_outline_content: false,
+          is_clickable: false,
+          current_course_id: null,
+          courses: [],
+        },
+        year_2: {
+          grade_id: 'year_2',
+          grade_name: '大二',
+          has_courses: false,
+          has_outline_content: false,
+          is_clickable: false,
+          current_course_id: null,
+          courses: [],
+        },
+        year_3: {
+          grade_id: 'year_3',
+          grade_name: '大三',
+          has_courses: true,
+          has_outline_content: true,
+          is_clickable: true,
+          current_course_id: 'year_3_course_2',
+          courses: [
+            {
+              course_node_id: 'year_3_course_1',
+              course_or_chapter_theme: 'AI 应用开发基础能力搭建',
+              course_goal: '完成最小功能闭环',
+              status: 'completed',
+              has_outline: true,
+            },
+            {
+              course_node_id: 'year_3_course_2',
+              course_or_chapter_theme: 'AI 应用开发项目实战',
+              course_goal: '完成项目验收',
+              status: 'current',
+              has_outline: true,
+            },
+            {
+              course_node_id: 'year_3_course_3',
+              course_or_chapter_theme: 'AI 应用部署与监控实战',
+              course_goal: '完成部署与监控闭环',
+              status: 'locked',
+              has_outline: false,
+            },
+          ],
+        },
+        year_4: {
+          grade_id: 'year_4',
+          grade_name: '大四',
+          has_courses: false,
+          has_outline_content: false,
+          is_clickable: false,
+          current_course_id: null,
+          courses: [],
+        },
+      },
+      updatedAt: '2026-06-05T00:00:00Z',
+    });
+
+    const { container } = renderBranchPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('这一学年共 3 门课程，按顺序慢慢推进。')).toBeTruthy();
+    });
+
+    expect(screen.getByText('第 1 门 · AI 应用开发基础能力搭建')).toBeTruthy();
+    expect(screen.getByText('第 2 门 · AI 应用开发项目实战')).toBeTruthy();
+    expect(screen.getByText('第 3 门 · AI 应用部署与监控实战')).toBeTruthy();
+
+    let centerNode = container.querySelector('.branch-node-center');
+    expect(centerNode?.textContent).toContain('AI 应用开发项目实战');
+
+    fireEvent.click(screen.getByRole('button', { name: /大三第 1 门课程：AI 应用开发基础能力搭建，已完成/ }));
+
+    await waitFor(() => {
+      const nextCenterNode = container.querySelector('.branch-node-center');
+      expect(nextCenterNode?.textContent).toContain('AI 应用开发基础能力搭建');
+    });
+
+    centerNode = container.querySelector('.branch-node-center');
+    expect(centerNode?.textContent).toContain('AI 应用开发基础能力搭建');
+  });
+
+  it('switches the stage content when the user selects another clickable year', async () => {
+    fetchProfileDashboardMock.mockResolvedValue({
+      profile: {
+        currentGrade: '大三',
+        major: '软件工程',
+        learningStage: '项目实践',
+        hasClearGoal: '是',
+        learningMethodPreference: '项目驱动',
+        learningPacePreference: '周末集中',
+        contentPreference: ['实践'],
+        needGuidance: '需要',
+        knowledgeFoundation: '有基础',
+        strengths: '执行力强',
+        weaknesses: '部署经验不足',
+        experience: '做过课程项目',
+        shortTermGoal: '完成 AI 项目',
+        longTermGoal: '成为 AI 应用开发者',
+        weeklyAvailableTime: '每周 8 小时',
+        constraints: '周末集中',
+      },
+      profileCompleteness: 100,
+      profileSummaryText: '测试摘要',
+      todayLearning: {
+        title: '今日学习',
+        description: '测试',
+        source: '学习路径智能体',
+        currentLearningCourse: null,
+        currentCourseDetail: null,
+        currentCourseOutline: null,
+        followingCourses: [],
+      },
+      recommendations: [],
+    });
+
+    fetchBranchOverviewMock.mockResolvedValue({
+      years: {
+        year_1: {
+          grade_id: 'year_1',
+          grade_name: '大一',
+          has_courses: true,
+          has_outline_content: false,
+          is_clickable: true,
+          current_course_id: null,
+          courses: [
+            {
+              course_node_id: 'year_1_course_1',
+              course_or_chapter_theme: '编程基础',
+              course_goal: '打基础',
+              status: 'completed',
+              has_outline: false,
+            },
+          ],
+        },
+        year_2: {
+          grade_id: 'year_2',
+          grade_name: '大二',
+          has_courses: true,
+          has_outline_content: false,
+          is_clickable: true,
+          current_course_id: null,
+          courses: [
+            {
+              course_node_id: 'year_2_course_1',
+              course_or_chapter_theme: '工程化 Web 开发基础',
+              course_goal: '建立工程能力',
+              status: 'completed',
+              has_outline: false,
+            },
+          ],
+        },
+        year_3: {
+          grade_id: 'year_3',
+          grade_name: '大三',
+          has_courses: true,
+          has_outline_content: true,
+          is_clickable: true,
+          current_course_id: 'year_3_course_1',
+          courses: [
+            {
+              course_node_id: 'year_3_course_1',
+              course_or_chapter_theme: 'AI 应用开发项目课',
+              course_goal: '完成项目',
+              status: 'current',
+              has_outline: true,
+            },
+          ],
+        },
+        year_4: {
+          grade_id: 'year_4',
+          grade_name: '大四',
+          has_courses: true,
+          has_outline_content: false,
+          is_clickable: true,
+          current_course_id: null,
+          courses: [
+            {
+              course_node_id: 'year_4_course_1',
+              course_or_chapter_theme: '就业级作品集与迭代优化',
+              course_goal: '完成作品集整理',
+              status: 'locked',
+              has_outline: false,
+            },
+          ],
+        },
+      },
+      updatedAt: '2026-06-05T00:00:00Z',
+    });
+
+    renderBranchPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('AI 应用开发项目课')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '大四' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('就业级作品集与迭代优化')).toBeTruthy();
+    });
+
+    expect(screen.queryByText('AI 应用开发项目课')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '大二' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('工程化 Web 开发基础')).toBeTruthy();
+    });
+
+    expect(screen.queryByText('就业级作品集与迭代优化')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '大一' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('编程基础')).toBeTruthy();
+    });
+
+    expect(screen.queryByText('工程化 Web 开发基础')).toBeNull();
   });
 });

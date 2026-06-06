@@ -164,6 +164,24 @@ def _extract_current_learning_course(final_state: dict[str, Any]) -> dict[str, A
     return None
 
 
+def _has_learning_paths(final_state: dict[str, Any]) -> bool:
+    year_learning_paths = final_state.get("year_learning_paths")
+    if isinstance(year_learning_paths, dict) and year_learning_paths:
+        return True
+
+    learning_path = final_state.get("learning_path")
+    if isinstance(learning_path, dict) and learning_path:
+        return True
+
+    year_learning_path = final_state.get("year_learning_path")
+    return isinstance(year_learning_path, dict) and bool(year_learning_path)
+
+
+def _has_course_knowledge(final_state: dict[str, Any]) -> bool:
+    course_knowledge = final_state.get("course_knowledge")
+    return isinstance(course_knowledge, dict) and bool(course_knowledge)
+
+
 async def _iter_graph_events_with_idle_status(
     graph_events: AsyncGenerator[dict, None],
     idle_timeout_seconds: float,
@@ -405,8 +423,8 @@ async def stream_orchestration_events(
                         "session_completed",
                         session_id=state.get("session_id", ""),
                         has_profile=is_complete_profile_data(final_state.get("profile")),
-                        has_paths=generated_paths_this_turn,
-                        has_outline=generated_outline_this_turn,
+                        has_paths=_has_learning_paths(final_state),
+                        has_outline=_has_course_knowledge(final_state),
                     )
 
     except Exception as exc:

@@ -20,6 +20,17 @@ interface TodayLearningDetailOverlayProps {
   data: TodayLearning;
 }
 
+function progressStateLabel(
+  progressState: NonNullable<TodayLearning['currentLearningCourse']>['progress_state'],
+): string {
+  switch (progressState) {
+    case 'in_progress':
+      return '进行中';
+    case 'completed':
+      return '已完成';
+  }
+}
+
 function renderList(items: string[]) {
   if (items.length === 0) {
     return <p className="today-detail-empty">等待课程 Agent 补充。</p>;
@@ -114,7 +125,7 @@ export function TodayLearningDetailOverlay({
         </header>
 
         <section className="today-detail-hero">
-          <p>{current.progress_state}</p>
+          <p>{progressStateLabel(current.progress_state)}</p>
           <h2>{current.course_or_chapter_theme}</h2>
           <strong>{current.current_focus}</strong>
           <p>{current.next_action}</p>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -7,6 +8,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 
+from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.agents.models import CourseKnowledgeDraftOutput, CourseKnowledgeOutput
 from app.orchestration.agents.prompts import COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
 from app.orchestration.agents.utils import extract_last_tool_call_args, extract_last_tool_call_id
@@ -14,6 +16,8 @@ from app.orchestration.state import OrchestrationState
 from app.services.learning_path_service import iter_year_learning_paths
 
 logger = logging.getLogger(__name__)
+
+_STRUCTURED_OUTLINE_TIMEOUT_SECONDS = 45.0
 
 
 def _select_course_for_outline(
@@ -507,7 +511,7 @@ async def run_course_knowledge_agent(state: OrchestrationState, llm: BaseChatMod
 
     profile = state.get("profile", {})
     year_learning_paths = state.get("year_learning_paths", {})
-    if not profile or profile.get("type") != "basic_profile":
+    if not is_complete_profile_data(profile):
         return {"error": "请先完成基础画像。"}
     if not year_learning_paths:
         return {"error": "请先生成学习路径。"}
@@ -531,7 +535,21 @@ async def run_course_knowledge_agent(state: OrchestrationState, llm: BaseChatMod
     chain = prompt | structured_llm
 
     try:
-        result = await chain.ainvoke({"query": input_text})
+        result = await asyncio.wait_for(
+            chain.ainvoke({"query": input_text}),
+            timeout=_STRUCTURED_OUTLINE_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "CourseKnowledgeAgent structured output timed out after %.1fs",
+            _STRUCTURED_OUTLINE_TIMEOUT_SECONDS,
+        )
+        outline_dict = _build_local_course_outline(selected_course, profile)
+        logger.info(
+            "CourseKnowledgeAgent fell back to local outline after timeout for user %s, course %s",
+            state["user_id"],
+            selected_course.get("course_node_id", ""),
+        )
     except Exception as exc:
         logger.warning("CourseKnowledgeAgent structured output failed: %s", exc)
         outline_dict = _build_local_course_outline(selected_course, profile)

@@ -216,6 +216,55 @@ describe('session orchestration API', () => {
     expect(result.hasPaths).toBe(true);
   });
 
+  it('does not mark summary-only legacy basic_profile as completed in start response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        session_id: 'sess-summary-only',
+        reply_text: null,
+        profile: {
+          type: 'basic_profile',
+          summary_text: '【基础学习画像总结】大三软件工程，当前以 AI 应用开发为主线。',
+        },
+        year_learning_paths: { year_3: makeLearningPath() },
+        course_knowledge: null,
+      }),
+    }));
+
+    const result = await startSession('token-1', '开始');
+
+    expect(result.hasProfile).toBe(false);
+    expect(result.hasPaths).toBe(true);
+    expect(result.hasOutline).toBe(false);
+  });
+
+  it('does not mark unsupported postgraduate basic_profile as completed in start response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        session_id: 'sess-unsupported-grade',
+        reply_text: null,
+        profile: {
+          ...makeCompleteProfile(),
+          confirmed_info: {
+            ...makeCompleteProfile().confirmed_info,
+            current_grade: '研一',
+          },
+          text: '当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。',
+          summary_text: '当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。',
+        },
+        year_learning_paths: { year_3: makeLearningPath() },
+        course_knowledge: null,
+      }),
+    }));
+
+    const result = await startSession('token-1', '开始');
+
+    expect(result.hasProfile).toBe(false);
+    expect(result.hasPaths).toBe(true);
+    expect(result.hasOutline).toBe(false);
+  });
+
   it('streams SSE events and returns a SessionTurn', async () => {
     const encoder = new TextEncoder();
     const body = new ReadableStream({
@@ -408,6 +457,30 @@ describe('session orchestration API', () => {
     expect(result.yearLearningPaths.year_2.schema_version).toBe('learning_path.v2.course_node');
     expect(result.yearLearningPaths.year_2.grade_plans.year_2.course_nodes[0].course_or_chapter_theme).toBe('数据结构基础');
     expect(result.updatedAt).toBe('2026-06-01T12:00:00Z');
+  });
+
+  it('rejects saved learning path with unsupported current progress_state', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        year_learning_paths: {
+          year_2: {
+            ...makeLearningPath(),
+            current_learning_course: {
+              ...makeLearningPath().current_learning_course,
+              grade_id: 'year_2',
+              course_node_id: 'year_2_course_1',
+              course_or_chapter_theme: '数据结构基础',
+              course_goal: '掌握线性表、树和图',
+              progress_state: 'not_started',
+            },
+          },
+        },
+        updated_at: '2026-06-01T12:00:00Z',
+      }),
+    }));
+
+    await expect(getMyLearningPath('token-1')).rejects.toThrow('学习路径数据格式不正确');
   });
 
   it('rejects legacy learning path payloads from getMyLearningPath', async () => {

@@ -52,6 +52,103 @@ function expandTimelineDetailsIfCollapsed() {
   if (expandButton) fireEvent.click(expandButton);
 }
 
+function makeRecoveredLearningPath() {
+  return {
+    schema_version: 'learning_path.v2.course_node',
+    learning_goal: {
+      target_course_or_skill: 'AI 应用开发',
+      goal_type: '项目实践',
+      desired_outcome: '完成一个 AI 功能模块',
+      four_year_outcome: '形成 AI 应用开发能力',
+    },
+    learner_baseline: {
+      current_grade: '大三',
+      major: '软件工程',
+      mastered_content: ['Python 基础'],
+      weaknesses: ['部署经验不足'],
+      constraints: ['时间有限'],
+      weekly_available_time: '每周 8 小时',
+    },
+    planning_rules: {
+      node_unit: 'course_node',
+      grade_boundary_rule: '按年级拆分',
+      sequence_rule: '先基础后项目',
+      resource_rule: '每个节点补充学习资源',
+    },
+    grade_plans: {
+      year_1: { grade_id: 'year_1', grade_name: '大一', grade_goal: '夯实基础', course_nodes: [] },
+      year_2: { grade_id: 'year_2', grade_name: '大二', grade_goal: '建立工程能力', course_nodes: [] },
+      year_3: {
+        grade_id: 'year_3',
+        grade_name: '大三',
+        grade_goal: '完成 AI 项目闭环',
+        course_nodes: [
+          {
+            course_node_id: 'year_3_course_1',
+            grade_id: 'year_3',
+            course_or_chapter_theme: 'AI Agent 开发基础能力搭建',
+            time_arrangement: {
+              semester_scope: '上学期',
+              duration: '6 周',
+              pace_reason: '项目驱动',
+            },
+            course_goal: '完成最小功能闭环',
+            prerequisite_node_ids: [],
+            chapter_nodes: [],
+            core_knowledge_points: [],
+            key_points: ['接口接入'],
+            difficult_points: ['错误处理'],
+            learning_sequence: ['需求拆解', '接口接入'],
+            knowledge_relations: [],
+            downstream_resource_direction_ids: [],
+            acceptance_criteria: ['完成一个可运行模块'],
+          },
+        ],
+      },
+      year_4: { grade_id: 'year_4', grade_name: '大四', grade_goal: '作品集沉淀', course_nodes: [] },
+    },
+    knowledge_graph: {
+      global_relations: [],
+      critical_paths: [],
+    },
+    resource_generation_contract: {
+      downstream_agents: [],
+      resource_directions: [],
+    },
+    dynamic_update_contract: {
+      trackable_metrics: [],
+      update_triggers: [],
+      adjustment_strategy: '按周调整',
+    },
+    current_learning_course: {
+      grade_id: 'year_3',
+      course_node_id: 'year_3_course_1',
+      course_or_chapter_theme: 'AI Agent 开发基础能力搭建',
+      course_goal: '完成最小功能闭环',
+      time_arrangement: {
+        semester_scope: '上学期',
+        duration: '6 周',
+        pace_reason: '项目驱动',
+      },
+      current_focus: '需求拆解',
+      progress_state: 'in_progress',
+      next_action: '继续学习第一章',
+    },
+  };
+}
+
+function makeRecoveredCourseKnowledge() {
+  return {
+    course_id: 'year_3_course_1',
+    course_name: 'AI Agent 开发基础能力搭建',
+    grade_year: 'year_3',
+    personalization_summary: '围绕项目驱动与工程化补强双线展开。',
+    sections: [],
+    learning_sequence: [],
+    total_estimated_hours: '45 小时',
+  };
+}
+
 test('renders AiGreetingInput cleanly without CSS areas', () => {
   const { container } = render(
     <AuthProvider>
@@ -81,6 +178,77 @@ test('shows the Codex-style progress panel beside the chat flow when expanded', 
   expect(screen.getByText('等待本轮调用开始...')).toBeTruthy();
   expect(screen.getByLabelText('对话内容')).toBeTruthy();
   expect(screen.getByLabelText('AI 基础画像对话')).toBeTruthy();
+});
+
+test('clears the composer after a message is submitted', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  stubLocalStorage({
+    'mutiagent-auth': JSON.stringify({
+      token: 'token-1',
+      user: {
+        uid: 'user-1',
+        username: '测试用户',
+        identifier: 'user@example.com',
+        provider: 'password',
+        is_active: true,
+        created_at: '2026-06-02T00:00:00Z',
+        last_login_at: null,
+      },
+    }),
+  });
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          [
+            'event: session_started',
+            'data: {"session_id":"session-clear-input","query":"先看看学习路径"}',
+            '',
+            'event: message_completed',
+            'data: {"full_text":"你的学习路径里已经有这些课程："}',
+            '',
+            'event: session_completed',
+            'data: {"session_id":"session-clear-input","has_profile":true,"has_paths":true,"has_outline":false}',
+            '',
+          ].join('\n'),
+        ),
+      );
+      controller.close();
+    },
+  });
+
+  vi.stubGlobal('fetch', vi.fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'session-clear-input',
+        reply_text: 'greeting',
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    })
+    .mockResolvedValueOnce(new Response(stream, { status: 200 })));
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <ExpandedWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  const input = await screen.findByPlaceholderText('输入你的学习情况...');
+  fireEvent.change(input, { target: { value: '先看看学习路径' } });
+  fireEvent.click(screen.getByLabelText('发送消息'));
+
+  expect((screen.getByPlaceholderText('输入你的学习情况...') as HTMLTextAreaElement).value).toBe('');
+
+  await waitFor(() => {
+    expect(screen.getByText('你的学习路径里已经有这些课程：')).toBeTruthy();
+  }, { timeout: 4000 });
 });
 
 test('renders detailed main agent flow in the left message timeline', async () => {
@@ -624,6 +792,7 @@ test('recovers a persisted basic_profile card from local session cache after ref
       },
     }),
     'session-session-recover-profile': JSON.stringify({
+      userUid: 'user-1',
       savedAt: 1000,
       messages: [
         {
@@ -774,6 +943,140 @@ test('recovers a generated basic_profile card from the server when local cache i
   expect(screen.getByPlaceholderText('画像已生成，可以继续补充或追问...')).toBeTruthy();
 });
 
+test('keeps completed-profile composer mode when a cached path-only session stores hasCompleteProfile', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  const fetchMock = vi.fn();
+  vi.stubGlobal('fetch', fetchMock);
+  stubLocalStorage({
+    'mutiagent-auth': JSON.stringify({
+      token: 'token-1',
+      user: {
+        uid: 'user-1',
+        username: '测试用户',
+        identifier: 'user@example.com',
+        provider: 'password',
+        is_active: true,
+        created_at: '2026-06-02T00:00:00Z',
+        last_login_at: null,
+      },
+    }),
+    'session-session-recover-path-complete': JSON.stringify({
+      userUid: 'user-1',
+      hasCompleteProfile: true,
+      savedAt: 1000,
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '继续恢复我的学习路径',
+          status: 'completed',
+          timestamp: 1000,
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '学习路径已生成，当前建议先学习《AI Agent 开发基础能力搭建》。',
+          status: 'completed',
+          timestamp: 1001,
+          learningPath: makeRecoveredLearningPath(),
+          runTrace: [],
+          activeStepId: null,
+        },
+      ],
+    }),
+  });
+  window.history.replaceState({}, '', '/sprout?session_id=session-recover-path-complete');
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <ExpandedWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText('大学四年课程路径')).toBeTruthy();
+    expect(screen.getByText('AI Agent 开发基础能力搭建')).toBeTruthy();
+  });
+
+  expect(screen.queryByText('画像已整理成可继续更新的学习底稿')).toBeNull();
+  expect(screen.getByPlaceholderText('画像已生成，可以继续补充或追问...')).toBeTruthy();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test('keeps completed-profile composer mode when the server recovers an outline-only session', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      session_id: 'session-recover-outline-complete',
+      user_uid: 'user-1',
+      messages: [
+        { type: 'human', data: { content: '继续恢复我的课程大纲' } },
+        { type: 'ai', data: { content: '课程大纲已生成：《AI Agent 开发基础能力搭建》。' } },
+      ],
+      profile: {
+        type: 'basic_profile',
+        confirmed_info: {
+          current_grade: '大三',
+          major: '软件工程',
+          learning_stage: '项目实践',
+          has_clear_goal: '是',
+          learning_method_preference: '项目驱动学习',
+          learning_pace_preference: '按项目里程碑推进',
+          content_preference: ['代码实践', '项目案例'],
+          need_guidance: '需要轻量提醒',
+          knowledge_foundation: '软件工程基础',
+          strengths: '工程实现',
+          weaknesses: '大型项目实战经验',
+          experience: '做过课程项目',
+          short_term_goal: '完成 AI 功能模块',
+          long_term_goal: '形成 AI 应用开发能力',
+          weekly_available_time: '每周 8 小时',
+          constraints: '时间有限',
+        },
+      },
+      year_learning_paths: null,
+      course_knowledge: makeRecoveredCourseKnowledge(),
+      updated_at: '2026-06-05T10:00:00Z',
+    }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  stubLocalStorage({
+    'mutiagent-auth': JSON.stringify({
+      token: 'token-1',
+      user: {
+        uid: 'user-1',
+        username: '测试用户',
+        identifier: 'user@example.com',
+        provider: 'password',
+        is_active: true,
+        created_at: '2026-06-02T00:00:00Z',
+        last_login_at: null,
+      },
+    }),
+  });
+  window.history.replaceState({}, '', '/sprout?session_id=session-recover-outline-complete');
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <ExpandedWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText('课程大纲 · year_3')).toBeTruthy();
+    expect(screen.getByText('AI Agent 开发基础能力搭建')).toBeTruthy();
+  });
+
+  expect(screen.queryByText('画像已整理成可继续更新的学习底稿')).toBeNull();
+  expect(screen.getByPlaceholderText('画像已生成，可以继续补充或追问...')).toBeTruthy();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
 test('recovers a persisted collecting profile card without marking the profile as completed', async () => {
   vi.stubGlobal('scrollTo', vi.fn());
   stubLocalStorage({
@@ -790,6 +1093,7 @@ test('recovers a persisted collecting profile card without marking the profile a
       },
     }),
     'session-session-recover-collecting': JSON.stringify({
+      userUid: 'user-1',
       savedAt: 1000,
       messages: [
         {
@@ -1313,6 +1617,103 @@ test('persists a failed session so refresh can recover the retry entrypoint', as
 
   view.unmount();
   window.history.replaceState({}, '', '/sprout?session_id=session-failed-refresh');
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <ExpandedWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getAllByText('学习路径生成失败').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: '重试生成学习路径' })).toBeTruthy();
+  });
+});
+
+test('persists and recovers a failed session even when the stream errors before session_started', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  const { store, api } = stubLocalStorage({
+    'mutiagent-auth': JSON.stringify({
+      token: 'token-1',
+      user: {
+        uid: 'user-1',
+        username: '测试用户',
+        identifier: 'user@example.com',
+        provider: 'password',
+        is_active: true,
+        created_at: '2026-06-02T00:00:00Z',
+        last_login_at: null,
+      },
+    }),
+  });
+  window.history.replaceState({}, '', '/sprout');
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          [
+            'event: supervisor_thinking',
+            'data: {"message":"正在分析你的需求..."}',
+            '',
+            'event: error',
+            'data: {"message":"学习路径生成失败","retryAction":"retry_learning_path","retryable":true}',
+            '',
+          ].join('\n'),
+        ),
+      );
+      controller.close();
+    },
+  });
+
+  vi.stubGlobal('fetch', vi.fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'session-error-before-started',
+        reply_text: 'greeting',
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    })
+    .mockResolvedValueOnce(new Response(stream, { status: 200 })));
+
+  const view = render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <ExpandedWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  const input = await screen.findByPlaceholderText('输入你的学习情况...');
+  fireEvent.change(input, { target: { value: '继续生成学习路径' } });
+  fireEvent.click(screen.getByLabelText('发送消息'));
+
+  await waitFor(() => {
+    expect(screen.getAllByText('学习路径生成失败').length).toBeGreaterThan(0);
+    expect(window.location.search).toBe('?session_id=session-error-before-started');
+    expect(api.setItem).toHaveBeenCalledWith(
+      'session-session-error-before-started',
+      expect.any(String),
+    );
+  });
+
+  const persistedRaw = store['session-session-error-before-started'];
+  expect(persistedRaw).toBeTruthy();
+  const persisted = JSON.parse(persistedRaw) as {
+    messages: Array<{ status?: string; retryAction?: string | null; error?: string }>;
+  };
+  expect(persisted.messages.some((message) => message.status === 'error')).toBe(true);
+  expect(
+    persisted.messages.some((message) => message.retryAction === 'retry_learning_path'),
+  ).toBe(true);
+
+  view.unmount();
 
   render(
     <AuthProvider>
@@ -2162,6 +2563,189 @@ test('loads saved course outline when stream marks course knowledge loaded', asy
   });
 });
 
+test('loads saved learning path when only the final completion text says 学习路径已生成', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  stubLocalStorage({
+    'mutiagent-auth': JSON.stringify({
+      token: 'token-1',
+      user: {
+        uid: 'user-1',
+        username: '测试用户',
+        identifier: 'user@example.com',
+        provider: 'password',
+        is_active: true,
+        created_at: '2026-06-02T00:00:00Z',
+        last_login_at: null,
+      },
+    }),
+  });
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          [
+            'event: session_started',
+            'data: {"session_id":"session-path-fallback-text","query":"下一步"}',
+            '',
+            'event: supervisor_thinking',
+            'data: {"message":"正在分析你的需求..."}',
+            '',
+            'event: message_completed',
+            'data: {"full_text":"学习路径已生成，当前建议先学习《AI Agent 开发基础能力搭建》。"}',
+            '',
+            'event: session_completed',
+            'data: {"session_id":"session-path-fallback-text","has_profile":true,"has_paths":true,"has_outline":false}',
+            '',
+          ].join('\n'),
+        ),
+      );
+      controller.close();
+    },
+  });
+
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'session-path-fallback-text',
+        reply_text: 'greeting',
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    })
+    .mockResolvedValueOnce(new Response(stream, { status: 200 }))
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'session-path-fallback-text',
+        user_uid: 'user-1',
+        profile: null,
+        year_learning_paths: {
+          year_3: makeRecoveredLearningPath(),
+        },
+        course_knowledge: null,
+        updated_at: '2026-06-05T10:00:00Z',
+      }),
+    });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <ExpandedWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  const input = await screen.findByPlaceholderText('输入你的学习情况...');
+  fireEvent.change(input, { target: { value: '下一步' } });
+  fireEvent.click(screen.getByLabelText('发送消息'));
+
+  await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) => url === 'http://127.0.0.1:8000/api/chat/sessions/session-path-fallback-text',
+      ),
+    ).toBe(true);
+    expect(screen.getByText('大学四年课程路径')).toBeTruthy();
+    expect(screen.getByText('AI Agent 开发基础能力搭建')).toBeTruthy();
+  });
+});
+
+test('loads saved course outline when only the final completion text says 课程大纲已生成', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  stubLocalStorage({
+    'mutiagent-auth': JSON.stringify({
+      token: 'token-1',
+      user: {
+        uid: 'user-1',
+        username: '测试用户',
+        identifier: 'user@example.com',
+        provider: 'password',
+        is_active: true,
+        created_at: '2026-06-02T00:00:00Z',
+        last_login_at: null,
+      },
+    }),
+  });
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          [
+            'event: session_started',
+            'data: {"session_id":"session-outline-fallback-text","query":"开始第一门课"}',
+            '',
+            'event: supervisor_thinking',
+            'data: {"message":"正在分析你的需求..."}',
+            '',
+            'event: message_completed',
+            'data: {"full_text":"课程大纲已生成：《AI Agent 开发基础能力搭建》。"}',
+            '',
+            'event: session_completed',
+            'data: {"session_id":"session-outline-fallback-text","has_profile":true,"has_paths":true,"has_outline":true}',
+            '',
+          ].join('\n'),
+        ),
+      );
+      controller.close();
+    },
+  });
+
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'session-outline-fallback-text',
+        reply_text: 'greeting',
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    })
+    .mockResolvedValueOnce(new Response(stream, { status: 200 }))
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'session-outline-fallback-text',
+        user_uid: 'user-1',
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: makeRecoveredCourseKnowledge(),
+        updated_at: '2026-06-05T10:00:00Z',
+      }),
+    });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <ExpandedWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  const input = await screen.findByPlaceholderText('输入你的学习情况...');
+  fireEvent.change(input, { target: { value: '开始第一门课' } });
+  fireEvent.click(screen.getByLabelText('发送消息'));
+
+  await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) => url === 'http://127.0.0.1:8000/api/chat/sessions/session-outline-fallback-text',
+      ),
+    ).toBe(true);
+    expect(screen.getByText('课程大纲 · year_3')).toBeTruthy();
+    expect(screen.getByText('AI Agent 开发基础能力搭建')).toBeTruthy();
+    expect(screen.getByText('围绕项目驱动与工程化补强双线展开。')).toBeTruthy();
+  });
+});
+
 test('does not replace a plain chat reply with historical course outline from session state', async () => {
   vi.stubGlobal('scrollTo', vi.fn());
   stubLocalStorage({
@@ -2520,4 +3104,314 @@ test('writes session_id to URL and local cache as soon as session_started arrive
   await waitFor(() => {
     expect(screen.getByText('学习路径已生成')).toBeTruthy();
   });
+}, 10000);
+
+test('clears a stale session anchor after 会话不存在 and starts a new session on the next send', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  stubLocalStorage({
+    'mutiagent-auth': JSON.stringify({
+      token: 'token-1',
+      user: {
+        uid: 'user-1',
+        username: '测试用户',
+        identifier: 'user@example.com',
+        provider: 'password',
+        is_active: true,
+        created_at: '2026-06-02T00:00:00Z',
+        last_login_at: null,
+      },
+    }),
+  });
+  window.history.replaceState({}, '', '/sprout');
+
+  const encoder = new TextEncoder();
+  const firstStream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          [
+            'event: session_started',
+            'data: {"session_id":"session-stale","query":"第一次消息"}',
+            '',
+            'event: supervisor_thinking',
+            'data: {"message":"正在分析你的需求..."}',
+            '',
+            'event: text_chunk',
+            'data: {"chunk":"第一次成功"}',
+            '',
+            'event: message_completed',
+            'data: {"full_text":"第一次成功"}',
+            '',
+            'event: session_completed',
+            'data: {"session_id":"session-stale","has_profile":false,"has_paths":false,"has_outline":false}',
+            '',
+          ].join('\n'),
+        ),
+      );
+      controller.close();
+    },
+  });
+
+  const thirdStream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          [
+            'event: session_started',
+            'data: {"session_id":"session-renewed","query":"第三次消息"}',
+            '',
+            'event: supervisor_thinking',
+            'data: {"message":"正在分析你的需求..."}',
+            '',
+            'event: text_chunk',
+            'data: {"chunk":"第三次成功"}',
+            '',
+            'event: message_completed',
+            'data: {"full_text":"第三次成功"}',
+            '',
+            'event: session_completed',
+            'data: {"session_id":"session-renewed","has_profile":false,"has_paths":false,"has_outline":false}',
+            '',
+          ].join('\n'),
+        ),
+      );
+      controller.close();
+    },
+  });
+
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'session-stale',
+        reply_text: 'greeting',
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    })
+    .mockResolvedValueOnce(new Response(firstStream, { status: 200 }))
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: '会话不存在' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'session-renewed',
+        reply_text: 'greeting',
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    })
+    .mockResolvedValueOnce(new Response(thirdStream, { status: 200 }));
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <ExpandedWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  const input = await screen.findByPlaceholderText('输入你的学习情况...');
+
+  fireEvent.change(input, { target: { value: '第一次消息' } });
+  fireEvent.click(screen.getByLabelText('发送消息'));
+
+  await waitFor(() => {
+    expect(screen.getByText('第一次成功')).toBeTruthy();
+  });
+  expect(window.location.search).toContain('session_id=session-stale');
+
+  fireEvent.change(input, { target: { value: '第二次消息' } });
+  fireEvent.click(screen.getByLabelText('发送消息'));
+
+  await waitFor(() => {
+    expect(screen.getAllByText('会话不存在').length).toBeGreaterThan(0);
+  });
+  expect(window.location.search).not.toContain('session_id=');
+
+  fireEvent.change(input, { target: { value: '第三次消息' } });
+  fireEvent.click(screen.getByLabelText('发送消息'));
+
+  await waitFor(() => {
+    expect(screen.getByText('第三次成功')).toBeTruthy();
+  });
+
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    3,
+    'http://127.0.0.1:8000/api/chat/message',
+    expect.objectContaining({
+      body: JSON.stringify({ session_id: 'session-stale', message: '第二次消息' }),
+    }),
+  );
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    4,
+    'http://127.0.0.1:8000/api/chat/start',
+    expect.objectContaining({
+      body: JSON.stringify({ query: '第三次消息' }),
+    }),
+  );
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    5,
+    'http://127.0.0.1:8000/api/chat/message',
+    expect.objectContaining({
+      body: JSON.stringify({ session_id: 'session-renewed', message: '第三次消息' }),
+    }),
+  );
+  expect(window.location.search).toContain('session_id=session-renewed');
+}, 10000);
+
+test('starts a clean local conversation after 会话不存在 instead of persisting old messages into the renewed session cache', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  const { store } = stubLocalStorage({
+    'mutiagent-auth': JSON.stringify({
+      token: 'token-1',
+      user: {
+        uid: 'user-1',
+        username: '测试用户',
+        identifier: 'user@example.com',
+        provider: 'password',
+        is_active: true,
+        created_at: '2026-06-02T00:00:00Z',
+        last_login_at: null,
+      },
+    }),
+  });
+  window.history.replaceState({}, '', '/sprout');
+
+  const encoder = new TextEncoder();
+  const firstStream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          [
+            'event: session_started',
+            'data: {"session_id":"session-stale-clean","query":"第一次消息"}',
+            '',
+            'event: supervisor_thinking',
+            'data: {"message":"正在分析你的需求..."}',
+            '',
+            'event: text_chunk',
+            'data: {"chunk":"第一次成功"}',
+            '',
+            'event: message_completed',
+            'data: {"full_text":"第一次成功"}',
+            '',
+            'event: session_completed',
+            'data: {"session_id":"session-stale-clean","has_profile":false,"has_paths":false,"has_outline":false}',
+            '',
+          ].join('\n'),
+        ),
+      );
+      controller.close();
+    },
+  });
+
+  const thirdStream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          [
+            'event: session_started',
+            'data: {"session_id":"session-renewed-clean","query":"第三次消息"}',
+            '',
+            'event: supervisor_thinking',
+            'data: {"message":"正在分析你的需求..."}',
+            '',
+            'event: text_chunk',
+            'data: {"chunk":"第三次成功"}',
+            '',
+            'event: message_completed',
+            'data: {"full_text":"第三次成功"}',
+            '',
+            'event: session_completed',
+            'data: {"session_id":"session-renewed-clean","has_profile":false,"has_paths":false,"has_outline":false}',
+            '',
+          ].join('\n'),
+        ),
+      );
+      controller.close();
+    },
+  });
+
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'session-stale-clean',
+        reply_text: 'greeting',
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    })
+    .mockResolvedValueOnce(new Response(firstStream, { status: 200 }))
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: '会话不存在' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'session-renewed-clean',
+        reply_text: 'greeting',
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    })
+    .mockResolvedValueOnce(new Response(thirdStream, { status: 200 }));
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <ExpandedWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  const input = await screen.findByPlaceholderText('输入你的学习情况...');
+
+  fireEvent.change(input, { target: { value: '第一次消息' } });
+  fireEvent.click(screen.getByLabelText('发送消息'));
+
+  await waitFor(() => {
+    expect(screen.getByText('第一次成功')).toBeTruthy();
+  });
+
+  fireEvent.change(input, { target: { value: '第二次消息' } });
+  fireEvent.click(screen.getByLabelText('发送消息'));
+
+  await waitFor(() => {
+    expect(screen.getAllByText('会话不存在').length).toBeGreaterThan(0);
+  });
+
+  fireEvent.change(input, { target: { value: '第三次消息' } });
+  fireEvent.click(screen.getByLabelText('发送消息'));
+
+  await waitFor(() => {
+    expect(screen.getByText('第三次成功')).toBeTruthy();
+  });
+
+  expect(screen.queryByText('第一次成功')).toBeNull();
+  expect(screen.queryByText('第二次消息')).toBeNull();
+
+  const renewedRaw = store['session-session-renewed-clean'];
+  expect(renewedRaw).toBeTruthy();
+  const renewed = JSON.parse(renewedRaw) as {
+    messages: Array<{ role: string; content: string }>;
+  };
+  expect(renewed.messages).toEqual([
+    expect.objectContaining({ role: 'user', content: '第三次消息' }),
+    expect.objectContaining({ role: 'assistant', content: '第三次成功' }),
+  ]);
 }, 10000);

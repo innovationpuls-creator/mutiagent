@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchProfileDashboard } from '../../api/profile';
@@ -9,7 +10,6 @@ import { RecommendationCard } from './RecommendationCard';
 import { ProfileDetailOverlay } from './ProfileDetailOverlay';
 import { TodayLearningDetailOverlay } from './TodayLearningDetailOverlay';
 import { motionTokens } from '../../styles/motion-tokens';
-import { useAiWidget } from '../../context/AiWidgetContext';
 import './SproutHero.css';
 
 /**
@@ -43,7 +43,7 @@ function getWeekday(): string {
  */
 export function SproutHero() {
   const auth = useAuth();
-  const { openWithMessage } = useAiWidget();
+  const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
   const [data, setData] = useState<ProfileDashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +112,11 @@ export function SproutHero() {
     );
   }
 
+  const currentLearningCourse = data.todayLearning.currentLearningCourse;
+  const canStartCurrentLearning = Boolean(
+    currentLearningCourse && currentLearningCourse.progress_state !== 'completed',
+  );
+
   return (
     <section className="sprout-hero">
       {/* ── 问候区 ── */}
@@ -164,8 +169,8 @@ export function SproutHero() {
         />
         <TodayLearningCard
           data={data.todayLearning}
-          onClick={data.todayLearning.currentLearningCourse ? () => setIsTodayOverlayOpen(true) : undefined}
-          onStartLearning={data.todayLearning.currentLearningCourse ? () => openWithMessage('开始第一门课') : undefined}
+          onClick={currentLearningCourse ? () => setIsTodayOverlayOpen(true) : undefined}
+          onStartLearning={canStartCurrentLearning ? () => navigate('/branch') : undefined}
         />
       </div>
 

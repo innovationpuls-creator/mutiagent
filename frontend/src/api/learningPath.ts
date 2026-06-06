@@ -1,4 +1,5 @@
 import { isLearningPathResult, type LearningPathResult } from '../types/chat';
+import { notifyAuthInvalidFromError, readApiError } from './http';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
 
@@ -29,7 +30,9 @@ export async function getMyLearningPath(token: string): Promise<LearningPathRead
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) {
-    throw new Error('还没有生成学习路径');
+    const error = await readApiError(response);
+    notifyAuthInvalidFromError(response.status, error);
+    throw new Error((typeof error?.detail === 'string' ? error.detail : null) ?? '还没有生成学习路径');
   }
 
   const payload = (await response.json()) as {

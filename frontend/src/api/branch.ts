@@ -1,10 +1,7 @@
 import type { BranchOverview, BranchYear, BranchCourseNode, BranchCourseStatus } from '../types/branch';
+import { notifyAuthInvalidFromError, readApiError } from './http';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
-
-interface ApiErrorResponse {
-  detail?: string;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
@@ -82,8 +79,9 @@ export async function fetchBranchOverview(token: string): Promise<BranchOverview
   });
 
   if (!response.ok) {
-    const error = (await response.json().catch(() => null)) as ApiErrorResponse | null;
-    throw new Error(error?.detail ?? '繁枝数据加载失败');
+    const error = await readApiError(response);
+    notifyAuthInvalidFromError(response.status, error);
+    throw new Error((typeof error?.detail === 'string' ? error.detail : null) ?? '繁枝数据加载失败');
   }
 
   const payload = (await response.json()) as {

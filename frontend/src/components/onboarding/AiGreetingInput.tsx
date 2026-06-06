@@ -1,12 +1,19 @@
 import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import styled from 'styled-components';
-import { fetchSessionState, streamSession, type SessionAgentEvent } from '../../api/orchestration';
+import {
+  fetchSessionState,
+  isCourseKnowledgeStructuredCompletionContent,
+  isLearningPathStructuredCompletionContent,
+  SessionStreamError,
+  streamSession,
+  type SessionAgentEvent,
+} from '../../api/orchestration';
 import { useAiWidget } from '../../context/AiWidgetContext';
 import { useAuth } from '../../contexts/AuthContext';
 import type { AgentRunStep, AgentRunStepKind, ChatMessage, SessionMessage } from '../../types/chat';
 import { chatReducer, initialChatStore, nextMessageId } from '../../onboarding/chatReducer';
-import { useChatSession } from '../../onboarding/hooks/useChatSession';
+import { type SessionRecoveryMeta, useChatSession } from '../../onboarding/hooks/useChatSession';
 import { CourseKnowledgeCard } from '../learning/CourseKnowledgeCard';
 import { LearningPathCard } from '../learning/LearningPathCard';
 import { AiEyes } from './AiEyes';
@@ -15,6 +22,7 @@ import { ChatCard } from './ChatCard';
 import { MessageBubble } from './MessageBubble';
 import { AssistantMessage } from './AssistantMessage';
 import { SystemMessage } from './AssistantMessage';
+import { hasCompleteBasicProfileSessionMessage } from '../../lib/profileContract';
 
 const AGENT_LABELS: Record<string, string> = {
   main_agent: '主智能体',
@@ -214,7 +222,7 @@ export function AiGreetingInput() {
     pendingMessage,
     clearPendingMessage,
   } = useAiWidget();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const cardRef = useRef<HTMLDivElement>(null);
   const [store, dispatch] = useReducer(chatReducer, initialChatStore);
   const [inputValue, setInputValue] = useState('');
@@ -229,22 +237,41 @@ export function AiGreetingInput() {
   const lastEventTimeRef = useRef(0);
   const executionIdRef = useRef<string | null>(null);
   const hasCompleteProfileRef = useRef(false);
+  const recoveryMetaRef = useRef<SessionRecoveryMeta | null>(null);
   const finalTextRef = useRef('');
   const accumulatedTextRef = useRef('');
   const retryActionRef = useRef<'retry_learning_path' | null>(null);
   const consumedPendingMessageIdRef = useRef<number | null>(null);
+  const resetConversationOnNextSendRef = useRef(false);
 
   const isPending = store.state === 'connecting' || store.state === 'streaming';
   const aiMood = store.state === 'error' ? 'error' : isPending ? 'thinking' : store.messages.some((m) => m.role === 'assistant' && m.status === 'completed') ? 'happy' : 'idle';
 
-  const { persistSession } = useChatSession(store.currentSessionId, token, (messages, sessionId) => {
-    dispatch({ type: 'LOAD_SESSION', messages, sessionId });
-    executionIdRef.current = sessionId;
-    hasCompleteProfileRef.current = messages.some(
-      (m) => m.role === 'assistant' && m.sessionMessage?.stage === 'generated',
-    );
-    window.dispatchEvent(new CustomEvent('mutiagent-profile-updated'));
-  });
+  const { persistSession, clearSessionFromUrl, clearPersistedSession } = useChatSession(
+    store.currentSessionId,
+    token,
+    user?.uid ?? null,
+    (messages, sessionId) => {
+      dispatch({ type: 'LOAD_SESSION', messages, sessionId });
+      executionIdRef.current = sessionId;
+      hasCompleteProfileRef.current = recoveryMetaRef.current?.hasCompleteProfile ?? messages.some(
+        (m) => m.role === 'assistant' && hasCompleteBasicProfileSessionMessage(m.sessionMessage),
+      );
+      window.dispatchEvent(new CustomEvent('mutiagent-profile-updated'));
+    },
+    recoveryMetaRef,
+  );
+
+  const clearInvalidSessionAnchor = useCallback((sessionId: string | null) => {
+    if (sessionId) {
+      clearPersistedSession(sessionId);
+    }
+    executionIdRef.current = null;
+    hasCompleteProfileRef.current = false;
+    resetConversationOnNextSendRef.current = true;
+    dispatch({ type: 'SET_SESSION_ID', sessionId: null });
+    clearSessionFromUrl();
+  }, [clearPersistedSession, clearSessionFromUrl]);
 
   const x = useMotionValue(0);
   const y = useMotionValue(0);
@@ -382,7 +409,12 @@ export function AiGreetingInput() {
         setGlobalError('请先登录后再开始基础画像对话。');
         return;
       }
+      if (resetConversationOnNextSendRef.current) {
+        dispatch({ type: 'NEW_SESSION' });
+        resetConversationOnNextSendRef.current = false;
+      }
 
+      setInputValue('');
       const userMsgId = nextMessageId();
       dispatch({ type: 'ADD_USER_MESSAGE', id: userMsgId, content: query });
 
@@ -472,6 +504,12 @@ export function AiGreetingInput() {
 
             if (event.event === 'message_completed' && event.full_text) {
               finalTextRef.current = event.full_text;
+              if (isLearningPathStructuredCompletionContent(event.full_text)) {
+                loadedLearningPathThisTurn = true;
+              }
+              if (isCourseKnowledgeStructuredCompletionContent(event.full_text)) {
+                loadedCourseOutlineThisTurn = true;
+              }
               return;
             }
 
@@ -582,7 +620,18 @@ export function AiGreetingInput() {
         }
       } catch (err) {
         if (runIdRef.current !== runId) return;
+        const errorSessionId = err instanceof SessionStreamError
+          ? err.sessionId ?? finalSessionId ?? executionIdRef.current
+          : finalSessionId ?? executionIdRef.current;
+        if (errorSessionId) {
+          finalSessionId = errorSessionId;
+          executionIdRef.current = errorSessionId;
+          dispatch({ type: 'SET_SESSION_ID', sessionId: errorSessionId });
+        }
         const message = err instanceof Error ? err.message : '对话请求失败，请稍后重试';
+        if (message === '会话不存在') {
+          clearInvalidSessionAnchor(finalSessionId ?? executionIdRef.current);
+        }
         dispatch({
           type: 'RUN_ERROR',
           messageId: assistantMsgId,
@@ -600,7 +649,7 @@ export function AiGreetingInput() {
         );
       }
     },
-    [isPending, token, eventToStep],
+    [clearInvalidSessionAnchor, isPending, token, eventToStep],
   );
 
   const retryLearningPath = useCallback(() => {
@@ -624,7 +673,7 @@ export function AiGreetingInput() {
       && store.currentSessionId
       && store.messages.length > 0
     ) {
-      persistSession(store.currentSessionId, store.messages);
+      persistSession(store.currentSessionId, store.messages, hasCompleteProfileRef.current);
     }
   }, [store.state, store.currentSessionId, store.messages, persistSession]);
 

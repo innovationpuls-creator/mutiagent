@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { AuthResponse, AuthUser } from '../types/auth';
+import { AUTH_INVALID_EVENT } from '../api/http';
 
 interface AuthState {
   user: AuthUser | null;
@@ -46,6 +47,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(stored.token);
     }
     setIsAuthReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleAuthInvalid = () => {
+      setUser(null);
+      setToken(null);
+      saveAuth(null, null);
+    };
+
+    window.addEventListener(AUTH_INVALID_EVENT, handleAuthInvalid);
+    return () => window.removeEventListener(AUTH_INVALID_EVENT, handleAuthInvalid);
   }, []);
 
   const login = useCallback((authResponse: AuthResponse) => {

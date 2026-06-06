@@ -129,6 +129,8 @@ describe('TodayLearningDetailOverlay', () => {
     );
 
     expect(screen.getByRole('dialog', { name: '今日学习详情' })).toBeTruthy();
+    expect(screen.getByText('进行中')).toBeTruthy();
+    expect(screen.queryByText('in_progress')).toBeNull();
     expect(screen.getByText('课程大纲说明')).toBeTruthy();
     expect(screen.getByText('先完成需求拆解，再进入接口接入与最小闭环演示。')).toBeTruthy();
     expect(screen.getByText('预计总投入：8-12 小时')).toBeTruthy();

@@ -7,6 +7,7 @@ from sqlmodel import Session
 
 from app.core.security import create_get_current_user
 from app.models import User, UserProfile
+from app.orchestration.grade_contract import is_supported_current_grade, unsupported_current_grade_error
 from app.services.course_knowledge_service import get_user_course_knowledge_outline
 from app.services.learning_path_service import (
     find_current_course,
@@ -75,6 +76,8 @@ def _profile_completeness(profile: dict) -> int:
     total = len(PROFILE_FIELDS)
     filled = 0
     for key, value in profile.items():
+        if key == "currentGrade" and not is_supported_current_grade(value):
+            continue
         if isinstance(value, list):
             filled += 1 if value else 0
         elif isinstance(value, str) and value != "暂未确认":
@@ -83,6 +86,13 @@ def _profile_completeness(profile: dict) -> int:
 
 
 def _summary_from_profile(profile_data: dict, profile: dict) -> str:
+    confirmed = profile_data.get("confirmed_info", {})
+    if isinstance(confirmed, dict) and not is_supported_current_grade(confirmed.get("current_grade")):
+        return (
+            f"{unsupported_current_grade_error(confirmed.get('current_grade'))}"
+            " 继续把本科年级补充清楚后，我会再生成更准确的学习建议。"
+        )
+
     text = profile_data.get("text")
     if isinstance(text, str) and text.strip():
         first_paragraph = text.strip().split("\n\n", 1)[0]
@@ -180,6 +190,11 @@ def _dashboard_from_profile(
 
     profile_data = stored.profile_data if isinstance(stored.profile_data, dict) else {}
     profile = _camelize_confirmed_info(profile_data)
+    confirmed = profile_data.get("confirmed_info", {}) if isinstance(profile_data, dict) else {}
+    has_supported_grade = (
+        isinstance(confirmed, dict)
+        and is_supported_current_grade(confirmed.get("current_grade"))
+    )
     if profile_data.get("type") == "collecting":
         return {
             "profile": profile,
@@ -189,6 +204,22 @@ def _dashboard_from_profile(
                 "title": "先完成基础画像",
                 "description": "你还有几项关键信息待确认。继续完成画像后，我会把今日学习建议和推荐内容补全到这里。",
                 "source": "等待画像生成",
+                "currentLearningCourse": None,
+                "currentCourseDetail": None,
+                "currentCourseOutline": None,
+                "followingCourses": [],
+            },
+            "recommendations": [],
+        }
+    if not has_supported_grade:
+        return {
+            "profile": profile,
+            "profileCompleteness": _profile_completeness(profile),
+            "profileSummaryText": _summary_from_profile(profile_data, profile),
+            "todayLearning": today_from_path or {
+                "title": "先确认本科年级",
+                "description": "当前学习路径只支持大一到大四。确认本科年级后，我会继续生成对应阶段的学习建议。",
+                "source": "等待画像修正",
                 "currentLearningCourse": None,
                 "currentCourseDetail": None,
                 "currentCourseOutline": None,

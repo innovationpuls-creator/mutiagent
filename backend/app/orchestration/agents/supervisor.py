@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.tools import tool
 
+from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.agents.prompts import SUPERVISOR_BASE_PROMPT
 from app.orchestration.rule_engine import (
     AGENT_COURSE_KNOWLEDGE,
@@ -13,13 +15,28 @@ from app.orchestration.rule_engine import (
     AGENT_PROFILE,
     build_blocked_agents_hint,
     evaluate as evaluate_rules,
+    has_pending_profile_update_followup,
     is_course_change_query,
+    is_navigation_query,
     is_profile_refinement_query,
 )
 from app.orchestration.state import OrchestrationState
 from app.services.learning_path_service import iter_year_learning_paths
 
 logger = logging.getLogger(__name__)
+
+_GENERIC_PROFILE_UPDATE_QUERIES = {"更新个人画像", "修改画像方向"}
+_GENERIC_PATH_REFRESH_QUERIES = {"继续生成学习路径", "更新学习路径"}
+_FOLLOWUP_PAUSE_QUERIES = {
+    "谢谢",
+    "谢谢你",
+    "先不用",
+    "先不用了",
+    "不用了",
+    "暂时不用",
+    "不需要",
+    "先这样",
+}
 
 
 # ── Dynamic system prompt builder ────────────────────────────────────────
@@ -68,10 +85,14 @@ def build_system_prompt(state: OrchestrationState) -> str:
     status_lines = []
 
     profile = state.get("profile")
-    if profile and isinstance(profile, dict) and profile.get("summary_text"):
-        status_lines.append(f"✅ 用户画像已完成 — 摘要：{profile['summary_text'][:120]}")
+    if is_complete_profile_data(profile):
+        summary_text = profile.get("summary_text") if isinstance(profile, dict) else None
+        if isinstance(summary_text, str) and summary_text.strip():
+            status_lines.append(f"✅ 用户画像已完成 — 摘要：{summary_text[:120]}")
+        else:
+            status_lines.append("✅ 用户画像已完成")
     elif profile and isinstance(profile, dict):
-        status_lines.append("✅ 用户画像已完成")
+        status_lines.append("❌ 用户画像未完成 — 当前仍需补全基础信息后再调用 profile_agent")
     else:
         status_lines.append("❌ 用户画像未完成 — 需要通过对话收集信息后调用 profile_agent")
 
@@ -205,13 +226,24 @@ def _profile_update_prompt_response() -> str:
     )
 
 
+def _followup_pause_response() -> str:
+    return (
+        "好的，当前先不调整。"
+        "如果你之后想继续更新个人画像或重新生成学习路径，直接告诉我你想调整的具体信息就可以。"
+    )
+
+
+def _normalize_followup_query(query: str) -> str:
+    return re.sub(r"[。！？!?,，、；：\s]+", "", query.strip())
+
+
 def _learning_path_force_args(state: OrchestrationState) -> dict[str, str]:
     query = str(state.get("query", "")).strip()
-    generic_refresh_queries = {"继续生成学习路径", "更新学习路径"}
+    normalized_query = _normalize_followup_query(query)
     return {
         "grade_year": "",
         "learning_topic": "",
-        "specific_requirements": "" if query in generic_refresh_queries else query,
+        "specific_requirements": "" if normalized_query in _GENERIC_PATH_REFRESH_QUERIES else query,
     }
 
 
@@ -219,7 +251,25 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
     """When the rule engine mandates a forced agent call."""
     if agent_key == AGENT_PROFILE:
         query = state.get("query", "")
-        if query.strip() in {"更新个人画像", "修改画像方向"} and not is_profile_refinement_query(query):
+        normalized_query = _normalize_followup_query(query)
+        if has_pending_profile_update_followup(state) and normalized_query in _FOLLOWUP_PAUSE_QUERIES:
+            response = _followup_pause_response()
+            return {
+                "messages": [AIMessage(content=response)],
+                "response": response,
+            }
+        if (
+            normalized_query in _GENERIC_PROFILE_UPDATE_QUERIES
+            or (
+                has_pending_profile_update_followup(state)
+                and normalized_query in _GENERIC_PATH_REFRESH_QUERIES
+            )
+            or (
+                has_pending_profile_update_followup(state)
+                and is_navigation_query(query)
+                and not is_profile_refinement_query(query)
+            )
+        ):
             response = _profile_update_prompt_response()
             return {
                 "messages": [AIMessage(content=response)],

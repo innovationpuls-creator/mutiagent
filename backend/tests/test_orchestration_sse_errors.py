@@ -169,7 +169,7 @@ def test_stream_orchestration_events_emits_idle_status_while_waiting(monkeypatch
     )
 
 
-def test_session_completed_flags_only_outputs_generated_this_turn(monkeypatch) -> None:
+def test_session_completed_reports_final_structured_state(monkeypatch) -> None:
     complete_profile = {
         "type": "basic_profile",
         "summary_text": "大三软件工程学生，目标是完成 AI 应用开发项目。",
@@ -234,8 +234,77 @@ def test_session_completed_flags_only_outputs_generated_this_turn(monkeypatch) -
 
     assert completed["session_id"] == "session-history-only"
     assert completed["has_profile"] is True
-    assert completed["has_paths"] is False
-    assert completed["has_outline"] is False
+    assert completed["has_paths"] is True
+    assert completed["has_outline"] is True
+
+
+def test_session_completed_marks_unsupported_postgraduate_basic_profile_as_incomplete(monkeypatch) -> None:
+    unsupported_profile = {
+        "type": "basic_profile",
+        "summary_text": "当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。",
+        "confirmed_info": {
+            "current_grade": "研一",
+            "major": "软件工程",
+            "learning_stage": "项目实践",
+            "has_clear_goal": "是",
+            "learning_method_preference": "项目驱动学习",
+            "learning_pace_preference": "按项目里程碑推进",
+            "content_preference": ["代码实践", "项目案例"],
+            "need_guidance": "需要轻量提醒",
+            "knowledge_foundation": "有 Python 和前端基础",
+            "strengths": "能完成小型功能",
+            "weaknesses": "异步工程经验不足",
+            "experience": "做过课程项目",
+            "short_term_goal": "完成 AI 功能模块",
+            "long_term_goal": "成为全栈 AI 开发者",
+            "weekly_available_time": "每周 8 小时",
+            "constraints": "时间有限",
+        },
+    }
+
+    class StubGraph:
+        async def astream_events(self, state, version):
+            yield {"event": "on_chain_start", "name": "supervisor"}
+            yield {
+                "event": "on_chain_end",
+                "name": "LangGraph",
+                "data": {
+                    "output": {
+                        "response": unsupported_profile["summary_text"],
+                        "profile": unsupported_profile,
+                        "year_learning_paths": {"year_3": {"grade_name": "大三"}},
+                        "course_knowledge": {"course_name": "AI 应用开发基础能力搭建"},
+                    }
+                },
+            }
+
+    monkeypatch.setattr(
+        "app.orchestration.graph.build_orchestration_graph",
+        lambda: StubGraph(),
+    )
+
+    async def collect_events() -> list[dict]:
+        return [
+            event
+            async for event in stream_orchestration_events(
+                {
+                    "session_id": "session-unsupported-grade",
+                    "query": "继续",
+                    "messages": [],
+                    "profile": unsupported_profile,
+                    "year_learning_paths": {"year_3": {"grade_name": "大三"}},
+                    "course_knowledge": {"course_name": "AI 应用开发基础能力搭建"},
+                }
+            )
+        ]
+
+    events = asyncio.run(collect_events())
+    completed = next(event for event in events if event["event"] == "session_completed")
+
+    assert completed["session_id"] == "session-unsupported-grade"
+    assert completed["has_profile"] is False
+    assert completed["has_paths"] is True
+    assert completed["has_outline"] is True
 
 
 def test_session_completed_marks_collecting_profile_as_incomplete(monkeypatch) -> None:

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import '../../components/home/BlankPage.css';
 import './branch.css';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { motionTokens } from '../../styles/motion-tokens';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { fetchBranchOverview } from '../../api/branch';
 import { fetchProfileDashboard } from '../../api/profile';
 import { useAuth } from '../../contexts/AuthContext';
+import { profileYearIdFromCurrentGrade } from '../../lib/profileContract';
 import type { BranchCourseNode, BranchOverview } from '../../types/branch';
 
 const YEAR_ORDER = ['year_1', 'year_2', 'year_3', 'year_4'] as const;
@@ -16,21 +17,6 @@ const YEAR_LABELS = {
   year_2: '大二',
   year_3: '大三',
   year_4: '大四',
-} as const;
-
-const PROFILE_GRADE_TO_YEAR_ID = {
-  大一: 'year_1',
-  大1: 'year_1',
-  一年级: 'year_1',
-  大二: 'year_2',
-  大2: 'year_2',
-  二年级: 'year_2',
-  大三: 'year_3',
-  大3: 'year_3',
-  三年级: 'year_3',
-  大四: 'year_4',
-  大4: 'year_4',
-  四年级: 'year_4',
 } as const;
 
 type YearId = keyof typeof YEAR_LABELS;
@@ -80,9 +66,9 @@ function iconLabel(status: BranchCourseNode['status']): string {
   }
 }
 
-function pickStageCourses(courses: BranchCourseNode[], currentCourseId: string | null): StageCourse[] {
+function defaultFocusCourseId(courses: BranchCourseNode[], currentCourseId: string | null): string | null {
   if (courses.length === 0) {
-    return [];
+    return null;
   }
 
   const currentIndex = courses.findIndex((course) => course.status === 'current');
@@ -93,6 +79,41 @@ function pickStageCourses(courses: BranchCourseNode[], currentCourseId: string |
   const focusIndex = currentIndex >= 0
     ? currentIndex
     : (currentCourseIndex >= 0 ? currentCourseIndex : (firstOutlinedIndex >= 0 ? firstOutlinedIndex : 0));
+
+  return courses[focusIndex]?.course_node_id ?? null;
+}
+
+function resolveFocusIndex(
+  courses: BranchCourseNode[],
+  currentCourseId: string | null,
+  focusedCourseId: string | null,
+): number {
+  if (focusedCourseId) {
+    const focusedIndex = courses.findIndex((course) => course.course_node_id === focusedCourseId);
+    if (focusedIndex >= 0) {
+      return focusedIndex;
+    }
+  }
+
+  const fallbackCourseId = defaultFocusCourseId(courses, currentCourseId);
+  return fallbackCourseId
+    ? courses.findIndex((course) => course.course_node_id === fallbackCourseId)
+    : -1;
+}
+
+function pickStageCourses(
+  courses: BranchCourseNode[],
+  currentCourseId: string | null,
+  focusedCourseId: string | null,
+): StageCourse[] {
+  if (courses.length === 0) {
+    return [];
+  }
+
+  const focusIndex = resolveFocusIndex(courses, currentCourseId, focusedCourseId);
+  if (focusIndex < 0) {
+    return [];
+  }
 
   const stageCourses: StageCourse[] = [];
   const leftCourse = focusIndex > 0 ? courses[focusIndex - 1] : null;
@@ -110,6 +131,10 @@ function pickStageCourses(courses: BranchCourseNode[], currentCourseId: string |
   }
 
   return stageCourses;
+}
+
+function stageLabel(courseCount: number): string {
+  return `这一学年共 ${courseCount} 门课程，按顺序慢慢推进。`;
 }
 
 function toStageCourseSet(stageCourses: StageCourse[]): StageCourseSet {
@@ -131,18 +156,7 @@ function toStageCourseSet(stageCourses: StageCourse[]): StageCourseSet {
 }
 
 function yearIdFromProfileGrade(currentGrade: string): YearId | null {
-  const normalized = currentGrade.trim();
-  if (!normalized) {
-    return null;
-  }
-
-  for (const [label, yearId] of Object.entries(PROFILE_GRADE_TO_YEAR_ID)) {
-    if (normalized.includes(label)) {
-      return yearId;
-    }
-  }
-
-  return null;
+  return profileYearIdFromCurrentGrade(currentGrade);
 }
 
 function MascotBlob() {
@@ -199,7 +213,8 @@ function PathSession({
   currentCourseId: string | null;
 }) {
   const reduceMotion = useReducedMotion();
-  const stageCourses = pickStageCourses(courses, currentCourseId);
+  const focusedCourseId = defaultFocusCourseId(courses, currentCourseId);
+  const stageCourses = pickStageCourses(courses, currentCourseId, focusedCourseId);
   const stage = toStageCourseSet(stageCourses);
 
   return (
@@ -207,6 +222,9 @@ function PathSession({
       <div className="branch-session-header">
         <h1 className="branch-session-title">你的路径</h1>
         <p className="branch-session-subtitle">慢一点，你正在稳稳向前。</p>
+        {courses.length > 0 ? (
+          <p className="branch-session-caption">{stageLabel(courses.length)}</p>
+        ) : null}
       </div>
 
       <div className="branch-stage">
@@ -324,6 +342,7 @@ function PathSession({
           </div>
         )}
       </div>
+
     </section>
   );
 }
@@ -368,8 +387,11 @@ export function BranchPage() {
         }
 
         setOverview(nextOverview);
-        const preferredYear = yearIdFromProfileGrade(dashboard.profile.currentGrade);
+        const mappedProfileYear = yearIdFromProfileGrade(dashboard.profile.currentGrade);
         const firstClickable = YEAR_ORDER.find((yearId) => nextOverview.years[yearId]?.is_clickable);
+        const preferredYear = mappedProfileYear && nextOverview.years[mappedProfileYear]?.is_clickable
+          ? mappedProfileYear
+          : null;
         setActiveYear(preferredYear ?? firstClickable ?? 'year_1');
       } catch (loadError) {
         if (cancelled) {
@@ -440,22 +462,19 @@ export function BranchPage() {
               <span className="branch-feedback-text">{error}</span>
             </div>
           ) : (
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeYear}
-                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -16 }}
-                transition={motionTokens.editorial}
-                style={{ width: '100%' }}
-              >
-                <PathSession
-                  gradeName={activeYearData?.grade_name ?? YEAR_LABELS[activeYear]}
-                  courses={activeYearData?.courses ?? []}
-                  currentCourseId={activeYearData?.current_course_id ?? null}
-                />
-              </motion.div>
-            </AnimatePresence>
+            <motion.div
+              key={activeYear}
+              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={motionTokens.editorial}
+              style={{ width: '100%' }}
+            >
+              <PathSession
+                gradeName={activeYearData?.grade_name ?? YEAR_LABELS[activeYear]}
+                courses={activeYearData?.courses ?? []}
+                currentCourseId={activeYearData?.current_course_id ?? null}
+              />
+            </motion.div>
           )}
         </div>
       </div>

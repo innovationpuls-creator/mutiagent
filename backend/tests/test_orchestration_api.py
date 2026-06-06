@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 import app.orchestration.graph as graph_module
+import app.services.conversation_session_service as conversation_session_service
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
@@ -18,6 +21,8 @@ from app.models import (
     UserProfile,
     UserYearLearningPath,
 )
+
+ORIGINAL_APPEND_MESSAGES = conversation_session_service.append_messages
 
 
 def _auth_header(token: str) -> dict:
@@ -143,6 +148,108 @@ def _year_3_path() -> dict:
     }
 
 
+def _all_years_path() -> dict:
+    def course(grade_id: str, course_id: str, theme: str) -> dict:
+        return {
+            "course_node_id": course_id,
+            "grade_id": grade_id,
+            "course_or_chapter_theme": theme,
+            "time_arrangement": {
+                "semester_scope": "上学期",
+                "duration": "6 周",
+                "pace_reason": "项目驱动",
+            },
+            "course_goal": f"完成{theme}",
+            "prerequisite_node_ids": [],
+            "chapter_nodes": [],
+            "core_knowledge_points": [],
+            "key_points": ["阶段重点"],
+            "difficult_points": ["阶段难点"],
+            "learning_sequence": ["需求拆解", "最小闭环演示"],
+            "knowledge_relations": [],
+            "downstream_resource_direction_ids": [],
+            "acceptance_criteria": [f"完成 {theme}"],
+        }
+
+    year_1_course = course("year_1", "year_1_course_1", "编程基础")
+    year_2_course = course("year_2", "year_2_course_1", "工程化 Web 开发")
+    year_3_course_1 = course("year_3", "year_3_course_1", "AI Agent 开发基础能力搭建")
+    year_3_course_2 = course("year_3", "year_3_course_2", "AI Agent 项目实战")
+    year_4_course = course("year_4", "year_4_course_1", "毕业项目实战")
+    return {
+        "schema_version": "learning_path.v2.course_node",
+        "learning_goal": {
+            "target_course_or_skill": "AI 应用开发",
+            "goal_type": "项目实践",
+            "desired_outcome": "完成一个 AI 功能模块",
+            "four_year_outcome": "具备全栈 AI 项目交付能力",
+        },
+        "learner_baseline": {
+            "current_grade": "大三",
+            "major": "软件工程",
+            "mastered_content": ["Python", "前端基础"],
+            "weaknesses": ["异步工程经验不足"],
+            "constraints": ["时间有限"],
+            "weekly_available_time": "每周 8 小时",
+        },
+        "planning_rules": {
+            "node_unit": "course_node",
+            "grade_boundary_rule": "按年级拆分",
+            "sequence_rule": "先基础后项目",
+            "resource_rule": "每个节点对应资源方向",
+        },
+        "grade_plans": {
+            "year_1": {
+                "grade_id": "year_1",
+                "grade_name": "大一",
+                "grade_goal": "打好编程基础",
+                "course_nodes": [year_1_course],
+            },
+            "year_2": {
+                "grade_id": "year_2",
+                "grade_name": "大二",
+                "grade_goal": "进入工程主线",
+                "course_nodes": [year_2_course],
+            },
+            "year_3": {
+                "grade_id": "year_3",
+                "grade_name": "大三",
+                "grade_goal": "完成 AI 应用开发项目",
+                "course_nodes": [year_3_course_1, year_3_course_2],
+            },
+            "year_4": {
+                "grade_id": "year_4",
+                "grade_name": "大四",
+                "grade_goal": "沉淀毕业项目",
+                "course_nodes": [year_4_course],
+            },
+        },
+        "knowledge_graph": {
+            "global_relations": [],
+            "critical_paths": [],
+        },
+        "resource_generation_contract": {
+            "downstream_agents": [],
+            "resource_directions": [],
+        },
+        "dynamic_update_contract": {
+            "trackable_metrics": [],
+            "update_triggers": [],
+            "adjustment_strategy": "按周调整",
+        },
+        "current_learning_course": {
+            "grade_id": "year_3",
+            "course_node_id": "year_3_course_1",
+            "course_or_chapter_theme": "AI Agent 开发基础能力搭建",
+            "course_goal": "完成AI Agent 开发基础能力搭建",
+            "time_arrangement": year_3_course_1["time_arrangement"],
+            "current_focus": "正在学习 AI Agent 开发基础能力搭建",
+            "progress_state": "in_progress",
+            "next_action": "继续学习第一章",
+        },
+    }
+
+
 def _course_outline() -> dict:
     return {
         "course_id": "year_3_course_1",
@@ -220,6 +327,24 @@ class TestChatEndpoints:
             assert "session_id" in data
             assert len(data["session_id"]) > 0
 
+    def test_start_chat_returns_explicit_response_shell_fields(self, tmp_path: Path) -> None:
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, "chat-shell@example.com", "chat123456")
+
+            response = client.post(
+                "/api/chat/start",
+                json={"query": "你好"},
+                headers=_auth_header(token),
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["session_id"]
+            assert data["reply_text"] == "你好！我是你的学习助手。请告诉我你的基本情况，比如年级、专业、想学什么？"
+            assert data["profile"] is None
+            assert data["year_learning_paths"] is None
+            assert data["course_knowledge"] is None
+
     def test_start_chat_requires_auth(self, tmp_path: Path) -> None:
         with chat_app(tmp_path) as client:
             response = client.post("/api/chat/start", json={"query": "你好"})
@@ -233,6 +358,27 @@ class TestChatEndpoints:
                 headers=_auth_header(token),
             )
             assert response.status_code == 404
+
+    def test_get_session_state_returns_empty_messages_for_fresh_session(self, tmp_path: Path) -> None:
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, "fresh-session@example.com", "fresh123456")
+
+            start_resp = client.post(
+                "/api/chat/start",
+                json={"query": "开始"},
+                headers=_auth_header(token),
+            )
+            session_id = start_resp.json()["session_id"]
+
+            response = client.get(
+                f"/api/chat/sessions/{session_id}",
+                headers=_auth_header(token),
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["session_id"] == session_id
+            assert data["messages"] == []
 
     @patch("app.api.orchestration.stream_orchestration_events")
     def test_send_message_streams_sse(self, mock_stream, tmp_path: Path) -> None:
@@ -274,6 +420,21 @@ class TestChatEndpoints:
                 assert row.messages[1]["data"]["content"] == "这是回复"
 
     @patch("app.api.orchestration.stream_orchestration_events")
+    def test_send_message_rejects_nonexistent_session_id(self, mock_stream, tmp_path: Path) -> None:
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, "missing-session@example.com", "missing123456")
+
+            response = client.post(
+                "/api/chat/message",
+                json={"session_id": "missing-session-id", "message": "我想学Python"},
+                headers=_auth_header(token),
+            )
+
+            assert response.status_code == 404
+            assert response.json()["detail"] == "会话不存在"
+            mock_stream.assert_not_called()
+
+    @patch("app.api.orchestration.stream_orchestration_events")
     def test_send_message_loads_persisted_messages(self, mock_stream, tmp_path: Path) -> None:
         captured_lengths = []
 
@@ -301,6 +462,67 @@ class TestChatEndpoints:
                 assert response.status_code == 200
 
             assert captured_lengths == [1, 3]
+
+    @patch("app.api.orchestration.stream_orchestration_events")
+    def test_send_message_rejects_session_owned_by_another_user(self, mock_stream, tmp_path: Path) -> None:
+        with chat_app(tmp_path) as client:
+            owner_token = _register_user(client, "session-owner@example.com", "owner123456")
+            other_token = _register_user(client, "session-other@example.com", "other123456")
+
+            start_resp = client.post(
+                "/api/chat/start",
+                json={"query": "开始"},
+                headers=_auth_header(owner_token),
+            )
+            session_id = start_resp.json()["session_id"]
+
+            response = client.post(
+                "/api/chat/message",
+                json={"session_id": session_id, "message": "读取这段历史"},
+                headers=_auth_header(other_token),
+            )
+
+            assert response.status_code == 404
+            assert response.json()["detail"] == "会话不存在"
+            mock_stream.assert_not_called()
+
+    @patch("app.api.orchestration._load_owned_session")
+    def test_send_message_streams_sse_error_when_session_disappears_after_precheck(
+        self,
+        mock_load_owned_session,
+        tmp_path: Path,
+    ) -> None:
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, "race-session@example.com", "race123456")
+            start_resp = client.post(
+                "/api/chat/start",
+                json={"query": "开始"},
+                headers=_auth_header(token),
+            )
+            session_id = start_resp.json()["session_id"]
+
+            mock_load_owned_session.side_effect = [
+                SimpleNamespace(user_uid="unused", messages=[]),
+                HTTPException(status_code=404, detail="会话不存在"),
+            ]
+
+            response = client.post(
+                "/api/chat/message",
+                json={"session_id": session_id, "message": "继续生成"},
+                headers=_auth_header(token),
+            )
+
+            assert response.status_code == 200
+            assert "event: error" in response.text
+            assert "会话不存在" in response.text
+            assert "UnboundLocalError" not in response.text
+            assert mock_load_owned_session.call_count == 2
+
+            engine = build_engine(f"sqlite:///{tmp_path / 'chat-test.db'}")
+            with Session(engine) as session:
+                row = session.get(ConversationSession, session_id)
+                assert row is not None
+                assert row.messages == []
 
     @patch("app.api.orchestration.stream_orchestration_events")
     def test_send_message_does_not_save_failed_assistant_as_success(self, mock_stream, tmp_path: Path) -> None:
@@ -378,6 +600,66 @@ class TestChatEndpoints:
                 assert row.messages[0]["type"] == "human"
                 assert row.messages[0]["data"]["content"] == "继续生成"
 
+    @patch("app.services.conversation_session_service.append_messages")
+    @patch("app.api.orchestration.stream_orchestration_events")
+    def test_send_message_keeps_only_user_message_when_graph_persistence_fails_after_completion(
+        self,
+        mock_stream,
+        mock_append_messages,
+        tmp_path: Path,
+    ) -> None:
+        async def mock_events(state):
+            yield {"event": "message_completed", "full_text": "这是回复"}
+            yield {
+                "event": "session_completed",
+                "session_id": state["session_id"],
+                "has_profile": False,
+                "has_paths": False,
+                "has_outline": False,
+            }
+
+        appended_batches: list[list[dict]] = []
+        def flaky_append_messages(session, session_id, new_messages):
+            appended_batches.append(new_messages)
+            if len(appended_batches) == 1:
+                raise RuntimeError("会话持久化失败")
+            return ORIGINAL_APPEND_MESSAGES(session, session_id, new_messages)
+
+        mock_stream.side_effect = mock_events
+        mock_append_messages.side_effect = flaky_append_messages
+
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, "graph-persist@example.com", "graph123456")
+            start_resp = client.post(
+                "/api/chat/start",
+                json={"query": "开始"},
+                headers=_auth_header(token),
+            )
+            session_id = start_resp.json()["session_id"]
+
+            response = client.post(
+                "/api/chat/message",
+                json={"session_id": session_id, "message": "继续生成"},
+                headers=_auth_header(token),
+            )
+
+            assert response.status_code == 200
+            assert "event: error" in response.text
+            assert "会话持久化失败" in response.text
+            assert "message_completed" not in response.text
+            assert "session_completed" not in response.text
+            assert len(appended_batches) == 2
+            assert len(appended_batches[0]) == 2
+            assert len(appended_batches[1]) == 1
+
+            engine = build_engine(f"sqlite:///{tmp_path / 'chat-test.db'}")
+            with Session(engine) as session:
+                row = session.get(ConversationSession, session_id)
+                assert row is not None
+                assert len(row.messages) == 1
+                assert row.messages[0]["type"] == "human"
+                assert row.messages[0]["data"]["content"] == "继续生成"
+
     @patch("app.api.orchestration.stream_orchestration_events")
     def test_send_message_returns_existing_outline_without_agent_call(self, mock_stream, tmp_path: Path) -> None:
         mock_stream.side_effect = AssertionError("已有课程大纲应直接从数据库返回")
@@ -415,6 +697,98 @@ class TestChatEndpoints:
                 assert len(row.messages) == 2
                 assert row.messages[1]["type"] == "ai"
                 assert "第一章：需求拆解" in row.messages[1]["data"]["content"]
+
+    @patch("app.services.conversation_session_service.append_messages")
+    @patch("app.api.orchestration.stream_orchestration_events")
+    def test_send_message_keeps_only_user_message_when_outline_shortcut_persistence_fails(
+        self,
+        mock_stream,
+        mock_append_messages,
+        tmp_path: Path,
+    ) -> None:
+        mock_stream.side_effect = AssertionError("已有课程大纲应直接从数据库返回")
+        identifier = "outline-persist@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        appended_batches: list[list[dict]] = []
+        def flaky_append_messages(session, session_id, new_messages):
+            appended_batches.append(new_messages)
+            if len(appended_batches) == 1:
+                raise RuntimeError("课程大纲会话持久化失败")
+            return ORIGINAL_APPEND_MESSAGES(session, session_id, new_messages)
+
+        mock_append_messages.side_effect = flaky_append_messages
+
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, identifier, "outline123456")
+            _seed_existing_learning_data(database_url, identifier)
+            start_resp = client.post(
+                "/api/chat/start",
+                json={"query": "开始"},
+                headers=_auth_header(token),
+            )
+            session_id = start_resp.json()["session_id"]
+
+            response = client.post(
+                "/api/chat/message",
+                json={"session_id": session_id, "message": "给我看看这个课的大纲"},
+                headers=_auth_header(token),
+            )
+
+            assert response.status_code == 200
+            assert "event: error" in response.text
+            assert "课程大纲会话持久化失败" in response.text
+            assert "message_completed" not in response.text
+            assert "session_completed" not in response.text
+            assert len(appended_batches) == 2
+            assert len(appended_batches[0]) == 2
+            assert len(appended_batches[1]) == 1
+
+            engine = build_engine(database_url)
+            with Session(engine) as session:
+                row = session.get(ConversationSession, session_id)
+                assert row is not None
+                assert len(row.messages) == 1
+                assert row.messages[0]["type"] == "human"
+                assert row.messages[0]["data"]["content"] == "给我看看这个课的大纲"
+
+    @patch("app.api.orchestration.stream_orchestration_events")
+    def test_send_message_start_first_course_reuses_existing_outline_without_agent_call(self, mock_stream, tmp_path: Path) -> None:
+        mock_stream.side_effect = AssertionError("开始第一门课时已有当前课程大纲应直接从数据库返回")
+        identifier = "outline-start-direct@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, identifier, "outline123456")
+            _seed_existing_learning_data(database_url, identifier)
+            start_resp = client.post(
+                "/api/chat/start",
+                json={"query": "开始"},
+                headers=_auth_header(token),
+            )
+            session_id = start_resp.json()["session_id"]
+
+            response = client.post(
+                "/api/chat/message",
+                json={"session_id": session_id, "message": "开始第一门课"},
+                headers=_auth_header(token),
+            )
+
+            assert response.status_code == 200
+            assert "course_knowledge_loaded" in response.text
+            assert "课程大纲 · year_3" in response.text
+            assert "AI Agent 开发基础能力搭建" in response.text
+            assert "第一章：需求拆解" in response.text
+            assert "course_knowledge_agent" not in response.text
+            assert "intent_agent" not in response.text
+            assert "\"has_outline\": true" in response.text
+
+            engine = build_engine(database_url)
+            with Session(engine) as session:
+                row = session.get(ConversationSession, session_id)
+                assert row is not None
+                assert len(row.messages) == 2
+                assert row.messages[1]["type"] == "ai"
+                assert row.messages[1]["data"]["content"].startswith("课程大纲 · year_3")
 
     @patch("app.api.orchestration.stream_orchestration_events")
     def test_send_message_returns_existing_learning_path_without_agent_call(self, mock_stream, tmp_path: Path) -> None:
@@ -477,6 +851,96 @@ class TestChatEndpoints:
             assert "course_knowledge_agent" not in response.text
             assert "intent_agent" not in response.text
             assert "\"has_paths\": true" in response.text
+
+    @patch("app.api.orchestration.stream_orchestration_events")
+    def test_send_message_review_shortcut_lists_courses_by_grade_for_single_multi_year_path_row(self, mock_stream, tmp_path: Path) -> None:
+        mock_stream.side_effect = AssertionError("回顾学习路径短语应直接从数据库返回")
+        identifier = "path-multi-year-shortcut@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, identifier, "path123456")
+            engine = build_engine(database_url)
+            with Session(engine) as session:
+                user = session.exec(select(User).where(User.identifier == identifier)).one()
+                session.add(
+                    UserProfile(
+                        user_uid=user.uid,
+                        profile_data=_basic_profile(),
+                        profile_text="大三软件工程学生，目标是完成 AI 应用开发项目。",
+                    )
+                )
+                session.add(
+                    UserYearLearningPath(
+                        user_uid=user.uid,
+                        grade_year="year_3",
+                        learning_topic="AI 应用开发",
+                        path_data=_all_years_path(),
+                    )
+                )
+                session.commit()
+
+            start_resp = client.post(
+                "/api/chat/start",
+                json={"query": "开始"},
+                headers=_auth_header(token),
+            )
+            session_id = start_resp.json()["session_id"]
+
+            response = client.post(
+                "/api/chat/message",
+                json={"session_id": session_id, "message": "看看路径"},
+                headers=_auth_header(token),
+            )
+
+            assert response.status_code == 200
+            assert "大一（year_1）：1 门课" in response.text
+            assert "大二（year_2）：1 门课" in response.text
+            assert "大三（year_3）：2 门课" in response.text
+            assert "大四（year_4）：1 门课" in response.text
+            assert "1. 编程基础：完成编程基础" in response.text
+            assert "1. 工程化 Web 开发：完成工程化 Web 开发" in response.text
+            assert "1. AI Agent 开发基础能力搭建：完成AI Agent 开发基础能力搭建" in response.text
+            assert "2. AI Agent 项目实战：完成AI Agent 项目实战" in response.text
+            assert "1. 毕业项目实战：完成毕业项目实战" in response.text
+
+    @patch("app.api.orchestration.stream_orchestration_events")
+    def test_send_message_does_not_treat_generic_look_first_phrase_as_learning_path_review(self, mock_stream, tmp_path: Path) -> None:
+        async def mock_events(_state):
+            yield {"event": "message_completed", "full_text": "这是画像建议"}
+            yield {
+                "event": "session_completed",
+                "session_id": "unused",
+                "has_profile": True,
+                "has_paths": True,
+                "has_outline": True,
+            }
+
+        mock_stream.side_effect = mock_events
+        identifier = "path-generic-look-first@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+
+        with chat_app(tmp_path) as client:
+            token = _register_user(client, identifier, "path123456")
+            _seed_existing_learning_data(database_url, identifier)
+            start_resp = client.post(
+                "/api/chat/start",
+                json={"query": "开始"},
+                headers=_auth_header(token),
+            )
+            session_id = start_resp.json()["session_id"]
+
+            response = client.post(
+                "/api/chat/message",
+                json={"session_id": session_id, "message": "我先看看我的个人画像，你推荐什么？"},
+                headers=_auth_header(token),
+            )
+
+            assert response.status_code == 200
+            assert "这是画像建议" in response.text
+            assert "learning_path_loaded" not in response.text
+            assert "你的学习路径里已经有这些课程：" not in response.text
+            mock_stream.assert_called_once()
 
     @patch("app.api.orchestration.stream_orchestration_events")
     def test_send_message_review_shortcut_keeps_collecting_profile_incomplete(self, mock_stream, tmp_path: Path) -> None:
@@ -914,6 +1378,264 @@ class TestChatEndpoints:
 
         graph_module._graph = None
 
+    def test_send_message_prompts_for_profile_details_on_punctuated_generic_profile_update(self, tmp_path: Path) -> None:
+        identifier = "profile-update-direct-punctuated@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        graph_module._graph = None
+
+        class GuardSupervisorLlm:
+            def bind_tools(self, _tools):
+                return self
+
+            async def ainvoke(self, _messages):
+                raise AssertionError("带标点的泛化画像更新提示也应走 force_call 收口，不应调用 LLM")
+
+        class WorkerPlaceholderLlm:
+            pass
+
+        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
+             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+            with chat_app(tmp_path) as client:
+                token = _register_user(client, identifier, "profile123456")
+                _seed_existing_learning_data(database_url, identifier)
+
+                start_resp = client.post(
+                    "/api/chat/start",
+                    json={"query": "开始"},
+                    headers=_auth_header(token),
+                )
+                session_id = start_resp.json()["session_id"]
+
+                response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "更新个人画像。"},
+                    headers=_auth_header(token),
+                )
+
+                assert response.status_code == 200
+                assert "可以。更新个人画像前，请先直接告诉我你想调整的具体信息。" in response.text
+                assert "session_completed" in response.text
+                assert "profile_agent" not in response.text
+
+                engine = build_engine(database_url)
+                with Session(engine) as session:
+                    row = session.get(ConversationSession, session_id)
+                    assert row is not None
+                    assert len(row.messages) == 2
+                    assert row.messages[1]["type"] == "ai"
+                    assert row.messages[1]["data"]["content"].startswith("可以。更新个人画像前，请先直接告诉我你想调整的具体信息。")
+
+        graph_module._graph = None
+
+    def test_send_message_collects_profile_again_for_unsupported_postgraduate_grade(self, tmp_path: Path) -> None:
+        identifier = "unsupported-postgraduate-grade@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        graph_module._graph = None
+
+        class GuardSupervisorLlm:
+            def bind_tools(self, _tools):
+                return self
+
+            async def ainvoke(self, _messages):
+                raise AssertionError("不支持的研究生年级应走 force_call + 本地画像收集，不应调用 LLM")
+
+        class WorkerPlaceholderLlm:
+            pass
+
+        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
+             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+            with chat_app(tmp_path) as client:
+                token = _register_user(client, identifier, "unsupported123456")
+
+                start_resp = client.post(
+                    "/api/chat/start",
+                    json={"query": "开始"},
+                    headers=_auth_header(token),
+                )
+                session_id = start_resp.json()["session_id"]
+
+                response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "研一，软件工程，AI，周末集中"},
+                    headers=_auth_header(token),
+                )
+
+                assert response.status_code == 200
+                assert "当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。" in response.text
+                assert "\"has_profile\": false" in response.text
+                assert "profile_agent" in response.text
+                assert "learning_path_agent" not in response.text
+
+                engine = build_engine(database_url)
+                with Session(engine) as session:
+                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    profile_row = session.get(UserProfile, user.uid)
+                    assert profile_row is not None
+                    assert profile_row.profile_data["type"] == "collecting"
+                    assert profile_row.profile_data["confirmed_info"]["current_grade"] == "研一"
+
+                    year_paths = session.exec(
+                        select(UserYearLearningPath).where(UserYearLearningPath.user_uid == user.uid)
+                    ).all()
+                    assert year_paths == []
+
+                    conversation_row = session.get(ConversationSession, session_id)
+                    assert conversation_row is not None
+                    assert len(conversation_row.messages) == 2
+                    assert conversation_row.messages[1]["type"] == "ai"
+                    assert conversation_row.messages[1]["data"]["content"].startswith("当前学习路径只支持大一到大四。")
+
+        graph_module._graph = None
+
+    def test_send_message_updates_existing_profile_without_reusing_stale_course_outline(self, tmp_path: Path) -> None:
+        identifier = "profile-update-existing-path@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        graph_module._graph = None
+
+        class GuardSupervisorLlm:
+            def bind_tools(self, _tools):
+                return self
+
+            async def ainvoke(self, _messages):
+                raise AssertionError("已有画像时的显式字段更新应走 force_call，不应调用 LLM")
+
+        class WorkerPlaceholderLlm:
+            pass
+
+        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
+             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+            with chat_app(tmp_path) as client:
+                token = _register_user(client, identifier, "profileupdate123456")
+                _seed_existing_learning_data(database_url, identifier)
+
+                start_resp = client.post(
+                    "/api/chat/start",
+                    json={"query": "开始"},
+                    headers=_auth_header(token),
+                )
+                session_id = start_resp.json()["session_id"]
+
+                response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "专业改成计算机科学，当前限制改成周末集中"},
+                    headers=_auth_header(token),
+                )
+
+                assert response.status_code == 200
+                assert "profile_agent" in response.text
+                assert "learning_path_agent" not in response.text
+                assert "课程大纲已生成：《AI Agent 开发基础能力搭建》" not in response.text
+                assert "【基础学习画像总结】大三计算机科学" in response.text
+
+                engine = build_engine(database_url)
+                with Session(engine) as session:
+                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    profile_row = session.get(UserProfile, user.uid)
+                    assert profile_row is not None
+                    assert profile_row.profile_data["confirmed_info"]["major"] == "计算机科学"
+                    assert profile_row.profile_data["confirmed_info"]["constraints"] == "周末集中"
+                    assert session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")) is None
+
+                    conversation_row = session.get(ConversationSession, session_id)
+                    assert conversation_row is not None
+                    assert len(conversation_row.messages) == 2
+                    assert conversation_row.messages[1]["type"] == "ai"
+                    assert conversation_row.messages[1]["data"]["content"].startswith("【基础学习画像总结】大三计算机科学")
+
+                dashboard_response = client.get(
+                    "/api/profile/dashboard",
+                    headers=_auth_header(token),
+                )
+                assert dashboard_response.status_code == 200
+                assert dashboard_response.json()["todayLearning"]["currentCourseOutline"] is None
+
+                branch_response = client.get(
+                    "/api/branch/overview",
+                    headers=_auth_header(token),
+                )
+                assert branch_response.status_code == 200
+                branch_year_3 = branch_response.json()["years"]["year_3"]
+                assert branch_year_3["has_outline_content"] is False
+                assert branch_year_3["courses"][0]["has_outline"] is False
+
+        graph_module._graph = None
+
+    def test_send_message_updates_single_explicit_profile_field_with_existing_path_without_calling_llm(self, tmp_path: Path) -> None:
+        identifier = "profile-update-single-field@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        graph_module._graph = None
+
+        class GuardSupervisorLlm:
+            def bind_tools(self, _tools):
+                return self
+
+            async def ainvoke(self, _messages):
+                raise AssertionError("已有画像时的单字段显式更新应走 force_call，不应调用 LLM")
+
+        class WorkerPlaceholderLlm:
+            pass
+
+        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
+             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+            with chat_app(tmp_path) as client:
+                token = _register_user(client, identifier, "profileupdate123456")
+                _seed_existing_learning_data(database_url, identifier)
+
+                start_resp = client.post(
+                    "/api/chat/start",
+                    json={"query": "开始"},
+                    headers=_auth_header(token),
+                )
+                session_id = start_resp.json()["session_id"]
+
+                response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "专业改成计算机科学"},
+                    headers=_auth_header(token),
+                )
+
+                assert response.status_code == 200
+                assert "profile_agent" in response.text
+                assert "learning_path_agent" not in response.text
+                assert "课程大纲已生成：《AI Agent 开发基础能力搭建》" not in response.text
+                assert "【基础学习画像总结】大三计算机科学" in response.text
+
+                engine = build_engine(database_url)
+                with Session(engine) as session:
+                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    profile_row = session.get(UserProfile, user.uid)
+                    assert profile_row is not None
+                    assert profile_row.profile_data["confirmed_info"]["major"] == "计算机科学"
+                    assert session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")) is None
+
+                    conversation_row = session.get(ConversationSession, session_id)
+                    assert conversation_row is not None
+                    assert len(conversation_row.messages) == 2
+                    assert conversation_row.messages[1]["type"] == "ai"
+                    assert conversation_row.messages[1]["data"]["content"].startswith("【基础学习画像总结】大三计算机科学")
+
+                dashboard_response = client.get(
+                    "/api/profile/dashboard",
+                    headers=_auth_header(token),
+                )
+                assert dashboard_response.status_code == 200
+                assert dashboard_response.json()["todayLearning"]["currentCourseOutline"] is None
+
+                branch_response = client.get(
+                    "/api/branch/overview",
+                    headers=_auth_header(token),
+                )
+                assert branch_response.status_code == 200
+                branch_year_3 = branch_response.json()["years"]["year_3"]
+                assert branch_year_3["has_outline_content"] is False
+                assert branch_year_3["courses"][0]["has_outline"] is False
+
+        graph_module._graph = None
+
     def test_send_message_updates_profile_and_refreshes_learning_path_after_completed_tasks(self, tmp_path: Path) -> None:
         identifier = "completed-followup@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
@@ -949,10 +1671,12 @@ class TestChatEndpoints:
                         "progress_state": "completed",
                         "next_action": "当前阶段课程已全部完成",
                     }
+                    profile_data = _basic_profile()
+                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
                     session.add(
                         UserProfile(
                             user_uid=user.uid,
-                            profile_data=_basic_profile(),
+                            profile_data=profile_data,
                             profile_text="大三软件工程学生，目标是完成 AI 应用开发项目。",
                         )
                     )
@@ -962,6 +1686,18 @@ class TestChatEndpoints:
                             grade_year="year_3",
                             learning_topic="AI 应用开发",
                             path_data=year_path,
+                        )
+                    )
+                    session.add(
+                        UserCourseKnowledgeOutline(
+                            user_uid=user.uid,
+                            course_id="year_3_course_1",
+                            grade_year="year_3",
+                            course_name="AI Agent 开发基础能力搭建",
+                            outline_data={
+                                **_course_outline(),
+                                "personalization_summary": "针对大三软件工程背景，先完成需求拆解，再进入接口接入与最小闭环演示。",
+                            },
                         )
                     )
                     session.commit()
@@ -1018,6 +1754,220 @@ class TestChatEndpoints:
 
         graph_module._graph = None
 
+    def test_send_message_collects_profile_without_refreshing_path_when_followup_grade_is_unsupported(self, tmp_path: Path) -> None:
+        identifier = "completed-unsupported-followup@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        graph_module._graph = None
+
+        class GuardSupervisorLlm:
+            def bind_tools(self, _tools):
+                return self
+
+            async def ainvoke(self, _messages):
+                raise AssertionError("完成任务后的不支持年级跟进应走 force_call，不应调用 LLM")
+
+        class WorkerPlaceholderLlm:
+            pass
+
+        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
+             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+            with chat_app(tmp_path) as client:
+                token = _register_user(client, identifier, "followup123456")
+
+                engine = build_engine(database_url)
+                with Session(engine) as session:
+                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    year_path = _year_3_path()
+                    year_path["current_learning_course"] = {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_2",
+                        "course_or_chapter_theme": "AI Agent 项目实战",
+                        "course_goal": "完成AI Agent 项目实战",
+                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "current_focus": "当前阶段课程已全部完成",
+                        "progress_state": "completed",
+                        "next_action": "当前阶段课程已全部完成",
+                    }
+                    profile_data = _basic_profile()
+                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    session.add(
+                        UserProfile(
+                            user_uid=user.uid,
+                            profile_data=profile_data,
+                            profile_text="大三软件工程学生，目标是完成 AI 应用开发项目。",
+                        )
+                    )
+                    session.add(
+                        UserYearLearningPath(
+                            user_uid=user.uid,
+                            grade_year="year_3",
+                            learning_topic="AI 应用开发",
+                            path_data=year_path,
+                        )
+                    )
+                    session.add(
+                        UserCourseKnowledgeOutline(
+                            user_uid=user.uid,
+                            course_id="year_3_course_1",
+                            grade_year="year_3",
+                            course_name="AI Agent 开发基础能力搭建",
+                            outline_data=_course_outline(),
+                        )
+                    )
+                    session.commit()
+
+                start_resp = client.post(
+                    "/api/chat/start",
+                    json={"query": "开始"},
+                    headers=_auth_header(token),
+                )
+                session_id = start_resp.json()["session_id"]
+
+                completed_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    headers=_auth_header(token),
+                )
+
+                assert completed_response.status_code == 200
+                assert "当前所有任务已经完成。" in completed_response.text
+
+                followup_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "研一，软件工程，AI，周末集中"},
+                    headers=_auth_header(token),
+                )
+
+                assert followup_response.status_code == 200
+                assert "当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。" in followup_response.text
+                assert "\"has_profile\": false" in followup_response.text
+                assert "profile_agent" in followup_response.text
+                assert "learning_path_agent" not in followup_response.text
+
+                with Session(engine) as session:
+                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    profile_row = session.get(UserProfile, user.uid)
+                    assert profile_row is not None
+                    assert profile_row.profile_data["type"] == "collecting"
+                    assert profile_row.profile_data["confirmed_info"]["current_grade"] == "研一"
+
+                    year_paths = session.exec(
+                        select(UserYearLearningPath).where(UserYearLearningPath.user_uid == user.uid)
+                    ).all()
+                    assert len(year_paths) == 1
+                    assert year_paths[0].grade_year == "year_3"
+                    assert session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")) is None
+
+                    conversation_row = session.get(ConversationSession, session_id)
+                    assert conversation_row is not None
+                    assert len(conversation_row.messages) == 4
+                    assert conversation_row.messages[3]["type"] == "ai"
+                    assert conversation_row.messages[3]["data"]["content"].startswith("当前学习路径只支持大一到大四。")
+
+                dashboard_response = client.get(
+                    "/api/profile/dashboard",
+                    headers=_auth_header(token),
+                )
+                assert dashboard_response.status_code == 200
+                dashboard_body = dashboard_response.json()
+                assert dashboard_body["todayLearning"]["currentLearningCourse"]["course_node_id"] == "year_3_course_2"
+                assert dashboard_body["todayLearning"]["currentCourseOutline"] is None
+
+                branch_response = client.get(
+                    "/api/branch/overview",
+                    headers=_auth_header(token),
+                )
+                assert branch_response.status_code == 200
+                branch_year_3 = branch_response.json()["years"]["year_3"]
+                assert branch_year_3["has_outline_content"] is False
+                assert branch_year_3["courses"][0]["has_outline"] is False
+
+        graph_module._graph = None
+
+    def test_send_message_prompts_for_profile_details_when_user_only_says_next_step_after_completed_tasks(self, tmp_path: Path) -> None:
+        identifier = "completed-next-step@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        graph_module._graph = None
+
+        class GuardSupervisorLlm:
+            def bind_tools(self, _tools):
+                return self
+
+            async def ainvoke(self, _messages):
+                raise AssertionError("完成任务后的下一步提示应走 force_call 收口，不应调用 LLM")
+
+        class WorkerPlaceholderLlm:
+            pass
+
+        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
+             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+            with chat_app(tmp_path) as client:
+                token = _register_user(client, identifier, "nextstep123456")
+
+                engine = build_engine(database_url)
+                with Session(engine) as session:
+                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    year_path = _year_3_path()
+                    year_path["current_learning_course"] = {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_2",
+                        "course_or_chapter_theme": "AI Agent 项目实战",
+                        "course_goal": "完成AI Agent 项目实战",
+                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "current_focus": "当前阶段课程已全部完成",
+                        "progress_state": "completed",
+                        "next_action": "当前阶段课程已全部完成",
+                    }
+                    profile_data = _basic_profile()
+                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    session.add(
+                        UserProfile(
+                            user_uid=user.uid,
+                            profile_data=profile_data,
+                            profile_text="大三软件工程学生，目标是完成 AI 应用开发项目。",
+                        )
+                    )
+                    session.add(
+                        UserYearLearningPath(
+                            user_uid=user.uid,
+                            grade_year="year_3",
+                            learning_topic="AI 应用开发",
+                            path_data=year_path,
+                        )
+                    )
+                    session.commit()
+
+                start_resp = client.post(
+                    "/api/chat/start",
+                    json={"query": "开始"},
+                    headers=_auth_header(token),
+                )
+                session_id = start_resp.json()["session_id"]
+
+                completed_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    headers=_auth_header(token),
+                )
+
+                assert completed_response.status_code == 200
+                assert "当前所有任务已经完成。" in completed_response.text
+
+                followup_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "下一步"},
+                    headers=_auth_header(token),
+                )
+
+                assert followup_response.status_code == 200
+                assert "为了继续更新个人画像" in followup_response.text or "请先直接告诉我你想调整的具体信息" in followup_response.text
+                assert "profile_agent" not in followup_response.text
+                assert "course_knowledge_agent" not in followup_response.text
+
+        graph_module._graph = None
+
     def test_send_message_updates_explicit_major_and_refreshes_learning_path_after_completed_tasks(self, tmp_path: Path) -> None:
         identifier = "completed-major-followup@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
@@ -1053,10 +2003,12 @@ class TestChatEndpoints:
                         "progress_state": "completed",
                         "next_action": "当前阶段课程已全部完成",
                     }
+                    profile_data = _basic_profile()
+                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
                     session.add(
                         UserProfile(
                             user_uid=user.uid,
-                            profile_data=_basic_profile(),
+                            profile_data=profile_data,
                             profile_text="大三软件工程学生，目标是完成 AI 应用开发项目。",
                         )
                     )
@@ -1066,6 +2018,18 @@ class TestChatEndpoints:
                             grade_year="year_3",
                             learning_topic="AI 应用开发",
                             path_data=year_path,
+                        )
+                    )
+                    session.add(
+                        UserCourseKnowledgeOutline(
+                            user_uid=user.uid,
+                            course_id="year_3_course_1",
+                            grade_year="year_3",
+                            course_name="AI Agent 开发基础能力搭建",
+                            outline_data={
+                                **_course_outline(),
+                                "personalization_summary": "针对大三软件工程背景，先完成需求拆解，再进入接口接入与最小闭环演示。",
+                            },
                         )
                     )
                     session.commit()
@@ -1116,8 +2080,8 @@ class TestChatEndpoints:
 
         graph_module._graph = None
 
-    def test_send_message_updates_multiple_explicit_profile_fields_and_refreshes_learning_path(self, tmp_path: Path) -> None:
-        identifier = "completed-multi-field-followup@example.com"
+    def test_send_message_prompts_for_profile_details_on_generic_path_refresh_after_completed_tasks(self, tmp_path: Path) -> None:
+        identifier = "completed-generic-path-followup@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
 
@@ -1126,7 +2090,7 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("完成任务后的画像更新与路径刷新应走 force_call，不应调用 LLM")
+                raise AssertionError("完成任务后的泛化路径刷新应走 force_call 追问，不应调用 LLM")
 
         class WorkerPlaceholderLlm:
             pass
@@ -1135,7 +2099,197 @@ class TestChatEndpoints:
              patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
              patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
             with chat_app(tmp_path) as client:
-                token = _register_user(client, identifier, "multifield123456")
+                token = _register_user(client, identifier, "genericpath123456")
+
+                engine = build_engine(database_url)
+                with Session(engine) as session:
+                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    year_path = _year_3_path()
+                    year_path["current_learning_course"] = {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_2",
+                        "course_or_chapter_theme": "AI Agent 项目实战",
+                        "course_goal": "完成AI Agent 项目实战",
+                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "current_focus": "当前阶段课程已全部完成",
+                        "progress_state": "completed",
+                        "next_action": "当前阶段课程已全部完成",
+                    }
+                    profile_data = _basic_profile()
+                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    session.add(
+                        UserProfile(
+                            user_uid=user.uid,
+                            profile_data=profile_data,
+                            profile_text="大三软件工程学生，目标是完成 AI 应用开发项目。",
+                        )
+                    )
+                    session.add(
+                        UserYearLearningPath(
+                            user_uid=user.uid,
+                            grade_year="year_3",
+                            learning_topic="AI 应用开发",
+                            path_data=year_path,
+                        )
+                    )
+                    session.add(
+                        UserCourseKnowledgeOutline(
+                            user_uid=user.uid,
+                            course_id="year_3_course_1",
+                            grade_year="year_3",
+                            course_name="AI Agent 开发基础能力搭建",
+                            outline_data={
+                                **_course_outline(),
+                                "personalization_summary": "针对大三软件工程背景，先完成需求拆解，再进入接口接入与最小闭环演示。",
+                            },
+                        )
+                    )
+                    session.commit()
+
+                start_resp = client.post(
+                    "/api/chat/start",
+                    json={"query": "开始"},
+                    headers=_auth_header(token),
+                )
+                session_id = start_resp.json()["session_id"]
+
+                completed_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    headers=_auth_header(token),
+                )
+
+                assert completed_response.status_code == 200
+                assert "当前所有任务已经完成。" in completed_response.text
+
+                followup_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "更新学习路径"},
+                    headers=_auth_header(token),
+                )
+
+                assert followup_response.status_code == 200
+                assert "请先直接告诉我你想调整的具体信息" in followup_response.text
+                assert "profile_agent" not in followup_response.text
+                assert "learning_path_agent" not in followup_response.text
+
+        graph_module._graph = None
+
+    def test_send_message_prompts_for_profile_details_on_punctuated_generic_path_refresh_after_completed_tasks(self, tmp_path: Path) -> None:
+        identifier = "completed-generic-path-followup-punctuated@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        graph_module._graph = None
+
+        class GuardSupervisorLlm:
+            def bind_tools(self, _tools):
+                return self
+
+            async def ainvoke(self, _messages):
+                raise AssertionError("带标点的完成任务后泛化路径刷新应走 force_call 追问，不应调用 LLM")
+
+        class WorkerPlaceholderLlm:
+            pass
+
+        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
+             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+            with chat_app(tmp_path) as client:
+                token = _register_user(client, identifier, "genericpath123456")
+
+                engine = build_engine(database_url)
+                with Session(engine) as session:
+                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    year_path = _year_3_path()
+                    year_path["current_learning_course"] = {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_2",
+                        "course_or_chapter_theme": "AI Agent 项目实战",
+                        "course_goal": "完成AI Agent 项目实战",
+                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "current_focus": "当前阶段课程已全部完成",
+                        "progress_state": "completed",
+                        "next_action": "当前阶段课程已全部完成",
+                    }
+                    profile_data = _basic_profile()
+                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    session.add(
+                        UserProfile(
+                            user_uid=user.uid,
+                            profile_data=profile_data,
+                            profile_text="大三软件工程学生，目标是完成 AI 应用开发项目。",
+                        )
+                    )
+                    session.add(
+                        UserYearLearningPath(
+                            user_uid=user.uid,
+                            grade_year="year_3",
+                            learning_topic="AI 应用开发",
+                            path_data=year_path,
+                        )
+                    )
+                    session.add(
+                        UserCourseKnowledgeOutline(
+                            user_uid=user.uid,
+                            course_id="year_3_course_1",
+                            grade_year="year_3",
+                            course_name="AI Agent 开发基础能力搭建",
+                            outline_data={
+                                **_course_outline(),
+                                "personalization_summary": "针对大三软件工程背景，先完成需求拆解，再进入接口接入与最小闭环演示。",
+                            },
+                        )
+                    )
+                    session.commit()
+
+                start_resp = client.post(
+                    "/api/chat/start",
+                    json={"query": "开始"},
+                    headers=_auth_header(token),
+                )
+                session_id = start_resp.json()["session_id"]
+
+                completed_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    headers=_auth_header(token),
+                )
+
+                assert completed_response.status_code == 200
+                assert "当前所有任务已经完成。" in completed_response.text
+
+                followup_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "更新学习路径。"},
+                    headers=_auth_header(token),
+                )
+
+                assert followup_response.status_code == 200
+                assert "请先直接告诉我你想调整的具体信息" in followup_response.text
+                assert "profile_agent" not in followup_response.text
+                assert "learning_path_agent" not in followup_response.text
+
+        graph_module._graph = None
+
+    def test_send_message_pauses_followup_when_user_says_no_need_after_completed_tasks(self, tmp_path: Path) -> None:
+        identifier = "completed-pause-followup@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        graph_module._graph = None
+
+        class GuardSupervisorLlm:
+            def bind_tools(self, _tools):
+                return self
+
+            async def ainvoke(self, _messages):
+                raise AssertionError("完成任务后的礼貌收尾应直接返回文本，不应调用 LLM")
+
+        class WorkerPlaceholderLlm:
+            pass
+
+        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
+             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+            with chat_app(tmp_path) as client:
+                token = _register_user(client, identifier, "pausefollow123456")
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
@@ -1184,6 +2338,101 @@ class TestChatEndpoints:
                 assert completed_response.status_code == 200
                 assert "当前所有任务已经完成。" in completed_response.text
 
+                followup_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "先不用了"},
+                    headers=_auth_header(token),
+                )
+
+                assert followup_response.status_code == 200
+                assert "好的，当前先不调整。" in followup_response.text
+                assert "profile_agent" not in followup_response.text
+                assert "learning_path_agent" not in followup_response.text
+
+        graph_module._graph = None
+
+    def test_send_message_updates_multiple_explicit_profile_fields_and_refreshes_learning_path(self, tmp_path: Path) -> None:
+        identifier = "completed-multi-field-followup@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        graph_module._graph = None
+
+        class GuardSupervisorLlm:
+            def bind_tools(self, _tools):
+                return self
+
+            async def ainvoke(self, _messages):
+                raise AssertionError("完成任务后的画像更新与路径刷新应走 force_call，不应调用 LLM")
+
+        class WorkerPlaceholderLlm:
+            pass
+
+        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
+             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+            with chat_app(tmp_path) as client:
+                token = _register_user(client, identifier, "multifield123456")
+
+                engine = build_engine(database_url)
+                with Session(engine) as session:
+                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    year_path = _year_3_path()
+                    year_path["current_learning_course"] = {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_2",
+                        "course_or_chapter_theme": "AI Agent 项目实战",
+                        "course_goal": "完成AI Agent 项目实战",
+                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "current_focus": "当前阶段课程已全部完成",
+                        "progress_state": "completed",
+                        "next_action": "当前阶段课程已全部完成",
+                    }
+                    profile_data = _basic_profile()
+                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    session.add(
+                        UserProfile(
+                            user_uid=user.uid,
+                            profile_data=profile_data,
+                            profile_text="大三软件工程学生，目标是完成 AI 应用开发项目。",
+                        )
+                    )
+                    session.add(
+                        UserYearLearningPath(
+                            user_uid=user.uid,
+                            grade_year="year_3",
+                            learning_topic="AI 应用开发",
+                            path_data=year_path,
+                        )
+                    )
+                    session.add(
+                        UserCourseKnowledgeOutline(
+                            user_uid=user.uid,
+                            course_id="year_3_course_1",
+                            grade_year="year_3",
+                            course_name="AI Agent 开发基础能力搭建",
+                            outline_data={
+                                **_course_outline(),
+                                "personalization_summary": "针对大三软件工程背景，先完成需求拆解，再进入接口接入与最小闭环演示。",
+                            },
+                        )
+                    )
+                    session.commit()
+
+                start_resp = client.post(
+                    "/api/chat/start",
+                    json={"query": "开始"},
+                    headers=_auth_header(token),
+                )
+                session_id = start_resp.json()["session_id"]
+
+                completed_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    headers=_auth_header(token),
+                )
+
+                assert completed_response.status_code == 200
+                assert "当前所有任务已经完成。" in completed_response.text
+
                 refresh_response = client.post(
                     "/api/chat/message",
                     json={"session_id": session_id, "message": "专业改成计算机科学，当前限制改成周末集中"},
@@ -1202,7 +2451,12 @@ class TestChatEndpoints:
                     assert profile_row is not None
                     assert profile_row.profile_data["confirmed_info"]["current_grade"] == "大三"
                     assert profile_row.profile_data["confirmed_info"]["major"] == "计算机科学"
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["knowledge_foundation"]
+                        == "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
+                    )
                     assert profile_row.profile_data["confirmed_info"]["constraints"] == "周末集中"
+                    assert session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")) is None
 
                     year_3_path = session.exec(
                         select(UserYearLearningPath).where(
@@ -1213,5 +2467,23 @@ class TestChatEndpoints:
                     assert year_3_path.path_data["learner_baseline"]["major"] == "计算机科学"
                     assert year_3_path.path_data["learner_baseline"]["constraints"] == ["周末集中"]
                     assert year_3_path.path_data["current_learning_course"]["course_node_id"] == "year_3_course_1"
+
+                dashboard_response = client.get(
+                    "/api/profile/dashboard",
+                    headers=_auth_header(token),
+                )
+                assert dashboard_response.status_code == 200
+                dashboard_body = dashboard_response.json()
+                assert dashboard_body["profile"]["knowledgeFoundation"] == "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
+                assert dashboard_body["todayLearning"]["currentCourseOutline"] is None
+
+                branch_response = client.get(
+                    "/api/branch/overview",
+                    headers=_auth_header(token),
+                )
+                assert branch_response.status_code == 200
+                branch_year_3 = branch_response.json()["years"]["year_3"]
+                assert branch_year_3["has_outline_content"] is False
+                assert branch_year_3["courses"][0]["has_outline"] is False
 
         graph_module._graph = None

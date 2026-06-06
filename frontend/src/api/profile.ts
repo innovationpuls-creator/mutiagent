@@ -1,10 +1,7 @@
-import type { ProfileDashboardData } from '../types/profile';
+import { isProfileDashboardData, type ProfileDashboardData } from '../types/profile';
+import { notifyAuthInvalidFromError, readApiError } from './http';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
-
-interface ApiErrorResponse {
-  detail?: string;
-}
 
 export async function fetchProfileDashboard(token: string): Promise<ProfileDashboardData> {
   const response = await fetch(`${API_BASE_URL}/api/profile/dashboard`, {
@@ -14,9 +11,15 @@ export async function fetchProfileDashboard(token: string): Promise<ProfileDashb
   });
 
   if (!response.ok) {
-    const error = (await response.json().catch(() => null)) as ApiErrorResponse | null;
-    throw new Error(error?.detail ?? '画像数据加载失败');
+    const error = await readApiError(response);
+    notifyAuthInvalidFromError(response.status, error);
+    throw new Error((typeof error?.detail === 'string' ? error.detail : null) ?? '画像数据加载失败');
   }
 
-  return (await response.json()) as ProfileDashboardData;
+  const payload = await response.json();
+  if (!isProfileDashboardData(payload)) {
+    throw new Error('画像数据格式不正确');
+  }
+
+  return payload;
 }

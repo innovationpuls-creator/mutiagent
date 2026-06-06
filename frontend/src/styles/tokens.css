@@ -156,7 +156,7 @@
   --height-groove-track: 44px;
 
   /* Typography */
-  --font-brand: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", sans-serif;
+  --font-brand: 'Caveat', 'LXGW WenKai', cursive;
   --font-heading: 'LXGW WenKai', serif;
   --font-body: 'LXGW WenKai', serif;
   --font-mono: 'LXGW WenKai Mono', monospace;
@@ -168,7 +168,7 @@
   --font-weight-light: 300;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
-  --font-weight-bold: 600;
+  --font-weight-bold: 500;
 
   --text-h1: 2.5rem;
   --text-h2: 2rem;

@@ -6,12 +6,10 @@ import {
   type CourseKnowledgeResult,
   type LearningPathResult,
 } from '../types/chat';
+import { hasCompleteBasicProfileRecord } from '../lib/profileContract';
+import { notifyAuthInvalidFromError, readApiError, type ApiErrorResponse } from './http';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
-
-interface ApiErrorResponse {
-  detail?: string | { msg?: string }[];
-}
 
 interface UnknownRecord {
   [key: string]: unknown;
@@ -124,6 +122,17 @@ export interface SessionStructuredData {
 export interface SessionRecoveryData extends SessionStructuredData {
   sessionId: string;
   messages: ChatMessage[];
+  hasCompleteProfile: boolean;
+}
+
+export class SessionStreamError extends Error {
+  sessionId: string | null;
+
+  constructor(message: string, sessionId: string | null) {
+    super(message);
+    this.name = 'SessionStreamError';
+    this.sessionId = sessionId;
+  }
 }
 
 // ── Helpers ──
@@ -149,6 +158,78 @@ function getStringArray(value: unknown): string[] | undefined {
 
 function isUnknownRecord(value: unknown): value is UnknownRecord {
   return value !== null && typeof value === 'object';
+}
+
+function isNullableUnknownRecord(value: unknown): value is UnknownRecord | null {
+  return value === null || isUnknownRecord(value);
+}
+
+function normalizeChatStartResponse(value: unknown): ChatStartResponse {
+  if (!isUnknownRecord(value)) {
+    throw new Error('会话数据格式不正确');
+  }
+
+  if (
+    typeof value.session_id !== 'string'
+    || !(value.reply_text === null || value.reply_text === undefined || typeof value.reply_text === 'string')
+    || !isNullableUnknownRecord(value.profile)
+    || !isNullableUnknownRecord(value.year_learning_paths)
+    || !(
+      value.latest_grade_year === undefined
+      || value.latest_grade_year === null
+      || typeof value.latest_grade_year === 'string'
+    )
+    || !isNullableUnknownRecord(value.course_knowledge)
+  ) {
+    throw new Error('会话数据格式不正确');
+  }
+
+  return {
+    session_id: value.session_id,
+    reply_text: value.reply_text ?? null,
+    profile: value.profile ?? null,
+    year_learning_paths: value.year_learning_paths ?? null,
+    latest_grade_year: value.latest_grade_year,
+    course_knowledge: value.course_knowledge ?? null,
+  };
+}
+
+function normalizeSessionStateResponse(value: unknown): SessionStateResponse {
+  if (!isUnknownRecord(value)) {
+    throw new Error('会话数据格式不正确');
+  }
+
+  const messages = value.messages;
+  if (!(messages === undefined || Array.isArray(messages))) {
+    throw new Error('会话数据格式不正确');
+  }
+
+  if (
+    typeof value.session_id !== 'string'
+    || typeof value.user_uid !== 'string'
+    || !isNullableUnknownRecord(value.profile)
+    || !isNullableUnknownRecord(value.year_learning_paths)
+    || !(
+      value.latest_grade_year === undefined
+      || value.latest_grade_year === null
+      || typeof value.latest_grade_year === 'string'
+    )
+    || !isNullableUnknownRecord(value.course_knowledge)
+    || typeof value.updated_at !== 'string'
+  ) {
+    throw new Error('会话数据格式不正确');
+  }
+
+  return {
+    session_id: value.session_id,
+    user_uid: value.user_uid,
+    messages: messages ?? [],
+    profile: value.profile ?? null,
+    year_learning_paths: value.year_learning_paths ?? null,
+    latest_grade_year: value.latest_grade_year,
+    course_knowledge: value.course_knowledge ?? null,
+    updated_at: value.updated_at,
+  };
 }
 
 function pickLearningPath(
@@ -183,6 +264,9 @@ function pickCourseKnowledge(courseKnowledge: Record<string, unknown> | null): C
 function pickProfile(profile: Record<string, unknown> | null): SessionMessage | null {
   if (!isUnknownRecord(profile)) return null;
   if (profile.type !== 'basic_profile' && profile.type !== 'collecting') return null;
+  if (profile.type === 'basic_profile' && !hasCompleteBasicProfileRecord(profile, REQUIRED_PROFILE_KEYS)) {
+    return null;
+  }
   if (typeof profile.stage !== 'string') return null;
   if (typeof profile.question_mode !== 'string') return null;
   if (!isUnknownRecord(profile.confirmed_info)) return null;
@@ -204,13 +288,25 @@ function isGeneratedProfileCompletionContent(content: string): boolean {
   return content === '基础画像已完成' || content === '你的画像已生成';
 }
 
+function isCombinedLearningResultCompletionContent(content: string): boolean {
+  return content === '学习路径和课程大纲已生成';
+}
+
+export function isLearningPathStructuredCompletionContent(content: string): boolean {
+  return content.startsWith('学习路径已生成')
+    || content.startsWith('你的学习路径里已经有这些课程：')
+    || isCombinedLearningResultCompletionContent(content);
+}
+
+export function isCourseKnowledgeStructuredCompletionContent(content: string): boolean {
+  return content.startsWith('课程大纲已生成')
+    || content.startsWith('课程大纲 · ')
+    || isCombinedLearningResultCompletionContent(content);
+}
+
 function hasCompleteProfile(profile: Record<string, unknown> | null): boolean {
   if (!isUnknownRecord(profile)) return false;
-  if (profile.type !== 'basic_profile') return false;
-  if (!isUnknownRecord(profile.confirmed_info)) return false;
-  return REQUIRED_PROFILE_KEYS.every((key) =>
-    Object.prototype.hasOwnProperty.call(profile.confirmed_info, key),
-  );
+  return hasCompleteBasicProfileRecord(profile, REQUIRED_PROFILE_KEYS);
 }
 
 function parsePersistedMessages(
@@ -277,61 +373,82 @@ function buildSessionStructuredData(payload: SessionStateResponse): SessionStruc
   };
 }
 
+function findLastMatchingAssistantMessageIndex(
+  messages: ChatMessage[],
+  predicate: (content: string) => boolean,
+): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== 'assistant') continue;
+    if (predicate(message.content.trim())) return index;
+  }
+  return -1;
+}
+
 function attachStructuredDataToRecoveredMessages(
   messages: ChatMessage[],
   structuredData: SessionStructuredData,
   profileSummaryText: string | null,
 ): ChatMessage[] {
-  const assistantIndex = [...messages].reverse().findIndex((message) => message.role === 'assistant');
-  if (assistantIndex < 0) return messages;
-
-  const targetIndex = messages.length - 1 - assistantIndex;
-  const target = messages[targetIndex];
-  const content = target.content.trim();
-
-  const shouldAttachProfile = Boolean(
-    structuredData.profile
-    && (
-      content === structuredData.profile.text
+  const profileTargetIndex = structuredData.profile
+    ? findLastMatchingAssistantMessageIndex(messages, (content) => (
+      content === structuredData.profile?.text
       || (
-        structuredData.profile.type === 'basic_profile'
+        structuredData.profile?.type === 'basic_profile'
         && structuredData.profile.stage === 'generated'
         && isGeneratedProfileCompletionContent(content)
       )
       || (profileSummaryText !== null && content === profileSummaryText)
-    ),
-  );
-  const shouldAttachLearningPath = Boolean(
-    structuredData.learningPath
-    && (
-      content.startsWith('学习路径已生成')
-      || content.startsWith('你的学习路径里已经有这些课程：')
-    ),
-  );
-  const shouldAttachCourseKnowledge = Boolean(
-    structuredData.courseKnowledge
-    && (
-      content.startsWith('课程大纲已生成：《')
-      || content.startsWith('课程大纲 · ')
-    ),
-  );
+    ))
+    : -1;
 
-  if (!shouldAttachProfile && !shouldAttachLearningPath && !shouldAttachCourseKnowledge) {
+  const learningPathTargetIndex = structuredData.learningPath
+    ? findLastMatchingAssistantMessageIndex(messages, (content) => (
+      isLearningPathStructuredCompletionContent(content)
+    ))
+    : -1;
+
+  const courseKnowledgeTargetIndex = structuredData.courseKnowledge
+    ? findLastMatchingAssistantMessageIndex(messages, (content) => (
+      isCourseKnowledgeStructuredCompletionContent(content)
+    ))
+    : -1;
+
+  if (
+    profileTargetIndex < 0
+    && learningPathTargetIndex < 0
+    && courseKnowledgeTargetIndex < 0
+  ) {
     return messages;
   }
 
   const nextMessages = [...messages];
-  nextMessages[targetIndex] = {
-    ...target,
-    sessionMessage: shouldAttachProfile ? structuredData.profile : target.sessionMessage ?? null,
-    learningPath: (
-      shouldAttachLearningPath
-      || (shouldAttachCourseKnowledge && content.startsWith('课程大纲已生成：《'))
-    )
-      ? structuredData.learningPath
-      : target.learningPath ?? null,
-    courseKnowledge: shouldAttachCourseKnowledge ? structuredData.courseKnowledge : target.courseKnowledge ?? null,
-  };
+
+  if (profileTargetIndex >= 0) {
+    const target = nextMessages[profileTargetIndex];
+    nextMessages[profileTargetIndex] = {
+      ...target,
+      sessionMessage: structuredData.profile,
+    };
+  }
+
+  if (learningPathTargetIndex >= 0) {
+    const target = nextMessages[learningPathTargetIndex];
+    nextMessages[learningPathTargetIndex] = {
+      ...target,
+      learningPath: structuredData.learningPath,
+    };
+  }
+
+  if (courseKnowledgeTargetIndex >= 0) {
+    const target = nextMessages[courseKnowledgeTargetIndex];
+    nextMessages[courseKnowledgeTargetIndex] = {
+      ...target,
+      learningPath: target.learningPath ?? null,
+      courseKnowledge: structuredData.courseKnowledge,
+    };
+  }
+
   return nextMessages;
 }
 
@@ -414,7 +531,8 @@ async function requestChat<TResponse>(
   });
 
   if (!response.ok) {
-    const error = (await response.json().catch(() => null)) as ApiErrorResponse | null;
+    const error = await readApiError(response);
+    notifyAuthInvalidFromError(response.status, error);
     throw new Error(getErrorMessage(error));
   }
 
@@ -432,19 +550,20 @@ async function requestSessionState(
   });
 
   if (!response.ok) {
-    const error = (await response.json().catch(() => null)) as ApiErrorResponse | null;
+    const error = await readApiError(response);
+    notifyAuthInvalidFromError(response.status, error);
     throw new Error(getErrorMessage(error));
   }
 
-  return (await response.json()) as SessionStateResponse;
+  return normalizeSessionStateResponse(await response.json());
 }
 
 export async function startSession(token: string, query: string): Promise<SessionTurn> {
-  const payload = await requestChat<ChatStartResponse>(
+  const payload = normalizeChatStartResponse(await requestChat<unknown>(
     '/api/chat/start',
     token,
     { query },
-  );
+  ));
   const courseKnowledge = pickCourseKnowledge(payload.course_knowledge);
   return {
     sessionId: payload.session_id,
@@ -482,6 +601,7 @@ export async function fetchSessionRecoveryData(
   return {
     sessionId: payload.session_id,
     messages,
+    hasCompleteProfile: hasCompleteProfile(payload.profile),
     ...structuredData,
   };
 }
@@ -497,11 +617,11 @@ export async function streamSession(
   let greetingText = '';
 
   if (!activeSessionId) {
-    const startPayload = await requestChat<ChatStartResponse>(
+    const startPayload = normalizeChatStartResponse(await requestChat<unknown>(
       '/api/chat/start',
       token,
       { query },
-    );
+    ));
     activeSessionId = startPayload.session_id;
     greetingText = startPayload.reply_text ?? '';
   }
@@ -518,11 +638,12 @@ export async function streamSession(
   });
 
   if (!response.ok) {
-    const error = (await response.json().catch(() => null)) as ApiErrorResponse | null;
-    throw new Error(getErrorMessage(error));
+    const error = await readApiError(response);
+    notifyAuthInvalidFromError(response.status, error);
+    throw new SessionStreamError(getErrorMessage(error), activeSessionId);
   }
   if (!response.body) {
-    throw new Error('浏览器无法读取实时对话流，请稍后重试');
+    throw new SessionStreamError('浏览器无法读取实时对话流，请稍后重试', activeSessionId);
   }
 
   const reader = response.body.getReader();
@@ -547,7 +668,10 @@ export async function streamSession(
       onEvent(event);
 
       if (event.event === 'error') {
-        throw new Error(event.message || event.error || '对话请求失败，请稍后重试');
+        throw new SessionStreamError(
+          event.message || event.error || '对话请求失败，请稍后重试',
+          completedSessionId ?? activeSessionId,
+        );
       }
 
       if (event.event === 'text_chunk' && event.chunk) {

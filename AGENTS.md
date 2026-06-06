@@ -1,26 +1,79 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
-## Project Overview
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
-这是一个全栈单体仓库 (Monorepo) 项目。
-- **frontend/**: 前端设计系统项目，风格参考 Headspace 冥想应用——温暖、柔和、有呼吸感。所有界面使用中文，面向中文用户。
-- **backend/**: AI 驱动的后端服务，基于 FastAPI、LangGraph、LangChain 架构。
+## 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+---
+
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
 
 ## Mandatory: Design System Docs
 
-**开始任何前端任务前，必须先调用 `/web-design-engineer` skill的Headspace meditation 风格，然后阅读 `docs/` 目录下的设计规范文档。** 这些文档定义了项目的全部视觉 token、组件规范和动效规则，是唯一的设计真相来源。
+**开始任何前端任务前，必须先调用 `/web-design-engineer` skill的Headspace meditation 风格** 
 
-执行顺序：
-
-1. 调用 `/web-design-engineer` skill 加载设计工程上下文
-2. 按以下顺序阅读 docs：
+**参考文档，按需加载**：
    - `docs/01-颜色系统.md` — OKLCH 色彩 token、品牌色、语义色、交互态
    - `docs/02-字体系统.md` — LXGW WenKai 字体、字阶、行高规则
    - `docs/03-间距系统.md` — 4px 基础单位、间距 Scale、Section Padding
    - `docs/04-圆角与阴影.md` — 多层阴影、层级对照、圆角 Scale
-   - `docs/05-暗色模式.md` — 完整暗色 token 对照、`color-scheme` 声明
    - `docs/06-materials-effects.md` — 毛玻璃、品牌渐变、发光弥散
    - `docs/07-motion-physics.md` — 弹性缓动、Haptics、骨架屏动画
    - `docs/session-desgin.md` -所有session开发的规范
@@ -50,13 +103,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **开发与预览**：本地 Node.js 环境下运行 `npm run dev` 或 `yarn dev`
 
 ### 后端 (backend)
-- **核心框架**：FastAPI + Python
+- **核心框架**：FastAPI + uv + Python
 - **智能体中枢**：LangGraph Supervisor + ToolNode (负责调度 Worker Agent)
 - **智能体执行层**：LangChain Chain + structured_output (Worker Agent — Profile/LearningPath/CourseKnowledge)
 - **LLM 接入**：OpenAI-compatible API (当前: 阿里百炼 Qwen3.5+)
-- **数据库与 ORM**：PostgreSQL (psycopg2) + SQLModel (测试用 SQLite)
+- **数据库**：PostgreSQL (psycopg2)
 - **异步**：全链路 asyncio
-- **参考文档**：`docs/后端技术栈.md` 包含完整架构说明
+- **参考文档，按需加载**：`docs/后端技术栈.md` 包含完整架构说明
 
 ## Code Style
 

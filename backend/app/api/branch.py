@@ -9,7 +9,11 @@ from app.core.security import create_get_current_user
 from app.models import User, UserCourseKnowledgeOutline
 from app.schemas import BranchCourseNodeRead, BranchOverviewReadResponse, BranchYearRead
 from app.services.learning_path_service import (
+    compare_grade_years,
     get_all_year_learning_paths,
+    get_current_grade_year_from_path,
+    get_current_learning_course,
+    get_grade_courses,
     get_latest_year_learning_path_row,
 )
 
@@ -36,21 +40,17 @@ def _grade_name(path_data: dict, grade_id: str) -> str:
 
 
 def _grade_courses(path_data: dict, grade_id: str) -> list[dict]:
-    grade_plans = path_data.get("grade_plans")
-    if not isinstance(grade_plans, dict):
-        return []
-    grade_plan = grade_plans.get(grade_id)
-    if not isinstance(grade_plan, dict):
-        return []
-    course_nodes = grade_plan.get("course_nodes")
-    if not isinstance(course_nodes, list):
-        return []
-    return [course for course in course_nodes if isinstance(course, dict)]
+    return get_grade_courses(path_data, grade_id)
 
 
-def _current_course_id(path_data: dict) -> str | None:
-    current_learning_course = path_data.get("current_learning_course")
+def _current_course_id(path_data: dict, grade_id: str, courses: list[dict]) -> str | None:
+    if not courses:
+        return None
+    current_learning_course = get_current_learning_course(path_data)
     if not isinstance(current_learning_course, dict):
+        return None
+    current_grade_id = get_current_grade_year_from_path(path_data)
+    if current_grade_id != grade_id:
         return None
     course_id = current_learning_course.get("course_node_id")
     if isinstance(course_id, str) and course_id.strip():
@@ -59,7 +59,7 @@ def _current_course_id(path_data: dict) -> str | None:
 
 
 def _current_progress_state(path_data: dict) -> str | None:
-    current_learning_course = path_data.get("current_learning_course")
+    current_learning_course = get_current_learning_course(path_data)
     if not isinstance(current_learning_course, dict):
         return None
     progress_state = current_learning_course.get("progress_state")
@@ -68,7 +68,18 @@ def _current_progress_state(path_data: dict) -> str | None:
     return None
 
 
-def _course_status(current_index: int | None, index: int, current_progress_state: str | None) -> str:
+def _course_status(
+    rendered_grade_id: str,
+    current_grade_id: str,
+    current_index: int | None,
+    index: int,
+    current_progress_state: str | None,
+) -> str:
+    grade_compare = compare_grade_years(rendered_grade_id, current_grade_id)
+    if grade_compare < 0:
+        return "completed"
+    if grade_compare > 0:
+        return "locked"
     if current_index is None:
         return "locked"
     if index < current_index:
@@ -78,6 +89,32 @@ def _course_status(current_index: int | None, index: int, current_progress_state
             return "completed"
         return "current"
     return "locked"
+
+
+def _has_outline_payload(outline_data: object, course_id: str, grade_id: str) -> bool:
+    if not isinstance(outline_data, dict):
+        return False
+
+    outline_course_id = outline_data.get("course_id")
+    outline_course_name = outline_data.get("course_name")
+    outline_grade_year = outline_data.get("grade_year")
+    personalization_summary = outline_data.get("personalization_summary")
+    sections = outline_data.get("sections")
+    learning_sequence = outline_data.get("learning_sequence")
+    total_estimated_hours = outline_data.get("total_estimated_hours")
+
+    return (
+        isinstance(outline_course_id, str)
+        and outline_course_id.strip() == course_id
+        and isinstance(outline_course_name, str)
+        and bool(outline_course_name.strip())
+        and isinstance(outline_grade_year, str)
+        and outline_grade_year.strip() == grade_id
+        and isinstance(personalization_summary, str)
+        and isinstance(sections, list)
+        and isinstance(learning_sequence, list)
+        and isinstance(total_estimated_hours, str)
+    )
 
 
 def create_branch_router(session_dependency: SessionDependency) -> APIRouter:
@@ -108,7 +145,8 @@ def create_branch_router(session_dependency: SessionDependency) -> APIRouter:
         for grade_id in YEAR_ORDER:
             path_data = paths_by_year.get(grade_id, {})
             courses = _grade_courses(path_data, grade_id)
-            current_course_id = _current_course_id(path_data)
+            current_grade_id = get_current_grade_year_from_path(path_data)
+            current_course_id = _current_course_id(path_data, grade_id, courses)
             current_progress_state = _current_progress_state(path_data)
             current_index = next(
                 (
@@ -127,8 +165,7 @@ def create_branch_router(session_dependency: SessionDependency) -> APIRouter:
                     continue
                 outline_row = outlines_by_course_id.get(course_id)
                 outline_data = outline_row.outline_data if outline_row else None
-                sections = outline_data.get("sections") if isinstance(outline_data, dict) else None
-                has_outline = isinstance(sections, list) and len(sections) > 0
+                has_outline = _has_outline_payload(outline_data, course_id, grade_id)
                 has_outline_content = has_outline_content or has_outline
                 theme = course.get("course_or_chapter_theme")
                 goal = course.get("course_goal")
@@ -137,7 +174,13 @@ def create_branch_router(session_dependency: SessionDependency) -> APIRouter:
                         course_node_id=course_id,
                         course_or_chapter_theme=theme.strip() if isinstance(theme, str) and theme.strip() else course_id,
                         course_goal=goal.strip() if isinstance(goal, str) and goal.strip() else "继续沿着学习路径稳步推进。",
-                        status=_course_status(current_index, index, current_progress_state),
+                        status=_course_status(
+                            grade_id,
+                            current_grade_id,
+                            current_index,
+                            index,
+                            current_progress_state,
+                        ),
                         has_outline=has_outline,
                     )
                 )

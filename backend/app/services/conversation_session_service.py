@@ -13,18 +13,22 @@ def load_session(session: Session, session_id: str) -> ConversationSession | Non
 
 def load_or_create_session(session: Session, session_id: str, user_uid: str) -> ConversationSession:
     row = session.get(ConversationSession, session_id)
-    if row is None:
-        now = datetime.now(timezone.utc)
-        row = ConversationSession(
-            session_id=session_id,
-            user_uid=user_uid,
-            messages=[],
-            created_at=now,
-            updated_at=now,
-        )
-        session.add(row)
-        session.commit()
-        session.refresh(row)
+    if row is not None:
+        if row.user_uid != user_uid:
+            raise ValueError(f"Conversation session {session_id} does not belong to user {user_uid}")
+        return row
+
+    now = datetime.now(timezone.utc)
+    row = ConversationSession(
+        session_id=session_id,
+        user_uid=user_uid,
+        messages=[],
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
     return row
 
 
