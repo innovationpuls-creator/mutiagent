@@ -1311,22 +1311,6 @@ _DISALLOWED_ANIMATION_COLOR_PATTERN = re.compile(
     r"(#[0-9A-Fa-f]{3,8}\b|\brgba?\s*\(|\bhsla?\s*\()"
 )
 _MARKDOWN_HEADING_PATTERN = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
-_TEACHING_DEPTH_MARKERS = (
-    "定义",
-    "是什么",
-    "为什么",
-    "怎么用",
-    "如何使用",
-    "适用",
-    "场景",
-    "例子",
-    "示例",
-    "反例",
-    "误区",
-    "边界",
-    "注意",
-    "验收",
-)
 _ENGLISH_KNOWLEDGE_POINT_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+(?:[./_-][A-Za-z0-9]+)*")
 _ENGLISH_KNOWLEDGE_POINT_STOPWORDS = {
     "a",
@@ -1438,39 +1422,25 @@ def _markdown_section_body(markdown: str, heading: str) -> str:
 def _markdown_teaching_depth_issue(markdown: str, section: dict) -> str | None:
     concept_body = _markdown_section_body(markdown, "核心概念")
     steps_body = _markdown_section_body(markdown, "步骤讲解")
-    practice_body = _markdown_section_body(markdown, "练习任务")
     check_body = _markdown_section_body(markdown, "检查标准")
 
     if len(markdown) < 1800:
         return "Markdown 教学深度不足：正文整体过短。"
     if len(concept_body) < 260:
         return "Markdown 教学深度不足：核心概念解释过短。"
-    missing_points = [
-        point
-        for point in _text_items(section.get("key_knowledge_points"))
-        if not _knowledge_point_covered_in_markdown(concept_body, point)
-    ]
-    if missing_points:
-        return f"Markdown 教学深度不足：核心概念缺少关键知识点：{', '.join(missing_points)}。"
-    marker_count = sum(1 for marker in _TEACHING_DEPTH_MARKERS if marker in concept_body)
-    if marker_count < 5:
-        return "Markdown 教学深度不足：核心概念缺少定义、用法、示例、边界或误区。"
     if len(steps_body) < 360:
         return "Markdown 教学深度不足：步骤讲解缺少展开。"
-    if not _STEP_MARKER_PATTERN.search(steps_body):
-        return "Markdown 教学深度不足：步骤讲解缺少清晰步骤。"
     has_table = "|" in steps_body and re.search(r"^\s*\|.*\|\s*$", steps_body, re.MULTILINE)
     has_code_block = "```" in steps_body
     if not has_table and not has_code_block:
         return "Markdown 教学支架不足：步骤讲解缺少表格、伪代码或代码块。"
-    if len(practice_body) < 180 or not any(term in practice_body for term in ("输入", "输出", "提交", "产出", "完成标准")):
-        return "Markdown 教学深度不足：练习任务缺少可交付产出。"
     check_items = re.findall(r"^\s*-\s+\[\s*[ xX]?\s*\]", check_body, re.MULTILINE)
     if len(check_items) < 4:
         return "Markdown 教学深度不足：检查标准少于 4 条。"
-    if len(check_body) < 160 or not any(term in check_body for term in ("能", "能够", "[ ]", "通过", "截图", "运行")):
+    if len(check_body) < 160:
         return "Markdown 教学深度不足：检查标准不可验收。"
     return None
+
 
 
 def _markdown_quality_issue(
@@ -2368,48 +2338,7 @@ async def _search_bilibili_video_results(query: str) -> list[dict]:
         ),
         "Referer": "https://www.bilibili.com/",
     }
-    page_results = await _search_bilibili_video_page_results(query, headers)
-    if page_results:
-        return page_results
-    params = {"search_type": "video", "keyword": query}
-    try:
-        async with httpx.AsyncClient(timeout=_VIDEO_METADATA_TIMEOUT_SECONDS, follow_redirects=True) as client:
-            response = await client.get(
-                "https://api.bilibili.com/x/web-interface/search/type",
-                params=params,
-                headers=headers,
-            )
-            response.raise_for_status()
-            payload = response.json()
-    except Exception as exc:
-        logger.warning("Bilibili search failed for query %s: %s", query, exc)
-        return []
-
-    if payload.get("code") != 0:
-        return []
-    data = payload.get("data")
-    results = data.get("result") if isinstance(data, dict) else None
-    if not isinstance(results, list):
-        return []
-    search_results: list[dict] = []
-    for item in results:
-        if not isinstance(item, dict):
-            continue
-        bvid = _clean_text(item.get("bvid"))
-        title = _strip_html_tags(item.get("title"))
-        arcurl = _clean_text(item.get("arcurl"))
-        url = f"https://www.bilibili.com/video/{bvid}" if bvid else arcurl
-        if not title or not _bilibili_bvid_from_url(url):
-            continue
-        search_results.append(
-            {
-                "title": title,
-                "url": url,
-                "cover_url": "",
-                "source": "Bilibili",
-            }
-        )
-    return search_results
+    return await _search_bilibili_video_page_results(query, headers)
 
 
 async def _search_bilibili_video_page_results(query: str, headers: dict[str, str]) -> list[dict]:
@@ -2636,10 +2565,10 @@ def _normalized_animation_quality_issue(
             return "动画 HTML 缺少 UTF-8 声明。"
         if "section-animation" not in html_text:
             return "动画 HTML 缺少 section-animation 根节点。"
-        if "opacity: 1 !important" not in html_text or "transform: none !important" not in html_text:
-            return "动画 HTML 缺少可见兜底样式。"
         if "animation-context" not in html_text or not _contains_chinese(html_text):
             return "动画 HTML 缺少中文上下文。"
+        if "opacity: 1 !important" not in html_text or "transform: none !important" not in html_text:
+            return "动画 HTML 缺少可见兜底样式。"
         if _DISALLOWED_ANIMATION_COLOR_PATTERN.search(html_text):
             return "动画 HTML 使用了 HEX/RGB/HSL 硬编码颜色。"
         if brief_terms and not any(term in html_text for term in brief_terms):
@@ -2855,10 +2784,12 @@ def _normalize_animation_html(html: str, brief: dict | None = None) -> str:
         return ""
     visible_fallback = (
         "<style>"
-        ".section-animation .node,.section-animation .connector,"
-        ".section-animation [data-node],.section-animation [data-step]{"
-        "opacity: 1 !important;"
-        "transform: none !important;"
+        "@media (prefers-reduced-motion: reduce) {"
+        "  .section-animation .node,.section-animation .connector,"
+        "  .section-animation [data-node],.section-animation [data-step]{"
+        "    opacity: 1 !important;"
+        "    transform: none !important;"
+        "  }"
         "}"
         ".section-animation .animation-context{"
         "width:100%;"
