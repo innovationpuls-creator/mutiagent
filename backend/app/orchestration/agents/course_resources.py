@@ -1292,7 +1292,7 @@ def _deterministic_animation_html(
         
     nodes = "\n".join(
         (
-            f'<div class="node" data-step="{index}" onclick="selectStep({index})">'
+            f'<div class="node" data-step="{index}">'
             f'<span class="step-label">第 {index} 步</span>'
             f'<strong>{html.escape(element)}</strong>'
             "</div>"
@@ -1301,11 +1301,10 @@ def _deterministic_animation_html(
         for index, element in enumerate(elements, start=1)
     )
     
-    # details json containing description for each step
     details_json = json.dumps({
         str(i): {
             "title": elem,
-            "desc": f"这里是「{elem}」的实战说明。在{clean_title}中，我们需要输入前置产出，进行处理和边界验证，最终生成验收证据。",
+            "desc": f"这里是「{elem}」的实战说明。在{clean_title}中，我们需要输入前置产出，进行处理 and 边界验证，最终生成验收证据。",
             "io": f"输入：上游产出 | 输出：{elem} 验证记录"
         }
         for i, elem in enumerate(elements, start=1)
@@ -1319,29 +1318,39 @@ def _deterministic_animation_html(
         "--surface:oklch(96% 0.025 92);--panel:oklch(100% 0 0 / 0.85);"
         "--text:oklch(29% 0.045 245);--muted:oklch(48% 0.035 245);"
         "--accent:oklch(65% 0.12 240);--line:oklch(85% 0.03 240);"
-        "--shadow-sm:0 2px 4px oklch(0% 0 0 / 0.02),0 10px 24px oklch(240deg 15% 10% / 0.05);}"
-        ".section-animation{font-family:\'LXGW WenKai\',serif;background:var(--surface);color:var(--text);"
+        "--shadow-sm:0 2px 4px oklch(0% 0 0 / 0.02),0 10px 24px oklch(10% 0.03 240 / 0.05);}"
+        "@media (prefers-color-scheme: dark) {"
+        ":root {"
+        "--surface:oklch(16% 0.01 240);--panel:oklch(22% 0.015 240 / 0.85);"
+        "--text:oklch(92% 0.01 240);--muted:oklch(65% 0.02 240);"
+        "--accent:oklch(70% 0.12 240);--line:oklch(30% 0.02 240);"
+        "--shadow-sm:0 2px 4px oklch(0% 0 0 / 0.2),0 10px 24px oklch(0% 0 0 / 0.4);}"
+        "}"
+        ".section-animation{font-family:'LXGW WenKai',serif;background:var(--surface);color:var(--text);"
         "padding:var(--space-lg);box-shadow:var(--shadow-sm);border-radius:16px;overflow:hidden;"
-        "backdrop-filter: blur(12px); border: 1px solid oklch(92% 0.01 240);}"
+        "border: 1px solid var(--line);}"
         ".animation-context{margin-bottom:var(--space-md);line-height:1.8;color:var(--muted);}"
         ".animation-title{font-size:20px;font-weight:500;margin:0 0 var(--space-sm);color:var(--text);}"
         ".stage{display:flex;gap:var(--space-sm);align-items:stretch;justify-content:space-between;margin-bottom:var(--space-md);}"
         ".node{cursor:pointer;background:var(--panel);border:1px solid var(--line);"
         "border-radius:12px;padding:var(--space-md);min-width:120px;flex:1;text-align:center;line-height:1.6;"
-        "transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1); position: relative;}"
+        "backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);"
+        "transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.4s, background-color 0.4s, box-shadow 0.4s; position: relative;}"
         ".node:hover{transform: translateY(-2px); border-color: var(--accent);}"
-        ".node.active{border-color: var(--accent); background: oklch(100% 0 0); animation: pulse 2.5s infinite ease-in-out;}"
+        ".node.active{border-color: var(--accent); background: var(--panel); animation: pulse 2.5s infinite ease-in-out;}"
+        "@media (prefers-color-scheme: dark) { .node.active{ background: oklch(25% 0.02 240); } }"
         ".node strong{font-weight:500;display:block;}.step-label{display:block;color:var(--accent);margin-bottom:var(--space-xs); font-size:12px;}"
         ".connector{align-self:center;flex:0 0 28px;height:2px;background:var(--line); position: relative; transition: background 0.3s;}"
         ".connector.active{background: var(--accent);}"
         ".connector:last-child{display:none;}"
         ".detail-panel{background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: var(--space-md);"
-        "box-shadow: var(--shadow-sm); transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);}"
+        "backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);"
+        "box-shadow: var(--shadow-sm); transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.4s, background-color 0.4s;}"
         ".detail-title{font-weight: 500; margin-bottom: var(--space-xs); color: var(--accent);}"
         ".detail-desc{font-size: 14px; line-height: 1.6; color: var(--text); margin-bottom: 6px;}"
         ".detail-io{font-size: 12px; color: var(--muted); font-family: monospace;}"
         "@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 oklch(65% 0.12 240 / 0.3); } 50% { box-shadow: 0 0 10px 3px oklch(65% 0.12 240 / 0.15); } }"
-        "@media (max-width: 640px){.stage{flex-direction:column}.connector{width:2px;height:20px;margin:auto;}}"
+        "@media (max-width: 640px){.stage{flex-direction:column}.connector{width:2px;height:20px;margin:auto;flex:none;}}"
         "@media (prefers-reduced-motion: reduce){.section-animation *{animation:none !important;transition:none !important;opacity: 1 !important;}"
         ".node{transform: none !important;}}"
         "</style>"
@@ -1354,29 +1363,32 @@ def _deterministic_animation_html(
         f'<div class="detail-io" id="detailIo-{html.escape(animation_id)}"></div>'
         f'</div>'
         f'<script>'
-        f'const details = {details_json};'
-        f'const animId = "{html.escape(animation_id)}";'
-        f'function selectStep(stepIndex) {{'
-        f'  document.querySelectorAll(`.stage[data-animation-id="${{animId}}"] .node`).forEach(node => {{'
-        f'    node.classList.remove("active");'
-        f'  }});'
-        f'  document.querySelectorAll(`.stage[data-animation-id="${{animId}}"] .connector`).forEach(conn => {{'
-        f'    conn.classList.remove("active");'
-        f'  }});'
-        f'  const selectedNode = document.querySelector(`.stage[data-animation-id="${{animId}}"] .node[data-step="${{stepIndex}}"]`);'
-        f'  if (selectedNode) selectedNode.classList.add("active");'
-        f'  for (let i = 1; i < stepIndex; i++) {{'
-        f'    const conn = document.querySelector(`.stage[data-animation-id="${{animId}}"] .connector[data-conn="${{i}}"]`);'
-        f'    if (conn) conn.classList.add("active");'
+        f'(function() {{'
+        f'  const details = {details_json};'
+        f'  const animId = "{html.escape(animation_id)}";'
+        f'  const stage = document.querySelector(`.stage[data-animation-id="${{animId}}"]`);'
+        f'  function selectStep(stepIndex) {{'
+        f'    stage.querySelectorAll(`.node`).forEach(node => {{'
+        f'      node.classList.toggle("active", parseInt(node.getAttribute("data-step")) === stepIndex);'
+        f'    }});'
+        f'    stage.querySelectorAll(`.connector`).forEach(conn => {{'
+        f'      conn.classList.toggle("active", parseInt(conn.getAttribute("data-conn")) < stepIndex);'
+        f'    }});'
+        f'    const detail = details[stepIndex];'
+        f'    if (detail) {{'
+        f'      document.getElementById(`detailTitle-${{animId}}`).innerText = detail.title;'
+        f'      document.getElementById(`detailDesc-${{animId}}`).innerText = detail.desc;'
+        f'      document.getElementById(`detailIo-${{animId}}`).innerText = detail.io;'
+        f'    }}'
         f'  }}'
-        f'  const detail = details[stepIndex];'
-        f'  if (detail) {{'
-        f'    document.getElementById(`detailTitle-${{animId}}`).innerText = detail.title;'
-        f'    document.getElementById(`detailDesc-${{animId}}`).innerText = detail.desc;'
-        f'    document.getElementById(`detailIo-${{animId}}`).innerText = detail.io;'
-        f'  }}'
-        f'}}'
-        f'window.addEventListener("DOMContentLoaded", () => selectStep(1));'
+        f'  stage.querySelectorAll(`.node`).forEach(node => {{'
+        f'    node.addEventListener("click", () => {{'
+        f'      const stepIndex = parseInt(node.getAttribute("data-step"));'
+        f'      selectStep(stepIndex);'
+        f'    }});'
+        f'  }});'
+        f'  selectStep(1);'
+        f'}})();'
         f'</script>'
         "</section></body></html>"
     )
