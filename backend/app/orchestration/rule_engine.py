@@ -193,6 +193,8 @@ def is_course_resource_generation_query(query: str) -> bool:
         "教学内容",
         "课程内容",
         "章节内容",
+        "详细内容",
+        "内容详情",
         "markdown",
         "video",
         "html animation",
@@ -212,6 +214,11 @@ def is_course_resource_generation_query(query: str) -> bool:
         "chapter",
         "section",
         "course",
+        "系统",
+        "构建",
+        "知识库",
+        "这门课",
+        "这门",
     ))
 
 def is_course_change_query(query: str) -> bool:

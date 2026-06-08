@@ -705,6 +705,9 @@ def test_course_resource_generation_query_keywords() -> None:
     assert is_course_resource_generation_query(
         "Please generate chapter 2 markdown, video resources, and HTML animations for this course.",
     )
+    assert is_course_resource_generation_query("帮我重新生成构建本地知识库问答系统 (RAG基础)的详细内容")
+    assert is_course_resource_generation_query("生成这门课的详细内容")
+    assert is_course_resource_generation_query("重新生成课程内容详情")
     assert not is_course_resource_generation_query("开始学习这门课")
     assert not is_course_resource_generation_query("先看看学习路径")
 
@@ -819,6 +822,33 @@ def test_resource_query_after_course_knowledge_forces_section_markdown() -> None
         "course_knowledge": {"course_id": "year_3_course_1", "sections": [{"section_id": "1"}]},
         "messages": [
             HumanMessage(content="生成当前课程教学内容"),
+            AIMessage(
+                content="",
+                tool_calls=[{
+                    "name": AGENT_COURSE_KNOWLEDGE,
+                    "args": {"course_id": "year_3_course_1"},
+                    "id": "force_course_knowledge_agent",
+                }],
+            ),
+            ToolMessage(
+                content='{"course_id": "year_3_course_1"}',
+                tool_call_id="force_course_knowledge_agent",
+            ),
+        ],
+    }
+    result = evaluate(state)
+
+    assert result.force_call == AGENT_SECTION_MARKDOWN
+
+
+def test_detailed_content_query_after_course_knowledge_forces_section_markdown() -> None:
+    state = {
+        "query": "帮我重新生成构建本地知识库问答系统 (RAG基础)的详细内容",
+        "profile": _complete_profile(),
+        "year_learning_paths": {"year_3": {"grade_plans": {"year_3": {"course_nodes": []}}}},
+        "course_knowledge": {"course_id": "year_3_course_1", "sections": [{"section_id": "1"}]},
+        "messages": [
+            HumanMessage(content="帮我重新生成构建本地知识库问答系统 (RAG基础)的详细内容"),
             AIMessage(
                 content="",
                 tool_calls=[{

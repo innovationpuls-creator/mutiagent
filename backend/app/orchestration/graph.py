@@ -108,7 +108,7 @@ def build_orchestration_graph():
     supervisor_node = create_supervisor_node(supervisor_llm)
     profile_node = create_profile_agent_node(supervisor_llm)
     learning_path_node = create_learning_path_agent_node(learning_path_llm)
-    course_knowledge_node = create_course_knowledge_agent_node(thinking_worker_llm)
+    course_knowledge_node = create_course_knowledge_agent_node(worker_llm)
     section_markdown_node = create_section_markdown_agent_node(worker_llm)
     section_video_search_node = create_section_video_search_agent_node(search_worker_llm)
     section_html_animation_node = create_section_html_animation_agent_node(worker_llm)

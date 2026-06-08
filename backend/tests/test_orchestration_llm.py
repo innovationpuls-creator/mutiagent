@@ -114,12 +114,12 @@ def test_graph_routes_long_reasoning_to_thinking_and_resource_generation_to_work
     assert received["supervisor"] is supervisor_llm
     assert received["profile_agent"] is supervisor_llm
     assert received["learning_path_agent"] is thinking_llm
-    assert received["course_knowledge_agent"] is thinking_llm
+    assert received["course_knowledge_agent"] is worker_llm
     assert received["section_markdown_agent"] is worker_llm
     assert received["section_video_search_agent"] is search_llm
     assert received["section_html_animation_agent"] is worker_llm
     assert received["learning_path_agent"] is not worker_llm
-    assert received["course_knowledge_agent"] is not worker_llm
+    assert received["course_knowledge_agent"] is not thinking_llm
     assert received["section_markdown_agent"] is not thinking_llm
     assert received["section_html_animation_agent"] is not thinking_llm
 

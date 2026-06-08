@@ -699,5 +699,32 @@ def test_route_after_course_knowledge_resource_request_returns_supervisor() -> N
     ) == "supervisor"
 
 
+def test_route_after_course_knowledge_detailed_content_returns_supervisor() -> None:
+    assert route_after_worker(
+        {
+            "query": "帮我重新生成构建本地知识库问答系统 (RAG基础)的详细内容",
+            "course_knowledge": {
+                "course_id": "year_3_course_1",
+                "sections": [{"section_id": "1", "parent_section_id": None, "depth": 1}],
+            },
+            "messages": [
+                HumanMessage(content="帮我重新生成构建本地知识库问答系统 (RAG基础)的详细内容"),
+                AIMessage(
+                    content="",
+                    tool_calls=[{
+                        "name": "course_knowledge_agent",
+                        "args": {"course_id": "year_3_course_1"},
+                        "id": "force_course_knowledge_agent",
+                    }],
+                ),
+                ToolMessage(
+                    content='{"course_id": "year_3_course_1"}',
+                    tool_call_id="force_course_knowledge_agent",
+                ),
+            ],
+        }
+    ) == "supervisor"
+
+
 def test_route_after_worker_ends_without_followup() -> None:
     assert route_after_worker({}) == "__end__"
