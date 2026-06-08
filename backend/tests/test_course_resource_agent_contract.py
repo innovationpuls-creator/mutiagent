@@ -5029,3 +5029,58 @@ def test_profile_learning_context_text_generates_natural_narrative():
     }
     text_unknown = _profile_learning_context_text(state_unknown)
     assert "未知" not in text_unknown
+    assert "根据您偏好的项目驱动学习方法" in text_unknown
+
+    # Test cases with only preference present (no background)
+    state_only_pref = {
+        "profile": {
+            "confirmed_info": {
+                "current_grade": "未知",
+                "major": "无",
+                "learning_method_preference": "实践探究"
+            }
+        }
+    }
+    text_only_pref = _profile_learning_context_text(state_only_pref)
+    assert "根据您偏好的实践探究方法，本节采用项目实践驱动" in text_only_pref
+
+    # Test cases with none-like placeholders present
+    state_placeholders = {
+        "profile": {
+            "confirmed_info": {
+                "current_grade": "暂无",
+                "major": "none",
+                "learning_method_preference": "无偏好"
+            }
+        }
+    }
+    text_placeholders = _profile_learning_context_text(state_placeholders)
+    assert text_placeholders == "本节采用项目实践驱动的教学设计，侧重动手实践与运行结果校验，以便快速掌握核心技能。"
+
+    # Test case: only grade present, preference is placeholder
+    state_only_grade = {
+        "profile": {
+            "confirmed_info": {
+                "current_grade": "硕士",
+                "major": "null",
+                "learning_method_preference": "没有"
+            }
+        }
+    }
+    text_only_grade = _profile_learning_context_text(state_only_grade)
+    assert "硕士阶段" in text_only_grade
+    assert "偏好" not in text_only_grade
+
+    # Test case: only major present, preference is placeholder
+    state_only_major = {
+        "profile": {
+            "confirmed_info": {
+                "current_grade": "none",
+                "major": "计算机科学与技术",
+                "learning_method_preference": "无"
+            }
+        }
+    }
+    text_only_major = _profile_learning_context_text(state_only_major)
+    assert "计算机科学与技术专业" in text_only_major
+    assert "偏好" not in text_only_major

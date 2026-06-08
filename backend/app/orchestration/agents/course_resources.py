@@ -1096,19 +1096,31 @@ def _profile_learning_context_text(state: OrchestrationState) -> str:
     major = _clean_text(confirmed_info.get("major"))
     preference = _clean_text(confirmed_info.get("learning_method_preference"))
     
-    if grade == "未知":
+    if grade in ("未知", "无", "暂无", "none", "null"):
         grade = ""
-    if major == "未知":
+    if major in ("未知", "无", "暂无", "none", "null"):
         major = ""
-    if preference == "未知":
+    if preference in ("未知", "无", "暂无", "没有", "无偏好", "none", "null"):
         preference = ""
-    
-    if grade and major and preference:
-        return f"根据您{grade}{major}专业的背景，本节针对您偏好的{preference}方法进行教学设计，重点关注实战应用与运行证据留存。"
-    elif grade and major:
-        return f"针对{grade}{major}专业的学习特点，本节采用项目实战设计，侧重实践与运行结果校验。"
-    
-    return "本节采用项目实践驱动的教学设计，侧重动手实践与运行结果校验，以便快速掌握核心技能。"
+        
+    background = ""
+    if grade and major:
+        background = f"{grade}{major}专业"
+    elif grade:
+        background = f"{grade}阶段"
+    elif major:
+        background = f"{major}专业"
+
+    if background:
+        if preference:
+            return f"根据您{background}的背景，本节针对您偏好的{preference}方法进行教学设计，重点关注实战应用与运行证据留存。"
+        else:
+            return f"针对{background}的学习特点，本节采用项目实战设计，侧重实践与运行结果校验。"
+    else:
+        if preference:
+            return f"根据您偏好的{preference}方法，本节采用项目实践驱动的教学设计，重点关注实战应用与运行证据留存。"
+        else:
+            return "本节采用项目实践驱动的教学设计，侧重动手实践与运行结果校验，以便快速掌握核心技能。"
 
 
 def _deterministic_video_briefs(section: dict) -> list[dict]:
