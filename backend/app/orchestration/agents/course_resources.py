@@ -1156,15 +1156,46 @@ def _deterministic_animation_briefs(section: dict) -> list[dict]:
 def _deterministic_concept_block(point: str, section: dict, index: int) -> str:
     title = _clean_text(section.get("title")) or "本节"
     description = _clean_text(section.get("description")) or f"围绕{title}完成可验收学习任务。"
-    return (
-        f"### {point}\n"
-        f"定义：{point}是「{title}」里必须能解释和操作的核心能力，它把章节描述中的「{description}」落到具体动作。\n"
-        f"为什么重要：如果只记住名词而没有理解{point}的输入、处理和输出，后续构建本地知识库问答系统时就会出现解析结果不可控、分块无法复查或检索质量无法解释的问题。\n"
-        f"怎么用：先把原始材料、处理规则、参数设置和验收证据写清楚，再用一份小样本文档验证{point}是否真的生效。第 {index} 个知识点要绑定一个可观察结果，例如日志、表格、分块样例、运行截图或同伴复述。\n"
-        f"示例：处理 RAG 基础项目时，可以选取一份包含标题、正文、代码块和页码的文档，记录{point}在清洗、切分、统计或预热过程中的具体作用，并把异常样例单独列出。\n"
-        f"常见误区或边界：不要把{point}写成一句口号，也不要把所有问题都交给大模型自动判断。只要输入格式、参数范围、失败条件或验收方式没有写清楚，本节产出就不能算完成。\n"
-        f"验收方式：学习者需要能用自己的话解释{point}，提交一条真实样例，并说明这条样例如何影响后续向量化、检索召回或答案质量。"
-    )
+    
+    mod = index % 3
+    if mod == 1:
+        return (
+            f"### {point}\n"
+            f"**定义**：{point}是「{title}」里用于明确数据边界的关键机制。\n\n"
+            f"为了理清其在 RAG 系统中的作用，以下是其与其他常见方案的横向对比：\n\n"
+            f"| 比较维度 | {point} 方案 | 传统/基础方案 | 核心优势 |\n"
+            f"| --- | --- | --- | --- |\n"
+            f"| 数据吞吐 | 适合高并发写入 | 单点写入瓶颈 | 降低资源阻塞率 |\n"
+            f"| 检索相关性 | 稠密向量语义对齐 | 关键词匹配 | 提升复杂 Query 召回率 |\n\n"
+            f"**适用场景**：在大规模非结构化文档导入和召回退化场景下，优先配置本机制以确保召回的准确性。\n\n"
+            f"**如何验证**：通过运行后检查向量数据库的索引一致性日志进行掌握验收。"
+        )
+    elif mod == 2:
+        return (
+            f"### {point}\n"
+            f"**概念解析**：{point}在工程落地上通常对应特定的初始化参数配置与资源分配。\n\n"
+            f"在实际开发中，可以通过如下典型的 Python 伪代码来进行组件初始化与高并发配置：\n\n"
+            f"```python\n"
+            f"# {point} 核心配置与并发限制初始化\n"
+            f"import asyncio\n\n"
+            f"class VectorIngestionPipeline:\n"
+            f"    def __init__(self, batch_size: int = 64, max_concurrency: int = 5):\n"
+            f"        self.batch_size = batch_size\n"
+            f"        self.semaphore = asyncio.Semaphore(max_concurrency)\n"
+            f"        # 初始化映射维度\n"
+            f"        self.dimension = 1024  # 对齐 BGE-large-zh 维度\n"
+            f"```\n\n"
+            f"**常见边界**：注意在高并发写入时控制 Batch Size，以防止 API 触发 429 限流或本地 PyTorch 显存溢出 (OOM)。"
+        )
+    else:
+        return (
+            f"### {point}\n"
+            f"**基本概念**：{point}是保证本地问答系统最终召回结果连续性不可或缺的一环，直指「{description}」的底层落地。\n\n"
+            f"**常见错误与排查步骤**：\n"
+            f"1. **维度不匹配错误 (Dimension Mismatch)**：通常表现为后端报错 `ValueError`。请打印 Query 向量与 Doc 向量的 `.shape` 确认是否完全对齐。\n"
+            f"2. **上下文断裂**：分块块间重叠率 (Overlap) 设置过低。建议将 overlap 调整在 10% - 20% 之间。\n\n"
+            f"**验收标准**：通过运行测试问题，确认召回的 Chunk 没有出现文本截断，并且能被下游大模型解析。"
+        )
 
 
 def _deterministic_section_markdown_data(

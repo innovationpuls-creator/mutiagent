@@ -5084,3 +5084,26 @@ def test_profile_learning_context_text_generates_natural_narrative():
     text_only_major = _profile_learning_context_text(state_only_major)
     assert "计算机科学与技术专业" in text_only_major
     assert "偏好" not in text_only_major
+
+
+def test_deterministic_concept_block_template_pool_rotation():
+    from app.orchestration.agents.course_resources import _deterministic_concept_block
+    
+    section = {"title": "向量检索基础", "description": "学习向量空间映射与召回"}
+    
+    # Simulate three different indexes
+    block_1 = _deterministic_concept_block("特征提取", section, 1)
+    block_2 = _deterministic_concept_block("余弦相似度", section, 2)
+    block_3 = _deterministic_concept_block("向量数据库", section, 3) # 3 % 3 = 0
+    
+    # block_1 (1%3=1) -> Template A should contain Markdown table "|"
+    assert "|" in block_1
+    assert "特征提取 方案" in block_1
+    
+    # block_2 (2%3=2) -> Template B should contain Python code block "```python"
+    assert "```python" in block_2
+    assert "VectorIngestionPipeline" in block_2
+    
+    # block_3 (3%3=0) -> Template C should contain troubleshooting list
+    assert "常见错误与排查步骤" in block_3
+    assert "维度不匹配错误" in block_3
