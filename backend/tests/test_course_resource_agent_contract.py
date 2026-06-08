@@ -5107,3 +5107,16 @@ def test_deterministic_concept_block_template_pool_rotation():
     # block_3 (3%3=0) -> Template C should contain troubleshooting list
     assert "常见错误与排查步骤" in block_3
     assert "维度不匹配错误" in block_3
+
+
+def test_deterministic_animation_html_generates_interactive_glassmorphism():
+    from app.orchestration.agents.course_resources import _deterministic_animation_html
+    
+    html_content = _deterministic_animation_html("anim_1", "维度对齐流程", "说明概念", ["分块", "向量化", "对齐"])
+    
+    assert "backdrop-filter: blur" in html_content
+    assert "box-shadow:" in html_content
+    assert "@keyframes pulse" in html_content
+    assert "data-animation-id=\"anim_1\"" in html_content
+    assert "function selectStep" in html_content or "addEventListener" in html_content
+

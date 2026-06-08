@@ -1289,41 +1289,95 @@ def _deterministic_animation_html(
     elements = [_clean_text(item) for item in visual_elements if _clean_text(item)]
     if not elements:
         elements = [clean_title, "处理步骤", "验收证据"]
+        
     nodes = "\n".join(
         (
-            f'<div class="node" data-step="{index}">'
+            f'<div class="node" data-step="{index}" onclick="selectStep({index})">'
             f'<span class="step-label">第 {index} 步</span>'
             f'<strong>{html.escape(element)}</strong>'
             "</div>"
-            f'<div class="connector" aria-hidden="true"></div>'
+            f'<div class="connector" data-conn="{index}" aria-hidden="true"></div>'
         )
         for index, element in enumerate(elements, start=1)
     )
+    
+    # details json containing description for each step
+    details_json = json.dumps({
+        str(i): {
+            "title": elem,
+            "desc": f"这里是「{elem}」的实战说明。在{clean_title}中，我们需要输入前置产出，进行处理和边界验证，最终生成验收证据。",
+            "io": f"输入：上游产出 | 输出：{elem} 验证记录"
+        }
+        for i, elem in enumerate(elements, start=1)
+    }, ensure_ascii=False)
+
     return (
         '<!doctype html><html><head><meta charset="utf-8"></head><body>'
         '<section class="section-animation">'
         "<style>"
         ":root{--space-xs:4px;--space-sm:8px;--space-md:16px;--space-lg:24px;"
-        "--surface:oklch(96% 0.025 92);--panel:oklch(99% 0.012 96);"
+        "--surface:oklch(96% 0.025 92);--panel:oklch(100% 0 0 / 0.85);"
         "--text:oklch(29% 0.045 245);--muted:oklch(48% 0.035 245);"
-        "--accent:oklch(70% 0.11 185);--line:oklch(82% 0.055 185);"
-        "--shadow-sm:0 2px 4px oklch(0% 0 0 / 0.05),0 10px 24px oklch(0% 0 0 / 0.07);}"
-        ".section-animation{font-family:'LXGW WenKai',serif;background:var(--surface);color:var(--text);"
-        "padding:var(--space-lg);box-shadow:var(--shadow-sm);border-radius:16px;overflow:hidden;}"
+        "--accent:oklch(65% 0.12 240);--line:oklch(85% 0.03 240);"
+        "--shadow-sm:0 2px 4px oklch(0% 0 0 / 0.02),0 10px 24px oklch(240deg 15% 10% / 0.05);}"
+        ".section-animation{font-family:\'LXGW WenKai\',serif;background:var(--surface);color:var(--text);"
+        "padding:var(--space-lg);box-shadow:var(--shadow-sm);border-radius:16px;overflow:hidden;"
+        "backdrop-filter: blur(12px); border: 1px solid oklch(92% 0.01 240);}"
         ".animation-context{margin-bottom:var(--space-md);line-height:1.8;color:var(--muted);}"
         ".animation-title{font-size:20px;font-weight:500;margin:0 0 var(--space-sm);color:var(--text);}"
-        ".stage{display:flex;gap:var(--space-sm);align-items:stretch;justify-content:space-between;}"
-        ".node{opacity: 1 !important;transform: none !important;background:var(--panel);border:1px solid var(--line);"
-        "border-radius:12px;padding:var(--space-md);min-width:120px;flex:1;text-align:center;line-height:1.6;}"
-        ".node strong{font-weight:500;display:block;}.step-label{display:block;color:var(--accent);margin-bottom:var(--space-xs);}"
-        ".connector{opacity: 1 !important;transform: none !important;align-self:center;flex:0 0 28px;height:2px;background:var(--accent);}"
+        ".stage{display:flex;gap:var(--space-sm);align-items:stretch;justify-content:space-between;margin-bottom:var(--space-md);}"
+        ".node{cursor:pointer;background:var(--panel);border:1px solid var(--line);"
+        "border-radius:12px;padding:var(--space-md);min-width:120px;flex:1;text-align:center;line-height:1.6;"
+        "transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1); position: relative;}"
+        ".node:hover{transform: translateY(-2px); border-color: var(--accent);}"
+        ".node.active{border-color: var(--accent); background: oklch(100% 0 0); animation: pulse 2.5s infinite ease-in-out;}"
+        ".node strong{font-weight:500;display:block;}.step-label{display:block;color:var(--accent);margin-bottom:var(--space-xs); font-size:12px;}"
+        ".connector{align-self:center;flex:0 0 28px;height:2px;background:var(--line); position: relative; transition: background 0.3s;}"
+        ".connector.active{background: var(--accent);}"
         ".connector:last-child{display:none;}"
+        ".detail-panel{background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: var(--space-md);"
+        "box-shadow: var(--shadow-sm); transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);}"
+        ".detail-title{font-weight: 500; margin-bottom: var(--space-xs); color: var(--accent);}"
+        ".detail-desc{font-size: 14px; line-height: 1.6; color: var(--text); margin-bottom: 6px;}"
+        ".detail-io{font-size: 12px; color: var(--muted); font-family: monospace;}"
+        "@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 oklch(65% 0.12 240 / 0.3); } 50% { box-shadow: 0 0 10px 3px oklch(65% 0.12 240 / 0.15); } }"
         "@media (max-width: 640px){.stage{flex-direction:column}.connector{width:2px;height:20px;margin:auto;}}"
-        "@media (prefers-reduced-motion: reduce){.section-animation *{animation:none !important;transition:none !important;}}"
+        "@media (prefers-reduced-motion: reduce){.section-animation *{animation:none !important;transition:none !important;opacity: 1 !important;}"
+        ".node{transform: none !important;}}"
         "</style>"
         f'<h3 class="animation-title">{html.escape(clean_title)}</h3>'
         f'<div class="animation-context">{html.escape(clean_concept)}</div>'
         f'<div class="stage" data-animation-id="{html.escape(animation_id)}">{nodes}</div>'
+        f'<div class="detail-panel" id="detailPanel-{html.escape(animation_id)}">'
+        f'<div class="detail-title" id="detailTitle-{html.escape(animation_id)}">点击节点查看详情</div>'
+        f'<div class="detail-desc" id="detailDesc-{html.escape(animation_id)}">请选择上方的步骤，查看其在流水线中的具体作用与输入输出定义。</div>'
+        f'<div class="detail-io" id="detailIo-{html.escape(animation_id)}"></div>'
+        f'</div>'
+        f'<script>'
+        f'const details = {details_json};'
+        f'const animId = "{html.escape(animation_id)}";'
+        f'function selectStep(stepIndex) {{'
+        f'  document.querySelectorAll(`.stage[data-animation-id="${{animId}}"] .node`).forEach(node => {{'
+        f'    node.classList.remove("active");'
+        f'  }});'
+        f'  document.querySelectorAll(`.stage[data-animation-id="${{animId}}"] .connector`).forEach(conn => {{'
+        f'    conn.classList.remove("active");'
+        f'  }});'
+        f'  const selectedNode = document.querySelector(`.stage[data-animation-id="${{animId}}"] .node[data-step="${{stepIndex}}"]`);'
+        f'  if (selectedNode) selectedNode.classList.add("active");'
+        f'  for (let i = 1; i < stepIndex; i++) {{'
+        f'    const conn = document.querySelector(`.stage[data-animation-id="${{animId}}"] .connector[data-conn="${{i}}"]`);'
+        f'    if (conn) conn.classList.add("active");'
+        f'  }}'
+        f'  const detail = details[stepIndex];'
+        f'  if (detail) {{'
+        f'    document.getElementById(`detailTitle-${{animId}}`).innerText = detail.title;'
+        f'    document.getElementById(`detailDesc-${{animId}}`).innerText = detail.desc;'
+        f'    document.getElementById(`detailIo-${{animId}}`).innerText = detail.io;'
+        f'  }}'
+        f'}}'
+        f'window.addEventListener("DOMContentLoaded", () => selectStep(1));'
+        f'</script>'
         "</section></body></html>"
     )
 
