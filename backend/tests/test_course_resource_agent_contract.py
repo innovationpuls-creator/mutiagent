@@ -8,13 +8,19 @@ import pytest
 from app.orchestration.agents.course_resources import (
     _ANIMATION_TIMEOUT_SECONDS,
     _animation_input,
+    _compose_section_content,
+    _deterministic_animation_data,
+    _deterministic_section_markdown_data,
     _fallback_cover_data_url,
     _find_verified_video_from_search,
     _MARKDOWN_TIMEOUT_SECONDS,
     _markdown_input,
+    _markdown_quality_issue,
     _merge_course_resource_data,
+    _normalized_animation_quality_issue,
     _normalized_video_quality_issue_async,
     _normalized_video_quality_issue,
+    _profile_learning_context_text,
     _RESOURCE_TIMEOUT_SECONDS,
     _section_by_id,
     _target_sections_for_scope,
@@ -5119,4 +5125,281 @@ def test_deterministic_animation_html_generates_interactive_glassmorphism():
     assert "@keyframes pulse" in html_content
     assert "data-animation-id=\"anim_1\"" in html_content
     assert "function selectStep" in html_content or "addEventListener" in html_content
+
+
+# ---------------------------------------------------------------------------
+# End-to-end integration: simulate real RAG course data flowing through the
+# entire deterministic pipeline (section → markdown → quality gate → animation
+# → compose → frontend-ready blocks).
+# ---------------------------------------------------------------------------
+
+def _rag_outline() -> dict:
+    """Simulates a realistic RAG course outline with 3 knowledge points."""
+    return {
+        "course_id": "year_3_course_1",
+        "course_name": "构建本地知识库问答系统 (RAG基础)",
+        "grade_year": "year_3",
+        "personalization_summary": "项目驱动，先跑通数据清洗和分块流程。",
+        "sections": [
+            {
+                "section_id": "1",
+                "parent_section_id": None,
+                "depth": 1,
+                "title": "数据预处理与分块",
+                "order_index": 1,
+                "description": "把非结构化文档整理成适合向量化的语料。",
+                "key_knowledge_points": ["数据清洗", "文本分块", "向量化准备"],
+            },
+            {
+                "section_id": "1.1",
+                "parent_section_id": "1",
+                "depth": 2,
+                "title": "文本清洗与分块策略",
+                "order_index": 2,
+                "description": "学习如何清洗原始文档并设计合理的分块策略，确保后续向量检索的召回质量。",
+                "key_knowledge_points": ["数据清洗", "文本分块", "重叠率控制"],
+            },
+            {
+                "section_id": "1.2",
+                "parent_section_id": "1",
+                "depth": 2,
+                "title": "向量化与索引构建",
+                "order_index": 3,
+                "description": "将清洗后的文本块转化为稠密向量并写入向量数据库。",
+                "key_knowledge_points": ["Embedding 模型", "向量数据库写入", "维度对齐"],
+            },
+        ],
+        "learning_sequence": ["第一章：数据预处理与分块"],
+        "total_estimated_hours": "6 小时",
+    }
+
+
+def _rag_state() -> dict:
+    """Simulates a realistic orchestration state with profile and learning path."""
+    return {
+        "profile": {
+            "type": "basic_profile",
+            "confirmed_info": {
+                "current_grade": "大三",
+                "major": "计算机科学与技术",
+                "learning_stage": "项目实践",
+                "learning_method_preference": "项目驱动学习",
+                "content_preference": ["文档", "代码实践"],
+                "weekly_available_time": "每天 8 小时",
+                "constraints": "需要先补齐 Python 异步编程基础",
+            },
+        },
+        "year_learning_paths": {
+            "year_3": {
+                "schema_version": "learning_path.v2.course_node",
+                "current_learning_course": {
+                    "grade_id": "year_3",
+                    "course_node_id": "year_3_course_1",
+                    "course_or_chapter_theme": "构建本地知识库问答系统",
+                    "course_goal": "完成可部署的 RAG 问答系统",
+                    "current_focus": "数据清洗与分块策略",
+                    "progress_state": "in_progress",
+                    "next_action": "完成第一章数据预处理",
+                },
+                "resource_generation_contract": {
+                    "resource_directions": [
+                        {
+                            "resource_direction_id": "year_3_course_1_resource",
+                            "target_node_ids": ["year_3_course_1"],
+                            "resource_type": "文档",
+                            "generation_goal": "围绕 RAG 数据管线生成教学资源",
+                            "content_requirements": ["绑定章节大纲", "引用学习者画像", "补充视频和动画"],
+                            "difficulty_level": "中级",
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+
+def test_e2e_deterministic_pipeline_produces_valid_composed_blocks():
+    """End-to-end: section → markdown → quality gate → animation → compose → blocks."""
+    outline = _rag_outline()
+    state = _rag_state()
+    section = _section_by_id(outline, "1.1")
+    assert section is not None, "Section 1.1 must exist in outline"
+
+    # Step 1: Generate deterministic markdown + briefs
+    md_data = _deterministic_section_markdown_data(state, outline, section)
+    markdown = md_data["markdown"]
+    video_briefs = md_data["video_briefs"]
+    animation_briefs = md_data["animation_briefs"]
+
+    assert md_data["section_id"] == "1.1"
+    assert md_data["title"] == "文本清洗与分块策略"
+    assert len(markdown) > 1800, f"Markdown too short: {len(markdown)} chars"
+    assert "## 学习目标" in markdown
+    assert "## 核心概念" in markdown
+    assert "## 步骤讲解" in markdown
+    assert "## 练习任务" in markdown
+    assert "## 检查标准" in markdown
+    assert "<!-- video:id=video_1 -->" in markdown
+    assert "<!-- animation:id=anim_1 -->" in markdown
+
+    # Step 2: Quality gate must accept the generated markdown
+    quality_issue = _markdown_quality_issue(markdown, section, video_briefs, animation_briefs)
+    assert quality_issue is None, f"Quality gate rejected: {quality_issue}"
+
+    # Step 3: Generate animation HTML from briefs
+    animations = _deterministic_animation_data(animation_briefs, section)
+    assert len(animations) == 1
+    anim_html = animations[0]["html"]
+    assert animations[0]["animation_id"] == "anim_1"
+    assert "section-animation" in anim_html
+    assert "backdrop-filter: blur" in anim_html
+    assert "@keyframes pulse" in anim_html
+    assert "data-animation-id=\"anim_1\"" in anim_html
+    assert "prefers-reduced-motion" in anim_html
+
+    # Step 4: Animation quality gate must accept
+    anim_issue = _normalized_animation_quality_issue(animations, animation_briefs, section)
+    assert anim_issue is None, f"Animation quality gate rejected: {anim_issue}"
+
+    # Step 5: Compose everything into frontend-ready blocks
+    video_links = {
+        "videos": [
+            {"brief_id": "video_1", "title": "文本清洗实战", "url": "https://example.com/video", "cover_url": "", "source": "example"}
+        ]
+    }
+    animation_data = {"animations": animations}
+    composed = _compose_section_content(md_data, video_links, animation_data)
+
+    assert composed["section_id"] == "1.1"
+    assert composed["title"] == "文本清洗与分块策略"
+    assert len(composed["blocks"]) >= 5, f"Expected ≥5 blocks, got {len(composed['blocks'])}"
+
+    # Verify block types and order
+    block_types = [b["type"] for b in composed["blocks"]]
+    assert "markdown" in block_types, "Must have markdown blocks"
+    assert "video" in block_types, "Must have video block"
+    assert "animation" in block_types, "Must have animation block"
+
+    # Verify video block structure
+    video_blocks = [b for b in composed["blocks"] if b["type"] == "video"]
+    assert len(video_blocks) == 1
+    vb = video_blocks[0]
+    assert vb["brief_id"] == "video_1"
+    assert vb["status"] == "available"
+    assert vb["videos"][0]["url"] == "https://example.com/video"
+
+    # Verify animation block structure
+    anim_blocks = [b for b in composed["blocks"] if b["type"] == "animation"]
+    assert len(anim_blocks) == 1
+    ab = anim_blocks[0]
+    assert ab["brief_id"] == "anim_1"
+    assert ab["status"] == "available"
+    assert "section-animation" in ab["html"]
+
+    # Verify markdown blocks contain expected headings
+    md_blocks = [b for b in composed["blocks"] if b["type"] == "markdown"]
+    all_md_text = "\n".join(b["markdown"] for b in md_blocks)
+    for heading in ("## 学习目标", "## 核心概念", "## 步骤讲解", "## 练习任务", "## 检查标准"):
+        assert heading in all_md_text, f"Missing heading {heading} in composed markdown blocks"
+
+
+def test_e2e_concept_block_rotation_produces_three_distinct_templates():
+    """Verify that 3 knowledge points produce 3 distinct template styles."""
+    from app.orchestration.agents.course_resources import _deterministic_concept_block
+
+    section = {
+        "title": "文本清洗与分块策略",
+        "description": "学习如何清洗原始文档并设计合理的分块策略",
+    }
+    points = ["数据清洗", "文本分块", "重叠率控制"]
+
+    blocks = [_deterministic_concept_block(p, section, i + 1) for i, p in enumerate(points)]
+
+    # Template A (index 1): comparison table
+    assert "|" in blocks[0], "Template A should have a comparison table"
+    assert "数据清洗 方案" in blocks[0]
+
+    # Template B (index 2): code block
+    assert "```python" in blocks[1], "Template B should have Python code"
+    assert "VectorIngestionPipeline" in blocks[1]
+
+    # Template C (index 0): troubleshooting list
+    assert "常见错误与排查步骤" in blocks[2], "Template C should have troubleshooting"
+    assert "维度不匹配错误" in blocks[2]
+
+    # All three must be different
+    assert blocks[0] != blocks[1] != blocks[2], "All three templates must be distinct"
+
+
+def test_e2e_profile_text_handles_realistic_and_edge_cases():
+    """Verify profile text generation with realistic data and edge cases."""
+    # Realistic: all fields present
+    state_full = _rag_state()
+    text = _profile_learning_context_text(state_full)
+    assert "大三" in text
+    assert "计算机科学与技术" in text
+    assert "项目驱动" in text
+    assert ";" not in text
+    assert "；" not in text
+
+    # Edge: all fields are placeholders
+    state_empty = {
+        "profile": {
+            "confirmed_info": {
+                "current_grade": "未知",
+                "major": "无",
+                "learning_method_preference": "无偏好",
+            }
+        }
+    }
+    text_empty = _profile_learning_context_text(state_empty)
+    assert "未知" not in text_empty
+    assert "无" not in text_empty
+    assert len(text_empty) > 20, "Fallback text should be meaningful"
+
+    # Edge: only preference present
+    state_pref_only = {
+        "profile": {
+            "confirmed_info": {
+                "current_grade": "null",
+                "major": "none",
+                "learning_method_preference": "动手实验",
+            }
+        }
+    }
+    text_pref = _profile_learning_context_text(state_pref_only)
+    assert "动手实验" in text_pref
+    assert "null" not in text_pref
+
+
+def test_e2e_animation_html_is_self_contained_and_accessible():
+    """Verify animation HTML is self-contained, accessible, and dark-mode ready."""
+    from app.orchestration.agents.course_resources import _deterministic_animation_html
+
+    html = _deterministic_animation_html("anim_1", "数据清洗流程", "展示清洗步骤", ["解析", "去噪", "标准化"])
+
+    # Self-contained: no external resources
+    assert "http" not in html.lower() or "href" not in html.lower(), "No external CSS/JS"
+    assert "<script>" in html
+    assert "<style>" in html
+
+    # Accessibility: reduced-motion support
+    assert "prefers-reduced-motion" in html
+
+    # Dark mode
+    assert "prefers-color-scheme: dark" in html
+
+    # Interactive: click handler
+    assert "addEventListener" in html or "onclick" in html
+
+    # OKLCH colors (no hex/rgb)
+    assert "#" not in html.split("<style>")[1].split("</style>")[0].replace("#detailPanel", "").replace("#detailTitle", "").replace("#detailDesc", "").replace("#detailIo", "")
+
+    # All 3 steps rendered
+    assert "解析" in html
+    assert "去噪" in html
+    assert "标准化" in html
+
+    # IIFE pattern for JS isolation
+    assert "(function()" in html or "(function() {" in html
 
