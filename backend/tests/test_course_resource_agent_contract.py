@@ -5017,3 +5017,15 @@ def test_profile_learning_context_text_generates_natural_narrative():
     assert "项目驱动" in text
     assert ";" not in text
     assert "；" not in text
+
+    state_unknown = {
+        "profile": {
+            "confirmed_info": {
+                "current_grade": "未知",
+                "major": "未知",
+                "learning_method_preference": "项目驱动学习"
+            }
+        }
+    }
+    text_unknown = _profile_learning_context_text(state_unknown)
+    assert "未知" not in text_unknown

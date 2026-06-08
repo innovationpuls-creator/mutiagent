@@ -1096,6 +1096,13 @@ def _profile_learning_context_text(state: OrchestrationState) -> str:
     major = _clean_text(confirmed_info.get("major"))
     preference = _clean_text(confirmed_info.get("learning_method_preference"))
     
+    if grade == "未知":
+        grade = ""
+    if major == "未知":
+        major = ""
+    if preference == "未知":
+        preference = ""
+    
     if grade and major and preference:
         return f"根据您{grade}{major}专业的背景，本节针对您偏好的{preference}方法进行教学设计，重点关注实战应用与运行证据留存。"
     elif grade and major:
