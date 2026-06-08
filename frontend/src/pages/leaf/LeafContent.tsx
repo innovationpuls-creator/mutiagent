@@ -64,28 +64,37 @@ function renderMarkdown(markdown: string, index: number) {
             />
           ),
           blockquote: ({ node, ...props }) => {
-            const contentText = getTextBlock(props.children);
-            let alertClass = "border-l-4 border-gray-300 bg-gray-50/50";
-            let alertLabel = "NOTE";
+            // Destructure children to avoid React prop warnings when spreading props
+            const { children, ...restProps } = props;
+            const contentText = getTextBlock(children);
+            const match = contentText.match(/\[!(NOTE|IMPORTANT|WARNING|TIP|CAUTION)\]/);
             
-            if (contentText.includes("[!IMPORTANT]") || contentText.includes("[!CAUTION]")) {
-              alertClass = "border-l-4 border-[var(--color-error)] bg-[var(--color-error-bg)] opacity-95";
-              alertLabel = contentText.includes("[!IMPORTANT]") ? "IMPORTANT" : "CAUTION";
-            } else if (contentText.includes("[!WARNING]")) {
-              alertClass = "border-l-4 border-[var(--color-warning)] bg-[var(--color-surface-raised)]";
-              alertLabel = "WARNING";
-            } else if (contentText.includes("[!TIP]")) {
-              alertClass = "border-l-4 border-[var(--color-primary)] bg-[var(--color-surface-raised)]";
-              alertLabel = "TIP";
-            } else if (contentText.includes("[!NOTE]")) {
-              alertClass = "border-l-4 border-[var(--color-primary)] bg-[var(--color-surface-raised)]";
-              alertLabel = "NOTE";
+            if (!match) {
+              // Render standard blockquote using OKLCH styles
+              return (
+                <blockquote className="border-l-4 border-[var(--color-border)] pl-4 my-4 italic text-[var(--color-text-secondary)]" {...restProps}>
+                  {children}
+                </blockquote>
+              );
             }
             
-            const cleanChildren = cleanAlertPrefix(props.children);
+            const alertLabel = match[1];
+            let alertClass = "border-l-4 border-[var(--color-border)] bg-[var(--color-surface-raised)]"; // safe default in OKLCH
+            
+            if (alertLabel === "IMPORTANT" || alertLabel === "CAUTION") {
+              alertClass = "border-l-4 border-[var(--color-error)] bg-[var(--color-error-bg)] opacity-95";
+            } else if (alertLabel === "WARNING") {
+              alertClass = "border-l-4 border-[var(--color-warning)] bg-[var(--color-surface-raised)]";
+            } else if (alertLabel === "TIP") {
+              alertClass = "border-l-4 border-[var(--color-primary)] bg-[var(--color-surface-raised)]";
+            } else if (alertLabel === "NOTE") {
+              alertClass = "border-l-4 border-[var(--color-primary)] bg-[var(--color-surface-raised)]";
+            }
+            
+            const cleanChildren = cleanAlertPrefix(children);
             
             return (
-              <blockquote className={`p-4 my-4 rounded-r-lg ${alertClass} text-[var(--color-text-primary)]`} {...props}>
+              <blockquote className={`p-4 my-4 rounded-r-lg ${alertClass} text-[var(--color-text-primary)]`} {...restProps}>
                 <div className="text-[10px] font-semibold uppercase tracking-wider mb-2 opacity-70 flex items-center gap-1.5 text-[var(--color-text-whisper)]">
                   <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
                   {alertLabel}
@@ -136,24 +145,32 @@ function renderMarkdown(markdown: string, index: number) {
             );
           },
           li: ({ node, children, ...props }) => {
-            // Check if it's a task checklist item
-            const isCheckbox = node && node.properties && typeof node.properties.className === 'object' && (node.properties.className as string[]).includes('task-list-item');
+            // Find if any child is a checkbox input and extract its state
+            let isCheckbox = false;
+            let isChecked = false;
             
-            // Wait, react-markdown 10+ handles checkboxes by passing "checked" prop in props (we can destructure checked from props)
-            const checked = (props as any).checked;
-            if (checked !== undefined || isCheckbox) {
+            const cleanChildren = React.Children.map(children, (child) => {
+              if (React.isValidElement(child) && child.type === 'input' && (child.props as any).type === 'checkbox') {
+                isCheckbox = true;
+                isChecked = !!(child.props as any).checked;
+                return null; // Remove the native checkbox from rendering
+              }
+              return child;
+            });
+            
+            if (isCheckbox) {
               return (
-                <li className={`flex items-start gap-2.5 my-1.5 list-none ${checked ? 'opacity-65 line-through' : ''}`} {...props}>
+                <li className={`flex items-start gap-2.5 my-1.5 list-none ${isChecked ? 'opacity-65 line-through' : ''}`} {...props}>
                   <span className={`w-4 h-4 rounded mt-1 border flex items-center justify-center flex-shrink-0 transition-all ${
-                    checked ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white' : 'border-[var(--color-border)]'
+                    isChecked ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white' : 'border-[var(--color-border)]'
                   }`}>
-                    {checked && (
+                    {isChecked && (
                       <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="4">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                       </svg>
                     )}
                   </span>
-                  <div>{children}</div>
+                  <div>{cleanChildren}</div>
                 </li>
               );
             }
