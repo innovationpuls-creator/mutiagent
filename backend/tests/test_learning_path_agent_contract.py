@@ -456,7 +456,7 @@ def test_validate_learning_path_contract_rejects_grade_with_less_than_three_cour
 def test_learning_path_prompt_mentions_json_output() -> None:
     assert "json" in LEARNING_PATH_AGENT_SYSTEM_PROMPT.lower()
     assert "先分析" in LEARNING_PATH_AGENT_SYSTEM_PROMPT
-    assert "至少 3 门课程" in LEARNING_PATH_AGENT_SYSTEM_PROMPT
+    assert "current_learning_course" in LEARNING_PATH_AGENT_SYSTEM_PROMPT
     assert "必须且只能输出 3 门课程" not in LEARNING_PATH_AGENT_SYSTEM_PROMPT
 
 

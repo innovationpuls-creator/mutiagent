@@ -203,15 +203,12 @@ def test_select_course_for_outline_prefers_latest_grade_year_when_no_explicit_co
 def test_course_knowledge_prompt_mentions_json_output() -> None:
     assert "json" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT.lower()
     assert "先分析" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
-    assert "只生成课程结构" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
-    assert "自行设计" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
-    assert "第一章、第二章" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
     assert "1.1" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
     assert "1.2" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
     assert "key_knowledge_points" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
-    assert "不要生成 Markdown" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
-    assert "视频" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
-    assert "HTML 动画" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
+    assert "第一章" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
+    assert "learning_sequence" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
+    assert "personalization_summary" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
 
 
 def test_course_knowledge_schema_requires_section_key_knowledge_points() -> None:
