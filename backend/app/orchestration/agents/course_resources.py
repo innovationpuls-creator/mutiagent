@@ -1087,19 +1087,21 @@ def _normalize_markdown_resources(markdown_data: dict, section: dict) -> dict:
 def _profile_learning_context_text(state: OrchestrationState) -> str:
     profile = state.get("profile")
     if not isinstance(profile, dict):
-        return "学习者需要用项目驱动方式推进本节，并保留可复查产出。"
+        return "本节采用项目实践驱动的教学设计，侧重动手实践与运行结果校验，以帮助学习者快速上手。"
+    
     confirmed = profile.get("confirmed_info")
     confirmed_info = confirmed if isinstance(confirmed, dict) else {}
-    fields = [
-        _clean_text(confirmed_info.get("current_grade")),
-        _clean_text(confirmed_info.get("major")),
-        _clean_text(confirmed_info.get("learning_method_preference")),
-        _clean_text(confirmed_info.get("weekly_available_time")),
-        _clean_text(confirmed_info.get("constraints")),
-    ]
-    profile_text = _clean_text(profile.get("text"))
-    details = "；".join(item for item in [*fields, profile_text] if item)
-    return details or "学习者需要用项目驱动方式推进本节，并保留可复查产出。"
+    
+    grade = _clean_text(confirmed_info.get("current_grade"))
+    major = _clean_text(confirmed_info.get("major"))
+    preference = _clean_text(confirmed_info.get("learning_method_preference"))
+    
+    if grade and major and preference:
+        return f"根据您{grade}{major}专业的背景，本节针对您偏好的{preference}方法进行教学设计，重点关注实战应用与运行证据留存。"
+    elif grade and major:
+        return f"针对{grade}{major}专业的学习特点，本节采用项目实战设计，侧重实践与运行结果校验。"
+    
+    return "本节采用项目实践驱动的教学设计，侧重动手实践与运行结果校验，以便快速掌握核心技能。"
 
 
 def _deterministic_video_briefs(section: dict) -> list[dict]:

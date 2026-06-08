@@ -4999,3 +4999,21 @@ def test_markdown_quality_gate_accepts_clean_structure_without_keywords():
     assert issue is None
 
 
+def test_profile_learning_context_text_generates_natural_narrative():
+    from app.orchestration.agents.course_resources import _profile_learning_context_text
+    
+    state = {
+        "profile": {
+            "confirmed_info": {
+                "current_grade": "大三",
+                "major": "软件工程",
+                "learning_method_preference": "项目驱动学习"
+            }
+        }
+    }
+    
+    text = _profile_learning_context_text(state)
+    assert "大三软件工程专业" in text
+    assert "项目驱动" in text
+    assert ";" not in text
+    assert "；" not in text
