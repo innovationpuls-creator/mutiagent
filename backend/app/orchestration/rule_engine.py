@@ -52,8 +52,6 @@ _COURSE_RESOURCE_GENERATION_KEYWORDS = {
     "生成课程教学内容",
     "生成第一章内容",
     "生成章节内容",
-    "开始学习这门课",
-    "开始学习当前课程",
     "根据课程大纲生成教学内容",
 }
 _COURSE_CHANGE_KEYWORDS = {
@@ -64,6 +62,8 @@ _REVIEW_PLAN_KEYWORDS = {
     "先看看学习路径",
     "看看路径",
     "回顾规划",
+    "我的学习路径",
+    "现在的学习路径",
     "我的学习路径里面要学哪些课",
     "学习路径里面要学哪些课",
 }
@@ -74,10 +74,25 @@ _PATH_REFRESH_KEYWORDS = {
 _PROFILE_UPDATE_KEYWORDS = {
     "修改画像方向",
     "更新个人画像",
+    "更新一下我的个人画像",
+    "完善个人画像",
+    "完善我的个人画像",
+    "进入提问环节",
+}
+_PROFILE_UPDATE_NO_CHANGE_KEYWORDS = {
+    "没有变化",
+    "没有具体变化",
+    "无变化",
+    "只是看看",
+    "随便看看",
+    "不更新",
+    "不用改",
+    "不用更新",
+    "还没想好",
 }
 _DEFAULT_PROFILE_COMMANDS = ("默认", "直接", "随便帮我填", "不确定的你随便帮我填", "帮我生成")
 _COMPLETED_REPLAN_RESPONSE_PREFIX = "当前所有任务已经完成。"
-_PROFILE_UPDATE_PROMPT_PREFIX = "可以。更新个人画像前，请先直接告诉我你想调整的具体信息。"
+_PROFILE_UPDATE_PROMPT_PREFIX = "可以。更新个人画像前，我需要先确认这次是否值得更新。"
 _GRADE_PATTERN = re.compile(r"(大[一二三四]|大[1234]|[一二三四]年级|研[一二三])")
 _REQUIRED_CONFIRMED_INFO_KEYS = frozenset({
     "current_grade",
@@ -137,13 +152,23 @@ def is_navigation_query(query: str) -> bool:
 
 def is_course_start_query(query: str) -> bool:
     q = query.strip().lower()
-    return any(kw in q for kw in _COURSE_START_KEYWORDS)
+    normalized = re.sub(r"[。！？!?,，、；：\s]+", "", q)
+    return any(kw in q for kw in _COURSE_START_KEYWORDS) or normalized in {
+        "开始",
+        "ok开始",
+        "好开始",
+    }
 
 
 def is_course_outline_regeneration_query(query: str) -> bool:
     q = query.strip().lower()
     if not q:
         return False
+    if "生成" in q and "大纲" in q:
+        if not any(keyword in q for keyword in ("教学内容", "课程内容", "章节内容", "markdown", "视频", "动画")):
+            return True
+    if "重新生成" in q and "章节大纲" in q:
+        return True
     return any(keyword in q for keyword in _COURSE_OUTLINE_REGENERATION_KEYWORDS)
 
 
@@ -151,7 +176,43 @@ def is_course_resource_generation_query(query: str) -> bool:
     q = query.strip().lower()
     if not q:
         return False
-    return any(keyword in q for keyword in _COURSE_RESOURCE_GENERATION_KEYWORDS)
+    if any(keyword in q for keyword in _COURSE_RESOURCE_GENERATION_KEYWORDS):
+        return True
+
+    has_generate_signal = any(keyword in q for keyword in (
+        "生成",
+        "重新生成",
+        "generate",
+        "regenerate",
+        "create",
+    ))
+    if not has_generate_signal:
+        return False
+
+    has_resource_signal = any(keyword in q for keyword in (
+        "教学内容",
+        "课程内容",
+        "章节内容",
+        "markdown",
+        "video",
+        "html animation",
+        "html animations",
+        "动画",
+        "teaching content",
+        "lesson content",
+    ))
+    if not has_resource_signal:
+        return False
+
+    return any(keyword in q for keyword in (
+        "当前课程",
+        "课程",
+        "章节",
+        "小节",
+        "chapter",
+        "section",
+        "course",
+    ))
 
 def is_course_change_query(query: str) -> bool:
     q = query.strip().lower()
@@ -162,17 +223,33 @@ def is_course_change_query(query: str) -> bool:
 
 def is_review_plan_query(query: str) -> bool:
     q = query.strip().lower()
-    return any(kw in q for kw in _REVIEW_PLAN_KEYWORDS)
+    normalized = re.sub(r"[。！？!?,，、；：\s]+", "", q)
+    return any(kw in q for kw in _REVIEW_PLAN_KEYWORDS) or normalized in {
+        "我的学习路径",
+        "我现在的学习路径是什么",
+        "现在的学习路径是什么",
+        "学习路径",
+        "路径",
+    }
 
 
 def is_learning_path_refresh_query(query: str) -> bool:
     q = query.strip()
-    return any(keyword in q for keyword in _PATH_REFRESH_KEYWORDS)
+    if any(keyword in q for keyword in _PATH_REFRESH_KEYWORDS):
+        return True
+    if "学习路径" not in q:
+        return False
+    return any(keyword in q for keyword in ("继续生成", "重新生成", "更新", "刷新", "生成"))
 
 
 def is_profile_update_query(query: str) -> bool:
     q = query.strip()
     return any(keyword in q for keyword in _PROFILE_UPDATE_KEYWORDS)
+
+
+def is_profile_update_no_change_query(query: str) -> bool:
+    q = query.strip()
+    return any(keyword in q for keyword in _PROFILE_UPDATE_NO_CHANGE_KEYWORDS)
 
 
 def is_default_profile_query(query: str) -> bool:
@@ -182,6 +259,19 @@ def is_default_profile_query(query: str) -> bool:
 
 def _parse_key_value_block(body: str, allowed_keys: set[str]) -> dict[str, str]:
     result: dict[str, str] = {}
+    key_pattern = "|".join(re.escape(key) for key in sorted(allowed_keys, key=len, reverse=True))
+    inline_pattern = re.compile(
+        rf"(?P<key>{key_pattern})\s*:\s*(?P<value>.*?)(?=\s+(?:{key_pattern})\s*:|$)",
+        re.DOTALL,
+    )
+    for match in inline_pattern.finditer(body.strip()):
+        key = match.group("key").strip()
+        value = match.group("value").strip()
+        if key in allowed_keys and value:
+            result[key] = value
+    if result:
+        return result
+
     for raw_line in body.splitlines():
         line = raw_line.strip()
         if not line or ":" not in line:
@@ -238,6 +328,8 @@ def _has_explicit_profile_field_update(query: str) -> bool:
 def is_profile_refinement_query(query: str) -> bool:
     q = query.strip()
     if not q:
+        return False
+    if "学习路径" in q:
         return False
     if _has_explicit_profile_field_update(q):
         return True
@@ -404,6 +496,15 @@ def _rule_has_profile_no_path(state: dict, profile: dict) -> RuleResult:
         )
         return result
 
+    if is_navigation_query(query) or is_learning_path_refresh_query(query):
+        result.force_call = AGENT_LEARNING_PATH
+        result.system_hints.append(
+            "[系统级强制指令] 用户画像已完成但尚无学习路径，且用户正在请求下一步学习安排。"
+            "你必须调用 learning_path_agent 生成学习路径，"
+            "不要再次调用 profile_agent。"
+        )
+        return result
+
     if last_tool_agent == AGENT_PROFILE:
         result.blocked_agents = {AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
         result.allowed_agents = {AGENT_PROFILE}
@@ -411,15 +512,6 @@ def _rule_has_profile_no_path(state: dict, profile: dict) -> RuleResult:
             "[系统级强制指令] profile_agent 刚在本轮生成完画像。"
             "这一轮不要继续调用 learning_path_agent。"
             "请直接向用户展示画像结果，并询问是否继续生成学习路径。"
-        )
-        return result
-
-    if is_navigation_query(query) or is_learning_path_refresh_query(query):
-        result.force_call = AGENT_LEARNING_PATH
-        result.system_hints.append(
-            "[系统级强制指令] 用户画像已完成但尚无学习路径，且用户正在请求下一步学习安排。"
-            "你必须调用 learning_path_agent 生成学习路径，"
-            "不要再次调用 profile_agent。"
         )
         return result
 
@@ -500,6 +592,13 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
         or is_course_start_query(query)
         or is_course_change_query(query)
     ):
+        if is_profile_update_no_change_query(query):
+            result.force_call = AGENT_PROFILE
+            result.system_hints.append(
+                "[系统级强制指令] 用户明确表示本次没有具体画像变化。"
+                "不要调用 profile_agent，不要写入画像；直接说明当前不调整。"
+            )
+            return result
         result.force_call = AGENT_PROFILE
         result.system_hints.append(
             "[系统级强制指令] 当前会话正在处理“先更新个人画像，再重新生成学习路径”的后续动作。"
@@ -527,6 +626,13 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
         return result
 
     if is_navigation_query(query):
+        if not _has_course_knowledge(state):
+            result.force_call = AGENT_COURSE_KNOWLEDGE
+            result.system_hints.append(
+                "[系统级强制指令] 画像和学习路径均已完成，且当前还没有课程大纲。"
+                "用户表达继续或开始意愿时，必须调用 course_knowledge_agent 生成课程大纲。"
+            )
+            return result
         result.system_hints.append(
             "[系统级强制指令] 画像和学习路径均已完成。用户表达了继续意愿，"
             "询问用户是否要开始第一门课程。"

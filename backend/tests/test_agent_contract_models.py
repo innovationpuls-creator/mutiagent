@@ -6,8 +6,13 @@ from pydantic import ValidationError
 from app.orchestration.agents.models import (
     ConfirmedInfoOutput,
     CurrentLearningCourse,
+    LearningPathCourseSpecOutput,
     LearningPathResultOutput,
     ProfileSessionOutput,
+    SectionAnimationBriefOutput,
+    SectionHtmlAnimationOutput,
+    SectionMarkdownOutput,
+    SectionVideoSearchOutput,
 )
 
 
@@ -118,6 +123,44 @@ def test_profile_session_output_requires_complete_confirmed_info() -> None:
     assert profile.confirmed_info.content_preference == ["代码实践", "项目案例", "AI 对话调试"]
 
 
+def test_confirmed_info_normalizes_list_style_scalar_fields_from_llm() -> None:
+    payload = _confirmed_info()
+    payload["content_preference"] = "代码实践"
+    payload["strengths"] = ["执行力强", "有课程项目经验"]
+    payload["weaknesses"] = ["部署经验不足", "工程稳定性经验不足"]
+    payload["constraints"] = ["平时课程比较满", "只能周末集中学习"]
+
+    confirmed = ConfirmedInfoOutput(**payload)
+
+    assert confirmed.content_preference == ["代码实践"]
+    assert confirmed.strengths == "执行力强、有课程项目经验"
+    assert confirmed.weaknesses == "部署经验不足、工程稳定性经验不足"
+    assert confirmed.constraints == "平时课程比较满、只能周末集中学习"
+
+
+def test_profile_session_output_defaults_sparse_question_box_options_from_llm() -> None:
+    profile = ProfileSessionOutput(
+        type="basic_profile",
+        stage="generated",
+        question_mode="question_box",
+        confirmed_info=ConfirmedInfoOutput(**_confirmed_info()),
+        defaulted_fields=[],
+        question_md="画像已生成，是否继续生成学习路径？",
+        question_box={
+            "question": "画像已生成，下一步要继续生成学习路径吗？",
+            "options": [
+                {"label": "继续生成学习路径", "value": "continue_path"},
+                {"label": "修改画像方向", "value": "modify_profile"},
+            ],
+        },
+        text="【基础学习画像总结】大三软件工程 AI 方向。",
+    )
+
+    assert profile.question_box.options[0].description == ""
+    assert profile.question_box.options[0].target_fields == []
+    assert profile.question_box.options[0].fills == {}
+
+
 def test_learning_path_requires_current_learning_course() -> None:
     path = LearningPathResultOutput(**_learning_path())
 
@@ -158,3 +201,257 @@ def test_learning_path_rejects_current_learning_course_not_started_state() -> No
         LearningPathResultOutput(**payload)
 
 
+def test_learning_path_course_spec_normalizes_string_list_fields_from_llm() -> None:
+    spec = LearningPathCourseSpecOutput(
+        theme="AI Agent 最小可用闭环搭建",
+        semester_scope="上学期",
+        duration="4周",
+        pace_reason="先完成最小闭环再扩展",
+        goal="完成一个可运行的 Agent 闭环原型",
+        stage_titles="需求拆解、状态管理、部署验收",
+        key_points="Agent 状态、工具调用、结果验证",
+        difficult_points="部署链路打通；稳定性排查",
+        acceptance_criteria="本地运行无崩溃，覆盖核心路径，具备边界条件测试用例。",
+        difficulty_level="中级",
+    )
+
+    assert spec.stage_titles == ["需求拆解", "状态管理", "部署验收"]
+    assert spec.key_points == ["Agent 状态", "工具调用", "结果验证"]
+    assert spec.difficult_points == ["部署链路打通", "稳定性排查"]
+    assert spec.acceptance_criteria == ["本地运行无崩溃", "覆盖核心路径", "具备边界条件测试用例。"]
+
+
+def test_section_markdown_normalizes_string_visual_elements_from_llm() -> None:
+    output = SectionMarkdownOutput(
+        section_id="1.1",
+        parent_section_id="1",
+        title="学习目标",
+        markdown="\n\n".join([
+            "# 1.1 学习目标",
+            "## 学习目标\n明确输入、输出和验收标准。",
+            "<!-- video:id=video_1 -->",
+            "## 核心概念\n功能边界与验收标准。",
+            "## 步骤讲解\n先确认目标，再拆任务。",
+            "<!-- animation:id=anim_1 -->",
+            "## 练习任务\n写一张任务卡。",
+            "## 检查标准\n能给出可验收产出。",
+        ]),
+        video_briefs=[
+            {
+                "video_id": "video_1",
+                "title": "学习目标导入视频",
+                "purpose": "帮助学习者理解功能边界与验收标准",
+            }
+        ],
+        animation_briefs=[
+            {
+                "animation_id": "anim_1",
+                "title": "目标动画",
+                "concept": "展示学习目标如何落到验收标准",
+                "visual_elements": "目标卡片、任务卡片、验收标准卡片",
+                "motion": "依次淡入",
+                "space": "正文宽度",
+                "placement_hint": "练习任务之后",
+            }
+        ],
+    )
+
+    assert output.animation_briefs[0].visual_elements == ["目标卡片、任务卡片、验收标准卡片"]
+
+
+def test_section_markdown_rejects_missing_resource_briefs() -> None:
+    with pytest.raises(ValidationError):
+        SectionMarkdownOutput(
+            section_id="1.1",
+            parent_section_id="1",
+            title="学习目标",
+            markdown="# 1.1 学习目标\n\n## 学习目标\n目标说明。",
+            video_briefs=[],
+            animation_briefs=[],
+        )
+
+
+def test_section_markdown_rejects_low_quality_fallback_markers() -> None:
+    with pytest.raises(ValidationError):
+        SectionMarkdownOutput(
+            section_id="1.1",
+            parent_section_id="1",
+            title="学习目标",
+            markdown="\n\n".join([
+                "# 1.1 学习目标",
+                "## 学习目标\n目标说明。",
+                "<!-- video:id=video_1 -->",
+                "## 核心概念\nKey Concept\nThis section explores foundational concepts.",
+                "## 步骤讲解\n先确认目标，再拆任务。",
+                "<!-- animation:id=anim_1 -->",
+                "## 练习任务\n写一张任务卡。",
+                "## 检查标准\n能给出可验收产出。",
+            ]),
+            video_briefs=[
+                {
+                    "video_id": "video_1",
+                    "title": "学习目标导入视频",
+                    "purpose": "帮助学习者理解功能边界与验收标准",
+                }
+            ],
+            animation_briefs=[
+                {
+                    "animation_id": "anim_1",
+                    "title": "目标动画",
+                    "concept": "展示学习目标如何落到验收标准",
+                    "visual_elements": ["目标卡片", "任务卡片", "验收标准卡片"],
+                    "motion": "依次淡入",
+                    "space": "正文宽度",
+                    "placement_hint": "练习任务之后",
+                }
+            ],
+        )
+
+
+def test_section_markdown_rejects_missing_teaching_headings() -> None:
+    with pytest.raises(ValidationError):
+        SectionMarkdownOutput(
+            section_id="1.1",
+            parent_section_id="1",
+            title="学习目标",
+            markdown="\n\n".join([
+                "# 1.1 学习目标",
+                "## 学习目标\n目标说明。",
+                "<!-- video:id=video_1 -->",
+                "## 核心概念\n功能边界与验收标准。",
+                "## 步骤讲解\n先确认目标，再拆任务。",
+                "<!-- animation:id=anim_1 -->",
+            ]),
+            video_briefs=[
+                {
+                    "video_id": "video_1",
+                    "title": "学习目标导入视频",
+                    "purpose": "帮助学习者理解功能边界与验收标准",
+                }
+            ],
+            animation_briefs=[
+                {
+                    "animation_id": "anim_1",
+                    "title": "目标动画",
+                    "concept": "展示学习目标如何落到验收标准",
+                    "visual_elements": ["目标卡片", "任务卡片", "验收标准卡片"],
+                    "motion": "依次淡入",
+                    "space": "正文宽度",
+                    "placement_hint": "练习任务之后",
+                }
+            ],
+        )
+
+
+def test_section_markdown_rejects_placeholder_id_mismatch() -> None:
+    with pytest.raises(ValidationError):
+        SectionMarkdownOutput(
+            section_id="1.1",
+            parent_section_id="1",
+            title="学习目标",
+            markdown="\n\n".join([
+                "# 1.1 学习目标",
+                "## 学习目标\n明确输入、输出和验收标准。",
+                "<!-- video:id=wrong_video -->",
+                "## 核心概念\n功能边界与验收标准。",
+                "## 步骤讲解\n先确认目标，再拆任务。",
+                "<!-- animation:id=anim_1 -->",
+                "## 练习任务\n写一张任务卡。",
+                "## 检查标准\n能给出可验收产出。",
+            ]),
+            video_briefs=[
+                {
+                    "video_id": "video_1",
+                    "title": "学习目标导入视频",
+                    "purpose": "帮助学习者理解功能边界与验收标准",
+                }
+            ],
+            animation_briefs=[
+                {
+                    "animation_id": "anim_1",
+                    "title": "目标动画",
+                    "concept": "展示学习目标如何落到验收标准",
+                    "visual_elements": ["目标卡片", "任务卡片", "验收标准卡片"],
+                    "motion": "依次淡入",
+                    "space": "正文宽度",
+                    "placement_hint": "练习任务之后",
+                }
+            ],
+        )
+
+
+def test_section_animation_brief_normalizes_structured_visual_elements_and_motion_steps() -> None:
+    output = SectionAnimationBriefOutput(
+        animation_id="anim_1",
+        title="接口调用流程动画",
+        concept="展示输入如何经过校验后进入异步 LLM 调用",
+        visual_elements=[
+            {"element": "User Input Card", "content": "{ query: '...' }"},
+            {"element": "Validation Box", "content": "Check Syntax (Sync)"},
+            {"element": "LLM Cloud Icon", "content": "Generate Answer (Async)"},
+        ],
+        motion=[
+            "Data packet moves from User Input Card to Validation Box.",
+            "Then it waits at the LLM Cloud Icon before returning the answer.",
+        ],
+        space="正文宽度",
+        placement_hint="步骤讲解之后",
+    )
+
+    assert output.visual_elements == [
+        "User Input Card：{ query: '...' }",
+        "Validation Box：Check Syntax (Sync)",
+        "LLM Cloud Icon：Generate Answer (Async)",
+    ]
+    assert output.motion == (
+        "Data packet moves from User Input Card to Validation Box.\n"
+        "Then it waits at the LLM Cloud Icon before returning the answer."
+    )
+
+
+def test_section_animation_brief_normalizes_structured_space() -> None:
+    output = SectionAnimationBriefOutput(
+        animation_id="anim_1",
+        title="检查点流程动画",
+        concept="展示运行证据如何被保存",
+        visual_elements=["用户输入", "Agent", "日志"],
+        motion="节点依次淡入",
+        space={"width": "600px", "height": "400px"},
+        placement_hint={"after": "练习任务"},
+    )
+
+    assert output.space == '{"width": "600px", "height": "400px"}'
+    assert output.placement_hint == '{"after": "练习任务"}'
+
+
+def test_section_video_search_allows_missing_top_level_query_fields_from_llm() -> None:
+    output = SectionVideoSearchOutput(
+        videos=[
+            {
+                "brief_id": "video_1",
+                "title": "需求拆解视频",
+                "url": "https://www.bilibili.com/video/example",
+                "cover_url": "",
+                "source": "Bilibili",
+            }
+        ]
+    )
+
+    assert output.section_id == ""
+    assert output.query == ""
+    assert output.videos[0].brief_id == "video_1"
+
+
+def test_section_html_animation_allows_missing_top_level_and_item_title_from_llm() -> None:
+    output = SectionHtmlAnimationOutput(
+        animations=[
+            {
+                "animation_id": "anim_1",
+                "html": "<div class=\"section-animation\"><style></style><p>目标</p></div>",
+            }
+        ]
+    )
+
+    assert output.section_id == ""
+    assert output.animations[0].title == ""
+    assert "section-animation" in output.animations[0].html

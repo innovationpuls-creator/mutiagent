@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, waitForElementToBeRemoved } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SproutPage } from './SproutPage';
@@ -7,7 +7,13 @@ import { GlobalAiWidget } from '../components/onboarding/GlobalAiWidget';
 import { AuthProvider } from '../contexts/AuthContext';
 
 vi.mock('../components/home/SproutHero', () => ({
-  SproutHero: () => <div>Sprout Hero</div>,
+  SproutHero: () => {
+    return (
+      <div>
+        <div>Sprout Hero</div>
+      </div>
+    );
+  },
 }));
 
 afterEach(() => {
@@ -87,7 +93,6 @@ describe('SproutPage', () => {
     await waitFor(() => {
       expect(sessionStorageRemoveItem).toHaveBeenCalledWith('mutiagent-sprout-init-overlay');
     });
-
-    expect(sessionStorageRemoveItem).toHaveBeenCalledWith('mutiagent-sprout-init-overlay');
   }, 22000);
+
 });

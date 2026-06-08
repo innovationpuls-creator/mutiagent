@@ -583,6 +583,50 @@ def test_stream_orchestration_events_keeps_soft_worker_failure_in_agent_result(m
     assert completed_event["full_text"] == "画像生成失败：结构化输出异常"
 
 
+def test_route_after_worker_ends_after_initial_profile_generation_to_wait_for_user_confirmation() -> None:
+    assert route_after_worker(
+        {
+            "profile": {
+                "type": "basic_profile",
+                "summary_text": "大三软件工程学生，继续强化 AI 应用开发。",
+                "confirmed_info": {
+                    "current_grade": "大三",
+                    "major": "软件工程",
+                    "learning_stage": "项目实践",
+                    "has_clear_goal": "是",
+                    "learning_method_preference": "项目驱动",
+                    "learning_pace_preference": "周末集中",
+                    "content_preference": ["实践"],
+                    "need_guidance": "需要",
+                    "knowledge_foundation": "有 Python 基础",
+                    "strengths": "执行力强",
+                    "weaknesses": "部署经验不足",
+                    "experience": "做过课程项目",
+                    "short_term_goal": "更新项目方向",
+                    "long_term_goal": "完成 AI 应用开发项目",
+                    "weekly_available_time": "每周 8 小时",
+                    "constraints": "周末集中",
+                },
+            },
+            "messages": [
+                HumanMessage(content="大三，软件工程，AI，周末集中"),
+                AIMessage(
+                    content="",
+                    tool_calls=[{
+                        "name": "profile_agent",
+                        "args": {"conversation_summary": "大三，软件工程，AI，周末集中"},
+                        "id": "force_profile_agent",
+                    }],
+                ),
+                ToolMessage(
+                    content="{}",
+                    tool_call_id="force_profile_agent",
+                ),
+            ],
+        }
+    ) == "__end__"
+
+
 def test_route_after_worker_returns_supervisor_for_completed_tasks_profile_followup() -> None:
     assert route_after_worker(
         {

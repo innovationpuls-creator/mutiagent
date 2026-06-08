@@ -13,6 +13,7 @@ from app.models import UserProfile
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.orchestration.agents.profile import _build_profile_input, _is_complete_profile, run_profile_agent
+from app.orchestration.agents.models import ProfileOutput
 from app.orchestration.rule_engine import AGENT_LEARNING_PATH, AGENT_PROFILE, evaluate
 
 
@@ -543,10 +544,11 @@ def test_run_profile_agent_uses_existing_collecting_profile_to_finish_basic_prof
 
     result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
 
-    assert result["profile"]["type"] == "basic_profile"
-    assert result["profile"]["stage"] == "generated"
+    assert result["profile"]["type"] == "collecting"
+    assert result["profile"]["stage"] == "basic_info"
     assert result["profile"]["confirmed_info"]["current_grade"] == "大三"
     assert result["profile"]["confirmed_info"]["major"] == "软件工程"
+    assert "还需要确认" in result["response"]
     assert result["response"] == result["profile"]["text"]
 
 
@@ -569,7 +571,7 @@ def test_run_profile_agent_maps_user_delimited_profile_without_fake_fields(tmp_p
     result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
 
     confirmed = result["profile"]["confirmed_info"]
-    assert result["profile"]["type"] == "basic_profile"
+    assert result["profile"]["type"] == "collecting"
     assert confirmed["current_grade"] == "大三"
     assert confirmed["major"] == "软件工程"
     assert confirmed["short_term_goal"] == "找工作，学习vibecoding"
@@ -581,7 +583,7 @@ def test_run_profile_agent_maps_user_delimited_profile_without_fake_fields(tmp_p
     assert confirmed["experience"] == ""
     assert confirmed["weekly_available_time"] == ""
     assert result["profile"]["defaulted_fields"] == []
-    assert "喜欢自己摸索" not in result["profile"]["summary_text"].split("软件工程", 1)[0]
+    assert "还需要确认" in result["response"]
 
 
 def test_run_profile_agent_maps_major_before_grade_in_delimited_profile(tmp_path: Path) -> None:
@@ -603,8 +605,115 @@ def test_run_profile_agent_maps_major_before_grade_in_delimited_profile(tmp_path
     result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
 
     confirmed = result["profile"]["confirmed_info"]
-    assert result["profile"]["type"] == "basic_profile"
+    assert result["profile"]["type"] == "collecting"
     assert confirmed["current_grade"] == "大三"
     assert confirmed["major"] == "软件工程"
     assert confirmed["short_term_goal"] == "找工作，学习vibecoding"
     assert confirmed["learning_method_preference"] == "喜欢自己摸索"
+    assert "还需要确认" in result["response"]
+
+
+def test_run_profile_agent_collecting_profile_understands_english_grade_without_corrupting_major(tmp_path: Path) -> None:
+    class ExplodingLlm:
+        def with_structured_output(self, *_args, **_kwargs):
+            raise AssertionError("local collecting completion path should not call structured llm")
+
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-english-grade.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000000018",
+        "query": (
+            "I am a third-year software engineering student. "
+            "I want to study AI application architecture and build a local knowledge-base QA demo."
+        ),
+        "messages": [
+            HumanMessage(content="开始学习这门课"),
+            HumanMessage(
+                content=(
+                    "I am a third-year software engineering student. "
+                    "I want to study AI application architecture and build a local knowledge-base QA demo."
+                )
+            ),
+        ],
+    }
+
+    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+
+    assert result["profile"]["type"] == "collecting"
+    assert result["profile"]["confirmed_info"]["current_grade"] == "大三"
+    assert result["profile"]["confirmed_info"]["major"] == ""
+    assert "请先告诉我你的专业" in result["response"]
+
+
+def test_run_profile_agent_uses_structured_llm_for_rich_first_profile_message(tmp_path: Path) -> None:
+    class RecordingLlm:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def with_structured_output(self, *_args, **_kwargs):
+            async def invoke(_messages):
+                self.calls += 1
+                profile = _profile()
+                profile["confirmed_info"]["learning_stage"] = "项目实践"
+                profile["confirmed_info"]["learning_method_preference"] = "项目驱动"
+                profile["confirmed_info"]["learning_pace_preference"] = "周末集中推进"
+                profile["confirmed_info"]["content_preference"] = ["实践型内容"]
+                profile["confirmed_info"]["need_guidance"] = "需要一定指导"
+                profile["confirmed_info"]["knowledge_foundation"] = "Python、前后端基础和一些 LLM API 接入经验"
+                profile["confirmed_info"]["strengths"] = "执行力强"
+                profile["confirmed_info"]["weaknesses"] = "部署经验不足和工程稳定性经验不足"
+                profile["confirmed_info"]["experience"] = "做过课程项目"
+                profile["confirmed_info"]["short_term_goal"] = "完成一个 AI Agent 项目并上线可演示功能"
+                profile["confirmed_info"]["long_term_goal"] = "成为 AI 应用开发者"
+                profile["confirmed_info"]["weekly_available_time"] = "每周 8 小时"
+                profile["confirmed_info"]["constraints"] = "平时课程比较满，只能周末集中学习"
+                profile["text"] = "【基础学习画像总结】大三软件工程，当前以 AI Agent 项目实践为主线。"
+                profile["summary_text"] = profile["text"]
+                return ProfileOutput(**profile)
+
+            return invoke
+
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-rich-first-message.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    user_text = (
+        "我是软件工程专业的大三学生。"
+        "我现在的学习阶段是项目实践。"
+        "我的目标比较明确，短期目标是完成一个 AI Agent 项目并真正上线一个可演示功能，"
+        "长期目标是成为 AI 应用开发者。"
+        "我的学习方法偏项目驱动，喜欢从真实需求出发边做边学。"
+        "学习节奏希望周末集中推进，每周大概能投入 8 小时。"
+        "我更偏好实践型内容。"
+        "我需要一定的指导和拆解。"
+        "我的知识基础是 Python、前后端基础和一些 LLM API 接入经验。"
+        "我做过课程项目，优势是执行力强，弱点是部署经验不足和工程稳定性经验不足。"
+        "平时课程比较满，所以主要限制是只能在周末集中学习。"
+        "请先生成我的基础画像。"
+    )
+    llm = RecordingLlm()
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000000017",
+        "query": user_text,
+        "messages": [HumanMessage(content=user_text)],
+    }
+
+    result = asyncio.run(run_profile_agent(state, llm))
+
+    assert llm.calls == 1
+    confirmed = result["profile"]["confirmed_info"]
+    assert confirmed["current_grade"] == "大三"
+    assert confirmed["major"] == "软件工程"
+    assert confirmed["learning_stage"] == "项目实践"
+    assert confirmed["learning_method_preference"] == "项目驱动"
+    assert confirmed["weekly_available_time"] == "每周 8 小时"
+    assert confirmed["constraints"] == "平时课程比较满，只能周末集中学习"
+    assert result["response"] == result["profile"]["text"]
+
+    with Session(engine) as session:
+        row = session.get(UserProfile, state["user_id"])
+
+    assert row is not None
+    assert row.profile_data["confirmed_info"]["major"] == "软件工程"

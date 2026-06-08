@@ -78,9 +78,11 @@ export function TodayLearningDetailOverlay({
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
+      document.documentElement.setAttribute('data-overlay-open', 'true');
     }
     return () => {
       document.body.style.overflow = '';
+      document.documentElement.removeAttribute('data-overlay-open');
     };
   }, [isOpen]);
 
@@ -120,15 +122,17 @@ export function TodayLearningDetailOverlay({
         <header className="today-detail-header">
           <span>今日推荐 · 当前课程</span>
           <button type="button" onClick={onClose} aria-label="关闭今日学习详情">
-            ×
+            ✕
           </button>
         </header>
 
         <section className="today-detail-hero">
-          <p>{progressStateLabel(current.progress_state)}</p>
+          <div className={`status-pill status-${current.progress_state}`}>
+            {progressStateLabel(current.progress_state)}
+          </div>
           <h2>{current.course_or_chapter_theme}</h2>
           <strong>{current.current_focus}</strong>
-          <p>{current.next_action}</p>
+          {current.next_action && <p className="next-action-tip">{current.next_action}</p>}
         </section>
 
         <section className="today-detail-grid">
@@ -140,7 +144,7 @@ export function TodayLearningDetailOverlay({
           <div className="today-detail-section">
             <h3>时间安排</h3>
             <p>{course.time_arrangement.semester_scope} · {course.time_arrangement.duration}</p>
-            <p>{course.time_arrangement.pace_reason}</p>
+            <p className="sub-text">{course.time_arrangement.pace_reason}</p>
           </div>
 
           <div className="today-detail-section">
@@ -168,7 +172,7 @@ export function TodayLearningDetailOverlay({
               <div className="today-detail-section">
                 <h3>课程大纲说明</h3>
                 <p>{getOutlineSummary(data.currentCourseOutline)}</p>
-                <p>预计总投入：{getOutlineHours(data.currentCourseOutline)}</p>
+                <p className="sub-text">预计总投入：{getOutlineHours(data.currentCourseOutline)}</p>
               </div>
 
               <div className="today-detail-section today-detail-section--wide">
@@ -177,7 +181,7 @@ export function TodayLearningDetailOverlay({
                   {topLevelSections.map((section) => (
                     <article className="today-detail-outline-card" key={section.section_id}>
                       <div className="today-detail-outline-head">
-                        <span>{getSectionLabel(section.section_id)}</span>
+                         <span>{getSectionLabel(section.section_id)}</span>
                         <div>
                           <strong>{getSectionHeading(section)}</strong>
                           <p>{getSectionDescription(section)}</p>
@@ -194,6 +198,25 @@ export function TodayLearningDetailOverlay({
         </section>
 
         <section className="today-detail-following">
+          <h3>同年级完整学习路径</h3>
+          {data.gradeCourses.length === 0 ? (
+            <p className="today-detail-empty">等待学习路径 Agent 补充。</p>
+          ) : (
+            <ol className="today-detail-grade-courses">
+              {data.gradeCourses.map((item) => (
+                <li
+                  key={item.course_node_id}
+                  className={item.course_node_id === current.course_node_id ? 'is-current' : undefined}
+                >
+                  <span>{item.course_or_chapter_theme}</span>
+                  {item.course_node_id === current.course_node_id && <small>当前课程</small>}
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+
+        <section className="today-detail-following today-detail-following--subtle">
           <h3>同年级后续课程</h3>
           {data.followingCourses.length === 0 ? (
             <p className="today-detail-empty">当前年级后续课程已完成。</p>

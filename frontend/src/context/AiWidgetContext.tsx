@@ -18,11 +18,48 @@ interface AiWidgetContextType {
 }
 
 const AiWidgetContext = createContext<AiWidgetContextType | undefined>(undefined);
+const WIDGET_STATE_STORAGE_KEY = 'mutiagent-ai-widget-state';
+
+function loadInitialWidgetState(): WidgetState {
+  if (typeof window === 'undefined') {
+    return 'HIDDEN';
+  }
+
+  try {
+    return window.sessionStorage.getItem(WIDGET_STATE_STORAGE_KEY) === 'WIDGET' ? 'WIDGET' : 'HIDDEN';
+  } catch {
+    return 'HIDDEN';
+  }
+}
+
+function persistWidgetState(state: WidgetState): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    if (state === 'WIDGET') {
+      window.sessionStorage.setItem(WIDGET_STATE_STORAGE_KEY, 'WIDGET');
+      return;
+    }
+
+    if (state === 'HIDDEN') {
+      window.sessionStorage.removeItem(WIDGET_STATE_STORAGE_KEY);
+    }
+  } catch {
+    /* sessionStorage can be unavailable in restricted browser contexts */
+  }
+}
 
 export function AiWidgetProvider({ children }: { children: ReactNode }) {
-  const [widgetState, setWidgetState] = useState<WidgetState>('HIDDEN');
+  const [widgetState, setWidgetStateValue] = useState<WidgetState>(loadInitialWidgetState);
   const [pendingMessage, setPendingMessage] = useState<PendingWidgetMessage | null>(null);
   const pendingMessageIdRef = useRef(0);
+
+  const setWidgetState = useCallback((state: WidgetState) => {
+    persistWidgetState(state);
+    setWidgetStateValue(state);
+  }, []);
 
   const openWithMessage = useCallback((text: string) => {
     pendingMessageIdRef.current += 1;

@@ -36,15 +36,51 @@ REQUIRED_CONFIRMED_INFO_KEYS = frozenset({
     "weekly_available_time",
     "constraints",
 })
+PROFILE_COMPLETION_REQUIRED_KEYS = frozenset({
+    "current_grade",
+    "major",
+    "learning_stage",
+    "has_clear_goal",
+    "learning_method_preference",
+    "learning_pace_preference",
+    "content_preference",
+    "need_guidance",
+    "knowledge_foundation",
+    "strengths",
+    "weaknesses",
+    "experience",
+    "short_term_goal",
+    "long_term_goal",
+    "weekly_available_time",
+    "constraints",
+})
 UNKNOWN_VALUE = "未知"
 DEFAULT_GRADE = "大三"
 DEFAULT_MAJOR = "软件工程"
 DEFAULT_TOPIC = "AI 应用开发"
 GRADE_PATTERN = re.compile(r"(大[一二三四]|大[1234]|[一二三四]年级|研[一二三])")
+ENGLISH_GRADE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bfreshman\b", re.IGNORECASE), "大一"),
+    (re.compile(r"\bsophomore\b", re.IGNORECASE), "大二"),
+    (re.compile(r"\bthird[\s-]?year\b", re.IGNORECASE), "大三"),
+    (re.compile(r"\bjunior\b", re.IGNORECASE), "大三"),
+    (re.compile(r"\bfourth[\s-]?year\b", re.IGNORECASE), "大四"),
+    (re.compile(r"\bsenior\b", re.IGNORECASE), "大四"),
+)
 SPLIT_PATTERN = re.compile(r"[，,、；;／/\s]+")
 EXPLICIT_FIELD_SPLIT_PATTERN = re.compile(r"[，,、；;]+")
 PACE_SEGMENTS = {"平时学习", "周末集中", "每天少量", "高强度冲刺"}
 GREETING_SEGMENTS = frozenset({"你好"})
+ENGLISH_MAJOR_BLOCKLIST = frozenset({
+    "hello",
+    "working",
+    "student",
+    "engineering",
+    "software",
+    "third-year",
+    "third",
+    "year",
+})
 MAJOR_BLOCKED_TERMS = (
     "推荐",
     "画像",
@@ -64,6 +100,9 @@ LEARNING_METHOD_SEGMENTS = ("喜欢自己摸索", "自己摸索", "自主学习"
 GOAL_SEGMENTS = ("找工作", "就业", "实习", "考研")
 TOPIC_PREFIXES = ("想学习", "想学", "学习", "学")
 TOPIC_BLOCKED_VALUES = frozenset({"", "路径", "学习路径", "课程", "画像", "什么", "下一步"})
+NARRATIVE_PUNCTUATION = ("。", "？", "?", "！", "!", "\n")
+BRIEF_PROFILE_SEGMENT_LIMIT = 8
+BRIEF_PROFILE_SEGMENT_LENGTH_LIMIT = 18
 EXPLICIT_PROFILE_FIELD_PREFIXES: dict[str, tuple[str, ...]] = {
     "current_grade": ("年级改成", "年级调整为", "当前年级改成", "当前年级调整为"),
     "major": ("专业改成", "专业调整为", "我的专业是", "专业是"),
@@ -76,6 +115,7 @@ EXPLICIT_PROFILE_FIELD_PREFIXES: dict[str, tuple[str, ...]] = {
 SYSTEM_GENERATED_KNOWLEDGE_FOUNDATION_PATTERN = re.compile(
     r"^已具备(?P<major>.+?)基础，(?P<suffix>(?:.+方向可从入门到基础逐步补全|AI 基础由系统补全为入门到基础))$"
 )
+ASCII_TOKEN_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 
 
 def _is_complete_profile(profile: dict | None) -> bool:
@@ -247,6 +287,13 @@ def _goal_from_segment(segment: str) -> str:
     return ""
 
 
+def _english_grade_from_text(text: str) -> str:
+    for pattern, grade in ENGLISH_GRADE_PATTERNS:
+        if pattern.search(text):
+            return grade
+    return ""
+
+
 def _clean_major_value(segment: str) -> str:
     value = segment.strip()
     if value.endswith("专业"):
@@ -259,6 +306,11 @@ def _major_from_segment(segment: str) -> str:
     if not value:
         return ""
     if len(value) > 16:
+        return ""
+    if ASCII_TOKEN_PATTERN.fullmatch(value):
+        return ""
+    lowered_value = value.lower()
+    if lowered_value in ENGLISH_MAJOR_BLOCKLIST:
         return ""
     if (
         _topic_from_segment(segment)
@@ -321,6 +373,32 @@ def _extract_explicit_profile_updates(texts: list[str]) -> dict[str, object]:
     return updates
 
 
+def _looks_like_brief_profile_query(query: str) -> bool:
+    normalized = query.strip()
+    if not normalized:
+        return False
+    if _extract_explicit_profile_updates([normalized]):
+        return True
+    if any(mark in normalized for mark in NARRATIVE_PUNCTUATION):
+        return False
+
+    segments = _normalize_segments([normalized])
+    if not 2 <= len(segments) <= BRIEF_PROFILE_SEGMENT_LIMIT:
+        return False
+    if any(len(segment) > BRIEF_PROFILE_SEGMENT_LENGTH_LIMIT for segment in segments):
+        return False
+
+    topic = _extract_topic([normalized], segments)
+    return any((
+        bool(GRADE_PATTERN.search(normalized)),
+        bool(_major_from_segments(segments)),
+        bool(topic),
+        any(segment in PACE_SEGMENTS for segment in segments),
+        any(_learning_method_from_segment(segment) for segment in segments),
+        any(_goal_from_segment(segment) for segment in segments),
+    ))
+
+
 def _extract_profile_updates(state: OrchestrationState, *, include_defaults: bool = True) -> dict[str, object]:
     texts = _recent_human_texts(state)
     segments = _normalize_segments(texts)
@@ -347,6 +425,13 @@ def _extract_profile_updates(state: OrchestrationState, *, include_defaults: boo
 
         if not detected_goal:
             detected_goal = _goal_from_segment(segment)
+
+    if "current_grade" not in updates:
+        for text in reversed(texts):
+            english_grade = _english_grade_from_text(text)
+            if english_grade:
+                updates["current_grade"] = english_grade
+                break
 
     if "major" not in updates:
         major = _major_from_segments(segments)
@@ -454,8 +539,9 @@ def _build_collecting_profile(state: OrchestrationState) -> dict:
         question = "为了生成基础画像，请先告诉我你的专业。"
     else:
         question = (
-            "我还需要再确认一点信息。"
-            "你可以继续补充学习方向、近期目标、每周可投入时间或当前限制。"
+            "我还需要确认你的学习阶段、目标清晰度、学习方式偏好、学习节奏、内容偏好、是否需要指导、"
+            "知识基础、优势、短板、项目经验、短期目标、长期目标、每周可投入时间和当前限制。"
+            "你可以一次性补充，也可以说「直接帮我生成」让我按默认信息补齐。"
         )
 
     return {
@@ -488,11 +574,46 @@ def _has_minimum_profile_fields(state: OrchestrationState) -> bool:
     )
 
 
+def _missing_minimum_profile_fields(state: OrchestrationState) -> list[str]:
+    existing_profile = state.get("profile")
+    existing_confirmed = (
+        existing_profile.get("confirmed_info", {})
+        if isinstance(existing_profile, dict) and isinstance(existing_profile.get("confirmed_info"), dict)
+        else {}
+    )
+    updates = _extract_profile_updates(state, include_defaults=False)
+    missing: list[str] = []
+    for key in ("current_grade", "major"):
+        value = existing_confirmed.get(key) or updates.get(key)
+        if not isinstance(value, str) or not value.strip():
+            missing.append(key)
+    return missing
+
+
 def _can_complete_collecting_profile_locally(state: OrchestrationState) -> bool:
     profile = state.get("profile")
     if not isinstance(profile, dict) or profile.get("type") != "collecting":
         return False
-    return _has_minimum_profile_fields(state)
+    return _has_confirmed_profile_completion_fields(state)
+
+
+def _has_confirmed_profile_completion_fields(state: OrchestrationState) -> bool:
+    existing_profile = state.get("profile")
+    existing_confirmed = (
+        existing_profile.get("confirmed_info", {})
+        if isinstance(existing_profile, dict) and isinstance(existing_profile.get("confirmed_info"), dict)
+        else {}
+    )
+    updates = _extract_profile_updates(state, include_defaults=False)
+    for key in PROFILE_COMPLETION_REQUIRED_KEYS:
+        value = updates.get(key, existing_confirmed.get(key))
+        if key == "content_preference":
+            if not isinstance(value, list) or not value:
+                return False
+            continue
+        if not isinstance(value, str) or not value.strip():
+            return False
+    return True
 
 
 def _profile_question_box() -> dict[str, object]:
@@ -737,18 +858,11 @@ def _should_use_local_profile(state: OrchestrationState) -> bool:
         return True
     if not query:
         return False
-    separators = any(mark in query for mark in ("，", ",", "、", ";", "；"))
-    has_profile_signal = (
-        bool(GRADE_PATTERN.search(query))
-        or "专业" in query
-        or "平时学习" in query
-        or "ai" in query.lower()
-        or "vibecoding" in query.lower()
-    )
-    has_existing_profile = _is_complete_profile(state.get("profile"))
-    if has_existing_profile:
-        return separators or has_profile_signal
-    return has_profile_signal
+    if not _looks_like_brief_profile_query(query):
+        return False
+    if _is_complete_profile(state.get("profile")):
+        return True
+    return _has_confirmed_profile_completion_fields(state)
 
 
 async def run_profile_agent(state: OrchestrationState, llm: BaseChatModel) -> dict:
@@ -757,8 +871,19 @@ async def run_profile_agent(state: OrchestrationState, llm: BaseChatModel) -> di
     conversation_summary = tool_args.get("conversation_summary", state["query"])
     profile_input = _build_profile_input(state, conversation_summary)
     allow_default_fill = _allows_default_fill(str(state.get("query", "")))
+    missing_minimum_fields = _missing_minimum_profile_fields(state)
+    looks_like_brief_profile_query = _looks_like_brief_profile_query(str(state.get("query", "")))
 
-    if not allow_default_fill and not _is_complete_profile(state.get("profile")) and not _has_minimum_profile_fields(state):
+    if (
+        not allow_default_fill
+        and not _is_complete_profile(state.get("profile"))
+        and (missing_minimum_fields or not _has_confirmed_profile_completion_fields(state))
+        and (
+            missing_minimum_fields
+            or looks_like_brief_profile_query
+            or isinstance(state.get("profile"), dict)
+        )
+    ):
         profile_dict = _build_collecting_profile(state)
         _persist_profile(state["user_id"], profile_dict)
         return {"profile": profile_dict, "response": profile_dict.get("text", "")}

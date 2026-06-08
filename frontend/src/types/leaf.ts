@@ -24,7 +24,7 @@ export interface LeafSection {
 export interface LeafGenerationStatus {
   course_node_id: string;
   chapter_section_id: string;
-  status: 'running';
+  status: 'running' | 'error';
   message: string;
 }
 

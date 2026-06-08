@@ -126,10 +126,25 @@ export function AgentRunTimeline({ steps = [], status }: AgentRunTimelineProps) 
   }, [status, timelineSteps]);
 
   const stepCount = timelineSteps.length;
-  const totalMs = timelineSteps.reduce(
-    (sum, s) => sum + (typeof s.durationMs === 'number' ? s.durationMs : 0),
-    0,
+  const timingBounds = timelineSteps.reduce(
+    (bounds, step) => {
+      if (typeof step.startedAtMs !== 'number' || !Number.isFinite(step.startedAtMs)) {
+        return bounds;
+      }
+      const durationMs = typeof step.durationMs === 'number' && Number.isFinite(step.durationMs)
+        ? step.durationMs
+        : 0;
+      const stepEndMs = step.startedAtMs + durationMs;
+      return {
+        earliest: bounds.earliest === null ? step.startedAtMs : Math.min(bounds.earliest, step.startedAtMs),
+        latest: bounds.latest === null ? stepEndMs : Math.max(bounds.latest, stepEndMs),
+      };
+    },
+    { earliest: null as number | null, latest: null as number | null },
   );
+  const totalMs = timingBounds.earliest !== null && timingBounds.latest !== null
+    ? Math.max(timingBounds.latest - timingBounds.earliest, 0)
+    : 0;
   const durationText =
     totalMs > 0
       ? totalMs < 1000

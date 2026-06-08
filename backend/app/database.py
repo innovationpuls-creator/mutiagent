@@ -59,6 +59,7 @@ def init_db(engine: Engine) -> None:
     migrate_removed_learning_path_table(engine)
 
     with Session(engine) as session:
+        _ensure_admin_user(session)
         existing = session.exec(
             select(User).where(User.identifier == "demo@mutiagent.local"),
         ).first()
@@ -70,8 +71,41 @@ def init_db(engine: Engine) -> None:
                 uid="00000000-0000-0000-0000-000000000001",
                 username="体验同学",
                 identifier="demo@mutiagent.local",
+                role="student",
                 provider="password",
                 password_hash=hash_password("demo123456"),
             ),
         )
         session.commit()
+
+
+def _ensure_admin_user(session: Session) -> None:
+    admin_username = os.getenv("ADMIN_USERNAME")
+    admin_identifier = os.getenv("ADMIN_IDENTIFIER")
+    admin_password = os.getenv("ADMIN_PASSWORD")
+    if not admin_username or not admin_identifier or not admin_password:
+        return
+
+    existing = session.exec(
+        select(User).where(User.identifier == admin_identifier),
+    ).first()
+    if existing:
+        existing.username = admin_username
+        existing.role = "admin"
+        existing.provider = "password"
+        existing.password_hash = hash_password(admin_password)
+        session.add(existing)
+        session.commit()
+        return
+
+    session.add(
+        User(
+            uid="00000000-0000-0000-0000-0000000000ad",
+            username=admin_username,
+            identifier=admin_identifier,
+            role="admin",
+            provider="password",
+            password_hash=hash_password(admin_password),
+        ),
+    )
+    session.commit()

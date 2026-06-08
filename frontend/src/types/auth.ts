@@ -1,4 +1,6 @@
 export type AuthMode = 'login' | 'register';
+export type AuthEntry = 'student' | 'teacher';
+export type AuthRole = 'student' | 'teacher' | 'admin';
 export type OAuthProvider = 'qq' | 'xuexitong';
 export type AuthType = 'password' | 'oauth';
 
@@ -6,6 +8,7 @@ export interface AuthUser {
   uid: string;
   username: string;
   identifier: string;
+  role: AuthRole;
   provider: string;
   is_active: boolean;
   created_at: string;
@@ -29,6 +32,7 @@ export interface RegisterPayload {
   identifier: string;
   password: string;
   confirmPassword: string;
+  role: AuthRole;
 }
 
 export interface OAuthPayload {

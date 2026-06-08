@@ -25,6 +25,9 @@ def test_llm_factories_split_worker_and_thinking_modes(monkeypatch) -> None:
     assert supervisor.kwargs["timeout"] == 30
     assert worker.kwargs["timeout"] == 180
     assert thinking_worker.kwargs["timeout"] == 180
+    assert supervisor.kwargs["max_tokens"] is None
+    assert worker.kwargs["max_tokens"] == 8192
+    assert thinking_worker.kwargs["max_tokens"] == 8192
     assert supervisor.kwargs["model_kwargs"]["extra_body"]["enable_thinking"] is False
     assert worker.kwargs["model_kwargs"]["extra_body"]["enable_thinking"] is False
     assert thinking_worker.kwargs["model_kwargs"]["extra_body"]["enable_thinking"] is True
@@ -52,7 +55,7 @@ def test_llm_factories_cache_instances(monkeypatch) -> None:
     assert build_count == 1
 
 
-def test_graph_routes_learning_and_outline_agents_to_thinking_worker(monkeypatch) -> None:
+def test_graph_routes_long_reasoning_to_thinking_and_resource_generation_to_worker(monkeypatch) -> None:
     import app.orchestration.graph as graph_module
 
     supervisor_llm = object()
@@ -112,11 +115,13 @@ def test_graph_routes_learning_and_outline_agents_to_thinking_worker(monkeypatch
     assert received["profile_agent"] is supervisor_llm
     assert received["learning_path_agent"] is thinking_llm
     assert received["course_knowledge_agent"] is thinking_llm
-    assert received["section_markdown_agent"] is thinking_llm
+    assert received["section_markdown_agent"] is worker_llm
     assert received["section_video_search_agent"] is search_llm
-    assert received["section_html_animation_agent"] is thinking_llm
+    assert received["section_html_animation_agent"] is worker_llm
     assert received["learning_path_agent"] is not worker_llm
     assert received["course_knowledge_agent"] is not worker_llm
+    assert received["section_markdown_agent"] is not thinking_llm
+    assert received["section_html_animation_agent"] is not thinking_llm
 
 
 def test_search_worker_llm_enables_search(monkeypatch) -> None:

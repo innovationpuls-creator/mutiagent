@@ -99,6 +99,41 @@ function getSessionEventStepId(event: SessionAgentEvent): string {
   return event.stepId ?? getSessionEventAgent(event) ?? event.session_id ?? event.event;
 }
 
+export function getSessionEventTimingKey(event: SessionAgentEvent): string {
+  const agent = getSessionEventAgent(event);
+  if (agent && event.course_id && event.chapter_section_id && event.section_id) {
+    return [
+      'structured',
+      event.kind ?? 'agent',
+      agent,
+      event.course_id,
+      event.chapter_section_id,
+      event.section_id,
+    ].join('|');
+  }
+  return `step|${getSessionEventStepId(event)}`;
+}
+
+export function rememberSessionEventStartTime(
+  starts: Record<string, number>,
+  event: SessionAgentEvent,
+  now: number,
+): void {
+  const stepId = getSessionEventStepId(event);
+  const timingKey = getSessionEventTimingKey(event);
+  const startTime = starts[stepId] ?? starts[timingKey] ?? now;
+  starts[stepId] = startTime;
+  starts[timingKey] = startTime;
+}
+
+export function getSessionEventStartTime(
+  starts: Record<string, number>,
+  event: SessionAgentEvent,
+  fallback: number,
+): number {
+  return starts[getSessionEventTimingKey(event)] ?? starts[getSessionEventStepId(event)] ?? fallback;
+}
+
 function getSessionEventTitle(event: SessionAgentEvent): string {
   const agent = getSessionEventAgent(event);
   return event.label ?? (agent ? AGENT_LABELS[agent] ?? agent : event.event);
@@ -216,7 +251,13 @@ function AssistantMessageFrame({ message, children }: AssistantMessageFrameProps
   );
 }
 
-export function AiGreetingInput() {
+type ExpandedLayout = 'centered' | 'docked';
+
+interface AiGreetingInputProps {
+  expandedLayout?: ExpandedLayout;
+}
+
+export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInputProps) {
   const {
     widgetState,
     setWidgetState,
@@ -281,6 +322,12 @@ export function AiGreetingInput() {
   const mouseYSpring = useSpring(y, { stiffness: 150, damping: 20 });
   const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ['15deg', '-15deg']);
   const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ['-15deg', '15deg']);
+  const expandedCardVariant = expandedLayout === 'docked'
+    ? {
+      width: 'min(86.6vw, calc(100vw - (var(--space-24) * 2)))',
+      height: 'min(86.6vh, calc(100vh - (var(--space-24) * 2)))',
+    }
+    : { width: '85vw', height: '85vh' };
 
   useEffect(() => {
     const handleGlobalMouseMove = (event: MouseEvent) => {
@@ -310,9 +357,7 @@ export function AiGreetingInput() {
 
     if (event.event === 'agent_calling' || event.event === 'agent_progress') {
       const stepId = getSessionEventStepId(event);
-      if (event.event === 'agent_calling') {
-        startTimeRef.current[stepId] = now;
-      }
+      rememberSessionEventStartTime(startTimeRef.current, event, now);
       return {
         step: {
           stepId,
@@ -321,7 +366,7 @@ export function AiGreetingInput() {
           title: label,
           summary: getTimelineSummary(event, event.message ?? '正在执行...'),
           agent: agent ?? null,
-          startedAtMs: startTimeRef.current[stepId] ?? now,
+          startedAtMs: getSessionEventStartTime(startTimeRef.current, event, now),
           dependsOn: event.dependsOn,
           parallelGroup: event.parallelGroup,
         },
@@ -330,7 +375,11 @@ export function AiGreetingInput() {
 
     if (event.event === 'agent_result') {
       const stepId = getSessionEventStepId(event);
-      const startTime = startTimeRef.current[stepId] ?? (lastEventTimeRef.current || runStartTimeRef.current || now);
+      const startTime = getSessionEventStartTime(
+        startTimeRef.current,
+        event,
+        lastEventTimeRef.current || runStartTimeRef.current || now,
+      );
       const status = event.success === false ? 'error' : 'success';
       const fallbackSummary = event.success === false ? '这一步没有正常完成' : '完成';
       return {
@@ -351,7 +400,11 @@ export function AiGreetingInput() {
 
     if (event.event === 'error') {
       const stepId = getSessionEventStepId(event);
-      const startTime = startTimeRef.current[stepId] ?? (lastEventTimeRef.current || runStartTimeRef.current || now);
+      const startTime = getSessionEventStartTime(
+        startTimeRef.current,
+        event,
+        lastEventTimeRef.current || runStartTimeRef.current || now,
+      );
       return {
         step: {
           stepId,
@@ -620,6 +673,9 @@ export function AiGreetingInput() {
               courseKnowledge: shouldFetchCourseOutline ? structuredData.courseKnowledge : null,
               sessionId: finalSessionId,
             });
+            if (shouldFetchCourseOutline && structuredData.courseKnowledge?.course_id) {
+              dispatchLeafGenerationCompleted(structuredData.courseKnowledge.course_id, 'course_outline');
+            }
           } catch {
             // Ignore structured follow-up errors and keep text result visible.
           }
@@ -768,7 +824,7 @@ export function AiGreetingInput() {
         className={`card ${widgetState === 'CENTER_INPUT' ? 'initial' : widgetState}`}
         variants={{
           initial: { width: 260, height: 160 },
-          expanded: { width: '85vw', height: '85vh' },
+          expanded: expandedCardVariant,
           widget: { width: 100, height: 100 },
         }}
         initial="initial"
@@ -808,7 +864,7 @@ export function AiGreetingInput() {
                   setWidgetState('WIDGET');
                 }}
               >
-                <span aria-hidden="true">//</span>
+                <span aria-hidden="true">✕</span>
               </button>
             </header>
 

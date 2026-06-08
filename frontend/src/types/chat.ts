@@ -72,7 +72,7 @@ export interface LearningPathResult {
     sequence_rule: string;
     resource_rule: string;
   };
-  grade_plans: Record<GradeId, GradePlan>;
+  grade_plans: Partial<Record<GradeId, GradePlan>>;
   knowledge_graph: {
     global_relations: KnowledgeRelation[];
     critical_paths: CriticalPath[];
@@ -140,14 +140,78 @@ export function isLearningPathResult(value: unknown): value is LearningPathResul
   if (!hasRecord(knowledgeGraph) || !hasRecord(resourceContract) || !hasRecord(updateContract)) return false;
   if (!hasRecord(currentLearningCourse)) return false;
 
-  const hasGradePlan = (gradeId: GradeId) => {
-    const gradePlan = gradePlans[gradeId];
-    return hasRecord(gradePlan)
+  type GradePlanRecord = Record<string, unknown> & {
+    grade_id: string;
+    grade_name: string;
+    grade_goal: string;
+    course_nodes: unknown[];
+  };
+
+  const isGradePlan = (gradePlan: unknown): gradePlan is GradePlanRecord => hasRecord(gradePlan)
       && hasString(gradePlan.grade_id)
       && hasString(gradePlan.grade_name)
       && hasString(gradePlan.grade_goal)
       && hasArray(gradePlan.course_nodes);
+
+  const hasGradePlan = (gradeId: string) => {
+    const gradePlan = gradePlans[gradeId];
+    return isGradePlan(gradePlan);
   };
+
+  const hasAnyGradePlan = Object.values(gradePlans).some(isGradePlan);
+  const currentGradeId = currentLearningCourse.grade_id;
+  const hasCurrentGradePlan = hasString(currentGradeId) && hasGradePlan(currentGradeId);
+  const currentGradePlan = hasString(currentGradeId) ? gradePlans[currentGradeId] : undefined;
+
+  const hasCurrentCourseNode = hasCurrentGradePlan && isGradePlan(currentGradePlan) && currentGradePlan.course_nodes.some((courseNode) => (
+    hasRecord(courseNode)
+    && courseNode.course_node_id === currentLearningCourse.course_node_id
+  ));
+
+  const hasValidGradePlanKeys = Object.keys(gradePlans).every((gradeId) => (
+    gradeId === 'year_1' || gradeId === 'year_2' || gradeId === 'year_3' || gradeId === 'year_4'
+  ));
+
+  const hasValidGradePlanIds = Object.entries(gradePlans).every(([gradeId, gradePlan]) => {
+    if (!isGradePlan(gradePlan)) return false;
+    return gradePlan.grade_id === gradeId;
+  });
+
+  if (!hasValidGradePlanKeys || !hasValidGradePlanIds) return false;
+
+  const hasTimeArrangement = (value: unknown) => {
+    if (!hasRecord(value)) return false;
+    return hasString(value.semester_scope)
+      && hasString(value.duration)
+      && hasString(value.pace_reason);
+  };
+
+  const hasCourseNodeShape = (courseNode: unknown) => {
+    if (!hasRecord(courseNode)) return false;
+    return hasString(courseNode.course_node_id)
+      && hasString(courseNode.grade_id)
+      && hasString(courseNode.course_or_chapter_theme)
+      && hasTimeArrangement(courseNode.time_arrangement)
+      && hasString(courseNode.course_goal)
+      && hasArray(courseNode.prerequisite_node_ids)
+      && hasArray(courseNode.chapter_nodes)
+      && hasArray(courseNode.core_knowledge_points)
+      && hasArray(courseNode.key_points)
+      && hasArray(courseNode.difficult_points)
+      && hasArray(courseNode.learning_sequence)
+      && hasArray(courseNode.knowledge_relations)
+      && hasArray(courseNode.downstream_resource_direction_ids)
+      && hasArray(courseNode.acceptance_criteria);
+  };
+
+  const hasValidCourseNodes = Object.entries(gradePlans).every(([gradeId, gradePlan]) => {
+    if (!isGradePlan(gradePlan)) return false;
+    return gradePlan.course_nodes.every((courseNode) => (
+      hasCourseNodeShape(courseNode)
+      && hasRecord(courseNode)
+      && courseNode.grade_id === gradeId
+    ));
+  });
 
   return hasString(learningGoal.target_course_or_skill)
     && hasString(learningGoal.goal_type)
@@ -159,10 +223,10 @@ export function isLearningPathResult(value: unknown): value is LearningPathResul
     && hasArray(learnerBaseline.weaknesses)
     && hasArray(learnerBaseline.constraints)
     && hasString(learnerBaseline.weekly_available_time)
-    && hasGradePlan('year_1')
-    && hasGradePlan('year_2')
-    && hasGradePlan('year_3')
-    && hasGradePlan('year_4')
+    && hasAnyGradePlan
+    && hasCurrentGradePlan
+    && hasCurrentCourseNode
+    && hasValidCourseNodes
     && hasArray(knowledgeGraph.global_relations)
     && hasArray(knowledgeGraph.critical_paths)
     && hasArray(resourceContract.downstream_agents)
@@ -174,7 +238,7 @@ export function isLearningPathResult(value: unknown): value is LearningPathResul
     && hasString(currentLearningCourse.course_node_id)
     && hasString(currentLearningCourse.course_or_chapter_theme)
     && hasString(currentLearningCourse.course_goal)
-    && hasRecord(currentLearningCourse.time_arrangement)
+    && hasTimeArrangement(currentLearningCourse.time_arrangement)
     && hasString(currentLearningCourse.current_focus)
     && isCurrentLearningProgressState(currentLearningCourse.progress_state)
     && hasString(currentLearningCourse.next_action);

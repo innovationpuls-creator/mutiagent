@@ -1,0 +1,53 @@
+.teacher-page {
+  min-block-size: 100svh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-80) var(--space-64);
+  background:
+    radial-gradient(circle at 18% 16%, oklch(84% 0.12 63 / 0.28), transparent 36%),
+    radial-gradient(circle at 88% 78%, oklch(88% 0.03 220 / 0.34), transparent 34%),
+    var(--gradient-paper);
+  color: var(--color-text-primary);
+}
+
+.teacher-shell {
+  inline-size: min(100%, var(--container-default));
+  padding: var(--space-64);
+  border-radius: var(--radius-lg);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.teacher-kicker {
+  margin: 0 0 var(--space-12);
+  color: var(--color-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: var(--font-weight-medium);
+}
+
+.teacher-shell h1 {
+  margin: 0;
+  font-size: var(--text-h1);
+  line-height: 1.2;
+}
+
+.teacher-shell p:last-child {
+  max-inline-size: var(--container-narrow);
+  margin: var(--space-24) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-body);
+}
+
+@media (max-width: 768px) {
+  .teacher-page {
+    padding: var(--space-48) var(--space-24);
+  }
+
+  .teacher-shell {
+    padding: var(--space-32);
+  }
+}

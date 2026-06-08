@@ -12,6 +12,8 @@ from app.orchestration.rule_engine import (
     AGENT_LEARNING_PATH,
     AGENT_PROFILE,
     evaluate,
+    is_course_outline_regeneration_query,
+    is_learning_path_refresh_query,
     has_pending_profile_update_followup,
     is_navigation_query,
     is_course_start_query,
@@ -67,9 +69,17 @@ class TestIntentDetection:
     def test_review_plan_query(self):
         assert is_review_plan_query("先看看学习路径")
         assert is_review_plan_query("回顾规划")
+        assert is_review_plan_query("我的学习路径？")
+        assert is_review_plan_query("我现在的学习路径是什么")
+        assert is_review_plan_query("现在的学习路径是什么")
         assert is_review_plan_query("我的学习路径里面要学哪些课？")
         assert not is_review_plan_query("我先看看我的个人画像，你推荐什么？")
         assert not is_review_plan_query("开始学习")
+
+    def test_learning_path_refresh_query_accepts_grade_specific_phrase(self):
+        assert is_learning_path_refresh_query("继续生成大三学习路径")
+        assert is_learning_path_refresh_query("重新生成 year_3 学习路径")
+        assert not is_learning_path_refresh_query("继续补充个人画像")
 
 
 class TestHardRules:
@@ -165,6 +175,34 @@ class TestHardRules:
         assert result.force_call == AGENT_LEARNING_PATH
         assert AGENT_COURSE_KNOWLEDGE in result.blocked_agents
 
+    def test_profile_result_followed_by_grade_specific_refresh_still_forces_learning_path(self):
+        state = {
+            "query": "继续生成大三学习路径，方向就是 AI Agent 开发与部署",
+            "profile": _complete_profile("大三软件工程，想学习 AI Agent 开发与部署。"),
+            "learning_path": None,
+            "year_learning_paths": None,
+            "messages": [
+                HumanMessage(content="我现在大三，软件工程专业，想做 AI Agent 项目。"),
+                AIMessage(
+                    content="",
+                    tool_calls=[{
+                        "name": AGENT_PROFILE,
+                        "args": {"conversation_summary": "我现在大三，软件工程专业，想做 AI Agent 项目。"},
+                        "id": "profile_after_collecting",
+                    }],
+                ),
+                ToolMessage(
+                    content=json.dumps({"profile": _complete_profile("大三软件工程，想学习 AI Agent 开发与部署。")}, ensure_ascii=False),
+                    tool_call_id="profile_after_collecting",
+                ),
+            ],
+        }
+
+        result = evaluate(state)
+
+        assert result.force_call == AGENT_LEARNING_PATH
+        assert AGENT_LEARNING_PATH not in result.blocked_agents
+
     def test_has_profile_and_path_allows_all(self):
         """Rule 3: Profile completed + path exists → all agents allowed."""
         state = {
@@ -248,7 +286,34 @@ class TestHardRules:
 
     def test_profile_update_query_with_existing_path_forces_profile(self):
         state = {
-            "query": "更新个人画像",
+            "query": "完善我的个人画像",
+            "profile": _complete_profile(),
+            "learning_path": {"grade_year": "year_3", "courses": []},
+            "year_learning_paths": {
+                "year_3": {
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_1",
+                    },
+                    "grade_plans": {
+                        "year_3": {
+                            "course_nodes": [
+                                {"course_node_id": "year_3_course_1"},
+                            ],
+                        },
+                    },
+                },
+            },
+            "messages": [],
+        }
+
+        result = evaluate(state)
+
+        assert result.force_call == AGENT_PROFILE
+
+    def test_profile_update_question_alignment_query_with_existing_path_forces_profile(self):
+        state = {
+            "query": "我现在想更新一下我的个人画像，进入提问环节",
             "profile": _complete_profile(),
             "learning_path": {"grade_year": "year_3", "courses": []},
             "year_learning_paths": {
@@ -420,6 +485,37 @@ class TestHardRules:
             "messages": [
                 AIMessage(content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"),
                 HumanMessage(content="先不用了"),
+            ],
+        }
+
+        result = evaluate(state)
+
+        assert has_pending_profile_update_followup(state) is True
+        assert result.force_call == AGENT_PROFILE
+
+    def test_profile_update_prompt_followup_with_no_change_uses_profile_force_call_text_gate(self):
+        state = {
+            "query": "没有具体变化，只是看看",
+            "profile": _complete_profile(),
+            "learning_path": {"grade_year": "year_3", "courses": []},
+            "year_learning_paths": {
+                "year_3": {
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_1",
+                    },
+                    "grade_plans": {
+                        "year_3": {
+                            "course_nodes": [
+                                {"course_node_id": "year_3_course_1"},
+                            ],
+                        },
+                    },
+                },
+            },
+            "messages": [
+                AIMessage(content="可以。更新个人画像前，我需要先确认这次是否值得更新。请先告诉我你想更新哪一块。"),
+                HumanMessage(content="没有具体变化，只是看看"),
             ],
         }
 
@@ -606,8 +702,45 @@ from app.orchestration.rule_engine import (
 def test_course_resource_generation_query_keywords() -> None:
     assert is_course_resource_generation_query("生成当前课程教学内容")
     assert is_course_resource_generation_query("生成第一章内容")
-    assert is_course_resource_generation_query("开始学习这门课")
+    assert is_course_resource_generation_query(
+        "Please generate chapter 2 markdown, video resources, and HTML animations for this course.",
+    )
+    assert not is_course_resource_generation_query("开始学习这门课")
     assert not is_course_resource_generation_query("先看看学习路径")
+
+
+def test_course_outline_regeneration_query_accepts_named_chapter_outline_request() -> None:
+    assert is_course_outline_regeneration_query("帮我重新生成AI Agent 开发基础能力搭建的章节大纲")
+    assert is_course_outline_regeneration_query("帮我生成AI应用核心架构与RAG实战的章节大纲")
+    assert is_course_outline_regeneration_query("帮我生成构建本地知识库问答系统 (RAG基础)的大纲")
+
+
+def test_named_chapter_outline_regeneration_forces_course_knowledge() -> None:
+    state = {
+        "query": "帮我重新生成AI Agent 开发基础能力搭建的章节大纲",
+        "profile": _complete_profile(),
+        "year_learning_paths": {
+            "year_3": {
+                "current_learning_course": {"grade_id": "year_3", "course_node_id": "year_3_course_1"},
+                "grade_plans": {
+                    "year_3": {
+                        "course_nodes": [
+                            {
+                                "course_node_id": "year_3_course_1",
+                                "course_or_chapter_theme": "AI Agent 开发基础能力搭建",
+                            },
+                        ],
+                    },
+                },
+            },
+        },
+        "course_knowledge": {"course_id": "year_3_course_1", "sections": [{"section_id": "1"}]},
+        "messages": [],
+    }
+
+    result = evaluate(state)
+
+    assert result.force_call == AGENT_COURSE_KNOWLEDGE
 
 
 def test_profile_path_and_outline_forces_course_knowledge_for_outline_regeneration() -> None:
@@ -650,6 +783,32 @@ def test_profile_path_and_outline_forces_section_markdown_for_resources() -> Non
     result = evaluate(state)
 
     assert result.force_call == AGENT_SECTION_MARKDOWN
+
+
+def test_profile_path_and_outline_treats_start_course_as_outline_generation() -> None:
+    state = {
+        "query": "开始学习这门课",
+        "profile": _complete_profile(),
+        "year_learning_paths": {"year_3": {"grade_plans": {"year_3": {"course_nodes": []}}}},
+        "course_knowledge": {"course_id": "year_3_course_1", "sections": []},
+        "messages": [],
+    }
+    result = evaluate(state)
+
+    assert result.force_call == AGENT_COURSE_KNOWLEDGE
+
+
+def test_profile_path_without_outline_treats_ok_start_as_outline_generation() -> None:
+    state = {
+        "query": "ok，开始",
+        "profile": _complete_profile(),
+        "year_learning_paths": {"year_3": {"grade_plans": {"year_3": {"course_nodes": []}}}},
+        "course_knowledge": None,
+        "messages": [],
+    }
+    result = evaluate(state)
+
+    assert result.force_call == AGENT_COURSE_KNOWLEDGE
 
 
 def test_resource_query_after_course_knowledge_forces_section_markdown() -> None:

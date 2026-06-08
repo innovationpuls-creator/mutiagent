@@ -3,7 +3,6 @@ from __future__ import annotations
 from fastapi import HTTPException, status
 from sqlmodel import Session
 
-from app.orchestration.agents.course_resources import _compose_section_content
 from app.schemas import LeafCourseRead, LeafCourseReadResponse, LeafGenerationStatusRead
 from app.services.course_generation_status_service import get_course_generation_status
 from app.services.course_knowledge_service import get_user_course_knowledge_outline
@@ -63,35 +62,6 @@ def _find_course(year_paths: dict[str, dict], course_node_id: str) -> tuple[dict
     return None
 
 
-def _composed_sections_from_outline(outline: dict) -> dict[str, dict]:
-    composed = outline.get("section_composed_markdowns")
-    result = dict(composed) if isinstance(composed, dict) else {}
-
-    section_markdowns = outline.get("section_markdowns")
-    if not isinstance(section_markdowns, dict):
-        return result
-
-    section_video_links = outline.get("section_video_links")
-    section_html_animations = outline.get("section_html_animations")
-
-    for section_id, section_markdown in section_markdowns.items():
-        if section_id in result or not isinstance(section_markdown, dict):
-            continue
-        video_links = section_video_links.get(section_id) if isinstance(section_video_links, dict) else {}
-        animations = (
-            section_html_animations.get(section_id)
-            if isinstance(section_html_animations, dict)
-            else {}
-        )
-        result[str(section_id)] = _compose_section_content(
-            section_markdown,
-            video_links if isinstance(video_links, dict) else {},
-            animations if isinstance(animations, dict) else {},
-        )
-
-    return result
-
-
 def read_leaf_course(session: Session, user_uid: str, course_node_id: str) -> LeafCourseReadResponse:
     year_paths = get_all_year_learning_paths(session, user_uid)
     found = _find_course(year_paths, course_node_id)
@@ -102,7 +72,8 @@ def read_leaf_course(session: Session, user_uid: str, course_node_id: str) -> Le
     outline = get_user_course_knowledge_outline(session, user_uid, course_node_id)
     has_outline = isinstance(outline, dict)
     sections = outline.get("sections", []) if isinstance(outline, dict) and isinstance(outline.get("sections"), list) else []
-    composed = _composed_sections_from_outline(outline) if isinstance(outline, dict) else {}
+    composed_value = outline.get("section_composed_markdowns") if isinstance(outline, dict) else None
+    composed = dict(composed_value) if isinstance(composed_value, dict) else {}
     running = get_course_generation_status(user_uid, course_node_id)
 
     generation_status = (

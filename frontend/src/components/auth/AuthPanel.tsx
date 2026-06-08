@@ -2,7 +2,7 @@ import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import type { FormEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import type { AuthMode, AuthResponse, RegisterPayload } from '../../types/auth';
+import type { AuthEntry, AuthMode, AuthResponse, RegisterPayload } from '../../types/auth';
 import { Button } from '../ui/Button';
 import { TextField } from '../ui/TextField';
 
@@ -19,9 +19,11 @@ function validateIdentifier(value: string): string | null {
 
 interface AuthPanelProps {
   busy: boolean;
+  entry: AuthEntry;
   mode: AuthMode;
   result: AuthResponse | null;
   error: string | null;
+  onEntryChange(entry: AuthEntry): void;
   onModeChange(mode: AuthMode): void;
   onLogin(account: string, password: string): Promise<void>;
   onRegister(payload: RegisterPayload): Promise<void>;
@@ -38,6 +40,11 @@ const initialFields = {
 const tabs: { value: AuthMode; label: string }[] = [
   { value: 'login', label: '登录' },
   { value: 'register', label: '注册' },
+];
+
+const entries: { value: AuthEntry; label: string }[] = [
+  { value: 'student', label: '学生' },
+  { value: 'teacher', label: '教师' },
 ];
 
 export function AuthPanel(props: AuthPanelProps) {
@@ -72,6 +79,28 @@ export function AuthPanel(props: AuthPanelProps) {
         </div>
       ) : null}
 
+      <div className="auth-entry-tabs" role="tablist" aria-label="登录身份">
+        {entries.map((entry) => (
+          <button
+            key={entry.value}
+            className="auth-entry-tab"
+            type="button"
+            role="tab"
+            aria-selected={props.entry === entry.value}
+            onClick={() => props.onEntryChange(entry.value)}
+          >
+            {props.entry === entry.value ? (
+              <motion.span
+                className="auth-entry-active"
+                layoutId="auth-entry-active"
+                transition={pillTransition}
+              />
+            ) : null}
+            <span className="auth-entry-label">{entry.label}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="auth-pill-tabs" role="tablist" aria-label="账号入口">
         {tabs.map((tab) => (
           <button
@@ -99,7 +128,7 @@ export function AuthPanel(props: AuthPanelProps) {
   );
 }
 
-function AuthForm({ busy, error, mode, onLogin, onRegister }: Omit<AuthPanelProps, 'result' | 'onModeChange'>) {
+function AuthForm({ busy, entry, error, mode, onLogin, onRegister }: Omit<AuthPanelProps, 'result' | 'onModeChange' | 'onEntryChange'>) {
   const [fields, setFields] = useState(initialFields);
   const [identifierError, setIdentifierError] = useState<string | null>(null);
   const reduceMotion = useReducedMotion();
@@ -135,6 +164,7 @@ function AuthForm({ busy, error, mode, onLogin, onRegister }: Omit<AuthPanelProp
       identifier: fields.identifier,
       password: fields.password,
       confirmPassword: fields.confirmPassword,
+      role: entry,
     });
   };
 

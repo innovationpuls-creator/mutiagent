@@ -4,6 +4,7 @@ import asyncio
 from langchain_core.messages import AIMessage
 
 from app.orchestration.agents.supervisor import (
+    ALL_CURRENT_GRADE_COURSES_ID,
     _learning_path_force_args,
     _force_call_response,
     build_system_prompt,
@@ -101,6 +102,128 @@ def test_force_call_response_returns_completion_reply_when_no_next_course_exists
     assert not message.tool_calls
 
 
+def test_force_call_response_maps_named_outline_regeneration_to_course_id() -> None:
+    response = _force_call_response(
+        AGENT_COURSE_KNOWLEDGE,
+        {
+            "query": "帮我重新生成AI Agent 开发基础能力搭建的章节大纲",
+            "year_learning_paths": {
+                "year_3": {
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_1",
+                    },
+                    "grade_plans": {
+                        "year_3": {
+                            "course_nodes": [
+                                {
+                                    "course_node_id": "year_3_course_1",
+                                    "course_or_chapter_theme": "AI Agent 开发基础能力搭建",
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+        },
+    )
+
+    tool_call = response["messages"][0].tool_calls[0]
+    assert tool_call["name"] == AGENT_COURSE_KNOWLEDGE
+    assert tool_call["args"] == {"course_id": "year_3_course_1"}
+
+
+def test_force_call_response_maps_chinese_course_name_to_course_id_for_outline() -> None:
+    response = _force_call_response(
+        AGENT_COURSE_KNOWLEDGE,
+        {
+            "query": "帮我生成AI应用核心架构与RAG实战的章节大纲",
+            "year_learning_paths": {
+                "year_3": {
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_1",
+                    },
+                    "grade_plans": {
+                        "year_3": {
+                            "course_nodes": [
+                                {
+                                    "course_node_id": "year_3_course_1",
+                                    "course_or_chapter_theme": "AI Agent 开发基础能力搭建",
+                                },
+                                {
+                                    "course_node_id": "year_3_course_2",
+                                    "course_or_chapter_theme": "AI应用核心架构与RAG实战",
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+        },
+    )
+
+    tool_call = response["messages"][0].tool_calls[0]
+    assert tool_call["name"] == AGENT_COURSE_KNOWLEDGE
+    assert tool_call["args"] == {"course_id": "year_3_course_2"}
+
+
+def test_force_call_response_uses_current_course_for_generic_start_query() -> None:
+    response = _force_call_response(
+        AGENT_COURSE_KNOWLEDGE,
+        {
+            "query": "ok，开始",
+            "year_learning_paths": {
+                "year_3": {
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_1",
+                    },
+                    "grade_plans": {
+                        "year_3": {
+                            "course_nodes": [
+                                {
+                                    "course_node_id": "year_3_course_1",
+                                    "course_or_chapter_theme": "LangGraph 核心架构与单智能体状态机构建",
+                                },
+                                {
+                                    "course_node_id": "year_3_course_2",
+                                    "course_or_chapter_theme": "多轮对话记忆管理与 RAG 增强",
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+        },
+    )
+
+    tool_call = response["messages"][0].tool_calls[0]
+    assert tool_call["name"] == AGENT_COURSE_KNOWLEDGE
+    assert tool_call["args"] == {"course_id": "year_3_course_1"}
+
+
+def test_force_call_response_uses_sentinel_for_explicit_all_course_outline_request() -> None:
+    response = _force_call_response(
+        AGENT_COURSE_KNOWLEDGE,
+        {
+            "query": "帮我一次性生成当前年级全部课程大纲",
+            "year_learning_paths": {
+                "year_3": {
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_1",
+                    },
+                },
+            },
+        },
+    )
+
+    tool_call = response["messages"][0].tool_calls[0]
+    assert tool_call["name"] == AGENT_COURSE_KNOWLEDGE
+    assert tool_call["args"] == {"course_id": ALL_CURRENT_GRADE_COURSES_ID}
+
+
 def test_learning_path_force_args_uses_profile_topic_for_generic_refresh_query() -> None:
     args = _learning_path_force_args({"query": "继续生成学习路径"})
 
@@ -156,6 +279,57 @@ def test_force_call_response_uses_section_markdown_for_course_resources() -> Non
     }
 
 
+def test_force_call_response_maps_current_course_resource_query_to_one_chapter() -> None:
+    response = _force_call_response(
+        AGENT_SECTION_MARKDOWN,
+        {
+            "query": "生成当前课程教学内容",
+            "course_knowledge": {
+                "course_id": "year_3_course_1",
+                "sections": [
+                    {"section_id": "1", "depth": 1, "order_index": 1, "title": "第一章"},
+                    {"section_id": "2", "depth": 1, "order_index": 2, "title": "第二章"},
+                ],
+            },
+        },
+    )
+
+    tool_call = response["messages"][0].tool_calls[0]
+    assert tool_call["name"] == AGENT_SECTION_MARKDOWN
+    assert tool_call["args"] == {
+        "course_id": "year_3_course_1",
+        "section_id": "1",
+        "scope": "chapter_sections",
+    }
+
+
+def test_force_call_response_maps_english_second_chapter_query_to_real_root_section() -> None:
+    response = _force_call_response(
+        AGENT_SECTION_MARKDOWN,
+        {
+            "query": (
+                "Please generate chapter 2 Embedding Generation and Storage, "
+                "including markdown, video resources, and HTML animations."
+            ),
+            "course_knowledge": {
+                "course_id": "year_3_course_1",
+                "sections": [
+                    {"section_id": "1", "depth": 1, "order_index": 1, "title": "Data Ingestion & Chunking Strategy"},
+                    {"section_id": "2", "depth": 1, "order_index": 2, "title": "Embedding Generation & Storage"},
+                ],
+            },
+        },
+    )
+
+    tool_call = response["messages"][0].tool_calls[0]
+    assert tool_call["name"] == AGENT_SECTION_MARKDOWN
+    assert tool_call["args"] == {
+        "course_id": "year_3_course_1",
+        "section_id": "2",
+        "scope": "chapter_sections",
+    }
+
+
 def test_force_call_response_prompts_for_profile_details_on_generic_profile_update_query() -> None:
     response = _force_call_response(
         AGENT_PROFILE,
@@ -165,7 +339,9 @@ def test_force_call_response_prompts_for_profile_details_on_generic_profile_upda
         },
     )
 
-    assert response["response"].startswith("可以。更新个人画像前，请先直接告诉我你想调整的具体信息。")
+    assert response["response"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+    assert "发生了什么具体变化" in response["response"]
+    assert "不会改画像" in response["response"]
     message = response["messages"][0]
     assert message.content == response["response"]
     assert not message.tool_calls
@@ -180,7 +356,43 @@ def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_p
         },
     )
 
-    assert response["response"].startswith("可以。更新个人画像前，请先直接告诉我你想调整的具体信息。")
+    assert response["response"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+    assert "发生了什么具体变化" in response["response"]
+    assert "不会改画像" in response["response"]
+    message = response["messages"][0]
+    assert message.content == response["response"]
+    assert not message.tool_calls
+
+
+def test_force_call_response_prompts_for_profile_details_on_profile_completion_query() -> None:
+    response = _force_call_response(
+        AGENT_PROFILE,
+        {
+            "query": "完善我的个人画像",
+            "messages": [],
+        },
+    )
+
+    assert response["response"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+    assert "发生了什么具体变化" in response["response"]
+    assert "不会改画像" in response["response"]
+    message = response["messages"][0]
+    assert message.content == response["response"]
+    assert not message.tool_calls
+
+
+def test_force_call_response_prompts_for_profile_details_on_question_alignment_query() -> None:
+    response = _force_call_response(
+        AGENT_PROFILE,
+        {
+            "query": "我现在想更新一下我的个人画像，进入提问环节",
+            "messages": [],
+        },
+    )
+
+    assert response["response"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+    assert "发生了什么具体变化" in response["response"]
+    assert "不会改画像" in response["response"]
     message = response["messages"][0]
     assert message.content == response["response"]
     assert not message.tool_calls
@@ -197,7 +409,9 @@ def test_force_call_response_prompts_for_profile_details_on_generic_path_refresh
         },
     )
 
-    assert response["response"].startswith("可以。更新个人画像前，请先直接告诉我你想调整的具体信息。")
+    assert response["response"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+    assert "发生了什么具体变化" in response["response"]
+    assert "不会改画像" in response["response"]
     message = response["messages"][0]
     assert message.content == response["response"]
     assert not message.tool_calls
@@ -214,7 +428,9 @@ def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_p
         },
     )
 
-    assert response["response"].startswith("可以。更新个人画像前，请先直接告诉我你想调整的具体信息。")
+    assert response["response"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+    assert "发生了什么具体变化" in response["response"]
+    assert "不会改画像" in response["response"]
     message = response["messages"][0]
     assert message.content == response["response"]
     assert not message.tool_calls
@@ -227,6 +443,23 @@ def test_force_call_response_pauses_followup_when_user_says_no_need_after_comple
             "query": "先不用了",
             "messages": [
                 AIMessage(content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"),
+            ],
+        },
+    )
+
+    assert response["response"].startswith("好的，当前先不调整。")
+    message = response["messages"][0]
+    assert message.content == response["response"]
+    assert not message.tool_calls
+
+
+def test_force_call_response_pauses_profile_update_when_followup_has_no_change() -> None:
+    response = _force_call_response(
+        AGENT_PROFILE,
+        {
+            "query": "没有具体变化，只是看看",
+            "messages": [
+                AIMessage(content="可以。更新个人画像前，我需要先确认这次是否值得更新。请先告诉我你想更新哪一块。"),
             ],
         },
     )

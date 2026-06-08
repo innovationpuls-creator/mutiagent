@@ -209,7 +209,7 @@ def test_leaf_course_returns_current_course_with_outline_and_composed_content(tm
     assert body["generation_status"] is None
 
 
-def test_leaf_course_composes_agent_resource_fields_when_composed_content_missing(tmp_path: Path) -> None:
+def test_leaf_course_keeps_sections_empty_when_composed_content_missing(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'leaf-resource-fields.db'}"
     client = TestClient(create_app(database_url=database_url))
     token = _seed(client, database_url, "leaf-resource-fields@example.com")
@@ -287,12 +287,7 @@ def test_leaf_course_composes_agent_resource_fields_when_composed_content_missin
 
     assert response.status_code == 200
     body = response.json()
-    composed = body["section_composed_markdowns"]["1.1"]
-    assert composed["markdown"].startswith("# 学习目标")
-    assert composed["blocks"][1]["type"] == "video"
-    assert composed["blocks"][1]["status"] == "available"
-    assert composed["blocks"][2]["type"] == "animation"
-    assert composed["blocks"][2]["status"] == "available"
+    assert body["section_composed_markdowns"] == {}
 
 
 def test_leaf_course_returns_completed_view_only(tmp_path: Path) -> None:

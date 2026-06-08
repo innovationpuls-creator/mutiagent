@@ -41,6 +41,7 @@ export interface TodayLearning {
   currentLearningCourse: LearningPathResult['current_learning_course'] | null;
   currentCourseDetail: CourseNode | null;
   currentCourseOutline: CourseKnowledgeResult | null;
+  gradeCourses: CourseNode[];
   followingCourses: CourseNode[];
 }
 
@@ -131,6 +132,8 @@ function isTodayLearning(value: unknown): value is TodayLearning {
     && (value.currentLearningCourse === null || isCurrentLearningCourse(value.currentLearningCourse))
     && (value.currentCourseDetail === null || isCourseNode(value.currentCourseDetail))
     && (value.currentCourseOutline === null || isCourseKnowledgeResult(value.currentCourseOutline))
+    && Array.isArray(value.gradeCourses)
+    && value.gradeCourses.every((course) => isCourseNode(course))
     && Array.isArray(value.followingCourses)
     && value.followingCourses.every((course) => isCourseNode(course));
 }

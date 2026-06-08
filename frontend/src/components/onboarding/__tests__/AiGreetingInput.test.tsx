@@ -2221,6 +2221,103 @@ test('renders both learning path and course outline when the same turn stores bo
   });
 });
 
+test('notifies leaf page to refresh after course outline generation stores structured data', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  stubLocalStorage({
+    'mutiagent-auth': JSON.stringify({
+      token: 'token-1',
+      user: {
+        uid: 'user-1',
+        username: '测试用户',
+        identifier: 'user@example.com',
+        provider: 'password',
+        is_active: true,
+        created_at: '2026-06-02T00:00:00Z',
+        last_login_at: null,
+      },
+    }),
+  });
+  const listener = vi.fn<(event: CustomEvent<{ courseId: string }>) => void>();
+  window.addEventListener(
+    'mutiagent-leaf-generation-completed',
+    listener as EventListener,
+  );
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          [
+            'event: session_started',
+            'data: {"session_id":"session-outline-refresh","query":"帮我生成AI Agent 开发基础能力搭建的大纲"}',
+            '',
+            'event: agent_calling',
+            'data: {"stepId":"course-knowledge-run","agent":"course_knowledge_agent","label":"课程知识智能体","message":"开始生成课程大纲"}',
+            '',
+            'event: agent_result',
+            'data: {"stepId":"course-knowledge-run","agent":"course_knowledge_agent","label":"课程知识智能体","success":true,"summary":"课程大纲已生成"}',
+            '',
+            'event: message_completed',
+            'data: {"full_text":"课程大纲已生成：《AI Agent 开发基础能力搭建》。"}',
+            '',
+            'event: session_completed',
+            'data: {"session_id":"session-outline-refresh","has_profile":true,"has_paths":true,"has_outline":true}',
+            '',
+          ].join('\n'),
+        ),
+      );
+      controller.close();
+    },
+  });
+
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'session-outline-refresh',
+        reply_text: 'greeting',
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    })
+    .mockResolvedValueOnce(new Response(stream, { status: 200 }))
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'session-outline-refresh',
+        user_uid: 'user-1',
+        profile: null,
+        year_learning_paths: {
+          year_3: makeRecoveredLearningPath(),
+        },
+        course_knowledge: makeRecoveredCourseKnowledge(),
+        updated_at: '2026-06-04T10:00:00Z',
+      }),
+    });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <PendingMessageWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  await waitFor(() => expect(listener).toHaveBeenCalled());
+  expect(listener.mock.calls.at(-1)?.[0].detail).toEqual({
+    courseId: 'year_3_course_1',
+    reason: 'course_outline',
+  });
+
+  window.removeEventListener(
+    'mutiagent-leaf-generation-completed',
+    listener as EventListener,
+  );
+});
+
 test('reuses the same session after profile completion instead of creating a new session', async () => {
   vi.stubGlobal('scrollTo', vi.fn());
   stubLocalStorage({

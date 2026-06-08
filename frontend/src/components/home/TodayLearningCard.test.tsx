@@ -93,6 +93,28 @@ const todayLearning: TodayLearning = {
     learning_sequence: ['第一章：需求拆解'],
     total_estimated_hours: '6-8 小时',
   },
+  gradeCourses: [
+    {
+      course_node_id: 'year_3_course_1',
+      grade_id: 'year_3',
+      course_or_chapter_theme: 'AI 应用开发项目课',
+      time_arrangement: {
+        semester_scope: '上学期',
+        duration: '6 周',
+        pace_reason: '围绕平时学习节奏安排',
+      },
+      course_goal: '完成一个 AI 功能模块并接入 Web 应用',
+      prerequisite_node_ids: [],
+      chapter_nodes: [],
+      core_knowledge_points: [],
+      key_points: ['AI API 调用'],
+      difficult_points: ['工程化部署'],
+      learning_sequence: ['需求拆解'],
+      knowledge_relations: [],
+      downstream_resource_direction_ids: [],
+      acceptance_criteria: ['能独立演示完整功能'],
+    },
+  ],
   followingCourses: [],
 };
 

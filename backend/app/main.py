@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.admin import create_admin_router
 from app.api.auth import create_auth_router
 from app.api.branch import create_branch_router
 from app.api.learning_path import create_learning_path_router
@@ -28,6 +29,7 @@ def create_app(database_url: str = DATABASE_URL) -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(create_auth_router(create_session_dependency(engine)))
+    app.include_router(create_admin_router(create_session_dependency(engine)))
     app.include_router(create_orchestration_router(create_session_dependency(engine)))
     app.include_router(create_profile_router(create_session_dependency(engine)))
     app.include_router(create_learning_path_router(create_session_dependency(engine)))

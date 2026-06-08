@@ -51,6 +51,7 @@ describe('fetchProfileDashboard', () => {
           },
           currentCourseDetail: null,
           currentCourseOutline: null,
+          gradeCourses: [],
           followingCourses: [],
         },
         recommendations: [],

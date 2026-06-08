@@ -26,11 +26,13 @@ for (const viewport of viewports) {
   });
 }
 
-test('mock oauth flow shows authorization panel then success', async ({ page }) => {
+test('oauth button shows QR panel without automatic success', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: /学习通登录/ }).click();
-  await expect(page.getByRole('dialog', { name: '模拟授权' })).toBeVisible();
-  await expect(page.getByText('思绪已对齐')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '扫码登录' })).toBeVisible();
+  await expect(page.getByLabel('学习通 登录二维码')).toBeVisible();
+  await expect(page.getByAltText('学习通 登录二维码')).toBeVisible();
+  await expect(page.getByText('思绪已对齐')).toBeHidden();
 });
 
 test('reduced motion disables active animations', async ({ page }) => {

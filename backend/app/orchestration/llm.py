@@ -18,6 +18,7 @@ _MODEL = os.getenv("LLM_MODEL", "gpt-4o")
 
 _SUPERVISOR_TIMEOUT = 30
 _WORKER_TIMEOUT = 180
+_WORKER_MAX_TOKENS = 8192
 
 _supervisor_llm: ChatOpenAI | None = None
 _worker_llm: ChatOpenAI | None = None
@@ -49,6 +50,7 @@ def _build(
         model=_MODEL,
         temperature=0.7,
         timeout=timeout,
+        max_tokens=_WORKER_MAX_TOKENS if timeout == _WORKER_TIMEOUT else None,
         max_retries=max_retries,
         streaming=True,
         model_kwargs={"extra_body": extra_body},

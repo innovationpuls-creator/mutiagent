@@ -29,6 +29,7 @@ def test_register_persists_user_and_returns_jwt(tmp_path: Path) -> None:
     assert len(body["access_token"]) > 20
     assert body["user"]["username"] == "林小鹿"
     assert body["user"]["identifier"] == "lin@example.com"
+    assert body["user"]["role"] == "student"
     assert "uid" in body["user"]
     assert "-" in body["user"]["uid"]
 
@@ -39,6 +40,42 @@ def test_register_persists_user_and_returns_jwt(tmp_path: Path) -> None:
 
     assert login_response.status_code == 200
     assert login_response.json()["user"]["username"] == "林小鹿"
+    assert login_response.json()["user"]["role"] == "student"
+
+
+def test_register_can_create_teacher_role(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "教师用户",
+            "identifier": "teacher@example.com",
+            "password": "learn-agent-123",
+            "confirm_password": "learn-agent-123",
+            "role": "teacher",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["user"]["role"] == "teacher"
+
+
+def test_init_db_creates_admin_from_env(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ADMIN_USERNAME", "管理员")
+    monkeypatch.setenv("ADMIN_IDENTIFIER", "admin@example.com")
+    monkeypatch.setenv("ADMIN_PASSWORD", "admin-password-123")
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/auth/login",
+        json={"account": "admin@example.com", "password": "admin-password-123"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["user"]["username"] == "管理员"
+    assert body["user"]["role"] == "admin"
 
 
 def test_login_rejects_wrong_password(tmp_path: Path) -> None:
@@ -66,6 +103,7 @@ def test_mock_oauth_creates_provider_user(tmp_path: Path) -> None:
     assert body["auth_type"] == "oauth"
     assert body["user"]["provider"] == "xuexitong"
     assert body["user"]["identifier"].endswith("@mock.local")
+    assert body["user"]["role"] == "student"
 
 
 def test_me_returns_current_user_with_valid_token(tmp_path: Path) -> None:
@@ -91,6 +129,7 @@ def test_me_returns_current_user_with_valid_token(tmp_path: Path) -> None:
     body = response.json()
     assert body["username"] == "测试用户"
     assert body["identifier"] == "me-test@example.com"
+    assert body["role"] == "student"
 
 
 def test_me_rejects_invalid_token(tmp_path: Path) -> None:

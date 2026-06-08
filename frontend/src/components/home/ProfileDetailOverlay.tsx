@@ -25,11 +25,14 @@ export function ProfileDetailOverlay({ isOpen, onClose, profile }: ProfileDetail
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
+      document.documentElement.setAttribute('data-overlay-open', 'true');
     } else {
       document.body.style.overflow = '';
+      document.documentElement.removeAttribute('data-overlay-open');
     }
     return () => {
       document.body.style.overflow = '';
+      document.documentElement.removeAttribute('data-overlay-open');
     };
   }, [isOpen]);
 
@@ -54,9 +57,10 @@ export function ProfileDetailOverlay({ isOpen, onClose, profile }: ProfileDetail
         className="overlay-content"
         role="dialog"
         aria-modal="true"
-        initial={reduceMotion ? false : { borderRadius: 'var(--radius-lg)' }}
-        animate={reduceMotion ? undefined : { borderRadius: 'var(--radius-2xl, 32px)' }}
-        exit={reduceMotion ? undefined : { borderRadius: 'var(--radius-lg)' }}
+        style={{ borderRadius: 32 }}
+        initial={reduceMotion ? false : { borderRadius: 24 }}
+        animate={reduceMotion ? undefined : { borderRadius: 32 }}
+        exit={reduceMotion ? undefined : { borderRadius: 24 }}
         transition={{ ...motionTokens.editorial, duration: 0.5, type: 'spring', bounce: 0, damping: 25, stiffness: 200 }}
       >
         <div className="overlay-header">

@@ -46,6 +46,32 @@ def test_profile_dashboard_returns_empty_state_before_profile_generated(tmp_path
     assert body["recommendations"] == []
 
 
+def test_profile_dashboard_treats_empty_profile_row_as_not_generated(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'profile-empty-row.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    token, uid = _register(client)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+
+    with Session(engine) as session:
+        session.add(
+            UserProfile(
+                user_uid=uid,
+                profile_data={},
+                profile_text="",
+            )
+        )
+        session.commit()
+
+    response = client.get("/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["profileCompleteness"] == 0
+    assert body["profile"]["major"] == "暂未确认"
+    assert body["todayLearning"]["title"] == "先完成基础画像"
+    assert body["todayLearning"]["source"] == "等待画像生成"
+
+
 def test_profile_dashboard_reads_saved_profile(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'profile-saved.db'}"
     client = TestClient(create_app(database_url=database_url))
@@ -320,6 +346,10 @@ def test_profile_dashboard_prefers_current_learning_course_from_path(tmp_path: P
     assert body["todayLearning"]["currentLearningCourse"]["course_node_id"] == "year_3_course_1"
     assert body["todayLearning"]["currentCourseDetail"]["course_node_id"] == "year_3_course_1"
     assert body["todayLearning"]["currentCourseOutline"]["course_id"] == "year_3_course_1"
+    assert [course["course_node_id"] for course in body["todayLearning"]["gradeCourses"]] == [
+        "year_3_course_1",
+        "year_3_course_2",
+    ]
     assert body["todayLearning"]["followingCourses"][0]["course_node_id"] == "year_3_course_2"
 
 

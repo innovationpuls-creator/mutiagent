@@ -14,12 +14,19 @@ const AuthContext = createContext<AuthState | null>(null);
 
 const STORAGE_KEY = 'mutiagent-auth';
 
+function normalizeUser(user: AuthUser): AuthUser {
+  if (user.role === 'teacher' || user.role === 'admin') return user;
+  return { ...user, role: 'student' };
+}
+
 function loadAuth(): { user: AuthUser; token: string } | null {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored) as { user: AuthUser; token: string };
-      if (parsed.user?.uid && parsed.token) return parsed;
+      if (parsed.user?.uid && parsed.token) {
+        return { user: normalizeUser(parsed.user), token: parsed.token };
+      }
     }
   } catch {
     /* corrupted data — treat as logged out */
@@ -65,9 +72,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback((authResponse: AuthResponse) => {
-    setUser(authResponse.user);
+    const user = normalizeUser(authResponse.user);
+    setUser(user);
     setToken(authResponse.access_token);
-    saveAuth(authResponse.user, authResponse.access_token);
+    saveAuth(user, authResponse.access_token);
   }, []);
 
   const logout = useCallback(() => {

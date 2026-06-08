@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 OAuthProvider = Literal["qq", "xuexitong"]
 AuthType = Literal["password", "oauth"]
+UserRole = Literal["student", "teacher", "admin"]
+AdminBatchAction = Literal["activate", "deactivate", "delete", "set_role"]
 
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 _PHONE_RE = re.compile(r"^1[3-9]\d[\s]?\d{4}[\s]?\d{4}$")
@@ -39,6 +41,7 @@ class RegisterRequest(BaseModel):
     identifier: str = Field(min_length=3, max_length=128)
     password: str = Field(min_length=6, max_length=128)
     confirm_password: str = Field(min_length=6, max_length=128)
+    role: UserRole = "student"
 
     @field_validator("identifier")
     @classmethod
@@ -63,6 +66,7 @@ class UserRead(BaseModel):
     uid: str
     username: str
     identifier: str
+    role: UserRole
     provider: str
     is_active: bool
     created_at: datetime
@@ -74,6 +78,61 @@ class AuthResponse(BaseModel):
     token_type: str = "bearer"
     auth_type: AuthType
     user: UserRead
+
+
+class AdminAccountCreateRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    identifier: str = Field(min_length=3, max_length=128)
+    password: str = Field(min_length=6, max_length=128)
+    role: UserRole
+    is_active: bool = True
+
+    @field_validator("identifier")
+    @classmethod
+    def validate_identifier(cls, v: str) -> str:
+        return _validate_identifier(v)
+
+
+class AdminAccountUpdateRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    identifier: str = Field(min_length=3, max_length=128)
+    role: UserRole
+    is_active: bool
+    password: str | None = Field(default=None, min_length=6, max_length=128)
+
+    @field_validator("identifier")
+    @classmethod
+    def validate_identifier(cls, v: str) -> str:
+        return _validate_identifier(v)
+
+
+class AdminAccountBatchRequest(BaseModel):
+    action: AdminBatchAction
+    uids: list[str] = Field(min_length=1)
+    role: UserRole | None = None
+
+    @model_validator(mode="after")
+    def validate_role_for_action(self) -> "AdminAccountBatchRequest":
+        if self.action == "set_role" and self.role is None:
+            raise ValueError("批量修改角色时必须提供 role")
+        return self
+
+
+class AdminAccountImportRequest(BaseModel):
+    csv_text: str = Field(min_length=1)
+
+
+class AdminAccountImportFailure(BaseModel):
+    row: int
+    identifier: str | None = None
+    reason: str
+
+
+class AdminAccountImportResponse(BaseModel):
+    created: int
+    updated: int
+    failed: int
+    failures: list[AdminAccountImportFailure] = Field(default_factory=list)
 
 
 class HealthResponse(BaseModel):

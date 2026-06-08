@@ -77,3 +77,12 @@ h1, h2, h3, h4, h5, h6 {
     scroll-behavior: auto !important;
   }
 }
+
+/* 当有二级弹窗打开时，暂时降低 Navbar 的 z-index，并提升 main 的 z-index，防止遮挡，同时保持 Framer Motion layoutId 动画正常 */
+html[data-overlay-open='true'] [class*="navbarWrapper"] {
+  z-index: 5 !important;
+}
+
+html[data-overlay-open='true'] main {
+  z-index: 10 !important;
+}

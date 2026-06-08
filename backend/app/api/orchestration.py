@@ -513,8 +513,17 @@ async def _stream_chat_events(
             try:
                 start_course_generation(user_uid, requested_course_id, requested_chapter_id)
             except ValueError as exc:
-                yield _sse("error", {"message": str(exc), "recoverable": True})
+                yield _sse("error", {
+                    "message": str(exc),
+                    "recoverable": True,
+                    "course_id": requested_course_id,
+                    "chapter_section_id": requested_chapter_id,
+                    "kind": "course_resource_chapter",
+                    "phase": "generation_status",
+                    "status": "error",
+                })
                 return
+            had_resource_error = False
             try:
                 async for event in stream_chapter_resource_generation(
                     state,
@@ -526,9 +535,20 @@ async def _stream_chat_events(
                 ):
                     event_name = str(event.get("event", "message"))
                     payload = {k: v for k, v in event.items() if k != "event"}
+                    if event_name == "error":
+                        had_resource_error = True
+                        payload.setdefault("course_id", requested_course_id)
+                        payload.setdefault("chapter_section_id", requested_chapter_id)
+                        payload.setdefault("kind", "course_resource_chapter")
+                        payload.setdefault("status", "error")
+                        yield _sse(event_name, payload)
+                        break
                     yield _sse(event_name, payload)
             finally:
                 finish_course_generation(user_uid, requested_course_id, requested_chapter_id)
+            if had_resource_error:
+                _append_user_message_safely(db_session, session_id, current_user_message)
+                return
             _append_turn_with_user_fallback(
                 db_session,
                 session_id,

@@ -459,6 +459,45 @@ describe('session orchestration API', () => {
     expect(result.updatedAt).toBe('2026-06-01T12:00:00Z');
   });
 
+  it('accepts a single-grade saved learning path with all course nodes', async () => {
+    const path = makeLearningPath();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        year_learning_paths: {
+          year_3: {
+            ...path,
+            grade_plans: {
+              year_3: {
+                grade_id: 'year_3',
+                grade_name: '大三',
+                grade_goal: '完成 AI Agent 学习路径',
+                course_nodes: [
+                  path.grade_plans.year_3.course_nodes[0],
+                  {
+                    ...path.grade_plans.year_3.course_nodes[0],
+                    course_node_id: 'year_3_course_2',
+                    course_or_chapter_theme: '多轮对话记忆管理与 RAG 增强',
+                  },
+                  {
+                    ...path.grade_plans.year_3.course_nodes[0],
+                    course_node_id: 'year_3_course_3',
+                    course_or_chapter_theme: '生产级部署、监控与性能调优',
+                  },
+                ],
+              },
+            },
+          },
+        },
+        updated_at: '2026-06-01T12:00:00Z',
+      }),
+    }));
+
+    const result = await getMyLearningPath('token-1');
+
+    expect(result.yearLearningPaths.year_3.grade_plans.year_3.course_nodes).toHaveLength(3);
+  });
+
   it('rejects saved learning path with unsupported current progress_state', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,

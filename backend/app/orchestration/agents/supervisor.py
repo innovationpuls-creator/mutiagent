@@ -7,6 +7,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.tools import tool
 
+from app.orchestration.agents.course_knowledge import ALL_CURRENT_GRADE_COURSES_ID
 from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.agents.prompts import SUPERVISOR_BASE_PROMPT
 from app.orchestration.rule_engine import (
@@ -22,6 +23,8 @@ from app.orchestration.rule_engine import (
     is_course_change_query,
     is_navigation_query,
     is_profile_refinement_query,
+    is_profile_update_no_change_query,
+    is_profile_update_query,
 )
 from app.orchestration.state import OrchestrationState
 from app.services.learning_path_service import iter_year_learning_paths
@@ -153,10 +156,12 @@ def create_tools_for_llm() -> list:
     async def course_knowledge_agent(course_id: str = "") -> str:
         """为学习路径中的课程生成详细的章节大纲。
         前提：该年级的学习路径已生成。
-        如果不指定 course_id，自动选取下一门待学课程。
+        如果不指定 course_id，生成当前学习课程的大纲。
+        如果用户指定某门课，传入对应 course_id，只刷新这一门课。
+        只有用户明确要求当前年级全部课程大纲时，course_id 才传 "__all_current_grade__"。
 
         Args:
-            course_id: 课程 ID（可选，留空则自动选取）
+            course_id: 课程 ID（可选，留空则生成当前课程；"__all_current_grade__" 表示当前年级全部课程）
         """
         return ""
 
@@ -171,7 +176,7 @@ def create_tools_for_llm() -> list:
         Args:
             course_id: 课程 ID，留空时使用当前课程
             section_id: 小节或一级章节 ID
-            scope: default_first_chapter/single_section/chapter_sections/course_sections
+            scope: default_first_chapter/single_section/chapter_sections
         """
         return ""
 
@@ -252,6 +257,76 @@ def _next_course_id_for_course_change(state: OrchestrationState) -> str:
     return ""
 
 
+def _normalized_course_match_text(value: object) -> str:
+    return re.sub(r"[\s《》“”\"'：:，,。！？!?、；;（）()【】\[\]\-_/]+", "", str(value).strip().lower())
+
+
+def _course_id_from_query_course_name(state: OrchestrationState) -> str:
+    query_key = _normalized_course_match_text(state.get("query", ""))
+    if not query_key:
+        return ""
+
+    year_learning_paths = state.get("year_learning_paths")
+    if not isinstance(year_learning_paths, dict):
+        return ""
+
+    latest_grade_year = str(state.get("latest_grade_year", "")).strip()
+    for path in iter_year_learning_paths(year_learning_paths, latest_grade_year):
+        if not isinstance(path, dict):
+            continue
+        grade_plans = path.get("grade_plans")
+        if not isinstance(grade_plans, dict):
+            continue
+        for grade_plan in grade_plans.values():
+            if not isinstance(grade_plan, dict):
+                continue
+            course_nodes = grade_plan.get("course_nodes")
+            if not isinstance(course_nodes, list):
+                continue
+            for course in course_nodes:
+                if not isinstance(course, dict):
+                    continue
+                course_name_key = _normalized_course_match_text(course.get("course_or_chapter_theme", ""))
+                if not course_name_key or course_name_key not in query_key:
+                    continue
+                course_id = course.get("course_node_id")
+                if isinstance(course_id, str):
+                    return course_id
+
+    return ""
+
+
+def _current_course_id_from_learning_path(state: OrchestrationState) -> str:
+    year_learning_paths = state.get("year_learning_paths")
+    if not isinstance(year_learning_paths, dict):
+        return ""
+
+    latest_grade_year = str(state.get("latest_grade_year", "")).strip()
+    for path in iter_year_learning_paths(year_learning_paths, latest_grade_year):
+        if not isinstance(path, dict):
+            continue
+        current = path.get("current_learning_course")
+        if not isinstance(current, dict):
+            continue
+        course_id = current.get("course_node_id")
+        if isinstance(course_id, str) and course_id.strip():
+            return course_id.strip()
+    return ""
+
+
+def _requests_all_current_grade_course_outlines(query: str) -> bool:
+    normalized = _normalized_course_match_text(query)
+    return any(keyword in normalized for keyword in (
+        "全年所有课程",
+        "全年全部课程",
+        "全部课程大纲",
+        "所有课程大纲",
+        "一整年所有课程",
+        "当前年级全部课程",
+        "当前年级所有课程",
+    ))
+
+
 def _all_tasks_completed_response() -> str:
     return (
         "当前所有任务已经完成。"
@@ -263,9 +338,9 @@ def _all_tasks_completed_response() -> str:
 
 def _profile_update_prompt_response() -> str:
     return (
-        "可以。更新个人画像前，请先直接告诉我你想调整的具体信息。"
-        "你可以提供年级、专业、学习方向、短期目标、长期目标、每周可投入时间、学习节奏或当前限制。"
-        "如果你暂时只确定了一部分，也可以先发我已确定的内容，我会继续向你确认剩余信息。"
+        "可以。更新个人画像前，我需要先确认这次是否值得更新。"
+        "请先告诉我你想更新哪一块：基础信息、学习目标、能力基础、学习偏好、每周时间或当前限制。"
+        "同时说明它和当前画像相比发生了什么具体变化；如果只是想看看或没有明确变化，我不会改画像，只会继续向你确认。"
     )
 
 
@@ -290,14 +365,111 @@ def _learning_path_force_args(state: OrchestrationState) -> dict[str, str]:
     }
 
 
+_CHINESE_CHAPTER_NUMBERS = {
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+}
+_CHINESE_CHAPTER_PATTERN = re.compile(r"第\s*([一二三四五六七八九十\d]+)\s*章")
+_ENGLISH_CHAPTER_PATTERN = re.compile(r"\bchapter\s*(\d+)\b", re.IGNORECASE)
+
+
+def _clean_text(value: object) -> str:
+    return str(value).strip()
+
+
+def _normalized_section_text(value: object) -> str:
+    return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", _clean_text(value).lower())
+
+
+def _course_outline_sections(course_knowledge: object) -> list[dict]:
+    if not isinstance(course_knowledge, dict):
+        return []
+    sections = course_knowledge.get("sections")
+    if not isinstance(sections, list):
+        return []
+    return [section for section in sections if isinstance(section, dict)]
+
+
+def _root_sections(course_knowledge: object) -> list[dict]:
+    sections = _course_outline_sections(course_knowledge)
+    return sorted(
+        [section for section in sections if int(section.get("depth", 1)) == 1],
+        key=lambda item: int(item.get("order_index", 0)),
+    )
+
+
+def _first_root_section_id(course_knowledge: object) -> str:
+    roots = _root_sections(course_knowledge)
+    if not roots:
+        return ""
+    return _clean_text(roots[0].get("section_id"))
+
+
+def _chapter_index_from_query(query: str) -> int | None:
+    chinese_match = _CHINESE_CHAPTER_PATTERN.search(query)
+    if chinese_match:
+        raw = chinese_match.group(1).strip()
+        if raw.isdigit():
+            return int(raw)
+        return _CHINESE_CHAPTER_NUMBERS.get(raw)
+
+    english_match = _ENGLISH_CHAPTER_PATTERN.search(query)
+    if english_match:
+        return int(english_match.group(1))
+
+    return None
+
+
+def _resolve_root_section_id_from_query(course_knowledge: object, query: str) -> str:
+    roots = _root_sections(course_knowledge)
+    if not roots:
+        return ""
+
+    chapter_index = _chapter_index_from_query(query)
+    if chapter_index is not None and 1 <= chapter_index <= len(roots):
+        return _clean_text(roots[chapter_index - 1].get("section_id"))
+
+    normalized_query = _normalized_section_text(query)
+    if not normalized_query:
+        return ""
+
+    for root in roots:
+        root_id = _clean_text(root.get("section_id"))
+        root_title = _clean_text(root.get("title"))
+        title_key = _normalized_section_text(root_title)
+        labeled_key = _normalized_section_text(f"{root_id} {root_title}")
+        if title_key and title_key in normalized_query:
+            return root_id
+        if labeled_key and labeled_key in normalized_query:
+            return root_id
+
+    return ""
+
+
 def _section_markdown_force_args(state: OrchestrationState) -> dict[str, str]:
     query = str(state.get("query", "")).strip()
     course_knowledge = state.get("course_knowledge")
     course_id = course_knowledge.get("course_id", "") if isinstance(course_knowledge, dict) else ""
+    first_root_id = _first_root_section_id(course_knowledge) or "1"
     if "当前课程" in query or "整门课" in query:
-        return {"course_id": course_id, "section_id": "", "scope": "course_sections"}
-    if "第一章" in query:
-        return {"course_id": course_id, "section_id": "1", "scope": "chapter_sections"}
+        return {"course_id": course_id, "section_id": first_root_id, "scope": "chapter_sections"}
+
+    resolved_root_id = _resolve_root_section_id_from_query(course_knowledge, query)
+    if resolved_root_id:
+        return {"course_id": course_id, "section_id": resolved_root_id, "scope": "chapter_sections"}
+
+    chapter_index = _chapter_index_from_query(query)
+    if chapter_index is not None:
+        return {"course_id": course_id, "section_id": str(chapter_index), "scope": "chapter_sections"}
+
     return {"course_id": course_id, "section_id": "", "scope": "default_first_chapter"}
 
 
@@ -306,7 +478,10 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
     if agent_key == AGENT_PROFILE:
         query = state.get("query", "")
         normalized_query = _normalize_followup_query(query)
-        if has_pending_profile_update_followup(state) and normalized_query in _FOLLOWUP_PAUSE_QUERIES:
+        if has_pending_profile_update_followup(state) and (
+            normalized_query in _FOLLOWUP_PAUSE_QUERIES
+            or is_profile_update_no_change_query(query)
+        ):
             response = _followup_pause_response()
             return {
                 "messages": [AIMessage(content=response)],
@@ -314,6 +489,7 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
             }
         if (
             normalized_query in _GENERIC_PROFILE_UPDATE_QUERIES
+            or is_profile_update_query(query)
             or (
                 has_pending_profile_update_followup(state)
                 and normalized_query in _GENERIC_PATH_REFRESH_QUERIES
@@ -364,8 +540,15 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
         }
 
     elif agent_key == AGENT_COURSE_KNOWLEDGE:
-        course_id = _next_course_id_for_course_change(state)
-        if is_course_change_query(str(state.get("query", "")).strip()) and not course_id:
+        query = str(state.get("query", "")).strip()
+        is_course_change = is_course_change_query(query)
+        if is_course_change:
+            course_id = _next_course_id_for_course_change(state)
+        elif _requests_all_current_grade_course_outlines(query):
+            course_id = ALL_CURRENT_GRADE_COURSES_ID
+        else:
+            course_id = _course_id_from_query_course_name(state) or _current_course_id_from_learning_path(state)
+        if is_course_change and not course_id:
             response = _all_tasks_completed_response()
             return {
                 "messages": [AIMessage(content=response)],

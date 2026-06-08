@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SproutHero } from './SproutHero';
 import { AuthProvider } from '../../contexts/AuthContext';
+import { AiWidgetProvider } from '../../context/AiWidgetContext';
 
 const fetchProfileDashboardMock = vi.fn();
 
@@ -50,20 +51,22 @@ function renderSproutHero() {
 
   return render(
     <AuthProvider>
-      <MemoryRouter initialEntries={['/sprout']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <Routes>
-          <Route
-            path="/sprout"
-            element={(
-              <>
-                <SproutHero />
-                <LocationProbe />
-              </>
-            )}
-          />
-          <Route path="/branch" element={<LocationProbe />} />
-        </Routes>
-      </MemoryRouter>
+      <AiWidgetProvider>
+        <MemoryRouter initialEntries={['/sprout']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <Routes>
+            <Route
+              path="/sprout"
+              element={(
+                <>
+                  <SproutHero />
+                  <LocationProbe />
+                </>
+              )}
+            />
+            <Route path="/branch" element={<LocationProbe />} />
+          </Routes>
+        </MemoryRouter>
+      </AiWidgetProvider>
     </AuthProvider>,
   );
 }
@@ -130,6 +133,7 @@ describe('SproutHero', () => {
           acceptance_criteria: ['新验收'],
         },
         currentCourseOutline: null,
+        gradeCourses: [],
         followingCourses: [],
       },
       recommendations: [],
@@ -207,6 +211,7 @@ describe('SproutHero', () => {
           acceptance_criteria: ['完整交付'],
         },
         currentCourseOutline: null,
+        gradeCourses: [],
         followingCourses: [],
       },
       recommendations: [],

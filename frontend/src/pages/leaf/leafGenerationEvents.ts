@@ -12,6 +12,13 @@ export interface LeafGenerationEventDetail {
   message: string;
 }
 
+export type LeafGenerationCompletedReason = 'course_outline' | 'course_resource';
+
+export interface LeafGenerationCompletedEventDetail {
+  courseId: string;
+  reason: LeafGenerationCompletedReason;
+}
+
 export function dispatchLeafGenerationEvent(event: SessionAgentEvent) {
   if (!event.course_id || !event.chapter_section_id) return;
   if (event.kind !== 'course_resource_section' && event.kind !== 'course_resource_chapter') return;
@@ -22,11 +29,17 @@ export function dispatchLeafGenerationEvent(event: SessionAgentEvent) {
       sectionId: event.section_id ?? null,
       phase: event.phase ?? '',
       status: event.status ?? '',
-      message: event.message ?? event.summary ?? '',
+      message: event.message ?? event.error ?? event.summary ?? '',
     },
   }));
 }
 
-export function dispatchLeafGenerationCompleted(courseId: string) {
-  window.dispatchEvent(new CustomEvent(LEAF_GENERATION_COMPLETED_EVENT, { detail: { courseId } }));
+export function dispatchLeafGenerationCompleted(
+  courseId: string,
+  reason: LeafGenerationCompletedReason = 'course_resource',
+) {
+  window.dispatchEvent(new CustomEvent<LeafGenerationCompletedEventDetail>(
+    LEAF_GENERATION_COMPLETED_EVENT,
+    { detail: { courseId, reason } },
+  ));
 }

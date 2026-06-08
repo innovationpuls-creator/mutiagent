@@ -9,6 +9,7 @@ interface Props {
 
 export function SproutInitOverlay({ onComplete }: Props) {
   const [phase, setPhase] = useState<number>(0);
+  const [isFinishing, setIsFinishing] = useState(false);
   const { widgetState, setWidgetState } = useAiWidget();
   const reduceMotion = useReducedMotion();
 
@@ -46,13 +47,24 @@ export function SproutInitOverlay({ onComplete }: Props) {
   }, [reduceMotion, setWidgetState]);
 
   useEffect(() => {
-    if (widgetState === 'WIDGET') {
-      onComplete?.();
+    if (phase >= 10 && widgetState === 'WIDGET' && !isFinishing) {
+      setIsFinishing(true);
+      
+      const sequence = async () => {
+        // 等待小人回到右下角 (动画约 1.2s)
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        
+        // 最后淡出背景模糊和文字
+        onComplete?.();
+      };
+      
+      sequence();
     }
-  }, [widgetState, onComplete]);
+  }, [phase, widgetState, onComplete, isFinishing, reduceMotion]);
 
   return (
     <motion.div
+      data-sprout-init-overlay="true"
       initial={reduceMotion ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -68,13 +80,14 @@ export function SproutInitOverlay({ onComplete }: Props) {
         backgroundColor: 'oklch(97% 0.02 75 / 0.36)',
         backdropFilter: 'blur(56px)',
         WebkitBackdropFilter: 'blur(56px)',
+        pointerEvents: 'none',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'
       }}
     >
-      <div style={{ position: 'absolute', top: '40%', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginTop: '-10vh' }}>
         <AnimatePresence mode="wait">
           {phase >= 2 && phase < 3 && (
             <motion.h1

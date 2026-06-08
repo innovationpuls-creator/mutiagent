@@ -92,6 +92,68 @@ const todayLearning: TodayLearning = {
     learning_sequence: ['第一章：需求拆解'],
     total_estimated_hours: '8-12 小时',
   },
+  gradeCourses: [
+    {
+      course_node_id: 'year_3_course_1',
+      grade_id: 'year_3',
+      course_or_chapter_theme: 'AI Agent 开发基础能力搭建',
+      time_arrangement: {
+        semester_scope: '上学期',
+        duration: '6 周',
+        pace_reason: '配合课程推进',
+      },
+      course_goal: '完成最小功能闭环',
+      prerequisite_node_ids: [],
+      chapter_nodes: [],
+      core_knowledge_points: [],
+      key_points: ['功能边界', '接口契约'],
+      difficult_points: ['错误处理', '流式联调'],
+      learning_sequence: ['需求拆解', '接口接入'],
+      knowledge_relations: [],
+      downstream_resource_direction_ids: [],
+      acceptance_criteria: ['完成最小功能闭环演示'],
+    },
+    {
+      course_node_id: 'year_3_course_2',
+      grade_id: 'year_3',
+      course_or_chapter_theme: 'SSE 流式交互与部署',
+      time_arrangement: {
+        semester_scope: '下学期',
+        duration: '8 周',
+        pace_reason: '完成最小闭环后再进入交互与部署',
+      },
+      course_goal: '支持真实用户流程与部署演示',
+      prerequisite_node_ids: ['year_3_course_1'],
+      chapter_nodes: [],
+      core_knowledge_points: [],
+      key_points: [],
+      difficult_points: [],
+      learning_sequence: [],
+      knowledge_relations: [],
+      downstream_resource_direction_ids: [],
+      acceptance_criteria: [],
+    },
+    {
+      course_node_id: 'year_3_course_3',
+      grade_id: 'year_3',
+      course_or_chapter_theme: '生产级部署、监控与性能调优',
+      time_arrangement: {
+        semester_scope: '下学期',
+        duration: '6 周',
+        pace_reason: '完成交互与部署后再进入生产化能力',
+      },
+      course_goal: '建立部署、监控与错误追踪能力',
+      prerequisite_node_ids: ['year_3_course_2'],
+      chapter_nodes: [],
+      core_knowledge_points: [],
+      key_points: [],
+      difficult_points: [],
+      learning_sequence: [],
+      knowledge_relations: [],
+      downstream_resource_direction_ids: [],
+      acceptance_criteria: [],
+    },
+  ],
   followingCourses: [
     {
       course_node_id: 'year_3_course_2',
@@ -141,7 +203,10 @@ describe('TodayLearningDetailOverlay', () => {
     expect(screen.getByText('1.2 任务拆解')).toBeTruthy();
     expect(screen.getByText('1.3 检查点')).toBeTruthy();
     expect(screen.getAllByText('完成标准').length).toBeGreaterThan(0);
-    expect(screen.getByText('SSE 流式交互与部署')).toBeTruthy();
+    expect(screen.getAllByText('SSE 流式交互与部署')).toHaveLength(2);
+    expect(screen.getByText('同年级完整学习路径')).toBeTruthy();
+    expect(screen.getAllByText('AI Agent 开发基础能力搭建')).toHaveLength(2);
+    expect(screen.getByText('生产级部署、监控与性能调优')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '关闭今日学习详情' }));
     expect(onClose).toHaveBeenCalledTimes(1);

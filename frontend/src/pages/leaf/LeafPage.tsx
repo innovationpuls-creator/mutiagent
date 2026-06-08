@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { fetchLeafCourse } from '../../api/leaf';
 import { useAiWidget } from '../../context/AiWidgetContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -24,11 +24,13 @@ import {
   getDefaultLeafSectionId,
   getLeafComposedSection,
   getTopLevelSectionForLeaf,
+  hasLeafComposedContent,
 } from './leafContentParser';
-import { buildLeafGenerationPrompt } from './leafPrompt';
+import { buildCourseOutlineGenerationPrompt, buildLeafGenerationPrompt } from './leafPrompt';
 import {
   LEAF_GENERATION_COMPLETED_EVENT,
   LEAF_GENERATION_EVENT,
+  type LeafGenerationCompletedEventDetail,
   type LeafGenerationEventDetail,
 } from './leafGenerationEvents';
 import { ChevronRight, PanelLeftClose } from 'lucide-react';
@@ -36,9 +38,12 @@ import '../../styles/leaf.css';
 
 type LeafPageStatus = 'idle' | 'loading' | 'ready' | 'error';
 const LEAF_NAV_TOGGLE_Z_INDEX = 10000;
+const LEAF_GENERATION_REFRESH_RETRY_MS = 600;
+const LEAF_GENERATION_REFRESH_ATTEMPTS = 3;
 
-interface LeafGenerationCompletedEventDetail {
-  courseId: string;
+interface LeafGenerationChapterDraft {
+  section_id: string;
+  title: string;
 }
 
 function isLeafGenerationCompletedEventDetail(value: unknown): value is LeafGenerationCompletedEventDetail {
@@ -47,6 +52,11 @@ function isLeafGenerationCompletedEventDetail(value: unknown): value is LeafGene
     && typeof value === 'object'
     && 'courseId' in value
     && typeof value.courseId === 'string'
+    && (
+      !('reason' in value)
+      || value.reason === 'course_outline'
+      || value.reason === 'course_resource'
+    )
   );
 }
 
@@ -76,10 +86,20 @@ function resolveSelectedSectionId(
 function getGenerationSection(
   response: LeafCourseResponse,
   selectedSection: LeafSection | null,
-): LeafSection | null {
+): LeafGenerationChapterDraft | null {
+  const selectedTopLevelSection = getTopLevelSectionForLeaf(response.sections, selectedSection);
+  if (selectedTopLevelSection) return selectedTopLevelSection;
   const firstGeneratableChapter = findLeafSectionById(response.sections, response.first_generatable_chapter_id);
   if (firstGeneratableChapter) return firstGeneratableChapter;
-  return getTopLevelSectionForLeaf(response.sections, selectedSection);
+  if (response.first_generatable_chapter_id) {
+    return {
+      section_id: response.first_generatable_chapter_id,
+      title: response.first_generatable_chapter_id === '1'
+        ? '第一章'
+        : `第${response.first_generatable_chapter_id}章`,
+    };
+  }
+  return null;
 }
 
 export function LeafPage() {
@@ -101,24 +121,45 @@ export function LeafPage() {
     () => createInitialCollapsedLeafSections(),
   );
 
-  const loadLeafCourse = useCallback(async () => {
+  const loadLeafCourse = useCallback(async (options?: { background?: boolean }) => {
     if (!token || !courseNodeId) return;
-    setStatus('loading');
-    setErrorMessage(null);
+    if (!options?.background) {
+      setStatus('loading');
+      setErrorMessage(null);
+    }
     try {
       const nextResponse = await fetchLeafCourse(token, courseNodeId);
       setResponse(nextResponse);
       setLiveGenerationStatus(nextResponse.generation_status);
       setStatus('ready');
+      return nextResponse;
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '叶茂数据加载失败');
       setStatus('error');
+      return null;
     }
   }, [courseNodeId, token]);
 
   useEffect(() => {
     void loadLeafCourse();
   }, [loadLeafCourse]);
+
+  const refreshLeafCourseAfterGeneration = useCallback(async () => {
+    for (let attempt = 0; attempt < LEAF_GENERATION_REFRESH_ATTEMPTS; attempt += 1) {
+      const nextResponse = await loadLeafCourse({ background: true });
+      if (!nextResponse) return;
+      const nextSelectedSectionId = resolveSelectedSectionId(nextResponse, sectionIdFromUrl);
+      if (!nextSelectedSectionId || hasLeafComposedContent(nextResponse, nextSelectedSectionId)) {
+        return;
+      }
+      if (attempt + 1 >= LEAF_GENERATION_REFRESH_ATTEMPTS) {
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, LEAF_GENERATION_REFRESH_RETRY_MS);
+      });
+    }
+  }, [loadLeafCourse, sectionIdFromUrl]);
 
   useEffect(() => {
     if (!response) return;
@@ -134,7 +175,7 @@ export function LeafPage() {
         setLiveGenerationStatus({
           course_node_id: detail.courseId,
           chapter_section_id: detail.chapterSectionId,
-          status: 'running',
+          status: detail.status === 'error' ? 'error' : 'running',
           message: detail.message,
         });
       });
@@ -144,7 +185,11 @@ export function LeafPage() {
       const detail = event instanceof CustomEvent ? event.detail : null;
       if (!isLeafGenerationCompletedEventDetail(detail) || detail.courseId !== courseNodeId) return;
       setLiveGenerationMessage(null);
-      void loadLeafCourse();
+      if (detail.reason === 'course_outline') {
+        void loadLeafCourse({ background: true });
+        return;
+      }
+      void refreshLeafCourseAfterGeneration();
     };
 
     window.addEventListener(LEAF_GENERATION_EVENT, handleGenerationEvent);
@@ -153,12 +198,17 @@ export function LeafPage() {
       window.removeEventListener(LEAF_GENERATION_EVENT, handleGenerationEvent);
       window.removeEventListener(LEAF_GENERATION_COMPLETED_EVENT, handleGenerationCompletedEvent);
     };
-  }, [courseNodeId, loadLeafCourse]);
+  }, [courseNodeId, loadLeafCourse, refreshLeafCourseAfterGeneration]);
 
   const selectedSection = useMemo(() => {
     if (!response) return null;
     return findLeafSectionById(response.sections, selectedSectionId);
   }, [response, selectedSectionId]);
+
+  const generationSection = useMemo(() => {
+    if (!response) return null;
+    return getGenerationSection(response, selectedSection);
+  }, [response, selectedSection]);
 
   const composedSection = response ? getLeafComposedSection(response, selectedSectionId) : null;
   const canGenerate = Boolean(
@@ -166,6 +216,10 @@ export function LeafPage() {
     && response.access_state === 'available'
     && response.can_generate
     && response.course.status !== 'completed',
+  ) && Boolean(
+    generationSection
+    && response?.first_generatable_chapter_id
+    && generationSection.section_id === response.first_generatable_chapter_id,
   );
 
   const handleSelectSection = useCallback((sectionId: string) => {
@@ -178,38 +232,31 @@ export function LeafPage() {
   }, [setSearchParams]);
 
   const handleGenerate = useCallback(() => {
+    if (!response || !generationSection) return;
+    const chapterLeafSections = response.sections.filter(
+      (section) => section.parent_section_id === generationSection.section_id,
+    );
+    const mode = chapterLeafSections.some((section) => hasLeafComposedContent(response, section.section_id))
+      ? 'regenerate'
+      : 'generate';
+    openWithDraft(buildLeafGenerationPrompt(response.course, generationSection, mode));
+  }, [generationSection, openWithDraft, response]);
+
+  const handleGenerateOutline = useCallback(() => {
     if (!response) return;
-    const generationSection = getGenerationSection(response, selectedSection);
-    if (!generationSection) return;
-    openWithDraft(buildLeafGenerationPrompt(response.course, generationSection));
-  }, [openWithDraft, response, selectedSection]);
+    openWithDraft(buildCourseOutlineGenerationPrompt(response.course));
+  }, [openWithDraft, response]);
 
   if (!token || !courseNodeId) {
     return null;
   }
 
-  const renderAmbientBackground = () => (
-    <div className="fixed top-0 right-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
-      <motion.div
-        className="absolute top-[-10%] right-[-5%] w-[40vw] h-[40vw] rounded-full mix-blend-multiply filter blur-3xl"
-        style={{ backgroundColor: 'var(--color-primary-soft)' }}
-        animate={reduceMotion ? {} : { scale: [1, 1.1, 1], x: [0, 10, 0], y: [0, -10, 0], opacity: [0.4, 0.6, 0.4] }}
-        transition={{ duration: 8, ease: "easeInOut", repeat: Infinity }}
-      />
-      <motion.div
-        className="absolute bottom-[10%] left-[20%] w-[30vw] h-[30vw] rounded-full mix-blend-multiply filter blur-3xl opacity-30"
-        style={{ backgroundColor: 'var(--color-secondary-soft)' }}
-        animate={reduceMotion ? {} : { scale: [1, 1.1, 1], x: [0, -10, 0], y: [0, 10, 0], opacity: [0.3, 0.5, 0.3] }}
-        transition={{ duration: 10, ease: "easeInOut", repeat: Infinity, delay: 1 }}
-      />
-    </div>
-  );
-
   if (status === 'loading' || status === 'idle') {
     return (
-      <section className="min-h-screen bg-[var(--color-canvas-base)] text-[var(--color-text-primary)] relative overflow-x-hidden flex items-center justify-center" aria-label="叶茂课程加载中">
-        {renderAmbientBackground()}
-        <div className="text-center">
+      <section className="leaf-page min-h-screen text-[var(--color-text-primary)] relative overflow-x-hidden flex items-center justify-center" aria-label="叶茂课程加载中">
+        <div className="leaf-ambient-sun" aria-hidden="true" />
+        <div className="leaf-paper-canvas" aria-hidden="true" />
+        <div className="text-center relative z-10">
           <motion.div
             animate={{ rotate: 360 }}
             transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
@@ -225,9 +272,10 @@ export function LeafPage() {
 
   if (status === 'error' || !response) {
     return (
-      <section className="min-h-screen bg-[var(--color-canvas-base)] text-[var(--color-text-primary)] relative overflow-x-hidden flex items-center justify-center" aria-label="叶茂课程加载失败">
-        {renderAmbientBackground()}
-        <div className="text-center">
+      <section className="leaf-page min-h-screen text-[var(--color-text-primary)] relative overflow-x-hidden flex items-center justify-center" aria-label="叶茂课程加载失败">
+        <div className="leaf-ambient-sun" aria-hidden="true" />
+        <div className="leaf-paper-canvas" aria-hidden="true" />
+        <div className="text-center relative z-10">
           <span className="text-[var(--color-error)] text-sm tracking-widest uppercase mb-2 block">// error</span>
           <h1 className="text-2xl font-medium text-[var(--color-secondary)] mb-2">叶茂数据加载失败</h1>
           <p className="text-[var(--color-text-secondary)]">{errorMessage ?? '请稍后再试。'}</p>
@@ -238,74 +286,40 @@ export function LeafPage() {
 
   const markmapToggleButton = typeof document !== 'undefined'
     ? createPortal(
-      <button
-        aria-label={markmapCollapsed ? '展开章节导航' : '收起章节导航'}
-        type="button"
-        onClick={() => {
-          const nextCollapsed = !markmapCollapsed;
-          persistLeafMarkmapCollapsed(nextCollapsed);
-          setMarkmapCollapsed(nextCollapsed);
-        }}
-        className="bg-[var(--color-surface-raised)] rounded-full py-4 px-4 shadow-md transition-all duration-300 cursor-pointer flex items-center group border border-[var(--glass-border)]"
-        style={{
-          position: 'fixed',
-          top: 'calc(var(--space-80) + var(--space-32))',
-          left: 'var(--space-16)',
-          zIndex: LEAF_NAV_TOGGLE_Z_INDEX,
-        }}
-      >
-        {markmapCollapsed ? (
-          <ChevronRight className="w-5 h-5 text-[var(--color-text-secondary)] group-hover:text-[var(--color-primary)] transition-colors" />
-        ) : (
-          <PanelLeftClose className="w-5 h-5 text-[var(--color-text-secondary)] group-hover:text-[var(--color-primary)] transition-colors" />
+      <AnimatePresence>
+        {markmapCollapsed && (
+          <motion.button
+            key="markmap-toggle-button"
+            initial={reduceMotion ? false : { opacity: 0, x: -20 }}
+            animate={reduceMotion ? undefined : { opacity: 1, x: 0 }}
+            exit={reduceMotion ? undefined : { opacity: 0, x: -20 }}
+            transition={motionTokens.editorial}
+            aria-label="展开章节导航"
+            type="button"
+            onClick={() => {
+              persistLeafMarkmapCollapsed(false);
+              setMarkmapCollapsed(false);
+            }}
+            className="fixed top-[104px] left-0 bg-[var(--glass-bg)] rounded-r-full py-4 pr-6 pl-4 shadow-[var(--shadow-md)] hover:pr-8 transition-[padding,color,background-color,border-color,text-decoration-color,fill,stroke] duration-300 cursor-pointer flex items-center z-50 group border border-l-0 border-[var(--glass-border)]"
+          >
+            <ChevronRight className="w-6 h-6 text-[var(--color-text-secondary)] group-hover:text-[var(--color-primary)] transition-colors" />
+          </motion.button>
         )}
-      </button>,
+      </AnimatePresence>,
       document.body,
     )
     : null;
 
   return (
-    <section className="min-h-screen bg-[var(--color-canvas-base)] text-[var(--color-text-primary)] relative overflow-x-hidden" aria-label={`${response.course.course_or_chapter_theme}课程内容`}>
-      {renderAmbientBackground()}
+    <section className="leaf-page min-h-screen text-[var(--color-text-primary)] relative overflow-x-hidden flex" aria-label={`${response.course.course_or_chapter_theme}课程内容`}>
+      <div className="leaf-ambient-sun" aria-hidden="true" />
+      <div className="leaf-paper-canvas" aria-hidden="true" />
       {markmapToggleButton}
 
-      {markmapCollapsed ? (
-        <>
-          <motion.div
-            key="collapsed-layout"
-            initial={reduceMotion ? false : { opacity: 0, x: -20 }}
-            animate={reduceMotion ? undefined : { opacity: 1, x: 0 }}
-            transition={motionTokens.editorial}
-            className="flex min-h-screen relative"
-          >
-            <main className="flex-1 w-full max-w-4xl mx-auto py-16 px-6 md:px-16 flex flex-col transition-all duration-500 ease-in-out">
-              <LeafTopBar
-                course={response.course}
-                selectedSection={selectedSection}
-                generationStatus={liveGenerationStatus}
-                liveGenerationMessage={liveGenerationMessage}
-                canGenerate={canGenerate}
-                onGenerate={handleGenerate}
-              />
-              <div className="mt-8">
-                <LeafContent
-                  section={selectedSection}
-                  composedSection={composedSection}
-                  lockedReason={response.locked_reason}
-                />
-              </div>
-            </main>
-          </motion.div>
-        </>
-      ) : (
-        <motion.div
-          key="expanded-layout"
-          initial={reduceMotion ? false : { opacity: 0, y: 16 }}
-          animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-          transition={motionTokens.editorial}
-          className="flex min-h-[calc(100vh-80px)] pt-6 min-h-screen"
-        >
+      <AnimatePresence mode="wait">
+        {!markmapCollapsed && (
           <LeafMarkmap
+            key="expanded-layout"
             response={response}
             selectedSectionId={selectedSectionId}
             markmapCollapsed={markmapCollapsed}
@@ -316,27 +330,36 @@ export function LeafPage() {
             }}
             onCollapsedSectionIdsChange={setCollapsedSectionIds}
             onSelectSection={handleSelectSection}
+            onGenerateOutline={handleGenerateOutline}
           />
+        )}
+      </AnimatePresence>
 
-          <main className="w-full md:ml-[360px] p-4 md:p-10 flex-1 flex flex-col items-center">
-            <div className="w-full max-w-4xl flex flex-col gap-8 pb-[100px]">
-              <LeafTopBar
-                course={response.course}
-                selectedSection={selectedSection}
-                generationStatus={liveGenerationStatus}
-                liveGenerationMessage={liveGenerationMessage}
-                canGenerate={canGenerate}
-                onGenerate={handleGenerate}
-              />
-              <LeafContent
-                section={selectedSection}
-                composedSection={composedSection}
-                lockedReason={response.locked_reason}
-              />
-            </div>
-          </main>
-        </motion.div>
-      )}
+      <main
+        className={`w-full pt-[104px] pb-16 px-6 md:px-16 flex-1 flex justify-center ${markmapCollapsed ? '' : 'md:ml-[360px]'}`}
+        style={{ transition: 'margin 0.76s cubic-bezier(0.25, 1, 0.5, 1)' }}
+      >
+        <div className="w-full max-w-4xl flex flex-col gap-10 pb-[100px]">
+          <LeafTopBar
+            course={response.course}
+            selectedSection={selectedSection}
+            generationStatus={liveGenerationStatus}
+            liveGenerationMessage={liveGenerationMessage}
+            canGenerate={canGenerate}
+            onGenerate={handleGenerate}
+          />
+          <div
+            className={markmapCollapsed ? 'mt-8' : 'mt-0'}
+            style={{ transition: 'margin 0.76s cubic-bezier(0.25, 1, 0.5, 1)' }}
+          >
+            <LeafContent
+              section={selectedSection}
+              composedSection={composedSection}
+              lockedReason={response.locked_reason}
+            />
+          </div>
+        </div>
+      </main>
     </section>
   );
 }

@@ -40,6 +40,7 @@ export const MOCK_PROFILE_DASHBOARD: ProfileDashboardData = {
     currentLearningCourse: null,
     currentCourseDetail: null,
     currentCourseOutline: null,
+    gradeCourses: [],
     followingCourses: [],
   },
 

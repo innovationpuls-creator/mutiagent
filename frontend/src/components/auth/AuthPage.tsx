@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { authApi as defaultAuthApi } from '../../api/auth';
 import { useAuth } from '../../contexts/AuthContext';
-import type { AuthApi, AuthMode, AuthResponse, OAuthProvider, RegisterPayload } from '../../types/auth';
+import type { AuthApi, AuthEntry, AuthMode, AuthResponse, OAuthProvider, RegisterPayload } from '../../types/auth';
 import { AuthPanel } from './AuthPanel';
 import { MultiAgentHero } from './MultiAgentHero';
 import { OAuthStatusDialog } from './OAuthStatusDialog';
@@ -13,14 +13,28 @@ export interface AuthPageProps {
   authApi?: AuthApi;
 }
 
-const oauthDelayMs = 620;
 const SPROUT_INIT_OVERLAY_KEY = 'mutiagent-sprout-init-overlay';
+
+function rememberSproutInitOverlay() {
+  try {
+    window.sessionStorage.setItem(SPROUT_INIT_OVERLAY_KEY, '1');
+  } catch {
+    /* Storage availability must not block the authenticated route transition. */
+  }
+}
+
+function routeForAuthResult(authResult: AuthResponse): string {
+  if (authResult.user.role === 'admin') return '/admin/accounts';
+  if (authResult.user.role === 'teacher') return '/teacher';
+  return '/sprout';
+}
 
 export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
   const navigate = useNavigate();
   const auth = useAuth();
   const reduceMotion = useReducedMotion();
   const [mode, setMode] = useState<AuthMode>('login');
+  const [entry, setEntry] = useState<AuthEntry>('student');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AuthResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,9 +47,9 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
       const authResult = await action();
       setResult(authResult);
       auth.login(authResult);
-      window.sessionStorage.setItem(SPROUT_INIT_OVERLAY_KEY, '1');
+      rememberSproutInitOverlay();
       setTimeout(() => {
-        navigate('/sprout', { state: { isFirstLogin: true } });
+        navigate(routeForAuthResult(authResult), { state: { isFirstLogin: true } });
       }, 1500);
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : '登录失败');
@@ -45,15 +59,8 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
     }
   };
 
-  const handleOAuth = async (provider: OAuthProvider) => {
+  const handleOAuth = (provider: OAuthProvider) => {
     setOAuthProvider(provider);
-    await new Promise((resolve) => window.setTimeout(resolve, oauthDelayMs));
-    await runAuth(() =>
-      authApi.oauth({
-        provider,
-        authorizationCode: `mock-${provider}-authorization`,
-      }),
-    );
   };
 
   return (
@@ -72,9 +79,11 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
         >
           <AuthPanel
             busy={busy}
+            entry={entry}
             error={error}
             mode={mode}
             result={result}
+            onEntryChange={setEntry}
             onModeChange={setMode}
             onLogin={(account, password) => runAuth(() => authApi.login({ account, password }))}
             onRegister={(payload: RegisterPayload) => runAuth(() => authApi.register(payload))}
@@ -85,7 +94,7 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
               <button
                 className="provider-pill qq"
                 aria-label="QQ 登录"
-                onClick={() => void handleOAuth('qq')}
+                onClick={() => handleOAuth('qq')}
               >
                 <span className="pill-icon" aria-hidden="true">
                   <QQIcon className="pill-icon-svg" />
@@ -98,7 +107,7 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
               <button
                 className="provider-pill xuexitong"
                 aria-label="学习通登录"
-                onClick={() => void handleOAuth('xuexitong')}
+                onClick={() => handleOAuth('xuexitong')}
               >
                 <span className="pill-icon" aria-hidden="true">
                   <XuexitongIcon className="pill-icon-svg" />
@@ -113,7 +122,11 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
         </motion.div>
       </section>
 
-      <OAuthStatusDialog open={Boolean(oauthProvider)} provider={oauthProvider} />
+      <OAuthStatusDialog
+        open={Boolean(oauthProvider)}
+        provider={oauthProvider}
+        onClose={() => setOAuthProvider(null)}
+      />
     </motion.main>
   );
 }

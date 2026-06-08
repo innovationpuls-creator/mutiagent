@@ -25,6 +25,7 @@ export function ProfileCard({ profile, completeness, summaryText, onClick }: Pro
       onClick={onClick}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
+      style={{ borderRadius: 24 }}
       initial={reduceMotion ? false : { opacity: 0, y: 20 }}
       animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
       transition={{ ...motionTokens.editorial, delay: 0.2 }}

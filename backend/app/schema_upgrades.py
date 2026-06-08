@@ -18,6 +18,7 @@ def run_schema_upgrades(engine: Engine) -> None:
     primary keys, or drop tables that were removed from the model.
     """
     with engine.begin() as connection:
+        _upgrade_user_role_column(connection)
         _upgrade_course_knowledge_outline_table(connection)
         _upgrade_profile_json_storage(connection)
         _drop_removed_agent_conversation_table(connection)
@@ -44,6 +45,19 @@ def migrate_removed_learning_path_table(engine: Engine) -> None:
 
 def _drop_removed_agent_conversation_table(connection: Any) -> None:
     connection.execute(text("DROP TABLE IF EXISTS useragentconversation"))
+
+
+def _upgrade_user_role_column(connection: Any) -> None:
+    inspector = inspect(connection)
+    if not inspector.has_table("user"):
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("user")}
+    if "role" in columns:
+        return
+
+    connection.execute(text('ALTER TABLE "user" ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT \'student\''))
+    connection.execute(text('CREATE INDEX IF NOT EXISTS ix_user_role ON "user" (role)'))
 
 
 def _upgrade_profile_json_storage(connection: Any) -> None:

@@ -52,6 +52,10 @@ function findResourceDirections(path: LearningPathResult, ids: string[]): Resour
 }
 
 export function LearningPathCard({ path }: LearningPathCardProps) {
+  const orderedGradePlans = gradeOrder
+    .map((gradeId) => path.grade_plans[gradeId])
+    .filter((gradePlan) => gradePlan !== undefined);
+
   return (
     <Card>
       <Header>
@@ -93,18 +97,18 @@ export function LearningPathCard({ path }: LearningPathCardProps) {
       <Section>
         <h3>年级课程节点</h3>
         <GradeStack>
-          {gradeOrder.map((gradeId) => (
-            <GradeCard key={gradeId}>
+          {orderedGradePlans.map((gradePlan) => (
+            <GradeCard key={gradePlan.grade_id}>
               <GradeHeader>
-                <span>{path.grade_plans[gradeId].grade_id}</span>
+                <span>{gradePlan.grade_id}</span>
                 <div>
-                  <h4>{path.grade_plans[gradeId].grade_name}</h4>
-                  <p>{path.grade_plans[gradeId].grade_goal}</p>
+                  <h4>{gradePlan.grade_name}</h4>
+                  <p>{gradePlan.grade_goal}</p>
                 </div>
               </GradeHeader>
 
               <CourseStack>
-                {path.grade_plans[gradeId].course_nodes.map((courseNode) => (
+                {gradePlan.course_nodes.map((courseNode) => (
                   <CourseCard key={courseNode.course_node_id}>
                     <CourseHeader>
                       <div>

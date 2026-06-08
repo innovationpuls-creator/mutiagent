@@ -153,6 +153,7 @@ def _today_learning_from_path(
             "currentLearningCourse": current,
             "currentCourseDetail": current_course,
             "currentCourseOutline": current_course_outline,
+            "gradeCourses": course_nodes,
             "followingCourses": following,
         }
     return None
@@ -171,7 +172,7 @@ def _dashboard_from_profile(
         year_learning_paths,
         latest_grade_year,
     )
-    if stored is None:
+    if stored is None or not isinstance(stored.profile_data, dict) or not stored.profile_data:
         return {
             "profile": DEFAULT_PROFILE,
             "profileCompleteness": 0,
@@ -183,6 +184,7 @@ def _dashboard_from_profile(
                 "currentLearningCourse": None,
                 "currentCourseDetail": None,
                 "currentCourseOutline": None,
+                "gradeCourses": [],
                 "followingCourses": [],
             },
             "recommendations": [],
@@ -207,6 +209,7 @@ def _dashboard_from_profile(
                 "currentLearningCourse": None,
                 "currentCourseDetail": None,
                 "currentCourseOutline": None,
+                "gradeCourses": [],
                 "followingCourses": [],
             },
             "recommendations": [],
@@ -223,6 +226,7 @@ def _dashboard_from_profile(
                 "currentLearningCourse": None,
                 "currentCourseDetail": None,
                 "currentCourseOutline": None,
+                "gradeCourses": [],
                 "followingCourses": [],
             },
             "recommendations": [],
@@ -242,6 +246,7 @@ def _dashboard_from_profile(
             "currentLearningCourse": None,
             "currentCourseDetail": None,
             "currentCourseOutline": None,
+            "gradeCourses": [],
             "followingCourses": [],
         },
         "recommendations": [

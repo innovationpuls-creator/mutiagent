@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { SproutHero } from '../components/home/SproutHero';
 import { SproutInitOverlay } from '../components/onboarding/SproutInitOverlay';
+import { useAiWidget } from '../context/AiWidgetContext';
 import '../components/home/BlankPage.css';
 
 const SPROUT_INIT_OVERLAY_KEY = 'mutiagent-sprout-init-overlay';
@@ -10,6 +11,7 @@ const SPROUT_INIT_OVERLAY_KEY = 'mutiagent-sprout-init-overlay';
 export function SproutPage() {
   const location = useLocation();
   const reduceMotion = useReducedMotion();
+  const { pendingMessage, widgetState } = useAiWidget();
   const isFirstLogin = location.state?.isFirstLogin === true;
   const [showOverlay, setShowOverlay] = useState(() => {
     if (isFirstLogin) return true;
@@ -23,6 +25,19 @@ export function SproutPage() {
     }
     setShowOverlay(false);
   };
+
+  useEffect(() => {
+    if (!showOverlay) {
+      return;
+    }
+    if (widgetState === 'WIDGET') {
+      handleOverlayComplete();
+      return;
+    }
+    if (widgetState === 'EXPANDED' && pendingMessage !== null) {
+      handleOverlayComplete();
+    }
+  }, [pendingMessage, showOverlay, widgetState]);
 
   return (
     <>

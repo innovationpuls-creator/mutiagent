@@ -77,6 +77,8 @@ function WidgetControls() {
 
 afterEach(() => {
   cleanup();
+  window.history.replaceState({}, '', '/');
+  window.sessionStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -124,7 +126,9 @@ test('shows overlay only in expanded mode', async () => {
 
   fireEvent.click(screen.getByRole('button', { name: 'expanded' }));
 
-  expect(await screen.findByTestId('global-ai-widget-overlay')).toBeTruthy();
+  const overlay = await screen.findByTestId('global-ai-widget-overlay');
+  expect(overlay).toBeTruthy();
+  expect((overlay as HTMLDivElement).style.pointerEvents).toBe('none');
   expect(screen.getByTestId('global-ai-widget-shell')).toBeTruthy();
 });
 
@@ -147,7 +151,29 @@ test('uses transform offset for center input mode instead of margin-top', () => 
   expect(frame.style.marginTop).toBe('');
 });
 
-test('resets expanded widget state after logout before a later login', async () => {
+test('shows the bottom-right widget after a logged-in page reload', async () => {
+  window.history.replaceState({}, '', '/branch');
+  stubLoggedInAuth();
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <GlobalAiWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByTestId('global-ai-widget-shell')).toBeTruthy();
+  });
+
+  const shell = screen.getByTestId('global-ai-widget-shell') as HTMLDivElement;
+  expect(screen.queryByTestId('global-ai-widget-overlay')).toBeNull();
+  expect(shell.style.justifyContent).toBe('flex-end');
+  expect(shell.style.alignItems).toBe('flex-end');
+});
+
+test('resets expanded widget state after logout before a later login returns to the docked widget', async () => {
   stubLoggedInAuth();
 
   render(
@@ -168,7 +194,10 @@ test('resets expanded widget state after logout before a later login', async () 
 
   fireEvent.click(screen.getByRole('button', { name: 'login' }));
 
-  expect(screen.queryByTestId('global-ai-widget-shell')).toBeNull();
+  await waitFor(() => {
+    expect(screen.getByTestId('global-ai-widget-shell')).toBeTruthy();
+  });
+  expect(screen.queryByTestId('global-ai-widget-overlay')).toBeNull();
 });
 
 test('reopens the chat panel when a logged-in sprout page contains a recoverable session_id', async () => {
@@ -241,4 +270,71 @@ test('reopens the chat panel when a logged-in sprout page contains a recoverable
     expect(screen.getByLabelText('AI 基础画像对话')).toBeTruthy();
     expect(screen.getByText('画像已整理成可继续更新的学习底稿')).toBeTruthy();
   });
+});
+
+test('docks the expanded sprout recovery panel to the right edge', async () => {
+  window.history.replaceState({}, '', '/sprout?session_id=session-recover-docked');
+  stubLoggedInAuth({
+    'session-session-recover-docked': JSON.stringify({
+      userUid: 'user-1',
+      savedAt: 1000,
+      messages: [
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '【基础学习画像总结】大三软件工程，当前以 AI 应用开发为主线。',
+          status: 'completed',
+          timestamp: 1001,
+          sessionMessage: {
+            type: 'basic_profile',
+            stage: 'generated',
+            question_mode: 'question_box',
+            confirmed_info: {
+              current_grade: '大三',
+              major: '软件工程',
+              learning_stage: '有基础',
+              has_clear_goal: '大致有方向',
+              learning_method_preference: '项目驱动学习',
+              learning_pace_preference: '按项目里程碑推进',
+              content_preference: ['代码实践', '项目案例'],
+              need_guidance: '需要轻量提醒',
+              knowledge_foundation: '软件工程基础',
+              strengths: '工程实现',
+              weaknesses: '大型项目实战经验',
+              experience: '做过课程项目',
+              short_term_goal: '完成 AI 功能模块',
+              long_term_goal: '形成 AI 应用开发能力',
+              weekly_available_time: '每周 8 小时',
+              constraints: '时间有限',
+            },
+            defaulted_fields: [],
+            question_md: '画像已生成，是否继续生成学习路径？',
+            question_box: {
+              question: '画像已生成，下一步要继续生成学习路径吗？',
+              options: [],
+            },
+            text: '【基础学习画像总结】大三软件工程，当前以 AI 应用开发为主线。',
+          },
+          runTrace: [],
+          activeStepId: null,
+        },
+      ],
+    }),
+  });
+  vi.stubGlobal('fetch', vi.fn());
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <GlobalAiWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByLabelText('AI 基础画像对话')).toBeTruthy();
+  });
+
+  expect(screen.getByTestId('global-ai-widget-frame').getAttribute('data-expanded-layout')).toBe('docked');
+  expect((screen.getByTestId('global-ai-widget-shell') as HTMLDivElement).style.justifyContent).toBe('flex-end');
 });

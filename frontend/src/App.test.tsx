@@ -4,6 +4,7 @@ import { Outlet } from 'react-router-dom';
 import { App } from './App';
 import { AuthProvider } from './contexts/AuthContext';
 import { AUTH_INVALID_EVENT } from './api/http';
+import type { AuthRole } from './types/auth';
 
 vi.mock('./components/auth/AuthPage', () => ({
   AuthPage: () => <div>Auth Page</div>,
@@ -19,6 +20,14 @@ vi.mock('./pages/branch/BranchPage', () => ({
 
 vi.mock('./pages/leaf/LeafPage', () => ({
   LeafPage: () => <div>Leaf Page</div>,
+}));
+
+vi.mock('./pages/admin/AdminAccountsPage', () => ({
+  AdminAccountsPage: () => <div>Admin Accounts Page</div>,
+}));
+
+vi.mock('./pages/teacher/TeacherPage', () => ({
+  TeacherPage: () => <div>Teacher Page</div>,
 }));
 
 vi.mock('./components/onboarding/GlobalAiWidget', () => ({
@@ -40,7 +49,7 @@ afterEach(() => {
   window.history.replaceState({}, '', '/');
 });
 
-function stubStoredAuth(enabled: boolean) {
+function stubStoredAuth(enabled: boolean, role: AuthRole = 'student') {
   vi.stubGlobal('localStorage', {
     getItem: vi.fn((key: string) => {
       if (!enabled || key !== 'mutiagent-auth') {
@@ -52,6 +61,7 @@ function stubStoredAuth(enabled: boolean) {
           uid: 'user-1',
           username: '测试用户',
           identifier: 'user@example.com',
+          role,
           provider: 'password',
           is_active: true,
           created_at: '2026-06-02T00:00:00Z',
@@ -125,6 +135,28 @@ describe('App routing', () => {
     await waitFor(() => {
       expect(screen.getByText('Main Layout')).toBeTruthy();
       expect(screen.getByText('Leaf Page')).toBeTruthy();
+    });
+  });
+
+  it('renders teacher route for authenticated users', async () => {
+    stubStoredAuth(true, 'teacher');
+    window.history.replaceState({}, '', '/teacher');
+
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByText('Teacher Page')).toBeTruthy();
+    });
+  });
+
+  it('renders hidden admin account route for authenticated users', async () => {
+    stubStoredAuth(true, 'admin');
+    window.history.replaceState({}, '', '/admin/accounts');
+
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin Accounts Page')).toBeTruthy();
     });
   });
 
