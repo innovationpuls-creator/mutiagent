@@ -1,13 +1,20 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Components } from 'react-markdown';
+import { usePrism } from './hooks/usePrism';
+import { useMathJax } from './hooks/useMathJax';
+import { useMermaid } from './hooks/useMermaid';
+import { extractLanguage } from './utils/highlight';
 import './markdown-styles.css';
 
 interface MarkdownRendererProps {
   content: string;
   className?: string;
   variant?: 'default' | 'editorial' | 'compact';
+  enableSyntaxHighlight?: boolean;
+  enableMath?: boolean;
+  enableMermaid?: boolean;
 }
 
 interface CheckboxInputProps {
@@ -163,16 +170,143 @@ const markdownComponents: Components = {
   dd: ({ node, ...props }) => <dd {...props} />,
 };
 
+function MermaidDiagram({ code, renderDiagram }: { code: string; renderDiagram: (code: string) => Promise<string> }) {
+  const [svg, setSvg] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    renderDiagram(code).then((result) => {
+      setSvg(result);
+      setLoading(false);
+    });
+  }, [code, renderDiagram]);
+
+  if (loading) {
+    return <div className="mermaid-container">Loading diagram...</div>;
+  }
+
+  return (
+    <div className="mermaid-container" dangerouslySetInnerHTML={{ __html: svg }} />
+  );
+}
+
+function HighlightedCodeBlock({ code, language, highlight }: { code: string; language: string; highlight: (code: string, language: string) => Promise<string> }) {
+  const [highlightedCode, setHighlightedCode] = useState<string>(code);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    highlight(code, language).then((result) => {
+      setHighlightedCode(result);
+      setLoading(false);
+    });
+  }, [code, language, highlight]);
+
+  return (
+    <div className="code-block">
+      <div className="code-block-header">
+        <span className="code-block-lang">{language}</span>
+        <button
+          className="code-block-copy"
+          onClick={(e) => {
+            const button = e.currentTarget;
+            navigator.clipboard.writeText(code).then(() => {
+              button.textContent = 'COPIED!';
+              setTimeout(() => {
+                button.textContent = 'COPY';
+              }, 2000);
+            }).catch(() => {
+              button.textContent = 'FAILED';
+              setTimeout(() => {
+                button.textContent = 'COPY';
+              }, 2000);
+            });
+          }}
+        >
+          COPY
+        </button>
+      </div>
+      <pre>
+        <code dangerouslySetInnerHTML={{ __html: highlightedCode }} />
+      </pre>
+    </div>
+  );
+}
+
 export function MarkdownRenderer({
   content,
   className = '',
   variant = 'default',
+  enableSyntaxHighlight = false,
+  enableMath = false,
+  enableMermaid = false,
 }: MarkdownRendererProps) {
+  const { highlight } = usePrism();
+  const { renderMath } = useMathJax();
+  const { renderDiagram } = useMermaid();
+
+  const enhancedComponents: Components = {
+    ...markdownComponents,
+    code: ({ node, className, children, ...props }) => {
+      const inline = !className || !className.includes('language-');
+      
+      if (inline) {
+        return <code {...props}>{children}</code>;
+      }
+
+      const lang = extractLanguage(className);
+      const codeString = String(children).replace(/\n$/, '');
+
+      if (enableMermaid && lang === 'mermaid') {
+        return <MermaidDiagram code={codeString} renderDiagram={renderDiagram} />;
+      }
+
+      if (enableSyntaxHighlight && lang) {
+        return <HighlightedCodeBlock code={codeString} language={lang} highlight={highlight} />;
+      }
+
+      return (
+        <div className="code-block">
+          <div className="code-block-header">
+            <span className="code-block-lang">{lang || 'code'}</span>
+            <button
+              className="code-block-copy"
+              onClick={(e) => {
+                const button = e.currentTarget;
+                navigator.clipboard.writeText(codeString).then(() => {
+                  button.textContent = 'COPIED!';
+                  button.ariaLabel = 'Code copied';
+                  setTimeout(() => {
+                    button.textContent = 'COPY';
+                    button.ariaLabel = 'Copy code to clipboard';
+                  }, 2000);
+                }).catch(() => {
+                  button.textContent = 'FAILED';
+                  button.ariaLabel = 'Failed to copy code';
+                  setTimeout(() => {
+                    button.textContent = 'COPY';
+                    button.ariaLabel = 'Copy code to clipboard';
+                  }, 2000);
+                });
+              }}
+            >
+              COPY
+            </button>
+          </div>
+          <pre>
+            <code className={className} {...props}>
+              {children}
+            </code>
+          </pre>
+        </div>
+      );
+    },
+  };
+
   const variantClass = variant !== 'default' ? variant : '';
 
   return (
     <div className={`markdown-renderer ${variantClass} ${className}`.trim()}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={enhancedComponents}>
         {content}
       </ReactMarkdown>
     </div>
