@@ -53,6 +53,7 @@
   --color-focus-ring: oklch(76% 0.12 55 / 0.42);
   --color-primary-hover: oklch(70% 0.12 55);
   --color-overlay: oklch(26% 0.04 235 / 0.42);
+  --color-link-underline: oklch(78% 0.12 55 / 0.4);
 
   /* =========================================
      2. Semantic Tokens (语义变量)

@@ -123,7 +123,7 @@
   text-decoration: underline;
   text-underline-offset: var(--space-4);
   text-decoration-thickness: 1px;
-  text-decoration-color: oklch(78% 0.12 55 / 0.4);
+  text-decoration-color: var(--color-link-underline);
   transition: color var(--duration-instant) var(--ease-editorial),
               text-decoration-color var(--duration-instant) var(--ease-editorial);
 }
@@ -202,7 +202,7 @@
   border: solid white;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
-  margin-left: 3px;
+  margin-left: var(--space-xs);
   margin-top: 1px;
 }
 
@@ -248,7 +248,7 @@
 
 .markdown-renderer .alert-label {
   font-size: var(--text-caption);
-  font-weight: 600;
+  font-weight: var(--font-weight-medium);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: var(--space-8);
