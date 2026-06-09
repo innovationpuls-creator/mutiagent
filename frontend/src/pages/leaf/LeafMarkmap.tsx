@@ -4,9 +4,7 @@ import { motionTokens } from '../../styles/motion-tokens';
 import type { LeafCourseResponse, LeafSection } from '../../types/leaf';
 import {
   getLeafChildSections,
-  getLeafSectionDescription,
   getLeafSectionHeading,
-  getLeafSectionLabel,
   hasLeafComposedContent,
 } from './leafContentParser';
 
@@ -231,7 +229,6 @@ function LeafMarkmapNode({
 export function LeafMarkmap({
   response,
   selectedSectionId,
-  markmapCollapsed,
   collapsedSectionIds,
   onToggleMarkmapCollapsed,
   onCollapsedSectionIdsChange,
