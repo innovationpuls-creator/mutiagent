@@ -24,6 +24,8 @@ import { AssistantMessage } from './AssistantMessage';
 import { SystemMessage } from './AssistantMessage';
 import { hasCompleteBasicProfileSessionMessage } from '../../lib/profileContract';
 import { dispatchLeafGenerationCompleted, dispatchLeafGenerationEvent } from '../../pages/leaf/leafGenerationEvents';
+import { HandwritingCanvas } from '../ui/HandwritingCanvas';
+import { PenTool } from 'lucide-react';
 
 const AGENT_LABELS: Record<string, string> = {
   main_agent: '主智能体',
@@ -272,6 +274,8 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
   const [agentEvents, setAgentEvents] = useState<SessionAgentEvent[]>([]);
   const [showEventLog, setShowEventLog] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [showCanvas, setShowCanvas] = useState(false);
+  const [imageAttachment, setImageAttachment] = useState<string | null>(null);
 
   const runIdRef = useRef(0);
   const startTimeRef = useRef<Record<string, number>>({});
@@ -457,9 +461,9 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
   }, []);
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, imageAttachmentArg?: string | null) => {
       const query = text.trim();
-      if (!query || isPending) return;
+      if ((!query && !imageAttachmentArg) || isPending) return;
       if (!token) {
         setGlobalError('请先登录后再开始基础画像对话。');
         return;
@@ -471,7 +475,12 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
 
       setInputValue('');
       const userMsgId = nextMessageId();
-      dispatch({ type: 'ADD_USER_MESSAGE', id: userMsgId, content: query });
+      dispatch({
+        type: 'ADD_USER_MESSAGE',
+        id: userMsgId,
+        content: query,
+        imageAttachment: imageAttachmentArg ?? null,
+      });
 
       const assistantMsgId = nextMessageId();
       dispatch({ type: 'ADD_ASSISTANT_MESSAGE', id: assistantMsgId });
@@ -642,6 +651,7 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
               setGlobalError(message);
             }
           },
+          imageAttachmentArg,
         );
 
         if (runIdRef.current !== runId) return;
@@ -756,12 +766,20 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
   };
 
   const handleSubmit = () => {
-    void sendMessage(inputValue);
+    void sendMessage(inputValue, imageAttachment);
+    setInputValue('');
+    setImageAttachment(null);
   };
 
   function renderMessage(message: ChatMessage, isLatestInteractive: boolean) {
     if (message.role === 'user') {
-      return <MessageBubble key={message.id} content={message.content} />;
+      return (
+        <MessageBubble
+          key={message.id}
+          content={message.content}
+          imageAttachment={message.imageAttachment}
+        />
+      );
     }
 
     if (message.role === 'system') {
@@ -892,34 +910,66 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
                   })}
                 </div>
 
-                <form
-                  className="chat-composer"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    handleSubmit();
-                  }}
-                >
-                  <textarea
-                    rows={1}
-                    placeholder={hasCompleteProfileRef.current ? '画像已生成，可以继续补充或追问...' : '输入你的学习情况...'}
-                    value={inputValue}
-                    disabled={isPending}
-                    onChange={(event) => setInputValue(event.target.value)}
-                    onKeyDown={(event) => {
-                      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                        handleSubmit();
-                      }
+                <div className="composer-container">
+                  {imageAttachment && (
+                    <div className="image-preview-box">
+                      <img
+                        src={imageAttachment}
+                        alt="Preview"
+                        className="preview-thumbnail"
+                      />
+                      <button
+                        type="button"
+                        className="delete-preview-button"
+                        onClick={() => setImageAttachment(null)}
+                        aria-label="删除图片"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                  <form
+                    className="chat-composer"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      handleSubmit();
                     }}
-                  />
-                  <button
-                    type="submit"
-                    className="submit-button"
-                    disabled={isPending || !inputValue.trim()}
-                    aria-label="发送消息"
                   >
-                    <span aria-hidden="true">+</span>
-                  </button>
-                </form>
+                    <textarea
+                      rows={1}
+                      placeholder={
+                        hasCompleteProfileRef.current
+                          ? '画像已生成，可以继续补充或追问...'
+                          : '输入你的学习情况...'
+                      }
+                      value={inputValue}
+                      disabled={isPending}
+                      onChange={(event) => setInputValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                          handleSubmit();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="pen-button"
+                      disabled={isPending}
+                      onClick={() => setShowCanvas(true)}
+                      aria-label="手写/绘图输入"
+                    >
+                      <PenTool className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="submit"
+                      className="submit-button"
+                      disabled={isPending || (!inputValue.trim() && !imageAttachment)}
+                      aria-label="发送消息"
+                    >
+                      <span aria-hidden="true">+</span>
+                    </button>
+                  </form>
+                </div>
               </main>
 
               <aside className="codex-agent-panel" aria-label="多智能体调用状态">
@@ -1011,6 +1061,15 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
           </div>
         )}
       </motion.div>
+      {showCanvas && (
+        <HandwritingCanvas
+          onSave={(base64Data) => {
+            setImageAttachment(base64Data);
+            setShowCanvas(false);
+          }}
+          onClose={() => setShowCanvas(false)}
+        />
+      )}
     </StyledWrapper>
   );
 }
@@ -1439,12 +1498,63 @@ const StyledWrapper = styled.div`
     color: var(--color-text-secondary);
   }
 
-  .chat-composer {
+  .composer-container {
     position: absolute;
     bottom: var(--space-8);
     left: var(--space-8);
     right: var(--space-8);
     z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+  }
+
+  .image-preview-box {
+    position: relative;
+    inline-size: fit-content;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    padding: var(--space-4);
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    align-items: center;
+    margin-inline-start: var(--space-12);
+  }
+
+  .preview-thumbnail {
+    max-block-size: 80px;
+    max-inline-size: 120px;
+    border-radius: var(--radius-sm);
+    object-fit: contain;
+  }
+
+  .delete-preview-button {
+    position: absolute;
+    top: calc(var(--space-4) * -1);
+    right: calc(var(--space-4) * -1);
+    background: var(--color-surface-inset);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: transform var(--duration-lazy-hover) var(--ease-lazy);
+  }
+
+  .delete-preview-button:hover {
+    transform: scale(1.1);
+    background: var(--color-error-bg);
+    color: var(--color-error);
+  }
+
+  .chat-composer {
     display: flex;
     align-items: flex-end;
     gap: var(--space-8);
@@ -1468,6 +1578,35 @@ const StyledWrapper = styled.div`
     font-family: var(--font-body);
     font-size: var(--text-body);
     line-height: 1.6;
+  }
+
+  .pen-button {
+    min-inline-size: 32px;
+    min-block-size: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--radius-full);
+    background: var(--color-surface-inset);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition:
+      transform var(--duration-lazy-hover) var(--ease-lazy),
+      background-color var(--duration-lazy-hover) var(--ease-lazy);
+    align-self: flex-end;
+    margin-bottom: var(--space-4);
+  }
+
+  .pen-button:hover {
+    transform: translateY(calc(var(--space-2) * -1));
+    background: var(--color-secondary-soft);
+    color: var(--color-secondary);
+  }
+
+  .pen-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
 
   .chat-composer .submit-button {

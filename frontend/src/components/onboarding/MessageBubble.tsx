@@ -3,14 +3,26 @@ import styled from 'styled-components';
 
 interface MessageBubbleProps {
   content: string;
+  imageAttachment?: string | null;
 }
 
-export function MessageBubble({ content }: MessageBubbleProps) {
+export function MessageBubble({ content, imageAttachment }: MessageBubbleProps) {
   return (
     <BubbleWrapper>
       <div className="bubble">
         <span className="avatar">U</span>
-        <p className="text">{content}</p>
+        <div className="bubble-content">
+          {content && <p className="text">{content}</p>}
+          {imageAttachment && (
+            <div className="image-container">
+              <img
+                src={imageAttachment}
+                alt="Attachment"
+                className="bubble-image"
+              />
+            </div>
+          )}
+        </div>
       </div>
     </BubbleWrapper>
   );
@@ -48,12 +60,36 @@ const BubbleWrapper = styled.article`
     flex-shrink: 0;
   }
 
+  .bubble-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+  }
+
+  .image-container {
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    background: var(--color-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .bubble-image {
+    display: block;
+    max-block-size: 200px;
+    max-inline-size: 100%;
+    object-fit: contain;
+  }
+
   .text {
     margin: 0;
     color: var(--color-text-primary);
     line-height: 1.6;
     font-size: var(--text-body);
     font-family: var(--font-body);
-    align-self: center;
+    align-self: flex-start;
   }
 `;

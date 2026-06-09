@@ -617,6 +617,7 @@ export async function streamSession(
   query: string,
   sessionId: string | null,
   onEvent: (event: SessionAgentEvent) => void,
+  imageAttachment?: string | null,
 ): Promise<SessionTurn> {
   // If no sessionId, create one first via /api/chat/start
   let activeSessionId = sessionId;
@@ -640,7 +641,11 @@ export async function streamSession(
       Authorization: `Bearer ${token}`,
       Accept: 'text/event-stream',
     },
-    body: JSON.stringify({ session_id: activeSessionId, message: query }),
+    body: JSON.stringify({
+      session_id: activeSessionId,
+      message: query,
+      image_attachment: imageAttachment || undefined,
+    }),
   });
 
   if (!response.ok) {

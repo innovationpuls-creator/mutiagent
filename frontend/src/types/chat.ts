@@ -438,6 +438,7 @@ export interface ChatMessage {
   content: string;
   status: MessageStatus;
   timestamp: number;
+  imageAttachment?: string | null;
   sessionMessage?: SessionMessage | null;
   agentAnswer?: AgentUserAnswer | null;
   learningPath?: LearningPathResult | null;

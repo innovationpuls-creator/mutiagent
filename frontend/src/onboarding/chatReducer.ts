@@ -15,7 +15,7 @@ export const initialChatStore: ChatStore = {
 };
 
 export type ChatAction =
-  | { type: 'ADD_USER_MESSAGE'; id: string; content: string }
+  | { type: 'ADD_USER_MESSAGE'; id: string; content: string; imageAttachment?: string | null }
   | { type: 'ADD_ASSISTANT_MESSAGE'; id: string }
   | { type: 'SET_SESSION_ID'; sessionId: string | null }
   | { type: 'STEP'; messageId: string; step: AgentRunStep }
@@ -102,6 +102,7 @@ export function chatReducer(state: ChatStore, action: ChatAction): ChatStore {
         content: action.content,
         status: 'completed',
         timestamp: Date.now(),
+        imageAttachment: action.imageAttachment ?? null,
       };
       return {
         ...state,

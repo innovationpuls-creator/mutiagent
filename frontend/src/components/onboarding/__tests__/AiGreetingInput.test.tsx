@@ -3512,3 +3512,124 @@ test('starts a clean local conversation after 会话不存在 instead of persist
     expect.objectContaining({ role: 'assistant', content: '第三次成功' }),
   ]);
 }, 10000);
+
+test('allows using handwriting canvas, previews sketch, and submits message with image attachment', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
+    scale: vi.fn(),
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    stroke: vi.fn(),
+    clearRect: vi.fn(),
+  });
+  HTMLCanvasElement.prototype.toDataURL = vi.fn().mockReturnValue('data:image/png;base64,fake-data');
+  stubLocalStorage({
+    'mutiagent-auth': JSON.stringify({
+      token: 'token-1',
+      user: {
+        uid: 'user-1',
+        username: '测试用户',
+        identifier: 'user@example.com',
+        provider: 'password',
+        is_active: true,
+        created_at: '2026-06-02T00:00:00Z',
+        last_login_at: null,
+      },
+    }),
+  });
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          [
+            'event: session_started',
+            'data: {"session_id":"session-with-attachment","query":"这里是手写内容"}',
+            '',
+            'event: message_completed',
+            'data: {"full_text":"已收到您的图片"}',
+            '',
+            'event: session_completed',
+            'data: {"session_id":"session-with-attachment","has_profile":true,"has_paths":false,"has_outline":false}',
+            '',
+          ].join('\n'),
+        ),
+      );
+      controller.close();
+    },
+  });
+
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        session_id: 'session-with-attachment',
+        reply_text: 'greeting',
+        profile: null,
+        year_learning_paths: null,
+        course_knowledge: null,
+      }),
+    })
+    .mockResolvedValueOnce(new Response(stream, { status: 200 }));
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <ExpandedWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  // Click on the handwriting pen tool button to open canvas
+  const penButton = await screen.findByLabelText('手写/绘图输入');
+  fireEvent.click(penButton);
+
+  // The dialog should be in the document
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(screen.getByText('手写笔记/草图')).toBeTruthy();
+
+  // Click '确认导出' to mock canvas export
+  const confirmButton = screen.getByText('确认导出');
+  fireEvent.click(confirmButton);
+
+  // Dialog should be closed, and preview image should be shown
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  const previewImg = screen.getByAltText('Preview');
+  expect(previewImg).toBeTruthy();
+  expect(previewImg.getAttribute('src')).toBe('data:image/png;base64,fake-data');
+
+  // Input some optional text
+  const input = screen.getByPlaceholderText('输入你的学习情况...');
+  fireEvent.change(input, { target: { value: '这里是手写内容' } });
+
+  // Click submit message
+  fireEvent.click(screen.getByLabelText('发送消息'));
+
+  // Ensure message is sent and preview is cleared
+  await waitFor(() => {
+    expect(screen.queryByAltText('Preview')).toBeNull();
+    expect((screen.getByPlaceholderText('输入你的学习情况...') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  // Verify fetch mock was called with correct payload containing image_attachment
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const lastFetchBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(lastFetchBody.image_attachment).toBe('data:image/png;base64,fake-data');
+    expect(lastFetchBody.message).toBe('这里是手写内容');
+  });
+
+  // Check that the image is rendered in the message flow
+  await waitFor(() => {
+    const bubbleImg = screen.getByAltText('Attachment');
+    expect(bubbleImg).toBeTruthy();
+    expect(bubbleImg.getAttribute('src')).toBe('data:image/png;base64,fake-data');
+    expect(screen.getByText('已收到您的图片')).toBeTruthy();
+  });
+}, 10000);
