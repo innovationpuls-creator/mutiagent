@@ -301,3 +301,41 @@ def test_submit_forest_quiz_attempt_api_opens_next_chapter(tmp_path: Path) -> No
 
     assert next_progress is not None
     assert next_progress.state == "available"
+
+
+def test_stream_forest_ai_api_returns_sse_chunks(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'forest-ai-stream-api.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    user_uid = _seed_forest_data(database_url)
+
+    async def fake_stream_response(*_args, **_kwargs):
+        yield "第一段"
+        yield "第二段"
+
+    with patch("app.api.forest.stream_forest_ai_response", fake_stream_response):
+        response = client.post(
+            "/api/forest/ai/stream",
+            json={
+                "course_node_id": "year_3_course_2",
+                "chapter_id": "1",
+                "quiz_id": None,
+                "question_id": None,
+                "message": "请解析",
+                "active_question_context": {
+                    "course_node_id": "year_3_course_2",
+                    "chapter_id": "1",
+                    "quiz_id": None,
+                    "question_id": None,
+                    "question": None,
+                    "answer": None,
+                    "grading_result": None,
+                },
+            },
+            headers=_auth_headers(user_uid),
+        )
+
+    assert response.status_code == 200
+    assert "event: forest_ai_text_chunk" in response.text
+    assert '"chunk": "第一段"' in response.text
+    assert '"chunk": "第二段"' in response.text
+    assert "event: forest_ai_completed" in response.text
