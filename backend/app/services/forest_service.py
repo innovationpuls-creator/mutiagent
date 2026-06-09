@@ -15,7 +15,11 @@ from app.schemas import (
     ForestQuizSessionReadResponse,
 )
 from app.services.course_knowledge_service import get_user_course_knowledge_outline
-from app.services.learning_path_service import get_all_year_learning_paths, get_grade_courses
+from app.services.learning_path_service import (
+    advance_current_learning_course,
+    get_all_year_learning_paths,
+    get_grade_courses,
+)
 
 
 PASSING_SCORE = 70
@@ -228,6 +232,113 @@ def read_forest_quiz_session(
         next_unlocked_chapter_id=None,
         next_course_id=None,
     )
+
+
+def generate_or_read_quiz(
+    session: Session,
+    user_uid: str,
+    course_node_id: str,
+    chapter_id: str,
+    questions: list[dict],
+    *,
+    regenerate: bool,
+) -> ForestQuizRead:
+    existing = _read_quiz(session, user_uid, course_node_id, chapter_id)
+    if existing is not None and existing.status == "ready" and not regenerate:
+        return _quiz_to_read(existing)
+
+    now = datetime.now(timezone.utc)
+    if existing is None:
+        quiz = ChapterQuiz(
+            quiz_id=make_id("quiz"),
+            user_uid=user_uid,
+            course_node_id=course_node_id,
+            chapter_id=chapter_id,
+            status="ready",
+            questions=questions,
+            created_at=now,
+            updated_at=now,
+        )
+    else:
+        quiz = existing
+        quiz.status = "ready"
+        quiz.questions = questions
+        quiz.generation_error = ""
+        quiz.updated_at = now
+
+    session.add(quiz)
+    session.commit()
+    session.refresh(quiz)
+    return _quiz_to_read(quiz)
+
+
+def _chapter_ids_for_course(session: Session, user_uid: str, course_node_id: str) -> tuple[str, list[str]]:
+    outline = get_user_course_knowledge_outline(session, user_uid, course_node_id)
+    if not isinstance(outline, dict):
+        return "", []
+    chapters = _top_level_sections(outline)
+    grade_year = _clean_text(outline.get("grade_year"))
+    return grade_year, [
+        chapter["section_id"]
+        for chapter in chapters
+        if isinstance(chapter.get("section_id"), str)
+    ]
+
+
+def _next_chapter_id(chapter_ids: list[str], chapter_id: str) -> str | None:
+    index = chapter_ids.index(chapter_id) if chapter_id in chapter_ids else -1
+    if index < 0 or index + 1 >= len(chapter_ids):
+        return None
+    return chapter_ids[index + 1]
+
+
+def submit_quiz_attempt(
+    session: Session,
+    user_uid: str,
+    quiz_id: str,
+    answers: dict,
+    grading_result: dict,
+) -> ForestAttemptRead:
+    quiz = session.get(ChapterQuiz, quiz_id)
+    if quiz is None or quiz.user_uid != user_uid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="测验不存在")
+
+    score = int(grading_result.get("score", 0))
+    passed = score > PASSING_SCORE
+    attempt = ChapterQuizAttempt(
+        attempt_id=make_id("attempt"),
+        quiz_id=quiz.quiz_id,
+        user_uid=user_uid,
+        answers=answers,
+        score=score,
+        passed=passed,
+        grading_result=grading_result,
+    )
+    session.add(attempt)
+
+    now = datetime.now(timezone.utc)
+    current_progress = _ensure_progress(session, user_uid, quiz.course_node_id, quiz.chapter_id, "available")
+    current_progress.best_score = max(current_progress.best_score, score)
+    current_progress.latest_attempt_id = attempt.attempt_id
+    current_progress.updated_at = now
+
+    if passed:
+        current_progress.state = "passed"
+        current_progress.passed_at = now
+        grade_year, chapter_ids = _chapter_ids_for_course(session, user_uid, quiz.course_node_id)
+        next_chapter_id = _next_chapter_id(chapter_ids, quiz.chapter_id)
+        if next_chapter_id:
+            next_progress = _ensure_progress(session, user_uid, quiz.course_node_id, next_chapter_id, "available")
+            next_progress.state = "available"
+            next_progress.updated_at = now
+            session.add(next_progress)
+        elif grade_year:
+            advance_current_learning_course(session, user_uid, grade_year, score)
+
+    session.add(current_progress)
+    session.commit()
+    session.refresh(attempt)
+    return _attempt_to_read(attempt)  # type: ignore[return-value]
 
 
 def make_id(prefix: str) -> str:

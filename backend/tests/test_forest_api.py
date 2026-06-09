@@ -14,7 +14,11 @@ from app.models import (
     UserCourseKnowledgeOutline,
     UserYearLearningPath,
 )
-from app.services.forest_service import read_forest_quiz_session
+from app.services.forest_service import (
+    generate_or_read_quiz,
+    read_forest_quiz_session,
+    submit_quiz_attempt,
+)
 
 
 def test_forest_tables_are_created(tmp_path: Path) -> None:
@@ -153,3 +157,44 @@ def test_read_forest_quiz_session_opens_first_chapter(tmp_path: Path) -> None:
     assert result.chapter["section_id"] == "1"
     assert result.quiz is None
     assert result.progress.state == "available"
+
+
+def test_generate_or_read_quiz_reuses_ready_quiz(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'forest-generate.db'}"
+    TestClient(create_app(database_url=database_url))
+    user_uid = _seed_forest_data(database_url)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+
+    with Session(engine) as session:
+        first = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+        second = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+
+    assert first.quiz_id == second.quiz_id
+    assert first.questions[0].question_id == "q1"
+
+
+def test_submit_quiz_attempt_passes_and_opens_next_chapter(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'forest-submit.db'}"
+    TestClient(create_app(database_url=database_url))
+    user_uid = _seed_forest_data(database_url)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+
+    with Session(engine) as session:
+        quiz = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+        result = submit_quiz_attempt(
+            session,
+            user_uid,
+            quiz.quiz_id,
+            {"q1": "A"},
+            {"score": 71, "passed": True, "question_results": [], "summary": "通过"},
+        )
+        current = session.get(ChapterProgress, (user_uid, "year_3_course_2", "1"))
+        next_progress = session.get(ChapterProgress, (user_uid, "year_3_course_2", "2"))
+
+    assert result.passed is True
+    assert current is not None
+    assert current.state == "passed"
+    assert next_progress is not None
+    assert next_progress.state == "available"
