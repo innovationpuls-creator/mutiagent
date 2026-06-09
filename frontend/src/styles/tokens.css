@@ -43,12 +43,15 @@
   --color-warning: var(--color-intent-warning);
   --color-error: oklch(72% 0.13 28);
   --color-error-bg: oklch(93% 0.04 28);
+  --color-warning-bg: oklch(94% 0.04 58);
+  --color-success-bg: oklch(93% 0.04 135);
   --color-info: var(--color-secondary);
   --color-info-bg: var(--color-secondary-soft);
 
   /* Interaction States (交互态) */
   --color-hover-wash: oklch(99% 0.01 80 / 0.68);
   --color-focus-ring: oklch(76% 0.12 55 / 0.42);
+  --color-primary-hover: oklch(70% 0.12 55);
   --color-overlay: oklch(26% 0.04 235 / 0.42);
 
   /* =========================================
@@ -178,6 +181,7 @@
   --text-h6: 0.9375rem;
   --text-body: 1rem;
   --text-body-sm: 0.9rem;
+  --text-body-relaxed: 1.0625rem;
   --text-caption: 0.8125rem;
 
   --ease-editorial: cubic-bezier(0.25, 1, 0.5, 1);
@@ -190,6 +194,12 @@
   --duration-route: 980ms;
   --duration-flip: 1200ms;
   --duration-breathe: 4200ms;
+
+  /* Mobile Typography */
+  --text-h1-mobile: 2rem;
+  --text-h2-mobile: 1.625rem;
+  --text-h3-mobile: 1.25rem;
+  --text-h4-mobile: 1.125rem;
 }
 
 body {
