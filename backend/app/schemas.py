@@ -234,6 +234,89 @@ class LeafCourseReadResponse(BaseModel):
     locked_reason: str | None = None
 
 
+ForestQuestionType = Literal["single_choice", "code", "image_upload"]
+ForestProgressState = Literal["locked", "available", "passed"]
+ForestQuizStatus = Literal["generating", "ready", "error"]
+
+
+class ForestQuizQuestionRead(BaseModel):
+    question_id: str
+    type: ForestQuestionType
+    prompt: str
+    options: list[dict] = Field(default_factory=list)
+    starter_code: str = ""
+    image_prompt: str = ""
+    points: int = 0
+
+
+class ForestQuizRead(BaseModel):
+    quiz_id: str
+    course_node_id: str
+    chapter_id: str
+    status: ForestQuizStatus
+    questions: list[ForestQuizQuestionRead] = Field(default_factory=list)
+    generation_error: str = ""
+    created_at: datetime
+    updated_at: datetime
+
+
+class ForestAttemptRead(BaseModel):
+    attempt_id: str
+    quiz_id: str
+    score: int
+    passed: bool
+    answers: dict
+    grading_result: dict
+    created_at: datetime
+
+
+class ForestChapterProgressRead(BaseModel):
+    course_node_id: str
+    chapter_id: str
+    state: ForestProgressState
+    best_score: int
+    latest_attempt_id: str | None = None
+    passed_at: datetime | None = None
+    updated_at: datetime
+
+
+class ForestQuizSessionReadResponse(BaseModel):
+    course: LeafCourseRead
+    chapter: dict
+    quiz: ForestQuizRead | None = None
+    latest_attempt: ForestAttemptRead | None = None
+    progress: ForestChapterProgressRead
+    next_unlocked_chapter_id: str | None = None
+    next_course_id: str | None = None
+
+
+class ForestQuizGenerateRequest(BaseModel):
+    regenerate: bool = False
+
+
+class ForestQuizAttemptCreateRequest(BaseModel):
+    answers: dict
+
+
+class ForestAiContext(BaseModel):
+    course_node_id: str
+    chapter_id: str
+    quiz_id: str | None = None
+    question_id: str | None = None
+    question: dict | None = None
+    answer: object | None = None
+    grading_result: dict | None = None
+
+
+class ForestAiStreamRequest(BaseModel):
+    course_node_id: str
+    chapter_id: str
+    quiz_id: str | None = None
+    question_id: str | None = None
+    message: str = Field(min_length=1, max_length=4000)
+    active_question_context: ForestAiContext
+
+
 LeafAccessState = Literal["available", "locked"]
 
 

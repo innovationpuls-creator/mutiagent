@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Index
+from sqlalchemy import Column, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -69,6 +69,57 @@ class UserCourseKnowledgeOutline(SQLModel, table=True):
     course_name: str = Field(default="", max_length=256)
     outline_data: dict = Field(default_factory=dict, sa_column=Column(_jsonb))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ChapterQuiz(SQLModel, table=True):
+    """Generated quiz for one user/course/chapter."""
+    __table_args__ = (
+        UniqueConstraint("user_uid", "course_node_id", "chapter_id", name="uq_chapter_quiz_scope"),
+        Index("idx_chapter_quiz_user_course", "user_uid", "course_node_id"),
+    )
+
+    quiz_id: str = Field(primary_key=True, max_length=64)
+    user_uid: str = Field(foreign_key="user.uid", index=True)
+    course_node_id: str = Field(index=True, max_length=128)
+    chapter_id: str = Field(index=True, max_length=64)
+    status: str = Field(default="ready", index=True, max_length=24)
+    questions: list = Field(default_factory=list, sa_column=Column(_jsonb))
+    source_outline_version: str = Field(default="", max_length=64)
+    generation_error: str = Field(default="")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ChapterQuizAttempt(SQLModel, table=True):
+    """Submitted answer set and grading result for a quiz."""
+    __table_args__ = (
+        Index("idx_chapter_quiz_attempt_user_quiz", "user_uid", "quiz_id"),
+    )
+
+    attempt_id: str = Field(primary_key=True, max_length=64)
+    quiz_id: str = Field(foreign_key="chapterquiz.quiz_id", index=True, max_length=64)
+    user_uid: str = Field(foreign_key="user.uid", index=True)
+    answers: dict = Field(default_factory=dict, sa_column=Column(_jsonb))
+    score: int = Field(default=0)
+    passed: bool = Field(default=False, index=True)
+    grading_result: dict = Field(default_factory=dict, sa_column=Column(_jsonb))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ChapterProgress(SQLModel, table=True):
+    """Unlock state for one user/course/chapter."""
+    __table_args__ = (
+        Index("idx_chapter_progress_user_course", "user_uid", "course_node_id"),
+    )
+
+    user_uid: str = Field(foreign_key="user.uid", primary_key=True)
+    course_node_id: str = Field(primary_key=True, max_length=128)
+    chapter_id: str = Field(primary_key=True, max_length=64)
+    state: str = Field(default="locked", index=True, max_length=24)
+    best_score: int = Field(default=0)
+    latest_attempt_id: str | None = Field(default=None, max_length=64)
+    passed_at: datetime | None = Field(default=None)
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
