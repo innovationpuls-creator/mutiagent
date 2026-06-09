@@ -125,14 +125,23 @@ const markdownComponents: Components = {
           <span className="code-block-lang">{lang}</span>
           <button
             className="code-block-copy"
+            aria-label="Copy code to clipboard"
             onClick={(e) => {
               const button = e.currentTarget;
               navigator.clipboard.writeText(codeString).then(() => {
                 button.textContent = 'COPIED!';
-                setTimeout(() => { button.textContent = 'COPY'; }, 2000);
+                button.ariaLabel = 'Code copied';
+                setTimeout(() => {
+                  button.textContent = 'COPY';
+                  button.ariaLabel = 'Copy code to clipboard';
+                }, 2000);
               }).catch(() => {
                 button.textContent = 'FAILED';
-                setTimeout(() => { button.textContent = 'COPY'; }, 2000);
+                button.ariaLabel = 'Failed to copy code';
+                setTimeout(() => {
+                  button.textContent = 'COPY';
+                  button.ariaLabel = 'Copy code to clipboard';
+                }, 2000);
               });
             }}
           >

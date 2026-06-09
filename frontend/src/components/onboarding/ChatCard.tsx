@@ -1,7 +1,6 @@
 import React from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import styled from 'styled-components';
+import { MarkdownRenderer } from '../markdown';
 import type { ConfirmedInfo, PartialStructuredData, QuestionBoxOption, SessionMessage } from '../../types/chat';
 
 interface ChatCardProps {
@@ -215,9 +214,7 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData }
             <h3>接下来</h3>
             <div className="question-list">
               {questions.map((question, i) => (
-                <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
-                  {question}
-                </ReactMarkdown>
+                <MarkdownRenderer key={i} content={question} variant="compact" />
               ))}
             </div>
           </section>
