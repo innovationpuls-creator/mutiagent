@@ -208,8 +208,7 @@
 }
 
 .forest-upload-box input {
-  inline-size: min(100%, var(--container-narrow));
-  color: var(--color-text-secondary);
+  display: none;
 }
 
 .forest-upload-box span {

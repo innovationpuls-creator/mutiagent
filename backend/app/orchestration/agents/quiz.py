@@ -104,7 +104,12 @@ async def generate_quiz_questions(
     chapter_context: str,
 ) -> list[dict[str, Any]]:
     prompt = (
-        "请为当前章节生成 3 道测验题，必须覆盖 single_choice、code、image_upload。"
+        "请为当前章节生成 3 道测验题，必须覆盖 single_choice、code、image_upload。\n"
+        "【重要设计要求】\n"
+        "生成的测验题必须紧密结合本章节中的「练习任务」与「检查标准」内容来设计：\n"
+        "1. 单选题 (single_choice)：考查「练习任务」或「检查标准」中的核心概念、要求或关键知识点。\n"
+        "2. 代码题 (code)：要求用户编写一段代码或伪代码，来完成/辅助完成「练习任务」，或者编写测试/验证代码以验证「检查标准」中的某项指标是否通过。必须包含 starter_code 作为起点。\n"
+        "3. 图片上传题 (image_upload)：要求用户上传完成「练习任务」后的运行效果截图、架构/思路图或结果图，并在 prompt 中说明具体的截图/图片要求。\n\n"
         "只输出 JSON 数组，每题包含 question_id、type、prompt、options、starter_code、image_prompt、points。\n"
         f"chapter_id: {chapter_id}\nchapter_title: {chapter_title}\nchapter_context:\n{chapter_context}"
     )

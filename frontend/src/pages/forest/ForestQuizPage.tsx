@@ -16,6 +16,7 @@ import type {
   ForestQuizQuestion,
   ForestQuizSession,
 } from '../../types/forest';
+import { MarkdownRenderer } from '../../components/markdown/MarkdownRenderer';
 import './forest-quiz.css';
 
 type ForestPageStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -138,6 +139,12 @@ function buildAiContext(
     answer,
     grading_result: getQuestionResult(attempt, question?.question_id ?? null) ?? attempt?.grading_result ?? null,
   };
+}
+
+function initAnswers(questions: ForestQuizQuestion[]): ForestAnswerDraft[] {
+  return questions
+    .filter((q) => q.type === 'code' && q.starter_code)
+    .map((q) => ({ question_id: q.question_id, value: q.starter_code }));
 }
 
 function EmptyForestState({ label, title, message, ariaLabel }: EmptyForestStateProps) {
@@ -315,7 +322,11 @@ function ForestAiPanel({
         <span>{attempt ? `得分 ${attempt.score}` : '等待提交结果'}</span>
       </div>
       <div className="forest-ai-response" aria-live="polite">
-        {aiText ? <p>{aiText}</p> : <p>选择题目或提交答案后，可以让我解释为什么这样判断。</p>}
+        {aiText ? (
+          <MarkdownRenderer content={aiText} />
+        ) : (
+          <p>选择题目或提交答案后，可以让我解释为什么这样判断。</p>
+        )}
       </div>
       <button type="button" onClick={onAskForestAi} disabled={aiStatus === 'streaming' || !quiz}>
         {aiStatus === 'streaming' ? '解析中' : aiStatus === 'error' ? '重新解析' : '请 Forest AI 解析'}
@@ -363,7 +374,17 @@ export function ForestQuizPage() {
       setQuiz(nextSession.quiz);
       setAttempt(nextSession.latest_attempt);
       setSelectedQuestionId(nextSession.quiz?.questions[0]?.question_id ?? null);
-      setAnswers([]);
+      if (nextSession.latest_attempt) {
+        const attemptAnswers = Object.entries(nextSession.latest_attempt.answers).map(([qId, val]) => ({
+          question_id: qId,
+          value: val,
+        }));
+        setAnswers(attemptAnswers);
+      } else if (nextSession.quiz) {
+        setAnswers(initAnswers(nextSession.quiz.questions));
+      } else {
+        setAnswers([]);
+      }
       setStatus('ready');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '成林测验加载失败');
@@ -395,7 +416,7 @@ export function ForestQuizPage() {
       const nextQuiz = await generateForestQuiz(token, courseNodeId, chapterId, false);
       setQuiz(nextQuiz);
       setSelectedQuestionId(nextQuiz.questions[0]?.question_id ?? null);
-      setAnswers([]);
+      setAnswers(initAnswers(nextQuiz.questions));
       setAttempt(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '章节测验生成失败');

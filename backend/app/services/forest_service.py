@@ -245,6 +245,15 @@ def read_forest_quiz_session(
     if chapter is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="章节不存在")
 
+    composed_markdowns = outline.get("section_composed_markdowns", {})
+    chapter_markdown_data = composed_markdowns.get(chapter_id)
+    if not chapter_markdown_data:
+        markdowns = outline.get("section_markdowns", {})
+        chapter_markdown_data = markdowns.get(chapter_id)
+
+    if isinstance(chapter_markdown_data, dict):
+        chapter = {**chapter, "composed_markdown": chapter_markdown_data}
+
     available = _chapter_is_available(session, user_uid, course_node_id, chapter_id, chapters)
     progress = _ensure_progress(
         session,
