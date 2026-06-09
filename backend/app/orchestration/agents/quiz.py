@@ -69,6 +69,7 @@ def normalize_quiz_questions(value: object) -> list[dict[str, Any]]:
                 "type": question_type,
                 "prompt": prompt,
                 "options": item.get("options") if isinstance(item.get("options"), list) else [],
+                "correct_option_id": _clean_text(item.get("correct_option_id")),
                 "starter_code": _clean_text(item.get("starter_code")),
                 "image_prompt": _clean_text(item.get("image_prompt")),
                 "points": int(points) if isinstance(points, int) else 0,
@@ -110,7 +111,7 @@ async def generate_quiz_questions(
         "1. 单选题 (single_choice)：考查「练习任务」或「检查标准」中的核心概念、要求或关键知识点。\n"
         "2. 代码题 (code)：要求用户编写一段代码或伪代码，来完成/辅助完成「练习任务」，或者编写测试/验证代码以验证「检查标准」中的某项指标是否通过。必须包含 starter_code 作为起点。\n"
         "3. 图片上传题 (image_upload)：要求用户上传完成「练习任务」后的运行效果截图、架构/思路图或结果图，并在 prompt 中说明具体的截图/图片要求。\n\n"
-        "只输出 JSON 数组，每题包含 question_id、type、prompt、options、starter_code、image_prompt、points。\n"
+        "只输出 JSON 数组，每题包含 question_id、type、prompt、options、correct_option_id（如果是单选题，请填写正确选项 ID，如 A、B 等）、starter_code、image_prompt、points。\n"
         f"chapter_id: {chapter_id}\nchapter_title: {chapter_title}\nchapter_context:\n{chapter_context}"
     )
     if not hasattr(llm, "ainvoke"):

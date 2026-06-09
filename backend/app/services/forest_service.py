@@ -245,10 +245,14 @@ def read_forest_quiz_session(
     if chapter is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="章节不存在")
 
-    composed_markdowns = outline.get("section_composed_markdowns", {})
+    composed_markdowns = outline.get("section_composed_markdowns")
+    if not isinstance(composed_markdowns, dict):
+        composed_markdowns = {}
     chapter_markdown_data = composed_markdowns.get(chapter_id)
     if not chapter_markdown_data:
-        markdowns = outline.get("section_markdowns", {})
+        markdowns = outline.get("section_markdowns")
+        if not isinstance(markdowns, dict):
+            markdowns = {}
         chapter_markdown_data = markdowns.get(chapter_id)
 
     if isinstance(chapter_markdown_data, dict):
