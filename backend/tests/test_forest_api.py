@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlmodel import Session, create_engine, select
 
+from app.core.security import create_access_token
 from app.main import create_app
 from app.models import (
     ChapterProgress,
@@ -144,6 +146,10 @@ def _seed_forest_data(database_url: str) -> str:
     return "forest-user"
 
 
+def _auth_headers(user_uid: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {create_access_token({'sub': user_uid})}"}
+
+
 def test_read_forest_quiz_session_opens_first_chapter(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'forest-read.db'}"
     TestClient(create_app(database_url=database_url))
@@ -196,5 +202,102 @@ def test_submit_quiz_attempt_passes_and_opens_next_chapter(tmp_path: Path) -> No
     assert result.passed is True
     assert current is not None
     assert current.state == "passed"
+    assert next_progress is not None
+    assert next_progress.state == "available"
+
+
+def test_forest_quiz_session_api_reads_current_chapter(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'forest-session-api.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    user_uid = _seed_forest_data(database_url)
+
+    response = client.get(
+        "/api/forest/courses/year_3_course_2/chapters/1/quiz",
+        headers=_auth_headers(user_uid),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["course"]["course_node_id"] == "year_3_course_2"
+    assert body["chapter"]["section_id"] == "1"
+    assert body["progress"]["state"] == "available"
+
+
+def test_generate_forest_quiz_api_persists_questions(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'forest-generate-api.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    user_uid = _seed_forest_data(database_url)
+
+    async def fake_generate_questions(*_args, **_kwargs):
+        return [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+
+    with patch("app.api.forest.generate_quiz_questions", fake_generate_questions):
+        response = client.post(
+            "/api/forest/courses/year_3_course_2/chapters/1/quiz/generate",
+            json={"regenerate": False},
+            headers=_auth_headers(user_uid),
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["course_node_id"] == "year_3_course_2"
+    assert body["chapter_id"] == "1"
+    assert body["questions"][0]["question_id"] == "q1"
+
+
+def test_generate_forest_quiz_api_reuses_ready_quiz_without_llm(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'forest-generate-reuse-api.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    user_uid = _seed_forest_data(database_url)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+
+    with Session(engine) as session:
+        quiz = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+
+    async def fail_generate_questions(*_args, **_kwargs):
+        raise AssertionError("ready quiz should be reused")
+
+    with patch("app.api.forest.generate_quiz_questions", fail_generate_questions):
+        response = client.post(
+            "/api/forest/courses/year_3_course_2/chapters/1/quiz/generate",
+            json={"regenerate": False},
+            headers=_auth_headers(user_uid),
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["quiz_id"] == quiz.quiz_id
+    assert body["questions"][0]["question_id"] == "q1"
+
+
+def test_submit_forest_quiz_attempt_api_opens_next_chapter(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'forest-attempt-api.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    user_uid = _seed_forest_data(database_url)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+
+    with Session(engine) as session:
+        quiz = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+
+    async def fake_grade_answers(*_args, **_kwargs):
+        return {"score": 71, "passed": True, "question_results": [], "summary": "通过"}
+
+    with patch("app.api.forest.grade_quiz_answers", fake_grade_answers):
+        response = client.post(
+            f"/api/forest/quizzes/{quiz.quiz_id}/attempts",
+            json={"answers": {"q1": "A"}},
+            headers=_auth_headers(user_uid),
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["score"] == 71
+    assert body["passed"] is True
+
+    with Session(engine) as session:
+        next_progress = session.get(ChapterProgress, (user_uid, "year_3_course_2", "2"))
+
     assert next_progress is not None
     assert next_progress.state == "available"

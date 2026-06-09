@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.admin import create_admin_router
 from app.api.auth import create_auth_router
 from app.api.branch import create_branch_router
+from app.api.forest import create_forest_router
 from app.api.learning_path import create_learning_path_router
 from app.api.leaf import create_leaf_router
 from app.api.orchestration import create_orchestration_router
@@ -35,6 +36,7 @@ def create_app(database_url: str = DATABASE_URL) -> FastAPI:
     app.include_router(create_learning_path_router(create_session_dependency(engine)))
     app.include_router(create_branch_router(create_session_dependency(engine)))
     app.include_router(create_leaf_router(create_session_dependency(engine)))
+    app.include_router(create_forest_router(create_session_dependency(engine)))
 
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:
