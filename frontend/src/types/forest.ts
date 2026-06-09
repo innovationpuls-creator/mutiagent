@@ -55,6 +55,10 @@ export interface ForestQuizSession {
   next_course_id: string | null;
 }
 
+export interface ForestQuizAttemptCreateRequest {
+  answers: Record<string, unknown>;
+}
+
 export interface ForestAiContext {
   course_node_id: string;
   chapter_id: string;

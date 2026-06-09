@@ -97,10 +97,10 @@ export function LeafTopBar({
         {canGenerate ? (
           <button
             type="button"
-            className="group relative flex items-center gap-1.5 px-5 py-1.5 rounded-full overflow-hidden shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] hover:-translate-y-[1px] active:translate-y-0 transition-all duration-300 bg-gradient-to-r from-[#FF8C69] to-[#FF6B6B] text-white"
+            className="group relative flex items-center gap-1.5 px-5 py-1.5 rounded-full overflow-hidden shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] hover:-translate-y-[1px] active:translate-y-0 transition-[transform,opacity] duration-[var(--duration-lazy-hover)] ease-[var(--ease-lazy)] bg-[var(--gradient-coral)] text-[var(--color-text-inverse)]"
             onClick={onGenerate}
           >
-            <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition-opacity duration-300" />
+            <div className="absolute inset-0 bg-[var(--color-hover-wash)] opacity-0 group-hover:opacity-20 transition-opacity duration-[var(--duration-lazy-hover)]" />
             <div className="relative flex items-center gap-1.5 text-xs font-medium tracking-normal">
               <Sparkles className="w-3.5 h-3.5 animate-pulse" />
               <span>让 AI 生成本章内容</span>

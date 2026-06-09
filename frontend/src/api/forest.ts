@@ -1,4 +1,11 @@
-import type { ForestAiContext, ForestAiEvent, ForestQuiz, ForestQuizSession } from '../types/forest';
+import type {
+  ForestAiContext,
+  ForestAiEvent,
+  ForestAttempt,
+  ForestQuiz,
+  ForestQuizAttemptCreateRequest,
+  ForestQuizSession,
+} from '../types/forest';
 import { notifyAuthInvalidFromError, readApiError } from './http';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
@@ -24,6 +31,13 @@ function normalizeForestQuiz(value: unknown): ForestQuiz {
     throw new Error('成林题目数据格式不正确');
   }
   return value as unknown as ForestQuiz;
+}
+
+function normalizeForestAttempt(value: unknown): ForestAttempt {
+  if (!isRecord(value) || typeof value.attempt_id !== 'string' || typeof value.quiz_id !== 'string') {
+    throw new Error('成林测验提交数据格式不正确');
+  }
+  return value as unknown as ForestAttempt;
 }
 
 async function readForestError(response: Response, fallback: string): Promise<Error> {
@@ -64,6 +78,26 @@ export async function generateForestQuiz(
   );
   if (!response.ok) throw await readForestError(response, '章节测验生成失败');
   return normalizeForestQuiz(await response.json());
+}
+
+export async function submitForestQuizAttempt(
+  token: string,
+  quizId: string,
+  payload: ForestQuizAttemptCreateRequest,
+): Promise<ForestAttempt> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/forest/quizzes/${encodeURIComponent(quizId)}/attempts`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!response.ok) throw await readForestError(response, '测验提交失败');
+  return normalizeForestAttempt(await response.json());
 }
 
 export async function streamForestAi(

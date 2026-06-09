@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { fetchForestQuizSession } from './forest';
+import { fetchForestQuizSession, streamForestAi, submitForestQuizAttempt } from './forest';
 
 const responsePayload = {
   course: {
@@ -50,5 +50,69 @@ describe('forest api', () => {
     expect(result.course.course_node_id).toBe('year_3_course_2');
     expect(result.chapter.section_id).toBe('1');
     expect(result.progress.state).toBe('available');
+  });
+
+  test('submits quiz attempt payload', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        attempt_id: 'attempt_1',
+        quiz_id: 'quiz_1',
+        score: 71,
+        passed: true,
+        answers: { q1: 'A' },
+        grading_result: { score: 71 },
+        created_at: '2026-06-09T00:00:00Z',
+      }),
+    }));
+
+    const result = await submitForestQuizAttempt('token', 'quiz_1', { answers: { q1: 'A' } });
+
+    expect(result.attempt_id).toBe('attempt_1');
+    expect(fetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:8000/api/forest/quizzes/quiz_1/attempts',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ answers: { q1: 'A' } }),
+      }),
+    );
+  });
+
+  test('streams Forest AI SSE chunks', async () => {
+    const chunks = [
+      'event: forest_ai_text_chunk\ndata: {"chunk":"第一段"}\n\n',
+      'event: forest_ai_completed\ndata: {"message":"completed"}\n\n',
+    ];
+    const encoder = new TextEncoder();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          chunks.forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+          controller.close();
+        },
+      }),
+    }));
+    const events: unknown[] = [];
+
+    await streamForestAi(
+      'token',
+      {
+        course_node_id: 'year_3_course_2',
+        chapter_id: '1',
+        quiz_id: 'quiz_1',
+        question_id: 'q1',
+        question: null,
+        answer: 'A',
+        grading_result: null,
+      },
+      '解析',
+      (event) => events.push(event),
+    );
+
+    expect(events).toEqual([
+      { event: 'forest_ai_text_chunk', chunk: '第一段' },
+      { event: 'forest_ai_completed', chunk: undefined },
+    ]);
   });
 });

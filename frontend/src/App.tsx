@@ -7,6 +7,7 @@ import { MainLayout } from './components/layout/MainLayout';
 import { SproutPage } from './pages/SproutPage';
 import { BranchPage } from './pages/branch/BranchPage';
 import { LeafPage } from './pages/leaf/LeafPage';
+import { ForestQuizPage } from './pages/forest/ForestQuizPage';
 import { AdminAccountsPage } from './pages/admin/AdminAccountsPage';
 import { TeacherPage } from './pages/teacher/TeacherPage';
 import { useAuth } from './contexts/AuthContext';
@@ -88,7 +89,7 @@ function AnimatedRoutes() {
                 <Route path="/leaf" element={<BranchPage />} />
                 <Route path="/leaf/:courseNodeId" element={<LeafPage />} />
                 <Route path="/forest" element={<BlankPage title="成林" />} />
-                <Route path="/forest/:courseNodeId" element={<BlankPage title="成林" />} />
+                <Route path="/forest/:courseNodeId" element={<ForestQuizPage />} />
                 <Route path="/canopy" element={<BlankPage title="成森" />} />
                 <Route path="/canvas" element={<div style={{ padding: 'var(--space-32)', color: 'var(--color-text-primary)' }}>Welcome to the Canvas!</div>} />
               </Route>
@@ -105,12 +106,20 @@ function AnimatedRoutes() {
 import { AiWidgetProvider } from './context/AiWidgetContext';
 import { GlobalAiWidget } from './components/onboarding/GlobalAiWidget';
 
+function AppGlobalAiWidget() {
+  const location = useLocation();
+  if (location.pathname === '/forest' || location.pathname.startsWith('/forest/')) {
+    return null;
+  }
+  return <GlobalAiWidget />;
+}
+
 export function App() {
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AiWidgetProvider>
         <AnimatedRoutes />
-        <GlobalAiWidget />
+        <AppGlobalAiWidget />
       </AiWidgetProvider>
     </BrowserRouter>
   );
