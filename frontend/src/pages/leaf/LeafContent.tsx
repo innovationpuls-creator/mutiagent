@@ -1,4 +1,3 @@
-import React from 'react';
 import { Play, BookOpen, FileText, LayoutDashboard } from 'lucide-react';
 import type {
   LeafAnimationBlock,
