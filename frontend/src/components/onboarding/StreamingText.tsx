@@ -71,8 +71,15 @@ export function StreamingText({ content, status }: StreamingTextProps) {
           return <SkeletonBlock key={block.id} type={block.type} />;
         }
 
+        const isLastBlock = block.id === blocks[blocks.length - 1]?.id;
+        const showCursor = isStreaming && isLastBlock && block.complete;
+
         return (
-          <div key={block.id} data-block-type={block.type}>
+          <div
+            key={block.id}
+            data-block-type={block.type}
+            className={showCursor ? 'streaming-cursor' : ''}
+          >
             <MarkdownRenderer content={block.content} variant="compact" />
           </div>
         );

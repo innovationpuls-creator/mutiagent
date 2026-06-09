@@ -633,6 +633,21 @@
 }
 
 /* =========================================
+   Streaming Cursor
+   ========================================= */
+
+.markdown-renderer .streaming-cursor::after {
+  content: '▊';
+  animation: blink 1s step-end infinite;
+  color: var(--color-primary);
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* =========================================
    Reduced Motion
    ========================================= */
 
@@ -641,5 +656,10 @@
   .markdown-renderer .task-list-item input[type="checkbox"],
   .markdown-renderer .code-block-copy {
     transition: none;
+  }
+
+  .streaming-cursor::after {
+    animation: none;
+    opacity: 0.7;
   }
 }
