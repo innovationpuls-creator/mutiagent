@@ -343,6 +343,7 @@ async def _stream_chat_events(
     user_uid: str,
     user_message: str,
     db_session: Session,
+    payload: ChatMessageRequest | None = None,
 ) -> AsyncGenerator[str, None]:
     """SSE generator: load context from DB, run graph, stream events."""
     from app.services.profile_service import get_user_profile
@@ -412,7 +413,15 @@ async def _stream_chat_events(
             ),
         )
 
-        current_user_message = HumanMessage(content=user_message)
+        if payload and getattr(payload, "image_attachment", None):
+            current_user_message = HumanMessage(
+                content=[
+                    {"type": "text", "text": user_message},
+                    {"type": "image_url", "image_url": {"url": payload.image_attachment}}
+                ]
+            )
+        else:
+            current_user_message = HumanMessage(content=user_message)
 
         state = {
             "user_id": user_uid,
@@ -736,6 +745,7 @@ def create_orchestration_router(session_dependency: SessionDependency) -> APIRou
                 user_uid=current_user.uid,
                 user_message=payload.message,
                 db_session=session,
+                payload=payload,
             ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

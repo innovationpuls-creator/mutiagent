@@ -149,6 +149,7 @@ class ChatStartRequest(BaseModel):
 class ChatMessageRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=80)
     message: str = Field(min_length=1, max_length=4000)
+    image_attachment: str | None = Field(default=None, description="Base64 encoded image attachment")
 
 
 class ChatResponse(BaseModel):
@@ -315,6 +316,7 @@ class ForestAiStreamRequest(BaseModel):
     question_id: str | None = None
     message: str = Field(min_length=1, max_length=4000)
     active_question_context: ForestAiContext
+    image_attachment: str | None = Field(default=None, description="Base64 encoded image attachment")
 
 
 LeafAccessState = Literal["available", "locked"]
