@@ -1,0 +1,110 @@
+import type { ForestAiContext, ForestAiEvent, ForestQuiz, ForestQuizSession } from '../types/forest';
+import { notifyAuthInvalidFromError, readApiError } from './http';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
+
+function requireString(value: unknown, message: string): string {
+  if (typeof value !== 'string') throw new Error(message);
+  return value;
+}
+
+function normalizeForestQuizSession(value: unknown): ForestQuizSession {
+  if (!isRecord(value) || !isRecord(value.course) || !isRecord(value.chapter) || !isRecord(value.progress)) {
+    throw new Error('成林测验数据格式不正确');
+  }
+  return value as unknown as ForestQuizSession;
+}
+
+function normalizeForestQuiz(value: unknown): ForestQuiz {
+  if (!isRecord(value) || typeof value.quiz_id !== 'string' || !Array.isArray(value.questions)) {
+    throw new Error('成林题目数据格式不正确');
+  }
+  return value as unknown as ForestQuiz;
+}
+
+async function readForestError(response: Response, fallback: string): Promise<Error> {
+  const error = await readApiError(response);
+  notifyAuthInvalidFromError(response.status, error);
+  return new Error((typeof error?.detail === 'string' ? error.detail : null) ?? fallback);
+}
+
+export async function fetchForestQuizSession(
+  token: string,
+  courseNodeId: string,
+  chapterId: string,
+): Promise<ForestQuizSession> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/forest/courses/${encodeURIComponent(courseNodeId)}/chapters/${encodeURIComponent(chapterId)}/quiz`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!response.ok) throw await readForestError(response, '成林测验加载失败');
+  return normalizeForestQuizSession(await response.json());
+}
+
+export async function generateForestQuiz(
+  token: string,
+  courseNodeId: string,
+  chapterId: string,
+  regenerate: boolean,
+): Promise<ForestQuiz> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/forest/courses/${encodeURIComponent(courseNodeId)}/chapters/${encodeURIComponent(chapterId)}/quiz/generate`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ regenerate }),
+    },
+  );
+  if (!response.ok) throw await readForestError(response, '章节测验生成失败');
+  return normalizeForestQuiz(await response.json());
+}
+
+export async function streamForestAi(
+  token: string,
+  context: ForestAiContext,
+  message: string,
+  onEvent: (event: ForestAiEvent) => void,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/forest/ai/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      course_node_id: context.course_node_id,
+      chapter_id: context.chapter_id,
+      quiz_id: context.quiz_id,
+      question_id: context.question_id,
+      message,
+      active_question_context: context,
+    }),
+  });
+  if (!response.ok) throw await readForestError(response, 'Forest AI 暂时不可用');
+  const reader = response.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop() ?? '';
+    for (const part of parts) {
+      const eventLine = part.split('\n').find((line) => line.startsWith('event: '));
+      const dataLine = part.split('\n').find((line) => line.startsWith('data: '));
+      if (!eventLine || !dataLine) continue;
+      const event = requireString(eventLine.slice('event: '.length), 'Forest AI 事件格式不正确');
+      const data = JSON.parse(dataLine.slice('data: '.length)) as Record<string, unknown>;
+      onEvent({ event: event as ForestAiEvent['event'], chunk: typeof data.chunk === 'string' ? data.chunk : undefined });
+    }
+  }
+}
