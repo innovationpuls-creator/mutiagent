@@ -11,7 +11,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from app.orchestration.grade_contract import is_supported_current_grade, unsupported_current_grade_error
 from app.orchestration.agents.models import ProfileOutput
-from app.orchestration.agents.prompts import PROFILE_AGENT_SYSTEM_PROMPT
+from app.orchestration.agents.prompts import PROFILE_AGENT_REPAIR_SYSTEM_PROMPT, PROFILE_AGENT_SYSTEM_PROMPT
 from app.orchestration.agents.utils import extract_last_tool_call_args, extract_last_tool_call_id
 from app.orchestration.state import OrchestrationState
 
@@ -71,6 +71,26 @@ SPLIT_PATTERN = re.compile(r"[，,、；;／/\s]+")
 EXPLICIT_FIELD_SPLIT_PATTERN = re.compile(r"[，,、；;]+")
 PACE_SEGMENTS = {"平时学习", "周末集中", "每天少量", "高强度冲刺"}
 GREETING_SEGMENTS = frozenset({"你好"})
+CONTENT_PREFERENCE_SEGMENTS: tuple[tuple[str, list[str]], ...] = (
+    ("喜欢看文档", ["文档"]),
+    ("看文档", ["文档"]),
+    ("喜欢文档", ["文档"]),
+    ("喜欢视频", ["视频"]),
+    ("看视频", ["视频"]),
+    ("喜欢代码实践", ["代码实践"]),
+    ("代码实践", ["代码实践"]),
+    ("喜欢项目案例", ["项目案例"]),
+    ("项目案例", ["项目案例"]),
+)
+GUIDANCE_PREFERENCE_SEGMENTS: tuple[tuple[str, str], ...] = (
+    ("一步一步跟着操作", "需要强引导"),
+    ("跟着操作", "需要强引导"),
+    ("一步一步", "需要强引导"),
+    ("喜欢自己摸索", "更喜欢自主探索"),
+    ("自己摸索", "更喜欢自主探索"),
+    ("自主学习", "更喜欢自主探索"),
+    ("自学", "更喜欢自主探索"),
+)
 ENGLISH_MAJOR_BLOCKLIST = frozenset({
     "hello",
     "working",
@@ -97,6 +117,7 @@ MAJOR_BLOCKED_TERMS = (
     "课程",
 )
 LEARNING_METHOD_SEGMENTS = ("喜欢自己摸索", "自己摸索", "自主学习", "自学")
+LEARNING_PREFERENCE_BLOCKED_SEGMENTS = ("喜欢看", "一步一步", "跟着操作")
 GOAL_SEGMENTS = ("找工作", "就业", "实习", "考研")
 TOPIC_PREFIXES = ("想学习", "想学", "学习", "学")
 TOPIC_BLOCKED_VALUES = frozenset({"", "路径", "学习路径", "课程", "画像", "什么", "下一步"})
@@ -116,6 +137,288 @@ SYSTEM_GENERATED_KNOWLEDGE_FOUNDATION_PATTERN = re.compile(
     r"^已具备(?P<major>.+?)基础，(?P<suffix>(?:.+方向可从入门到基础逐步补全|AI 基础由系统补全为入门到基础))$"
 )
 ASCII_TOKEN_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+PROFILE_REPAIR_MAX_ATTEMPTS = 3
+
+_FIELD_QUESTIONS: dict[str, dict[str, object]] = {
+    "learning_stage": {
+        "question": "你目前的学习阶段是？",
+        "stage": "learning_preference",
+        "options": [
+            {"label": "有基础", "value": "有基础", "description": "已学过相关课程，有一定基础", "target_fields": ["learning_stage"], "fills": {"learning_stage": "有基础"}},
+            {"label": "刚入门", "value": "刚入门", "description": "刚开始接触这个领域", "target_fields": ["learning_stage"], "fills": {"learning_stage": "刚入门"}},
+            {"label": "项目实践", "value": "项目实践", "description": "已有项目经验，想进一步提升", "target_fields": ["learning_stage"], "fills": {"learning_stage": "项目实践"}},
+            {"label": "准备就业", "value": "准备就业", "description": "即将毕业，以就业为导向", "target_fields": ["learning_stage"], "fills": {"learning_stage": "准备就业"}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+    "has_clear_goal": {
+        "question": "你的学习目标清晰吗？",
+        "stage": "learning_preference",
+        "options": [
+            {"label": "目标明确", "value": "是", "description": "清楚自己要学什么", "target_fields": ["has_clear_goal"], "fills": {"has_clear_goal": "是"}},
+            {"label": "大致有方向", "value": "大致有方向", "description": "知道大方向，细节待定", "target_fields": ["has_clear_goal"], "fills": {"has_clear_goal": "大致有方向"}},
+            {"label": "还没想好", "value": "否", "description": "需要帮助探索方向", "target_fields": ["has_clear_goal"], "fills": {"has_clear_goal": "否"}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+    "learning_method_preference": {
+        "question": "你偏好哪种学习方式？",
+        "stage": "learning_preference",
+        "options": [
+            {"label": "项目驱动学习", "value": "项目驱动学习", "description": "通过做项目来学", "target_fields": ["learning_method_preference"], "fills": {"learning_method_preference": "项目驱动学习"}},
+            {"label": "系统课程学习", "value": "系统课程学习", "description": "按课程体系系统学习", "target_fields": ["learning_method_preference"], "fills": {"learning_method_preference": "系统课程学习"}},
+            {"label": "AI 交互式学习", "value": "AI 交互式学习", "description": "通过与 AI 对话来学习", "target_fields": ["learning_method_preference"], "fills": {"learning_method_preference": "AI 交互式学习"}},
+            {"label": "刷题巩固", "value": "刷题巩固", "description": "通过大量练习来掌握", "target_fields": ["learning_method_preference"], "fills": {"learning_method_preference": "刷题巩固"}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+    "learning_pace_preference": {
+        "question": "你希望什么学习节奏？",
+        "stage": "learning_preference",
+        "options": [
+            {"label": "每天少量", "value": "每天少量", "description": "每天 1-2 小时", "target_fields": ["learning_pace_preference"], "fills": {"learning_pace_preference": "每天少量"}},
+            {"label": "周末集中", "value": "周末集中", "description": "周末集中学习", "target_fields": ["learning_pace_preference"], "fills": {"learning_pace_preference": "周末集中"}},
+            {"label": "按项目里程碑推进", "value": "按项目里程碑推进", "description": "按项目进度灵活安排", "target_fields": ["learning_pace_preference"], "fills": {"learning_pace_preference": "按项目里程碑推进"}},
+            {"label": "高强度冲刺", "value": "高强度冲刺", "description": "短期内集中大量学习", "target_fields": ["learning_pace_preference"], "fills": {"learning_pace_preference": "高强度冲刺"}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+    "content_preference": {
+        "question": "你偏好什么内容形式？",
+        "stage": "learning_preference",
+        "options": [
+            {"label": "文档为主", "value": "文档", "description": "喜欢阅读文档学习", "target_fields": ["content_preference"], "fills": {"content_preference": ["文档"]}},
+            {"label": "视频为主", "value": "视频", "description": "喜欢看视频学习", "target_fields": ["content_preference"], "fills": {"content_preference": ["视频"]}},
+            {"label": "代码实践为主", "value": "代码实践", "description": "喜欢通过写代码学习", "target_fields": ["content_preference"], "fills": {"content_preference": ["代码实践"]}},
+            {"label": "项目案例为主", "value": "项目案例", "description": "喜欢通过完整项目学习", "target_fields": ["content_preference"], "fills": {"content_preference": ["项目案例"]}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+    "need_guidance": {
+        "question": "你需要什么程度的引导？",
+        "stage": "learning_preference",
+        "options": [
+            {"label": "需要强引导", "value": "需要强引导", "description": "希望有详细步骤指导", "target_fields": ["need_guidance"], "fills": {"need_guidance": "需要强引导"}},
+            {"label": "需要轻量提醒", "value": "需要轻量提醒", "description": "偶尔需要关键节点提醒", "target_fields": ["need_guidance"], "fills": {"need_guidance": "需要轻量提醒"}},
+            {"label": "更喜欢自主探索", "value": "更喜欢自主探索", "description": "自己摸索为主", "target_fields": ["need_guidance"], "fills": {"need_guidance": "更喜欢自主探索"}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+    "knowledge_foundation": {
+        "question": "你目前的知识基础是什么？",
+        "stage": "ability_basis",
+        "options": [
+            {"label": "编程基础扎实", "value": "编程基础扎实", "description": "数据结构、算法、设计模式等掌握较好", "target_fields": ["knowledge_foundation"], "fills": {"knowledge_foundation": "编程基础扎实"}},
+            {"label": "有前后端基础", "value": "有前后端基础", "description": "了解 Web 开发基本流程", "target_fields": ["knowledge_foundation"], "fills": {"knowledge_foundation": "有前后端基础"}},
+            {"label": "有 Python 基础", "value": "有 Python 基础", "description": "能用 Python 写脚本和小工具", "target_fields": ["knowledge_foundation"], "fills": {"knowledge_foundation": "有 Python 基础"}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+    "strengths": {
+        "question": "你的优势是什么？",
+        "stage": "ability_basis",
+        "options": [
+            {"label": "动手能力强", "value": "动手能力强", "description": "善于从零开始做项目", "target_fields": ["strengths"], "fills": {"strengths": "动手能力强"}},
+            {"label": "学习能力强", "value": "学习能力强", "description": "能快速掌握新技术", "target_fields": ["strengths"], "fills": {"strengths": "学习能力强"}},
+            {"label": "逻辑思维好", "value": "逻辑思维好", "description": "善于分析和拆解问题", "target_fields": ["strengths"], "fills": {"strengths": "逻辑思维好"}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+    "weaknesses": {
+        "question": "你的薄弱点是什么？",
+        "stage": "ability_basis",
+        "options": [
+            {"label": "缺少项目经验", "value": "缺少项目经验", "description": "理论知识有但实战少", "target_fields": ["weaknesses"], "fills": {"weaknesses": "缺少项目经验"}},
+            {"label": "缺少系统训练", "value": "缺少系统训练", "description": "知识比较零散", "target_fields": ["weaknesses"], "fills": {"weaknesses": "缺少系统训练"}},
+            {"label": "调试能力不足", "value": "调试能力不足", "description": "遇到问题不知从何排查", "target_fields": ["weaknesses"], "fills": {"weaknesses": "调试能力不足"}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+    "experience": {
+        "question": "你有什么相关经验？",
+        "stage": "ability_basis",
+        "options": [
+            {"label": "有课程项目经验", "value": "有课程项目经验", "description": "做过课程设计或大作业", "target_fields": ["experience"], "fills": {"experience": "有课程项目经验"}},
+            {"label": "有实习经验", "value": "有实习经验", "description": "参加过企业实习", "target_fields": ["experience"], "fills": {"experience": "有实习经验"}},
+            {"label": "有个人项目经验", "value": "有个人项目经验", "description": "自己做过独立项目", "target_fields": ["experience"], "fills": {"experience": "有个人项目经验"}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+    "short_term_goal": {
+        "question": "你的近期目标是什么？",
+        "stage": "goal_constraint",
+        "options": [
+            {"label": "找工作", "value": "找工作", "description": "以就业为近期目标", "target_fields": ["short_term_goal"], "fills": {"short_term_goal": "找工作"}},
+            {"label": "考研", "value": "考研", "description": "以考研为近期目标", "target_fields": ["short_term_goal"], "fills": {"short_term_goal": "考研"}},
+            {"label": "提升能力", "value": "提升能力", "description": "以提升技术能力为目标", "target_fields": ["short_term_goal"], "fills": {"short_term_goal": "提升能力"}},
+            {"label": "完成一个项目", "value": "完成一个项目", "description": "做出一个可运行的作品", "target_fields": ["short_term_goal"], "fills": {"short_term_goal": "完成一个项目"}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+    "long_term_goal": {
+        "question": "你的长期目标是什么？",
+        "stage": "goal_constraint",
+        "options": [
+            {"label": "成为全栈开发者", "value": "成为全栈开发者", "description": "前后端都能独立完成", "target_fields": ["long_term_goal"], "fills": {"long_term_goal": "成为全栈开发者"}},
+            {"label": "成为 AI 应用开发者", "value": "成为 AI 应用开发者", "description": "专注于 AI 应用方向", "target_fields": ["long_term_goal"], "fills": {"long_term_goal": "成为 AI 应用开发者"}},
+            {"label": "还没想好", "value": "还没想好", "description": "先学着再说", "target_fields": ["long_term_goal"], "fills": {"long_term_goal": "还没想好"}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+    "weekly_available_time": {
+        "question": "每周可投入多少时间学习？",
+        "stage": "goal_constraint",
+        "options": [
+            {"label": "每周 6-10 小时", "value": "每周 6-10 小时", "description": "中等投入", "target_fields": ["weekly_available_time"], "fills": {"weekly_available_time": "每周 6-10 小时"}},
+            {"label": "每周 10-15 小时", "value": "每周 10-15 小时", "description": "较高投入", "target_fields": ["weekly_available_time"], "fills": {"weekly_available_time": "每周 10-15 小时"}},
+            {"label": "每周 15 小时以上", "value": "每周 15 小时以上", "description": "高强度投入", "target_fields": ["weekly_available_time"], "fills": {"weekly_available_time": "每周 15 小时以上"}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+    "constraints": {
+        "question": "你有什么主要约束或限制？",
+        "stage": "goal_constraint",
+        "options": [
+            {"label": "平时课程多", "value": "平时课程多", "description": "学期中时间紧张", "target_fields": ["constraints"], "fills": {"constraints": "平时课程多"}},
+            {"label": "缺少指导", "value": "缺少指导", "description": "没有合适的引路人", "target_fields": ["constraints"], "fills": {"constraints": "缺少指导"}},
+            {"label": "没有特别约束", "value": "没有特别约束", "description": "时间精力都比较充裕", "target_fields": ["constraints"], "fills": {"constraints": "没有特别约束"}},
+            {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+        ],
+    },
+}
+
+_COLLECTING_FIELD_ORDER = (
+    "learning_stage",
+    "has_clear_goal",
+    "learning_method_preference",
+    "learning_pace_preference",
+    "content_preference",
+    "need_guidance",
+    "knowledge_foundation",
+    "strengths",
+    "weaknesses",
+    "experience",
+    "short_term_goal",
+    "long_term_goal",
+    "weekly_available_time",
+    "constraints",
+)
+
+
+def _next_incomplete_field(confirmed_info: dict[str, object]) -> str | None:
+    for field_name in _COLLECTING_FIELD_ORDER:
+        value = confirmed_info.get(field_name)
+        if field_name == "content_preference":
+            if not isinstance(value, list) or not value:
+                return field_name
+        elif not isinstance(value, str) or not value.strip():
+            return field_name
+    return None
+
+
+def _build_field_question_box(field_name: str) -> dict[str, object]:
+    field = _FIELD_QUESTIONS[field_name]
+    return {
+        "question": str(field["question"]),
+        "options": list(field["options"]),
+    }
+
+
+def _collecting_stage_for_field(field_name: str) -> str:
+    field = _FIELD_QUESTIONS.get(field_name)
+    if field:
+        return str(field.get("stage", "basic_info"))
+    return "basic_info"
+
+
+def _has_unknown_values(confirmed_info: dict[str, object]) -> bool:
+    for key in PROFILE_COMPLETION_REQUIRED_KEYS:
+        value = confirmed_info.get(key)
+        if key == "content_preference":
+            if not isinstance(value, list) or not value:
+                return True
+            if any(str(item).strip() in (UNKNOWN_VALUE, "") for item in value):
+                return True
+        elif not isinstance(value, str) or not value.strip() or value.strip() == UNKNOWN_VALUE:
+            return True
+    return False
+
+
+def _missing_confirmed_info_fields(confirmed_info: dict[str, object]) -> list[str]:
+    missing_fields: list[str] = []
+    for key in PROFILE_COMPLETION_REQUIRED_KEYS:
+        value = confirmed_info.get(key)
+        if key == "content_preference":
+            if not isinstance(value, list) or not value:
+                missing_fields.append(key)
+            continue
+        if not isinstance(value, str) or not value.strip() or value.strip() == UNKNOWN_VALUE:
+            missing_fields.append(key)
+    return missing_fields
+
+
+def _normalize_profile_output_dict(profile_dict: dict[str, object]) -> dict[str, object]:
+    normalized = dict(profile_dict)
+    question_box = normalized.get("question_box")
+    question_text = ""
+    if isinstance(question_box, dict):
+        question_text = str(question_box.get("question", "")).strip()
+    question_md = str(normalized.get("question_md", "")).strip()
+    text = str(normalized.get("text", "")).strip()
+    summary_text = str(normalized.get("summary_text", "")).strip()
+
+    if not question_md and question_text:
+        normalized["question_md"] = question_text
+    if not text and question_text:
+        normalized["text"] = question_text
+    elif not text and question_md:
+        normalized["text"] = question_md
+    elif text:
+        normalized["text"] = text
+
+    if not summary_text and str(normalized.get("type", "")).strip() == "basic_profile":
+        text_value = str(normalized.get("text", "")).strip()
+        if text_value:
+            normalized["summary_text"] = text_value
+    elif summary_text:
+        normalized["summary_text"] = summary_text
+        if not str(normalized.get("text", "")).strip():
+            normalized["text"] = summary_text
+    return normalized
+
+
+def _profile_output_error(profile_dict: dict[str, object]) -> str | None:
+    normalized = _normalize_profile_output_dict(profile_dict)
+    profile_type = str(normalized.get("type", "")).strip()
+    stage = str(normalized.get("stage", "")).strip()
+    confirmed_info = normalized.get("confirmed_info")
+    if not isinstance(confirmed_info, dict):
+        return "confirmed_info 必须是对象"
+
+    if profile_type == "basic_profile":
+        if stage != "generated":
+            return "basic_profile 的 stage 必须是 generated"
+        missing_fields = _missing_confirmed_info_fields(confirmed_info)
+        if missing_fields:
+            return f"basic_profile 缺少完整字段：{', '.join(missing_fields)}"
+        if not is_supported_current_grade(confirmed_info.get("current_grade")):
+            return "basic_profile 的 current_grade 必须是大一到大四"
+        if not str(normalized.get("text", "")).strip():
+            return "basic_profile 缺少画像总结 text"
+        question_box = normalized.get("question_box")
+        if not isinstance(question_box, dict) or not str(question_box.get("question", "")).strip():
+            return "basic_profile 缺少下一步 question_box.question"
+        return None
+
+    if stage == "generated":
+        return "collecting 的 stage 不能是 generated"
+    question_box = normalized.get("question_box")
+    question_text = str(question_box.get("question", "")).strip() if isinstance(question_box, dict) else ""
+    question_md = str(normalized.get("question_md", "")).strip()
+    text = str(normalized.get("text", "")).strip()
+    if not any((question_text, question_md, text)):
+        return "collecting 缺少下一轮问题内容"
+    return None
 
 
 def _is_complete_profile(profile: dict | None) -> bool:
@@ -145,6 +448,30 @@ def _message_content_text(content: object) -> str:
     return json.dumps(content, ensure_ascii=False)
 
 
+def _profile_context_payload(state: OrchestrationState) -> dict[str, object]:
+    existing_profile = state.get("profile")
+    confirmed = _empty_confirmed_info()
+
+    if isinstance(existing_profile, dict):
+        existing_confirmed = existing_profile.get("confirmed_info")
+        if isinstance(existing_confirmed, dict):
+            for key in confirmed:
+                value = existing_confirmed.get(key)
+                if key == "content_preference":
+                    confirmed[key] = value if isinstance(value, list) else []
+                elif isinstance(value, str):
+                    confirmed[key] = value
+
+    return {
+        "type": str(existing_profile.get("type", "")) if isinstance(existing_profile, dict) else "",
+        "stage": str(existing_profile.get("stage", "")) if isinstance(existing_profile, dict) else "",
+        "question_mode": str(existing_profile.get("question_mode", "")) if isinstance(existing_profile, dict) else "",
+        "question_md": str(existing_profile.get("question_md", "")) if isinstance(existing_profile, dict) else "",
+        "text": str(existing_profile.get("text", "")) if isinstance(existing_profile, dict) else "",
+        "confirmed_info": confirmed,
+    }
+
+
 def _build_profile_input(state: OrchestrationState, conversation_summary: str) -> str:
     messages = state.get("messages", [])
     recent_contents = [
@@ -153,17 +480,43 @@ def _build_profile_input(state: OrchestrationState, conversation_summary: str) -
     ]
     query = state.get("query", "")
     allow_default_fill = _allows_default_fill(query) or _allows_default_fill(conversation_summary)
+    profile_context = json.dumps(_profile_context_payload(state), ensure_ascii=False, indent=2)
 
     parts = [
-        "请根据以下信息生成画像，并输出 SessionMessage JSON。",
+        "请根据以下基础画像上下文生成 SessionMessage JSON。",
+        f"是否允许系统补全缺失字段：{'是' if allow_default_fill else '否'}。",
+        "当前画像上下文：",
+        profile_context,
         "主 Agent 对话总结：",
         conversation_summary,
         "最近对话内容：",
         "\n".join(content for content in recent_contents if content),
+        "用户最新回复：",
+        query,
     ]
     if allow_default_fill:
         parts.append("允许系统补全所有缺失字段。")
     parts.append("输出 SessionMessage JSON。")
+    return "\n\n".join(part for part in parts if part)
+
+
+def _build_profile_repair_input(
+    state: OrchestrationState,
+    conversation_summary: str,
+    validation_error: str,
+    previous_output: str,
+) -> str:
+    parts = [
+        _build_profile_input(state, conversation_summary),
+        "上一轮输出的问题：",
+        validation_error,
+    ]
+    if previous_output.strip():
+        parts.extend([
+            "上一轮无效输出：",
+            previous_output,
+        ])
+    parts.append("请输出修正后的 SessionMessage JSON。")
     return "\n\n".join(part for part in parts if part)
 
 
@@ -280,6 +633,44 @@ def _learning_method_from_segment(segment: str) -> str:
     return ""
 
 
+def _learning_stage_from_segment(segment: str) -> str:
+    if any(marker in segment for marker in ("初学者", "刚入门", "新手", "零基础")):
+        return "刚入门"
+    if any(marker in segment for marker in ("有基础", "有一点基础", "有些基础", "有一定基础")):
+        return "有基础"
+    if any(marker in segment for marker in ("项目实践", "做项目", "项目驱动", "边做边学")):
+        return "项目实践"
+    if "准备就业" in segment:
+        return "准备就业"
+    return ""
+
+
+def _content_preference_from_segment(segment: str) -> list[str]:
+    for marker, values in CONTENT_PREFERENCE_SEGMENTS:
+        if marker in segment:
+            return list(values)
+    return []
+
+
+def _guidance_preference_from_segment(segment: str) -> str:
+    for marker, value in GUIDANCE_PREFERENCE_SEGMENTS:
+        if marker in segment:
+            return value
+    return ""
+
+
+def _looks_like_learning_preference_segment(segment: str) -> bool:
+    if _learning_stage_from_segment(segment):
+        return True
+    if _learning_method_from_segment(segment):
+        return True
+    if _content_preference_from_segment(segment):
+        return True
+    if _guidance_preference_from_segment(segment):
+        return True
+    return any(marker in segment for marker in LEARNING_PREFERENCE_BLOCKED_SEGMENTS)
+
+
 def _goal_from_segment(segment: str) -> str:
     for marker in GOAL_SEGMENTS:
         if marker in segment:
@@ -314,7 +705,7 @@ def _major_from_segment(segment: str) -> str:
         return ""
     if (
         _topic_from_segment(segment)
-        or _learning_method_from_segment(segment)
+        or _looks_like_learning_preference_segment(segment)
         or _goal_from_segment(segment)
         or segment in PACE_SEGMENTS
         or segment in GREETING_SEGMENTS
@@ -332,6 +723,86 @@ def _major_from_segments(segments: list[str]) -> str:
         if major:
             return major
     return ""
+
+
+def _current_collecting_field(state: OrchestrationState) -> str:
+    profile = state.get("profile")
+    if not isinstance(profile, dict) or profile.get("type") != "collecting":
+        return ""
+    confirmed_info = profile.get("confirmed_info")
+    if not isinstance(confirmed_info, dict):
+        return ""
+
+    missing_basic_fields = [
+        field_name
+        for field_name in ("current_grade", "major")
+        if not isinstance(confirmed_info.get(field_name), str) or not str(confirmed_info.get(field_name)).strip()
+    ]
+    if len(missing_basic_fields) == 1:
+        return missing_basic_fields[0]
+    if len(missing_basic_fields) > 1:
+        return ""
+
+    next_field = _next_incomplete_field(confirmed_info)
+    return next_field or ""
+
+
+def _field_fill_from_options(field_name: str, text: str) -> dict[str, object]:
+    field = _FIELD_QUESTIONS.get(field_name)
+    if not field:
+        return {}
+    for option in field.get("options", []):
+        if not isinstance(option, dict):
+            continue
+        value = str(option.get("value", "")).strip()
+        label = str(option.get("label", "")).strip()
+        if value == "__free_text__":
+            continue
+        if (label and label in text) or (value and value in text):
+            fills = option.get("fills")
+            if isinstance(fills, dict):
+                return dict(fills)
+    return {}
+
+
+def _contextual_profile_updates(state: OrchestrationState) -> dict[str, object]:
+    current_field = _current_collecting_field(state)
+    query = str(state.get("query", "")).strip()
+    if not current_field or not query:
+        return {}
+
+    if current_field == "current_grade":
+        grade_match = GRADE_PATTERN.search(query)
+        if grade_match:
+            return {"current_grade": grade_match.group(1)}
+        english_grade = _english_grade_from_text(query)
+        return {"current_grade": english_grade} if english_grade else {}
+
+    if current_field == "major":
+        major = _major_from_segment(query)
+        return {"major": major} if major else {}
+
+    if current_field == "learning_stage":
+        learning_stage = _learning_stage_from_segment(query)
+        if learning_stage:
+            return {"learning_stage": learning_stage}
+
+    if current_field == "learning_method_preference":
+        learning_method = _learning_method_from_segment(query)
+        if learning_method:
+            return {"learning_method_preference": learning_method}
+
+    if current_field == "content_preference":
+        content_preference = _content_preference_from_segment(query)
+        if content_preference:
+            return {"content_preference": content_preference}
+
+    if current_field == "need_guidance":
+        need_guidance = _guidance_preference_from_segment(query)
+        if need_guidance:
+            return {"need_guidance": need_guidance}
+
+    return _field_fill_from_options(current_field, query)
 
 
 def _short_term_goal_from_parts(detected_goal: str, topic: str) -> str:
@@ -423,6 +894,24 @@ def _extract_profile_updates(state: OrchestrationState, *, include_defaults: boo
                 updates["learning_method_preference"] = learning_method
                 continue
 
+        if "learning_stage" not in updates:
+            learning_stage = _learning_stage_from_segment(segment)
+            if learning_stage:
+                updates["learning_stage"] = learning_stage
+                continue
+
+        if "content_preference" not in updates:
+            content_preference = _content_preference_from_segment(segment)
+            if content_preference:
+                updates["content_preference"] = content_preference
+                continue
+
+        if "need_guidance" not in updates:
+            need_guidance = _guidance_preference_from_segment(segment)
+            if need_guidance:
+                updates["need_guidance"] = need_guidance
+                continue
+
         if not detected_goal:
             detected_goal = _goal_from_segment(segment)
 
@@ -442,6 +931,10 @@ def _extract_profile_updates(state: OrchestrationState, *, include_defaults: boo
         short_term_goal = _short_term_goal_from_parts(detected_goal, topic)
         if short_term_goal:
             updates["short_term_goal"] = short_term_goal
+
+    contextual_updates = _contextual_profile_updates(state)
+    if contextual_updates:
+        updates.update(contextual_updates)
 
     if include_defaults and not topic:
         topic = DEFAULT_TOPIC
@@ -493,13 +986,171 @@ def _collecting_profile_for_unsupported_grade(confirmed_info: dict[str, object])
     return {
         "type": "collecting",
         "stage": "basic_info",
-        "question_mode": "question_md",
+        "question_mode": "question_box",
         "confirmed_info": merged,
         "defaulted_fields": [],
         "question_md": question,
-        "question_box": {"question": "", "options": []},
+        "question_box": {
+            "question": question,
+            "options": [
+                {
+                    "label": "我是大一",
+                    "value": "大一",
+                    "description": "按本科大一继续生成画像",
+                    "target_fields": ["current_grade"],
+                    "fills": {"current_grade": "大一"},
+                },
+                {
+                    "label": "我是大二",
+                    "value": "大二",
+                    "description": "按本科大二继续生成画像",
+                    "target_fields": ["current_grade"],
+                    "fills": {"current_grade": "大二"},
+                },
+                {
+                    "label": "我是大三",
+                    "value": "大三",
+                    "description": "按本科大三继续生成画像",
+                    "target_fields": ["current_grade"],
+                    "fills": {"current_grade": "大三"},
+                },
+                {
+                    "label": "我是大四",
+                    "value": "大四",
+                    "description": "按本科大四继续生成画像",
+                    "target_fields": ["current_grade"],
+                    "fills": {"current_grade": "大四"},
+                },
+                {
+                    "label": "其他",
+                    "value": "__free_text__",
+                    "description": "以上都不符合，我来输入",
+                    "target_fields": [],
+                    "fills": {},
+                },
+            ],
+        },
         "text": question,
     }
+
+
+def _build_basic_info_question_box(missing_fields: list[str], question: str) -> dict[str, object]:
+    options: list[dict[str, object]] = []
+    if missing_fields == ["current_grade", "major"]:
+        options = [
+            {
+                "label": "我是大一",
+                "value": "大一",
+                "description": "先确认年级，再继续补充专业",
+                "target_fields": ["current_grade"],
+                "fills": {"current_grade": "大一"},
+            },
+            {
+                "label": "我是大二",
+                "value": "大二",
+                "description": "先确认年级，再继续补充专业",
+                "target_fields": ["current_grade"],
+                "fills": {"current_grade": "大二"},
+            },
+            {
+                "label": "我是大三",
+                "value": "大三",
+                "description": "先确认年级，再继续补充专业",
+                "target_fields": ["current_grade"],
+                "fills": {"current_grade": "大三"},
+            },
+            {
+                "label": "我是大四",
+                "value": "大四",
+                "description": "先确认年级，再继续补充专业",
+                "target_fields": ["current_grade"],
+                "fills": {"current_grade": "大四"},
+            },
+            {
+                "label": "其他",
+                "value": "__free_text__",
+                "description": "以上都不符合，我来输入",
+                "target_fields": [],
+                "fills": {},
+            },
+        ]
+    elif missing_fields == ["current_grade"]:
+        options = [
+            {
+                "label": "大一",
+                "value": "大一",
+                "description": "当前是本科大一",
+                "target_fields": ["current_grade"],
+                "fills": {"current_grade": "大一"},
+            },
+            {
+                "label": "大二",
+                "value": "大二",
+                "description": "当前是本科大二",
+                "target_fields": ["current_grade"],
+                "fills": {"current_grade": "大二"},
+            },
+            {
+                "label": "大三",
+                "value": "大三",
+                "description": "当前是本科大三",
+                "target_fields": ["current_grade"],
+                "fills": {"current_grade": "大三"},
+            },
+            {
+                "label": "大四",
+                "value": "大四",
+                "description": "当前是本科大四",
+                "target_fields": ["current_grade"],
+                "fills": {"current_grade": "大四"},
+            },
+            {
+                "label": "其他",
+                "value": "__free_text__",
+                "description": "以上都不符合，我来输入",
+                "target_fields": [],
+                "fills": {},
+            },
+        ]
+    elif missing_fields == ["major"]:
+        options = [
+            {
+                "label": "计算机科学",
+                "value": "计算机科学",
+                "description": "常见计算机相关专业方向",
+                "target_fields": ["major"],
+                "fills": {"major": "计算机科学"},
+            },
+            {
+                "label": "软件工程",
+                "value": "软件工程",
+                "description": "常见软件开发相关专业方向",
+                "target_fields": ["major"],
+                "fills": {"major": "软件工程"},
+            },
+            {
+                "label": "人工智能",
+                "value": "人工智能",
+                "description": "常见 AI 相关专业方向",
+                "target_fields": ["major"],
+                "fills": {"major": "人工智能"},
+            },
+            {
+                "label": "数据科学",
+                "value": "数据科学",
+                "description": "常见数据方向专业",
+                "target_fields": ["major"],
+                "fills": {"major": "数据科学"},
+            },
+            {
+                "label": "其他",
+                "value": "__free_text__",
+                "description": "以上都不符合，我来输入",
+                "target_fields": [],
+                "fills": {},
+            },
+        ]
+    return {"question": question, "options": options}
 
 
 def _build_collecting_profile(state: OrchestrationState) -> dict:
@@ -533,17 +1184,58 @@ def _build_collecting_profile(state: OrchestrationState) -> dict:
             "为了生成基础画像，请先告诉我你的年级和专业。"
             "如果你愿意，也可以一起告诉我想学的方向、近期目标和每周可投入时间。"
         )
+        return {
+            "type": "collecting",
+            "stage": "basic_info",
+            "question_mode": "question_box",
+            "confirmed_info": merged,
+            "defaulted_fields": [],
+            "question_md": question,
+            "question_box": _build_basic_info_question_box(missing_fields, question),
+            "text": question,
+        }
     elif missing_fields == ["current_grade"]:
         question = "为了生成基础画像，请先告诉我你的年级。"
+        return {
+            "type": "collecting",
+            "stage": "basic_info",
+            "question_mode": "question_box",
+            "confirmed_info": merged,
+            "defaulted_fields": [],
+            "question_md": question,
+            "question_box": _build_basic_info_question_box(missing_fields, question),
+            "text": question,
+        }
     elif missing_fields == ["major"]:
         question = "为了生成基础画像，请先告诉我你的专业。"
-    else:
-        question = (
-            "我还需要确认你的学习阶段、目标清晰度、学习方式偏好、学习节奏、内容偏好、是否需要指导、"
-            "知识基础、优势、短板、项目经验、短期目标、长期目标、每周可投入时间和当前限制。"
-            "你可以一次性补充，也可以说「直接帮我生成」让我按默认信息补齐。"
-        )
+        return {
+            "type": "collecting",
+            "stage": "basic_info",
+            "question_mode": "question_box",
+            "confirmed_info": merged,
+            "defaulted_fields": [],
+            "question_md": question,
+            "question_box": _build_basic_info_question_box(missing_fields, question),
+            "text": question,
+        }
 
+    next_field = _next_incomplete_field(merged)
+    if next_field:
+        question_box = _build_field_question_box(next_field)
+        stage = _collecting_stage_for_field(next_field)
+        question_text = str(question_box.get("question", ""))
+        return {
+            "type": "collecting",
+            "stage": stage,
+            "question_mode": "question_box",
+            "confirmed_info": merged,
+            "defaulted_fields": [],
+            "question_md": question_text,
+            "question_box": question_box,
+            "text": question_text,
+        }
+
+    question = "画像信息已全部确认，可以生成完整画像了。"
     return {
         "type": "collecting",
         "stage": "basic_info",
@@ -856,64 +1548,95 @@ def _should_use_local_profile(state: OrchestrationState) -> bool:
     query = str(state.get("query", "")).strip()
     if _allows_default_fill(query):
         return True
-    if not query:
-        return False
-    if not _looks_like_brief_profile_query(query):
-        return False
     if _is_complete_profile(state.get("profile")):
         return True
-    return _has_confirmed_profile_completion_fields(state)
+    if not query:
+        return False
+    if _has_confirmed_profile_completion_fields(state):
+        return _looks_like_brief_profile_query(query)
+    return False
+
+
+def _fallback_collecting_profile(state: OrchestrationState) -> dict[str, object]:
+    context = _profile_context_payload(state)
+    confirmed_info = context["confirmed_info"] if isinstance(context.get("confirmed_info"), dict) else _empty_confirmed_info()
+    stage = str(context.get("stage", "basic_info") or "basic_info")
+    if stage == "generated":
+        stage = "basic_info"
+    question = (
+        "我先继续帮你整理基础画像。"
+        "请直接补充你当前还没确认的学习阶段、目标、学习方式、时间安排或能力基础。"
+    )
+    return {
+        "type": "collecting",
+        "stage": stage,
+        "question_mode": "question_box",
+        "confirmed_info": confirmed_info,
+        "defaulted_fields": [],
+        "question_md": question,
+        "question_box": {"question": question, "options": []},
+        "text": question,
+    }
+
+
+async def _invoke_profile_output_with_retries(
+    state: OrchestrationState,
+    llm: BaseChatModel,
+    conversation_summary: str,
+) -> dict[str, object]:
+    structured_llm = llm.with_structured_output(ProfileOutput)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", PROFILE_AGENT_SYSTEM_PROMPT),
+        ("human", "{profile_input}"),
+    ])
+    repair_prompt = ChatPromptTemplate.from_messages([
+        ("system", PROFILE_AGENT_REPAIR_SYSTEM_PROMPT),
+        ("human", "{profile_input}"),
+    ])
+    chain = prompt | structured_llm
+    repair_chain = repair_prompt | structured_llm
+    previous_output = ""
+    validation_error = ""
+
+    for attempt in range(PROFILE_REPAIR_MAX_ATTEMPTS):
+        try:
+            if attempt == 0:
+                result: ProfileOutput = await chain.ainvoke({
+                    "profile_input": _build_profile_input(state, conversation_summary),
+                })
+            else:
+                result = await repair_chain.ainvoke({
+                    "profile_input": _build_profile_repair_input(
+                        state,
+                        conversation_summary,
+                        validation_error,
+                        previous_output,
+                    ),
+                })
+        except Exception as exc:
+            validation_error = str(exc)
+            logger.warning("ProfileAgent structured output attempt %s failed: %s", attempt + 1, exc)
+            previous_output = ""
+            continue
+
+        profile_dict = _normalize_profile_output_dict(result.model_dump())
+        previous_output = json.dumps(profile_dict, ensure_ascii=False)
+        semantic_error = _profile_output_error(profile_dict)
+        if semantic_error is None:
+            return profile_dict
+
+        validation_error = semantic_error
+        logger.warning("ProfileAgent semantic validation attempt %s failed: %s", attempt + 1, semantic_error)
+
+    logger.error("ProfileAgent exhausted repair attempts; returning collecting fallback")
+    return _fallback_collecting_profile(state)
 
 
 async def run_profile_agent(state: OrchestrationState, llm: BaseChatModel) -> dict:
     """One-shot profile generation: receives conversation summary, outputs structured profile."""
     tool_args = extract_last_tool_call_args(state)
     conversation_summary = tool_args.get("conversation_summary", state["query"])
-    profile_input = _build_profile_input(state, conversation_summary)
-    allow_default_fill = _allows_default_fill(str(state.get("query", "")))
-    missing_minimum_fields = _missing_minimum_profile_fields(state)
-    looks_like_brief_profile_query = _looks_like_brief_profile_query(str(state.get("query", "")))
-
-    if (
-        not allow_default_fill
-        and not _is_complete_profile(state.get("profile"))
-        and (missing_minimum_fields or not _has_confirmed_profile_completion_fields(state))
-        and (
-            missing_minimum_fields
-            or looks_like_brief_profile_query
-            or isinstance(state.get("profile"), dict)
-        )
-    ):
-        profile_dict = _build_collecting_profile(state)
-        _persist_profile(state["user_id"], profile_dict)
-        return {"profile": profile_dict, "response": profile_dict.get("text", "")}
-
-    if _can_complete_collecting_profile_locally(state) or _should_use_local_profile(state):
-        profile_dict = _build_local_profile(state, allow_default_fill=allow_default_fill)
-        _persist_profile(state["user_id"], profile_dict)
-        return {"profile": profile_dict, "response": profile_dict.get("text", "")}
-
-    structured_llm = llm.with_structured_output(ProfileOutput)
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", PROFILE_AGENT_SYSTEM_PROMPT),
-        ("human", "{profile_input}"),
-    ])
-    chain = prompt | structured_llm
-
-    try:
-        result: ProfileOutput = await chain.ainvoke({"profile_input": profile_input})
-    except Exception as exc:
-        logger.warning("ProfileAgent structured output failed: %s", exc)
-        if allow_default_fill or _is_complete_profile(state.get("profile")):
-            profile_dict = _build_local_profile(state, allow_default_fill=allow_default_fill)
-            _persist_profile(state["user_id"], profile_dict)
-            return {"profile": profile_dict, "response": profile_dict.get("text", "")}
-        return {"error": f"画像生成失败：{str(exc)[:200]}"}
-
-    profile_dict = result.model_dump()
-    confirmed_info = profile_dict.get("confirmed_info", {})
-    if isinstance(confirmed_info, dict) and not is_supported_current_grade(confirmed_info.get("current_grade")):
-        profile_dict = _collecting_profile_for_unsupported_grade(confirmed_info)
+    profile_dict = await _invoke_profile_output_with_retries(state, llm, conversation_summary)
     _persist_profile(state["user_id"], profile_dict)
 
     return {"profile": profile_dict, "response": profile_dict.get("text", "")}

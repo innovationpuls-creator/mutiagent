@@ -340,6 +340,9 @@
   background: var(--glass-dark-bg);
   padding: var(--space-16);
   overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-family: var(--font-mono);
   font-size: var(--text-body-sm);
   line-height: 1.6;

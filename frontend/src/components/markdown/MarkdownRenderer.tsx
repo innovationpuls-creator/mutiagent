@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Components } from 'react-markdown';
@@ -6,6 +6,7 @@ import { usePrism } from './hooks/usePrism';
 import { useMathJax } from './hooks/useMathJax';
 import { useMermaid } from './hooks/useMermaid';
 import { extractLanguage } from './utils/highlight';
+import { copyToClipboard } from './utils/clipboard';
 import './markdown-styles.css';
 
 interface MarkdownRendererProps {
@@ -130,27 +131,10 @@ const markdownComponents: Components = {
       <div className="code-block">
         <div className="code-block-header">
           <span className="code-block-lang">{lang}</span>
-          <button
+            <button
             className="code-block-copy"
             aria-label="Copy code to clipboard"
-            onClick={(e) => {
-              const button = e.currentTarget;
-              navigator.clipboard.writeText(codeString).then(() => {
-                button.textContent = 'COPIED!';
-                button.ariaLabel = 'Code copied';
-                setTimeout(() => {
-                  button.textContent = 'COPY';
-                  button.ariaLabel = 'Copy code to clipboard';
-                }, 2000);
-              }).catch(() => {
-                button.textContent = 'FAILED';
-                button.ariaLabel = 'Failed to copy code';
-                setTimeout(() => {
-                  button.textContent = 'COPY';
-                  button.ariaLabel = 'Copy code to clipboard';
-                }, 2000);
-              });
-            }}
+            onClick={(e) => copyToClipboard(codeString, e.currentTarget)}
           >
             COPY
           </button>
@@ -173,16 +157,24 @@ const markdownComponents: Components = {
 function MermaidDiagram({ code, renderDiagram }: { code: string; renderDiagram: (code: string) => Promise<string> }) {
   const [svg, setSvg] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     renderDiagram(code).then((result) => {
       setSvg(result);
+      setLoading(false);
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : 'Failed to render diagram');
       setLoading(false);
     });
   }, [code, renderDiagram]);
 
   if (loading) {
     return <div className="mermaid-container">Loading diagram...</div>;
+  }
+
+  if (error) {
+    return <div className="mermaid-container mermaid-error">Diagram error: {error}</div>;
   }
 
   return (
@@ -193,13 +185,36 @@ function MermaidDiagram({ code, renderDiagram }: { code: string; renderDiagram: 
 function HighlightedCodeBlock({ code, language, highlight }: { code: string; language: string; highlight: (code: string, language: string) => Promise<string> }) {
   const [highlightedCode, setHighlightedCode] = useState<string>(code);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     highlight(code, language).then((result) => {
       setHighlightedCode(result);
       setLoading(false);
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : 'Failed to highlight code');
+      setLoading(false);
     });
   }, [code, language, highlight]);
+
+  if (error) {
+    return (
+      <div className="code-block">
+        <div className="code-block-header">
+          <span className="code-block-lang">{language}</span>
+          <button
+            className="code-block-copy"
+            onClick={(e) => copyToClipboard(code, e.currentTarget)}
+          >
+            COPY
+          </button>
+        </div>
+        <pre>
+          <code>{code}</code>
+        </pre>
+      </div>
+    );
+  }
 
   return (
     <div className="code-block">
@@ -207,20 +222,7 @@ function HighlightedCodeBlock({ code, language, highlight }: { code: string; lan
         <span className="code-block-lang">{language}</span>
         <button
           className="code-block-copy"
-          onClick={(e) => {
-            const button = e.currentTarget;
-            navigator.clipboard.writeText(code).then(() => {
-              button.textContent = 'COPIED!';
-              setTimeout(() => {
-                button.textContent = 'COPY';
-              }, 2000);
-            }).catch(() => {
-              button.textContent = 'FAILED';
-              setTimeout(() => {
-                button.textContent = 'COPY';
-              }, 2000);
-            });
-          }}
+          onClick={(e) => copyToClipboard(code, e.currentTarget)}
         >
           COPY
         </button>
@@ -240,9 +242,22 @@ export function MarkdownRenderer({
   enableMath = false,
   enableMermaid = false,
 }: MarkdownRendererProps) {
-  const { highlight } = usePrism();
-  const { renderMath } = useMathJax();
-  const { renderDiagram } = useMermaid();
+  const { highlight } = usePrism(enableSyntaxHighlight);
+  const { isLoaded: isMathJaxLoaded } = useMathJax(enableMath);
+  const { renderDiagram } = useMermaid(enableMermaid);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (enableMath && isMathJaxLoaded && containerRef.current) {
+      const MathJax = (window as any).MathJax;
+      if (MathJax && MathJax.typesetPromise) {
+        MathJax.typesetPromise([containerRef.current]).catch((err: any) => {
+          console.warn('MathJax typeset failed', err);
+        });
+      }
+    }
+  }, [content, enableMath, isMathJaxLoaded]);
 
   const enhancedComponents: Components = {
     ...markdownComponents,
@@ -270,24 +285,7 @@ export function MarkdownRenderer({
             <span className="code-block-lang">{lang || 'code'}</span>
             <button
               className="code-block-copy"
-              onClick={(e) => {
-                const button = e.currentTarget;
-                navigator.clipboard.writeText(codeString).then(() => {
-                  button.textContent = 'COPIED!';
-                  button.ariaLabel = 'Code copied';
-                  setTimeout(() => {
-                    button.textContent = 'COPY';
-                    button.ariaLabel = 'Copy code to clipboard';
-                  }, 2000);
-                }).catch(() => {
-                  button.textContent = 'FAILED';
-                  button.ariaLabel = 'Failed to copy code';
-                  setTimeout(() => {
-                    button.textContent = 'COPY';
-                    button.ariaLabel = 'Copy code to clipboard';
-                  }, 2000);
-                });
-              }}
+              onClick={(e) => copyToClipboard(codeString, e.currentTarget)}
             >
               COPY
             </button>
@@ -305,7 +303,7 @@ export function MarkdownRenderer({
   const variantClass = variant !== 'default' ? variant : '';
 
   return (
-    <div className={`markdown-renderer ${variantClass} ${className}`.trim()}>
+    <div ref={containerRef} className={`markdown-renderer ${variantClass} ${className}`.trim()}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={enhancedComponents}>
         {content}
       </ReactMarkdown>

@@ -162,8 +162,11 @@ export function isLearningPathResult(value: unknown): value is LearningPathResul
   const currentGradeId = currentLearningCourse.grade_id;
   const hasCurrentGradePlan = hasString(currentGradeId) && hasGradePlan(currentGradeId);
   const currentGradePlan = hasString(currentGradeId) ? gradePlans[currentGradeId] : undefined;
+  const currentGradeCourseNodes = hasCurrentGradePlan && isGradePlan(currentGradePlan)
+    ? currentGradePlan.course_nodes
+    : [];
 
-  const hasCurrentCourseNode = hasCurrentGradePlan && isGradePlan(currentGradePlan) && currentGradePlan.course_nodes.some((courseNode) => (
+  const hasCurrentCourseNode = currentGradeCourseNodes.length === 0 || currentGradeCourseNodes.some((courseNode) => (
     hasRecord(courseNode)
     && courseNode.course_node_id === currentLearningCourse.course_node_id
   ));

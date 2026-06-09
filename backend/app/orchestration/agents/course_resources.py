@@ -6,7 +6,6 @@ import json
 import logging
 import re
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
@@ -26,7 +25,6 @@ from app.orchestration.agents.models import (
 )
 from app.orchestration.agents.prompts import (
     SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT,
-    SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT,
     SECTION_VIDEO_SEARCH_AGENT_SYSTEM_PROMPT,
 )
 from app.orchestration.agents.utils import extract_last_tool_call_args, extract_last_tool_call_id
@@ -37,11 +35,27 @@ logger = logging.getLogger(__name__)
 
 _RESOURCE_TIMEOUT_SECONDS = 180.0
 _MARKDOWN_TIMEOUT_SECONDS = 180.0
-_MARKDOWN_ATTEMPTS = 3
+_MARKDOWN_SECTION_BODY_ATTEMPTS = 3
 _VIDEO_TIMEOUT_SECONDS = 180.0
 _ANIMATION_TIMEOUT_SECONDS = 180.0
 _VIDEO_METADATA_TIMEOUT_SECONDS = 8.0
 _VIDEO_VERIFIED_QUERY_LIMIT = 6
+_SECTION_CONCURRENCY_LIMIT = 3
+
+SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT = """\
+你是课程 Markdown 章节正文扩写智能体。
+
+你只生成输入中 markdown_expansion_section 指定的单个章节正文。
+禁止输出 JSON。
+禁止输出完整 Markdown 文档。
+禁止输出 `#` 或 `##` 标题。
+禁止输出视频或动画占位符。
+
+内容必须绑定 target_section.title、target_section.description 和 target_section.key_knowledge_points。
+如果 markdown_expansion_section 是 步骤讲解，必须包含 Markdown 表格或 fenced code block。
+如果 markdown_expansion_section 是 检查标准，必须输出至少 4 条 `- [ ]` 可验收清单。
+其他章节输出可直接拼入教学文档的 Markdown 正文。
+"""
 
 
 def _now_iso() -> str:
@@ -134,10 +148,10 @@ async def _invoke_resource_chain(
         chain.ainvoke({"query": query}),
         timeout=timeout_seconds,
     )
-    if hasattr(output, "model_dump"):
-        return output.model_dump()
     if hasattr(output, "content"):
         output = output.content
+    if hasattr(output, "model_dump"):
+        return output.model_dump()
     if isinstance(output, str):
         text = output.strip()
         json_text = _extract_json_object_text(text)
@@ -150,6 +164,21 @@ async def _invoke_resource_chain(
         else:
             output = json.loads(text)
     return _normalize_resource_chain_output(output, output_schema, query)
+
+
+async def _invoke_markdown_expansion_chain(
+    chain: Any,
+    query: str,
+    *,
+    timeout_seconds: float = _MARKDOWN_TIMEOUT_SECONDS,
+) -> str:
+    output = await asyncio.wait_for(
+        chain.ainvoke({"query": query}),
+        timeout=timeout_seconds,
+    )
+    if hasattr(output, "content"):
+        output = output.content
+    return _plain_markdown_text(_clean_text(output))
 
 
 def _extract_json_object_text(text: str) -> str:
@@ -594,10 +623,8 @@ def _parent_section(outline: dict, section: dict) -> dict | None:
 
 
 def _merge_course_resource_data(outline: dict, field_name: str, values: dict[str, dict]) -> dict:
-    merged = deepcopy(outline)
-    existing = merged.get(field_name)
-    if not isinstance(existing, dict):
-        existing = {}
+    merged = {**outline}
+    existing = dict(merged.get(field_name) or {})
     existing.update(values)
     merged[field_name] = existing
     return merged
@@ -691,18 +718,27 @@ def _chapter_course_knowledge_context(outline: dict, section: dict) -> dict:
     )
     root_title = _clean_text(root_section.get("title")) if isinstance(root_section, dict) else ""
     root_description = _clean_text(root_section.get("description")) if isinstance(root_section, dict) else ""
-    context = {
-        "course_id": outline.get("course_id", ""),
+    target_id = _clean_text(section.get("section_id"))
+    slim_sections = []
+    for s in chapter_sections:
+        sid = _clean_text(s.get("section_id"))
+        if sid == target_id:
+            continue
+        slim_sections.append({
+            "section_id": sid,
+            "title": s.get("title"),
+            "depth": s.get("depth"),
+            "parent_section_id": s.get("parent_section_id"),
+        })
+    context: dict = {
         "course_name": outline.get("course_name", ""),
-        "grade_year": outline.get("grade_year", ""),
         "personalization_summary": (
             f"当前只生成「{root_title}」这一章的具体教学内容。{root_description}"
             if root_title
             else "当前只生成指定章节的具体教学内容。"
         ),
-        "sections": chapter_sections,
+        "sections": slim_sections,
         "learning_sequence": _chapter_learning_sequence(outline, root_section),
-        "total_estimated_hours": outline.get("total_estimated_hours", ""),
     }
     for field_name in (
         "section_markdowns",
@@ -713,11 +749,9 @@ def _chapter_course_knowledge_context(outline: dict, section: dict) -> dict:
         values = outline.get(field_name)
         if not isinstance(values, dict):
             continue
-        context[field_name] = {
-            section_id: value
-            for section_id, value in values.items()
-            if section_id in chapter_ids
-        }
+        existing_ids = [sid for sid in values if sid in chapter_ids]
+        if existing_ids:
+            context[f"existing_{field_name}_ids"] = existing_ids
     return context
 
 
@@ -735,13 +769,10 @@ def _year_learning_paths_context(state: OrchestrationState, outline: dict, secti
     current_course: dict = {}
     if isinstance(current, dict) and current.get("course_node_id") == course_id:
         current_course = {
-            "grade_id": current.get("grade_id", grade_year),
-            "course_node_id": current.get("course_node_id", course_id),
             "course_or_chapter_theme": current.get("course_or_chapter_theme", outline.get("course_name", "")),
             "course_goal": current.get("course_goal", ""),
             "current_focus": "",
             "next_action": "",
-            "progress_state": current.get("progress_state", ""),
         }
 
     root_id = _root_section_id_for_section(outline, section)
@@ -766,18 +797,23 @@ def _year_learning_paths_context(state: OrchestrationState, outline: dict, secti
             ]
 
     return {
-        grade_year: {
-            "schema_version": path.get("schema_version", ""),
-            "current_learning_course": current_course,
-            "resource_generation_contract": resource_contract,
-        }
+        "current_learning_course": current_course,
+        "resource_generation_contract": resource_contract,
     }
 
 
 def _resource_context(state: OrchestrationState, outline: dict, section: dict) -> dict:
     profile = state.get("profile")
+    if isinstance(profile, dict):
+        confirmed = profile.get("confirmed_info")
+        slim_profile = dict(confirmed) if isinstance(confirmed, dict) else {}
+        summary = profile.get("summary_text")
+        if isinstance(summary, str) and summary.strip():
+            slim_profile["summary_text"] = summary.strip()
+    else:
+        slim_profile = {}
     return {
-        "profile": profile if isinstance(profile, dict) else {},
+        "profile": slim_profile,
         "year_learning_paths": _year_learning_paths_context(state, outline, section),
         "course_knowledge": _chapter_course_knowledge_context(outline, section),
     }
@@ -806,9 +842,9 @@ def _markdown_input(state: OrchestrationState, outline: dict, section: dict) -> 
         "target_section": section,
     }
     return (
-        "请为输入小节生成完整 Markdown 教学文档，不要写摘要，不要压缩为提纲。"
-        "markdown 字段必须写到不少于 1800 个中文字符；"
-        "如果一次想到的内容不够长，就继续补充概念解释、步骤细节、练习验收和常见误区，直到达到长度。"
+        "请为输入小节生成可由后端拼装的 Markdown 教学文档，不要写摘要，不要压缩为提纲。"
+        "内容必须覆盖学习目标、核心概念、步骤讲解、练习任务和检查标准；"
+        "如果内容不够具体，就补充概念解释、步骤细节、练习验收和常见误区。"
         "最终只输出一个 JSON 对象。\n\n"
         f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )
@@ -834,12 +870,49 @@ def _markdown_repair_input(
         "必须修正 markdown_quality_issue 指出的具体问题。"
         "不要复述上一版，不要补几句话了事；请完整重写一份长文档 JSON。\n\n"
         "硬性要求：必须包含 ## 学习目标、## 核心概念、## 步骤讲解、## 练习任务、## 检查标准；"
-        "正文不少于 1800 个中文字符；"
         "核心概念必须覆盖 target_section.key_knowledge_points 的每一个知识点；"
         "步骤讲解必须包含 Markdown 表格或 fenced code block 作为教学支架；"
         "必须包含与 video_briefs.video_id 完全一致的视频占位符；"
         "必须包含与 animation_briefs.animation_id 完全一致的动画占位符；"
         "禁止输出旧兜底文案、英文占位说明或资源不可用提示。\n\n"
+        f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
+    )
+
+
+def _markdown_expansion_input(
+    state: OrchestrationState,
+    outline: dict,
+    section: dict,
+    quality_issue: str,
+    previous_markdown: str,
+    expansion_section: str,
+) -> str:
+    context = _resource_context(state, outline, section)
+    existing_section_lengths = {
+        heading: len(_markdown_section_body(previous_markdown, heading))
+        for heading in _REQUIRED_MARKDOWN_HEADING_TITLES
+    }
+    video_ids = _extract_brief_ids_from_markdown(previous_markdown, "video")
+    animation_ids = _extract_brief_ids_from_markdown(previous_markdown, "animation")
+    payload = {
+        **context,
+        "parent_section": _parent_section(outline, section),
+        "target_section": section,
+        "markdown_quality_issue": quality_issue,
+        "markdown_expansion_section": expansion_section,
+        "existing_section_lengths": existing_section_lengths,
+        "existing_video_placeholder_ids": video_ids,
+        "existing_animation_placeholder_ids": animation_ids,
+    }
+    return (
+        "请为 markdown_expansion_section 生成可直接放入完整教学文档的 Markdown 章节正文。"
+        "不要输出 JSON，不要输出章节标题，不要输出视频或动画占位符。"
+        "补充内容必须绑定 target_section.title、target_section.description 和 target_section.key_knowledge_points，"
+        "并结合 profile、year_learning_paths、course_knowledge 写成本小节专属教学内容。"
+        "如果 markdown_expansion_section 是 步骤讲解，必须包含 Markdown 表格或 fenced code block；"
+        "如果 markdown_expansion_section 是 检查标准，必须输出至少 4 条 `- [ ]` 可验收清单；"
+        "学习目标、练习任务请输出 450 到 800 个中文字符；"
+        "核心概念、步骤讲解请输出 650 到 1000 个中文字符。\n\n"
         f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )
 
@@ -1057,6 +1130,49 @@ def _normalize_markdown_animation_briefs(section: dict, animation_briefs: object
     return []
 
 
+def _generated_markdown_video_briefs(section: dict) -> list[dict]:
+    title = _clean_text(section.get("title")) or _clean_text(section.get("section_id")) or "本节"
+    knowledge_points = _text_items(section.get("key_knowledge_points"))
+    focus = "、".join(knowledge_points[:2]) or title
+    return [
+        {
+            "video_id": "video_1",
+            "title": f"{title}导入视频",
+            "purpose": f"帮助学习者理解{focus}，并把本节内容落到可验收任务。",
+        }
+    ]
+
+
+def _generated_markdown_animation_briefs(section: dict) -> list[dict]:
+    title = _clean_text(section.get("title")) or _clean_text(section.get("section_id")) or "本节"
+    knowledge_points = _text_items(section.get("key_knowledge_points"))
+    visual_elements = knowledge_points[:3] or [title, "输入材料", "验收证据"]
+    return [
+        {
+            "animation_id": "anim_1",
+            "title": f"{title}流程动画",
+            "concept": f"展示{title}如何从输入材料、处理步骤推进到验收证据。",
+            "visual_elements": visual_elements,
+            "motion": "关键节点依次通过 opacity 淡入，并只用 transform 表现轻微位移。",
+            "space": "正文宽度 100%，高度 320px。",
+            "placement_hint": "练习任务之前。",
+        }
+    ]
+
+
+def _generated_markdown_seed_data(section: dict) -> dict:
+    section_id = _clean_text(section.get("section_id"))
+    title = _clean_text(section.get("title")) or section_id
+    return {
+        "section_id": section_id,
+        "parent_section_id": section.get("parent_section_id"),
+        "title": title,
+        "markdown": "",
+        "video_briefs": _generated_markdown_video_briefs(section),
+        "animation_briefs": _generated_markdown_animation_briefs(section),
+    }
+
+
 def _normalize_markdown_resources(markdown_data: dict, section: dict) -> dict:
     normalized = dict(markdown_data)
     markdown = _clean_text(normalized.get("markdown"))
@@ -1123,159 +1239,6 @@ def _profile_learning_context_text(state: OrchestrationState) -> str:
             return "本节采用项目实践驱动的教学设计，侧重动手实践与运行结果校验，以便快速掌握核心技能。"
 
 
-def _deterministic_video_briefs(section: dict) -> list[dict]:
-    title = _clean_text(section.get("title")) or _clean_text(section.get("section_id")) or "本节"
-    knowledge_points = _text_items(section.get("key_knowledge_points"))
-    focus = "、".join(knowledge_points[:2]) or title
-    return [
-        {
-            "video_id": "video_1",
-            "title": f"{title}实战讲解视频",
-            "purpose": f"帮助学习者通过相近主题视频理解{focus}，并把本节内容转成可验收产出。",
-        }
-    ]
-
-
-def _deterministic_animation_briefs(section: dict) -> list[dict]:
-    title = _clean_text(section.get("title")) or _clean_text(section.get("section_id")) or "本节"
-    knowledge_points = _text_items(section.get("key_knowledge_points"))
-    visual_elements = knowledge_points[:3] or [title, "输入材料", "验收证据"]
-    return [
-        {
-            "animation_id": "anim_1",
-            "title": f"{title}流程动画",
-            "concept": f"展示{title}如何从输入材料、处理步骤推进到验收证据。",
-            "visual_elements": visual_elements,
-            "motion": "关键节点依次通过 opacity 淡入，并只用 transform 表现轻微位移。",
-            "space": "正文宽度 100%，高度 320px。",
-            "placement_hint": "步骤讲解之后或练习任务之前。",
-        }
-    ]
-
-
-def _deterministic_concept_block(point: str, section: dict, index: int) -> str:
-    title = _clean_text(section.get("title")) or "本节"
-    description = _clean_text(section.get("description")) or f"围绕{title}完成可验收学习任务。"
-    
-    mod = index % 3
-    if mod == 1:
-        return (
-            f"### {point}\n"
-            f"**定义**：{point}是「{title}」里用于明确数据边界的关键机制。\n\n"
-            f"为了理清其在 RAG 系统中的作用，以下是其与其他常见方案的横向对比：\n\n"
-            f"| 比较维度 | {point} 方案 | 传统/基础方案 | 核心优势 |\n"
-            f"| --- | --- | --- | --- |\n"
-            f"| 数据吞吐 | 适合高并发写入 | 单点写入瓶颈 | 降低资源阻塞率 |\n"
-            f"| 检索相关性 | 稠密向量语义对齐 | 关键词匹配 | 提升复杂 Query 召回率 |\n\n"
-            f"**适用场景**：在大规模非结构化文档导入和召回退化场景下，优先配置本机制以确保召回的准确性。\n\n"
-            f"**如何验证**：通过运行后检查向量数据库的索引一致性日志进行掌握验收。"
-        )
-    elif mod == 2:
-        return (
-            f"### {point}\n"
-            f"**概念解析**：{point}在工程落地上通常对应特定的初始化参数配置与资源分配。\n\n"
-            f"在实际开发中，可以通过如下典型的 Python 伪代码来进行组件初始化与高并发配置：\n\n"
-            f"```python\n"
-            f"# {point} 核心配置与并发限制初始化\n"
-            f"import asyncio\n\n"
-            f"class VectorIngestionPipeline:\n"
-            f"    def __init__(self, batch_size: int = 64, max_concurrency: int = 5):\n"
-            f"        self.batch_size = batch_size\n"
-            f"        self.semaphore = asyncio.Semaphore(max_concurrency)\n"
-            f"        # 初始化映射维度\n"
-            f"        self.dimension = 1024  # 对齐 BGE-large-zh 维度\n"
-            f"```\n\n"
-            f"**常见边界**：注意在高并发写入时控制 Batch Size，以防止 API 触发 429 限流或本地 PyTorch 显存溢出 (OOM)。"
-        )
-    else:
-        return (
-            f"### {point}\n"
-            f"**基本概念**：{point}是保证本地问答系统最终召回结果连续性不可或缺的一环，直指「{description}」的底层落地。\n\n"
-            f"**常见错误与排查步骤**：\n"
-            f"1. **维度不匹配错误 (Dimension Mismatch)**：通常表现为后端报错 `ValueError`。请打印 Query 向量与 Doc 向量的 `.shape` 确认是否完全对齐。\n"
-            f"2. **上下文断裂**：分块块间重叠率 (Overlap) 设置过低。建议将 overlap 调整在 10% - 20% 之间。\n\n"
-            f"**验收标准**：通过运行测试问题，确认召回的 Chunk 没有出现文本截断，并且能被下游大模型解析。"
-        )
-
-
-def _deterministic_section_markdown_data(
-    state: OrchestrationState,
-    outline: dict,
-    section: dict,
-) -> dict:
-    section_id = _clean_text(section.get("section_id"))
-    title = _clean_text(section.get("title")) or section_id or "本节"
-    parent = _parent_section(outline, section) or {}
-    parent_title = _clean_text(parent.get("title")) or "当前章节"
-    description = _clean_text(section.get("description")) or f"围绕{title}建立可执行学习产出。"
-    course_name = _clean_text(outline.get("course_name")) or "构建本地知识库问答系统 (RAG基础)"
-    profile_text = _profile_learning_context_text(state)
-    knowledge_points = _text_items(section.get("key_knowledge_points")) or [title]
-    video_briefs = _deterministic_video_briefs(section)
-    animation_briefs = _deterministic_animation_briefs(section)
-
-    concept_blocks = [
-        _deterministic_concept_block(point, section, index + 1)
-        for index, point in enumerate(knowledge_points)
-    ]
-    first_point = knowledge_points[0]
-    second_point = knowledge_points[1] if len(knowledge_points) > 1 else first_point
-    third_point = knowledge_points[2] if len(knowledge_points) > 2 else second_point
-
-    markdown = "\n\n".join([
-        f"# {section_id} {title}",
-        (
-            "## 学习目标\n"
-            f"本节属于《{course_name}》第一章「{parent_title}」，目标不是泛泛了解概念，而是把「{title}」变成能在本地 RAG 项目中复用的工作方法。"
-            f"学习者需要围绕「{description}」完成三类结果：一份可解释的处理规则、一组能复查的样例输出，以及一张说明后续检索质量如何受影响的检查表。\n\n"
-            f"结合当前画像：{profile_text}。因此本节安排会偏向项目驱动和证据留存，每一步都要求留下表格、日志、截图或口头解释，避免只读完文档却不知道自己是否真正掌握。完成后，学习者应该能把任意一份 PDF、Markdown 或技术文档放进处理流程，说明每个清洗和分块决策的依据。"
-        ),
-        "## 核心概念\n" + "\n\n".join(concept_blocks),
-        (
-            "## 步骤讲解\n"
-            f"第一步：准备输入样本。输入材料是一份包含标题、正文、列表、代码块或页码信息的非结构化文档；具体动作是记录文件来源、格式、页数、编码和明显噪声；判断依据是样本能覆盖「{first_point}」会遇到的正常情况与异常情况；产出物是一张输入登记表。\n\n"
-            f"第二步：设计处理规则。输入材料是登记表和本节关键知识点；具体动作是为「{first_point}」「{second_point}」分别写出处理前、处理后、失败条件和人工复查方式；判断依据是规则是否能被另一个人照着执行；产出物是一份 cleaning_and_chunking_rules.md。\n\n"
-            f"第三步：运行小样本验证。输入材料是 3 到 5 段真实文本；具体动作是按规则完成清洗、分块、重叠率或元数据处理；判断依据是每个 chunk 都能追溯到原文位置，并且没有明显乱码、空白或上下文断裂；产出物是一份分块样例表。\n\n"
-            f"第四步：连接后续 RAG 检索。输入材料是分块样例表；具体动作是标注哪些 chunk 适合进入向量化，哪些应该剔除或合并，并解释「{third_point}」对召回率、答案完整性或上下文连续性的影响；判断依据是能用一个测试问题说明为什么这些 chunk 会被召回；产出物是一份检索影响说明。\n\n"
-            "| 步骤 | 输入材料 | 具体动作 | 产出物 | 验收方式 |\n"
-            "| --- | --- | --- | --- | --- |\n"
-            "| 输入登记 | 原始文档 | 记录来源、格式、页数、编码和噪声 | 输入登记表 | 能说明样本覆盖哪些场景 |\n"
-            "| 规则设计 | 登记表与关键知识点 | 写出处理前后、失败条件和复查方式 | cleaning_and_chunking_rules.md | 同伴能照规则复现 |\n"
-            "| 小样本验证 | 3 到 5 段真实文本 | 执行清洗、分块和元数据处理 | 分块样例表 | chunk 可追溯、无明显断裂 |\n"
-            "| 检索连接 | 分块样例表 | 标注保留、剔除、合并和召回影响 | 检索影响说明 | 能用测试问题解释召回依据 |"
-        ),
-        "<!-- video:id=video_1 -->",
-        (
-            "## 练习任务\n"
-            f"预计耗时 25 到 40 分钟。输入：一份你准备放进本地知识库的 PDF、Markdown 或技术说明文档，以及本节小节目标「{title}」。"
-            "操作步骤：先填写输入登记表，再写清洗与分块规则，然后选取 3 到 5 段文本手动跑一遍处理流程，最后写出每个 chunk 为什么保留、剔除或合并。"
-            "输出：一份 markdown 记录，至少包含输入登记表、规则说明、分块样例表和检索影响说明。"
-            "提交物：文档截图、终端运行日志或整理后的 markdown 文件。"
-            "完成标准：别人只看你的提交物，就能判断你的非结构化文档是否已经被整理成适合后续向量化和语义检索的语料。"
-        ),
-        "<!-- animation:id=anim_1 -->",
-        (
-            "## 检查标准\n"
-            f"- [ ] 能用自己的话解释「{title}」在《{course_name}》中的作用，并说明它和后续向量化、检索召回的关系。\n"
-            f"- [ ] 能逐条解释 {', '.join(knowledge_points)}，每条都能给出输入、处理动作、输出和失败边界。\n"
-            "- [ ] 能提交一张分块样例表，表里至少包含原文片段、处理后文本、元数据、保留或剔除理由。\n"
-            "- [ ] 能通过运行结果、截图、表格或口头解释证明清洗和分块规则不是随意写的，而是能复查、能复现。\n"
-            "- [ ] 能说明视频资源和 HTML 动画分别服务哪个理解难点，并确认占位符 ID 与 brief 完全一致。"
-        ),
-        (
-            "补充说明：这份文档由资源生成链路在模型短输出后进行确定性重写，并且仍然要通过同一套质量检查才能保存。"
-            "它不会把不可用模型调用、空结果或低质量占位内容当成完成；只有当 Markdown 具备完整标题、核心概念展开、步骤表格、练习任务、检查清单、视频 brief 和动画 brief 时，才会进入视频搜索与 HTML 动画阶段。"
-        ),
-    ])
-
-    return {
-        "section_id": section_id,
-        "parent_section_id": section.get("parent_section_id"),
-        "title": title,
-        "markdown": markdown,
-        "video_briefs": video_briefs,
-        "animation_briefs": animation_briefs,
-    }
 
 
 def _deterministic_animation_html(
@@ -1537,17 +1500,166 @@ def _markdown_section_body(markdown: str, heading: str) -> str:
     return ""
 
 
+def _markdown_needs_expansion(issue: str) -> bool:
+    text = _clean_text(issue)
+    return (
+        "Markdown 内容过短" in text
+        or "Markdown 教学深度不足" in text
+        or "Markdown 教学支架不足" in text
+    )
+
+
+def _markdown_expansion_sections_for_issue(markdown: str, issue: str) -> list[str]:
+    text = _clean_text(issue)
+    if "核心概念解释过短" in text:
+        return ["核心概念"]
+    if "步骤讲解" in text or "教学支架不足" in text:
+        return ["步骤讲解"]
+    if "检查标准" in text:
+        return ["检查标准"]
+
+    sections: list[str] = []
+    for heading in _REQUIRED_MARKDOWN_HEADING_TITLES:
+        body = _markdown_section_body(markdown, heading)
+        if heading == "核心概念" and len(body) < 420:
+            sections.append(heading)
+        elif heading == "步骤讲解" and (len(body) < 520 or "|" not in body and "```" not in body):
+            sections.append(heading)
+        elif heading == "检查标准" and len(body) < 220:
+            sections.append(heading)
+        elif heading in {"学习目标", "练习任务"} and len(body) < 260:
+            sections.append(heading)
+    return sections or list(_REQUIRED_MARKDOWN_HEADING_TITLES)
+
+
+def _insert_markdown_expansion(markdown: str, heading: str, expansion: str) -> str:
+    expansion_text = _clean_text(_plain_markdown_text(expansion))
+    if not expansion_text:
+        return markdown
+    expansion_text = re.sub(rf"^##\s+{re.escape(heading)}\s*", "", expansion_text).strip()
+    if not expansion_text:
+        return markdown
+
+    matches = list(_MARKDOWN_HEADING_PATTERN.finditer(markdown))
+    for index, match in enumerate(matches):
+        if not match.group(1).strip().startswith(heading):
+            continue
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(markdown)
+        body = markdown[start:end].rstrip()
+        suffix = markdown[end:].lstrip()
+        expanded_body = f"{body}\n\n{expansion_text}".strip()
+        return f"{markdown[:start]}\n{expanded_body}\n\n{suffix}".rstrip()
+    return f"{markdown.rstrip()}\n\n## {heading}\n{expansion_text}"
+
+
+def _section_body_from_expansion_text(text: str, heading: str) -> str:
+    clean_text = _clean_text(text)
+    if not clean_text:
+        return ""
+
+    json_text = _extract_json_object_text(clean_text)
+    if json_text:
+        try:
+            payload = json.loads(json_text)
+        except json.JSONDecodeError:
+            payload = {}
+        if isinstance(payload, dict):
+            markdown = _clean_text(payload.get("markdown"))
+            section_body = _markdown_section_body(markdown, heading)
+            if section_body:
+                return section_body
+
+    section_body = _markdown_section_body(clean_text, heading)
+    if section_body:
+        return section_body
+
+    return _clean_text(_plain_markdown_text(clean_text))
+
+
+def _compose_llm_section_markdown(
+    markdown_data: dict,
+    section: dict,
+    section_bodies: dict[str, str],
+) -> dict:
+    normalized = dict(markdown_data)
+    video_briefs = _normalize_markdown_video_briefs(section, normalized.get("video_briefs"))
+    animation_briefs = _normalize_markdown_animation_briefs(section, normalized.get("animation_briefs"))
+    if not video_briefs or not animation_briefs:
+        return normalized
+
+    section_id = _clean_text(section.get("section_id"))
+    title = _clean_text(section.get("title")) or _clean_text(normalized.get("title"))
+    blocks = [f"# {section_id} {title}"]
+    for heading in ("学习目标", "核心概念", "步骤讲解"):
+        blocks.append(f"## {heading}\n{_clean_text(section_bodies.get(heading))}")
+    for brief in video_briefs:
+        blocks.append(f"<!-- video:id={brief['video_id']} -->")
+    blocks.append(f"## 练习任务\n{_clean_text(section_bodies.get('练习任务'))}")
+    for brief in animation_briefs:
+        blocks.append(f"<!-- animation:id={brief['animation_id']} -->")
+    blocks.append(f"## 检查标准\n{_normalize_checklist_body(section_bodies.get('检查标准'))}")
+
+    normalized.update(
+        {
+            "section_id": section_id,
+            "parent_section_id": section.get("parent_section_id"),
+            "title": title,
+            "markdown": "\n\n".join(block for block in blocks if block.strip()),
+            "video_briefs": video_briefs,
+            "animation_briefs": animation_briefs,
+        }
+    )
+    return normalized
+
+
+def _normalize_checklist_body(body: object) -> str:
+    text = _clean_text(_plain_markdown_text(_clean_text(body)))
+    if not text:
+        return ""
+    if re.search(r"^\s*-\s+\[\s*[ xX]?\s*\]", text, re.MULTILINE):
+        return text
+
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.strip().startswith("##")
+    ]
+    if len(lines) < 4:
+        lines = [
+            part.strip()
+            for part in re.split(r"[。；;]\s*", text)
+            if part.strip() and not part.strip().startswith("##")
+        ]
+    cleaned_items: list[str] = []
+    for line in lines:
+        item = re.sub(r"^\s*(?:[-*+]\s+|\d+[.、]\s*|[（(]?\d+[）)]\s*)", "", line).strip()
+        item = re.sub(r"^\[\s*[ xX]?\]\s*", "", item).strip()
+        if item:
+            cleaned_items.append(item)
+    return "\n".join(f"- [ ] {item}" for item in cleaned_items)
+
+
+def _markdown_section_body_issue(heading: str, body: str) -> str | None:
+    text = _normalize_checklist_body(body) if heading == "检查标准" else _clean_text(body)
+    if not text:
+        return f"{heading}正文为空。"
+    if heading == "步骤讲解":
+        has_table = "|" in text and re.search(r"^\s*\|.*\|\s*$", text, re.MULTILINE)
+        has_code_block = "```" in text
+        if not has_table and not has_code_block:
+            return "步骤讲解缺少表格或代码块。"
+    if heading == "检查标准":
+        check_items = re.findall(r"^\s*-\s+\[\s*[ xX]?\s*\]", text, re.MULTILINE)
+        if len(check_items) < 4:
+            return "检查标准少于 4 条。"
+    return None
+
+
 def _markdown_teaching_depth_issue(markdown: str, section: dict) -> str | None:
-    concept_body = _markdown_section_body(markdown, "核心概念")
     steps_body = _markdown_section_body(markdown, "步骤讲解")
     check_body = _markdown_section_body(markdown, "检查标准")
 
-    if len(markdown) < 1800:
-        return "Markdown 教学深度不足：正文整体过短。"
-    if len(concept_body) < 260:
-        return "Markdown 教学深度不足：核心概念解释过短。"
-    if len(steps_body) < 360:
-        return "Markdown 教学深度不足：步骤讲解缺少展开。"
     has_table = "|" in steps_body and re.search(r"^\s*\|.*\|\s*$", steps_body, re.MULTILINE)
     has_code_block = "```" in steps_body
     if not has_table and not has_code_block:
@@ -1555,8 +1667,6 @@ def _markdown_teaching_depth_issue(markdown: str, section: dict) -> str | None:
     check_items = re.findall(r"^\s*-\s+\[\s*[ xX]?\s*\]", check_body, re.MULTILINE)
     if len(check_items) < 4:
         return "Markdown 教学深度不足：检查标准少于 4 条。"
-    if len(check_body) < 160:
-        return "Markdown 教学深度不足：检查标准不可验收。"
     return None
 
 
@@ -1570,8 +1680,6 @@ def _markdown_quality_issue(
     text = _clean_text(markdown)
     if any(marker in text for marker in _LOW_QUALITY_MARKERS):
         return "Markdown 含旧兜底内容。"
-    if len(text) < 700:
-        return "Markdown 内容过短。"
     required_headings = ("## 学习目标", "## 核心概念", "## 步骤讲解", "## 练习任务", "## 检查标准")
     missing_headings = [heading for heading in required_headings if heading not in text]
     if missing_headings:
@@ -2896,10 +3004,36 @@ def _inject_animation_context(normalized: str, brief: dict | None) -> str:
     return f"{normalized[:root_match.end()]}\n{context_html}{normalized[root_match.end():]}"
 
 
+def _normalize_animation_colors(html_text: str) -> str:
+    normalized = re.sub(
+        r"#[0-9A-Fa-f]{3,8}\b",
+        "oklch(72% 0.08 240)",
+        html_text,
+    )
+    normalized = re.sub(
+        r"\brgba?\s*\([^)]*\)",
+        "oklch(0% 0 0 / 0.12)",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\bhsla?\s*\([^)]*\)",
+        "oklch(72% 0.08 240)",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(r"(?i)(background(?:-color)?\s*:\s*)white\b", r"\1oklch(98% 0.01 90)", normalized)
+    normalized = re.sub(r"(?i)(color\s*:\s*)white\b", r"\1oklch(98% 0.01 90)", normalized)
+    normalized = re.sub(r"(?i)(background(?:-color)?\s*:\s*)black\b", r"\1oklch(18% 0.01 240)", normalized)
+    normalized = re.sub(r"(?i)(color\s*:\s*)black\b", r"\1oklch(18% 0.01 240)", normalized)
+    return normalized
+
+
 def _normalize_animation_html(html: str, brief: dict | None = None) -> str:
     normalized = _clean_text(html)
     if not normalized:
         return ""
+    normalized = _normalize_animation_colors(normalized)
     visible_fallback = (
         "<style>"
         "@media (prefers-reduced-motion: reduce) {"
@@ -3074,16 +3208,17 @@ async def run_section_markdown_agent(
     except ValueError as exc:
         return {"error": str(exc), "hard_error": True}
 
-    prompt = ChatPromptTemplate.from_messages([
-        SystemMessage(content=SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT),
+    expansion_prompt = ChatPromptTemplate.from_messages([
+        SystemMessage(content=SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT),
         ("human", "{query}"),
     ])
-    chain = prompt | llm
+    expansion_chain = expansion_prompt | llm
 
     target_section_ids = [
         _clean_text(section.get("section_id"))
         for section in target_sections
     ]
+
     async def generate_markdown(section: dict) -> tuple[str, dict]:
         target_section_id = _clean_text(section.get("section_id"))
         if not target_section_id:
@@ -3091,98 +3226,74 @@ async def run_section_markdown_agent(
         existing_markdown = _existing_markdown_value(outline, section)
         if existing_markdown is not None:
             return target_section_id, existing_markdown
-        query = _markdown_input(state, outline, section)
-        markdown_data: dict = {}
-        quality_issue = ""
+        markdown_data = _generated_markdown_seed_data(section)
 
-        def deterministic_markdown(reason: str) -> dict:
-            repaired_data = _normalize_markdown_resources(
-                _deterministic_section_markdown_data(state, outline, section),
-                section,
-            )
-            repaired_issue = _markdown_quality_issue(
-                _clean_text(repaired_data.get("markdown")),
-                section,
-                repaired_data.get("video_briefs"),
-                repaired_data.get("animation_briefs"),
-            ) or ""
-            if repaired_issue:
-                logger.warning(
-                    "Deterministic markdown rewrite after %s failed for section %s: %s",
-                    reason,
-                    target_section_id,
-                    repaired_issue,
-                )
-                return {"error": f"{target_section_id} Markdown 文档质量不合格。"}
-            return repaired_data
-
-        for attempt in range(_MARKDOWN_ATTEMPTS):
-            try:
-                markdown_data = await _invoke_resource_chain(
-                    chain,
-                    query,
-                    SectionMarkdownOutput,
-                    timeout_seconds=_MARKDOWN_TIMEOUT_SECONDS,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Markdown generation failed for section %s on attempt %s: %s: %r",
-                    target_section_id,
-                    attempt + 1,
-                    type(exc).__name__,
-                    exc,
-                )
-                if attempt + 1 < _MARKDOWN_ATTEMPTS:
-                    query = _markdown_repair_input(
-                        state,
-                        outline,
-                        section,
-                        "Markdown JSON 文本无法通过校验或生成过程超时，请严格按要求重写。",
-                        "",
-                    )
-                    continue
-                markdown_data = deterministic_markdown("generation failure")
-                if _clean_text(markdown_data.get("error")):
-                    return target_section_id, markdown_data
-                quality_issue = ""
-                break
-
-            if _clean_text(markdown_data.get("error")):
-                logger.warning(
-                    "Markdown generation returned explicit error for section %s: %s",
-                    target_section_id,
-                    _clean_text(markdown_data.get("error")),
-                )
-                markdown_data = deterministic_markdown("explicit model error")
-                if _clean_text(markdown_data.get("error")):
-                    return target_section_id, markdown_data
-                quality_issue = ""
-                break
-
-            markdown_data = _normalize_markdown_resources(markdown_data, section)
-            quality_issue = _markdown_quality_issue(
-                _clean_text(markdown_data.get("markdown")),
-                section,
-                markdown_data.get("video_briefs"),
-                markdown_data.get("animation_briefs"),
-            ) or ""
-            if not quality_issue:
-                break
-            logger.warning("Markdown quality issue for section %s: %s", target_section_id, quality_issue)
-            if attempt + 1 < _MARKDOWN_ATTEMPTS:
-                query = _markdown_repair_input(
+        async def generate_section_body(expansion_section: str) -> tuple[str, str]:
+            body = ""
+            section_issue = "请生成该教学点正文。"
+            for attempt in range(_MARKDOWN_SECTION_BODY_ATTEMPTS):
+                query = _markdown_expansion_input(
                     state,
                     outline,
                     section,
-                    f"Markdown 质量问题：{quality_issue}",
-                    _clean_text(markdown_data.get("markdown")),
+                    section_issue,
+                    "",
+                    expansion_section,
                 )
-                continue
-            markdown_data = deterministic_markdown("quality failure")
-            if _clean_text(markdown_data.get("error")):
-                return target_section_id, markdown_data
-            quality_issue = ""
-            break
+                try:
+                    raw_body = await _invoke_markdown_expansion_chain(
+                        expansion_chain,
+                        query,
+                        timeout_seconds=_MARKDOWN_TIMEOUT_SECONDS,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Markdown section body generation failed for section %s / %s on attempt %s: %s: %r",
+                        target_section_id,
+                        expansion_section,
+                        attempt + 1,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    section_issue = "章节正文生成失败或超时，请重新生成该教学点正文。"
+                    continue
+                body = _section_body_from_expansion_text(raw_body, expansion_section)
+                issue = _markdown_section_body_issue(expansion_section, body)
+                if not issue:
+                    return expansion_section, body
+                logger.warning(
+                    "Markdown section body issue for section %s / %s on attempt %s: %s",
+                    target_section_id,
+                    expansion_section,
+                    attempt + 1,
+                    issue,
+                )
+                section_issue = issue
+            return expansion_section, body
+
+        body_results = await asyncio.gather(
+            *(generate_section_body(heading) for heading in _REQUIRED_MARKDOWN_HEADING_TITLES)
+        )
+        section_bodies = dict(body_results)
+        body_issues = [
+            issue
+            for heading in _REQUIRED_MARKDOWN_HEADING_TITLES
+            if (issue := _markdown_section_body_issue(heading, _clean_text(section_bodies.get(heading))))
+        ]
+        if body_issues:
+            return target_section_id, {"error": f"{target_section_id} Markdown 教学点生成失败：{'；'.join(body_issues)}"}
+
+        markdown_data = _compose_llm_section_markdown(markdown_data, section, section_bodies)
+        markdown_data = _normalize_markdown_resources(markdown_data, section)
+        quality_issue = _markdown_quality_issue(
+            _clean_text(markdown_data.get("markdown")),
+            section,
+            markdown_data.get("video_briefs"),
+            markdown_data.get("animation_briefs"),
+        )
+        if quality_issue:
+            logger.warning("Markdown quality issue for section %s: %s", target_section_id, quality_issue)
+            return target_section_id, {"error": f"{target_section_id} Markdown 文档质量不合格：{quality_issue}"}
 
         animation_briefs = markdown_data.get("animation_briefs")
         video_briefs = markdown_data.get("video_briefs")
@@ -3198,7 +3309,13 @@ async def run_section_markdown_agent(
 
     section_markdowns: dict[str, dict] = {}
     failed_sections: list[dict] = []
-    markdown_results = await asyncio.gather(*(generate_markdown(section) for section in target_sections))
+    _sem = asyncio.Semaphore(_SECTION_CONCURRENCY_LIMIT)
+
+    async def _limited_markdown(section: dict) -> tuple[str, dict]:
+        async with _sem:
+            return await generate_markdown(section)
+
+    markdown_results = await asyncio.gather(*(_limited_markdown(section) for section in target_sections))
     for section, (target_section_id, markdown_value) in zip(target_sections, markdown_results, strict=True):
         if not target_section_id:
             continue
@@ -3222,6 +3339,15 @@ async def run_section_markdown_agent(
         return {"error": "课程资源生成失败：Markdown 文档未生成，请稍后重试。", "hard_error": True}
 
     updated_outline = _merge_course_resource_data(outline, "section_markdowns", section_markdowns)
+    section_composed_markdowns = {
+        section_id: _compose_section_content(markdown_value, {}, {})
+        for section_id, markdown_value in section_markdowns.items()
+    }
+    updated_outline = _merge_course_resource_data(
+        updated_outline,
+        "section_composed_markdowns",
+        section_composed_markdowns,
+    )
     try:
         _persist_outline(str(state.get("user_id", "")), updated_outline)
     except Exception as exc:
@@ -3330,7 +3456,13 @@ async def run_section_video_search_agent(
         }
 
     section_video_links: dict[str, dict] = {}
-    video_results = await asyncio.gather(*(generate_video_links(section) for section in target_sections))
+    _sem = asyncio.Semaphore(_SECTION_CONCURRENCY_LIMIT)
+
+    async def _limited_video(section: dict) -> tuple[str, dict]:
+        async with _sem:
+            return await generate_video_links(section)
+
+    video_results = await asyncio.gather(*(_limited_video(section) for section in target_sections))
     for target_section_id, video_value in video_results:
         if not target_section_id:
             continue
@@ -3446,25 +3578,9 @@ async def run_section_html_animation_agent(
                 not animations
                 or _normalized_animation_quality_issue(animations, animation_briefs, section)
             ):
-                animations = _deterministic_animation_data(animation_briefs, section)
-                quality_issue = _normalized_animation_quality_issue(animations, animation_briefs, section)
-                if quality_issue:
-                    logger.warning(
-                        "Deterministic animation quality issue for section %s: %s",
-                        target_section_id,
-                        quality_issue,
-                    )
-                    return target_section_id, {"error": f"{target_section_id} HTML 动画未生成。"}
+                return target_section_id, {"error": f"{target_section_id} HTML 动画未生成。"}
         if isinstance(animation_briefs, list) and animation_briefs and not animations:
-            animations = _deterministic_animation_data(animation_briefs, section)
-            quality_issue = _normalized_animation_quality_issue(animations, animation_briefs, section)
-            if quality_issue:
-                logger.warning(
-                    "Deterministic animation quality issue for section %s: %s",
-                    target_section_id,
-                    quality_issue,
-                )
-                return target_section_id, {"error": f"{target_section_id} HTML 动画生成失败。"}
+            return target_section_id, {"error": f"{target_section_id} HTML 动画生成失败。"}
         quality_issue = _normalized_animation_quality_issue(animations, animation_briefs, section)
         if quality_issue:
             logger.warning("Animation quality issue for section %s: %s", target_section_id, quality_issue)
@@ -3480,8 +3596,14 @@ async def run_section_html_animation_agent(
 
     section_html_animations: dict[str, dict] = {}
     failed_sections: list[dict] = []
+    _sem = asyncio.Semaphore(_SECTION_CONCURRENCY_LIMIT)
+
+    async def _limited_animation(section: dict) -> tuple[str, dict]:
+        async with _sem:
+            return await generate_html_animations(section)
+
     animation_results = await asyncio.gather(
-        *(generate_html_animations(section) for section in target_sections)
+        *(_limited_animation(section) for section in target_sections)
     )
     for section, (target_section_id, animation_value) in zip(target_sections, animation_results, strict=True):
         if not target_section_id:
@@ -3733,7 +3855,7 @@ async def stream_chapter_resource_generation(
         )
         return
 
-    state = {**state, **markdown_result}
+    state.update(markdown_result)
     for section_id in section_ids:
         yield {
             "event": "agent_result",
@@ -3778,7 +3900,7 @@ async def stream_chapter_resource_generation(
             section_ids=section_ids,
         )
         return
-    state = {**state, **video_result}
+    state.update(video_result)
     animation_result = await run_section_html_animation_agent(state, llm)
     if animation_result.get("error"):
         yield _chapter_resource_error_event(
@@ -3792,7 +3914,7 @@ async def stream_chapter_resource_generation(
             section_ids=section_ids,
         )
         return
-    state = {**state, **animation_result}
+    state.update(animation_result)
 
     for section_id in section_ids:
         yield {

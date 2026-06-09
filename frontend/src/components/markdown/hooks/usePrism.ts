@@ -1,23 +1,35 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import type * as PrismJS from 'prismjs';
 
-export function usePrism() {
+export function usePrism(enabled = true) {
   const [Prism, setPrism] = useState<typeof PrismJS | null>(null);
+  const prismRef = useRef<typeof PrismJS | null>(null);
+  const loadedLanguages = useRef(new Set<string>());
 
   useEffect(() => {
+    if (!enabled) return;
+    let active = true;
     import('prismjs').then((module) => {
+      if (!active) return;
+      module.manual = true;
+      prismRef.current = module;
       setPrism(module);
     });
-  }, []);
+    return () => { active = false; };
+  }, [enabled]);
 
   const highlight = useCallback(
     async (code: string, language: string): Promise<string> => {
-      if (!Prism) return code;
+      const prism = prismRef.current;
+      if (!prism) return code;
 
       try {
-        await import(`prismjs/components/prism-${language}`);
-        if (Prism.languages[language]) {
-          return Prism.highlight(code, Prism.languages[language], language);
+        if (!loadedLanguages.current.has(language)) {
+          await import(/* @vite-ignore */ `prismjs/components/prism-${language}`);
+          loadedLanguages.current.add(language);
+        }
+        if (prism.languages[language]) {
+          return prism.highlight(code, prism.languages[language], language);
         }
       } catch (error) {
         console.warn(`Failed to load language: ${language}`, error);
@@ -25,7 +37,7 @@ export function usePrism() {
 
       return code;
     },
-    [Prism]
+    []
   );
 
   return { highlight, isLoaded: !!Prism };

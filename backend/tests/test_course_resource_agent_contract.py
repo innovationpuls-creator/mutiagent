@@ -10,9 +10,9 @@ from app.orchestration.agents.course_resources import (
     _animation_input,
     _compose_section_content,
     _deterministic_animation_data,
-    _deterministic_section_markdown_data,
     _fallback_cover_data_url,
     _find_verified_video_from_search,
+    _invoke_resource_chain,
     _MARKDOWN_TIMEOUT_SECONDS,
     _markdown_input,
     _markdown_quality_issue,
@@ -22,6 +22,7 @@ from app.orchestration.agents.course_resources import (
     _normalized_video_quality_issue,
     _profile_learning_context_text,
     _RESOURCE_TIMEOUT_SECONDS,
+    _section_body_from_expansion_text,
     _section_by_id,
     _target_sections_for_scope,
     _VIDEO_TIMEOUT_SECONDS,
@@ -104,6 +105,56 @@ def test_course_resource_llm_timeouts_are_three_minutes() -> None:
     assert _MARKDOWN_TIMEOUT_SECONDS == 180.0
     assert _VIDEO_TIMEOUT_SECONDS == 180.0
     assert _ANIMATION_TIMEOUT_SECONDS == 180.0
+
+
+def test_invoke_resource_chain_parses_chat_message_content_before_model_dump() -> None:
+    from app.orchestration.agents.models import SectionHtmlAnimationOutput
+
+    class MessageLike:
+        content = json.dumps(
+            {
+                "section_id": "1.1",
+                "animations": [
+                    {
+                        "animation_id": "anim_1",
+                        "title": "动画",
+                        "html": "<section class=\"section-animation\">动画内容</section>",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+        def model_dump(self):
+            return {"content": self.content, "type": "ai", "usage_metadata": {}}
+
+    class Chain:
+        async def ainvoke(self, _payload):
+            return MessageLike()
+
+    query = (
+        "请生成动画。\n\n"
+        "输入："
+        + json.dumps(
+            {
+                "target_section": {"section_id": "1.1"},
+                "animation_briefs": [
+                    {
+                        "animation_id": "anim_1",
+                        "title": "动画",
+                        "concept": "动画内容",
+                        "visual_elements": ["动画内容"],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    result = asyncio.run(_invoke_resource_chain(Chain(), query, SectionHtmlAnimationOutput))
+
+    assert result["section_id"] == "1.1"
+    assert result["animations"][0]["animation_id"] == "anim_1"
 
 
 def test_video_search_prompts_require_bilibili_bv_video_pages() -> None:
@@ -292,17 +343,17 @@ def test_resource_agent_inputs_keep_only_current_chapter_context() -> None:
         assert "接口接入" not in query
         assert "第二章：接口接入" not in query
         assert "2.1" not in query
-        assert [item["section_id"] for item in payload["course_knowledge"]["sections"]] == ["1", "1.1", "1.2", "1.3"]
+        assert [item["section_id"] for item in payload["course_knowledge"]["sections"]] == ["1", "1.2", "1.3"]
         assert payload["course_knowledge"]["learning_sequence"] == ["第一章：需求拆解"]
         assert payload["parent_section"]["section_id"] == "1"
         assert payload["target_section"]["section_id"] == "1.1"
-        assert payload["year_learning_paths"]["year_3"]["current_learning_course"]["course_node_id"] == "year_3_course_1"
-        directions = payload["year_learning_paths"]["year_3"]["resource_generation_contract"]["resource_directions"]
+        assert "course_node_id" not in payload["year_learning_paths"]["current_learning_course"]
+        directions = payload["year_learning_paths"]["resource_generation_contract"]["resource_directions"]
         assert [item["resource_direction_id"] for item in directions] == ["year_3_course_1_resource"]
         assert "year_3_course_2_resource" not in query
 
+    assert payloads[0]["course_knowledge"]["existing_section_markdowns_ids"] == ["1.1"]
     assert payloads[1]["section_markdowns"].keys() == {"1.1"}
-    assert payloads[2]["section_markdown"]["section_id"] == "1.1"
 
 
 def test_merge_course_resource_data_preserves_outline_fields() -> None:
@@ -1654,11 +1705,52 @@ def test_run_section_markdown_agent_writes_each_first_chapter_child_section(tmp_
     class RecordingLlm:
         pass
 
+    section_bodies = {
+        "学习目标": (
+            "本节先把小节目标拆成可验收的学习结果。学习者需要说明当前小节解决什么问题、"
+            "输入材料来自哪里、后端如何组织模型调用、页面最终要展示什么内容。完成后，学习者可以把"
+            "AI 核心接口调用与 Prompt 工程基础中的一个小任务写成可运行、可检查、可复盘的资源生成流程。"
+        ),
+        "核心概念": (
+            "### API 连通性测试\n"
+            "API 连通性测试用于确认密钥、base_url、model、messages 和 timeout 都能进入同一个标准请求。"
+            "它不是泛泛点击一次按钮，而是要留下状态码、响应 JSON、错误日志和最小 payload。\n\n"
+            "### 标准化请求封装\n"
+            "标准化请求封装把模型调用需要的参数集中到一个函数里，避免业务代码散落密钥、模型名和错误处理。"
+            "学习者需要说明请求输入、模型输出、异常响应和重试证据之间的关系。"
+        ),
+        "步骤讲解": (
+            "第一步：读取输入材料。输入材料包括用户画像、学习路径、课程大纲和当前小节；具体动作是提取"
+            "小节标题、描述和关键知识点；产出物是资源生成上下文。\n\n"
+            "第二步：生成五个正文点。输入材料是资源生成上下文；具体动作是分别生成学习目标、核心概念、"
+            "步骤讲解、练习任务和检查标准；产出物是五段正文。\n\n"
+            "| 步骤 | 输入材料 | 具体动作 | 产出物 | 验收方式 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| 上下文读取 | 画像、路径、大纲、小节 | 提取目标字段 | 资源生成上下文 | 字段可打印复查 |\n"
+            "| 五点生成 | 资源生成上下文 | 并发生成五段正文 | section_bodies | 每段非空且绑定小节 |\n"
+            "| 后端拼装 | 五段正文与 brief | 插入标题和资源占位符 | markdown | 占位符 ID 与 brief 一致 |"
+        ),
+        "练习任务": (
+            "请完成一个资源生成任务卡：输入是一个小节标题和三个关键知识点；操作步骤是先写五段正文，"
+            "再确认视频 brief 与动画 brief，最后检查 `section_composed_markdowns` 是否能被前端读取。"
+            "提交物是一份 Markdown 和一份 blocks 结构截图。"
+        ),
+        "检查标准": (
+            "- [ ] 能说明五个正文点分别来自哪一次模型调用。\n"
+            "- [ ] 能展示 Markdown 中的视频占位符与 video_briefs.video_id 完全一致。\n"
+            "- [ ] 能展示 Markdown 中的动画占位符与 animation_briefs.animation_id 完全一致。\n"
+            "- [ ] 能从数据库 outline_data 中读取 section_composed_markdowns。"
+        ),
+    }
+
     class MarkdownChain:
         async def ainvoke(self, payload):
             captured["queries"].append(payload["query"])
+            assert "markdown_expansion_section" in payload["query"]
             section = _payload_from_query(payload["query"])["target_section"]
-            return _complete_markdown_output(section["section_id"], section["title"])
+            expansion_section = _payload_from_query(payload["query"])["markdown_expansion_section"]
+            captured["sections"].append((section["section_id"], expansion_section))
+            return section_bodies[expansion_section]
 
     class MarkdownPrompt:
         def __or__(self, _other):
@@ -1669,7 +1761,7 @@ def test_run_section_markdown_agent_writes_each_first_chapter_child_section(tmp_
         def from_messages(_messages):
             return MarkdownPrompt()
 
-    captured = {"schema": None, "queries": []}
+    captured = {"schema": None, "queries": [], "sections": []}
     engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown.db'}")
     set_engine(engine)
     init_db(engine)
@@ -1706,7 +1798,10 @@ def test_run_section_markdown_agent_writes_each_first_chapter_child_section(tmp_
     finally:
         module.ChatPromptTemplate = original_factory
 
-    assert len(captured["queries"]) == 3
+    assert len(captured["queries"]) == 15
+    assert captured["sections"].count(("1.1", "学习目标")) == 1
+    assert captured["sections"].count(("1.2", "核心概念")) == 1
+    assert captured["sections"].count(("1.3", "检查标准")) == 1
     assert all('"profile"' in query for query in captured["queries"])
     assert all('"year_learning_paths"' in query for query in captured["queries"])
     assert all('"course_knowledge"' in query for query in captured["queries"])
@@ -1722,13 +1817,16 @@ def test_run_section_markdown_agent_writes_each_first_chapter_child_section(tmp_
     assert first_markdown["video_briefs"][0]["video_id"] == "video_1"
     assert first_markdown["animation_briefs"][0]["animation_id"] == "anim_1"
     assert "学习目标" in first_markdown["animation_briefs"][0]["title"]
+    assert set(result["course_knowledge"]["section_composed_markdowns"]) == {"1.1", "1.2", "1.3"}
+    assert result["course_knowledge"]["section_composed_markdowns"]["1.1"]["blocks"][0]["type"] == "markdown"
     with Session(engine) as session:
         row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
     assert row is not None
     assert set(row.outline_data["section_markdowns"]) == {"1.1", "1.2", "1.3"}
+    assert set(row.outline_data["section_composed_markdowns"]) == {"1.1", "1.2", "1.3"}
 
 
-def test_run_section_markdown_agent_uses_deterministic_markdown_when_llm_unavailable(tmp_path) -> None:
+def test_run_section_markdown_agent_returns_error_when_llm_unavailable(tmp_path) -> None:
     class FailingLlm:
         pass
 
@@ -1779,24 +1877,11 @@ def test_run_section_markdown_agent_uses_deterministic_markdown_when_llm_unavail
     finally:
         module.ChatPromptTemplate = original_factory
 
-    assert "error" not in result
-    generated = result["course_knowledge"]["section_markdowns"]
-    assert set(generated) == {"1.1", "1.2", "1.3"}
-    for section_id, markdown_value in generated.items():
-        section = next(item for item in _outline()["sections"] if item["section_id"] == section_id)
-        assert _markdown_quality_issue(
-            markdown_value["markdown"],
-            section,
-            markdown_value["video_briefs"],
-            markdown_value["animation_briefs"],
-        ) is None
-    with Session(engine) as session:
-        row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
-    assert row is not None
-    assert set(row.outline_data["section_markdowns"]) == {"1.1", "1.2", "1.3"}
+    assert result.get("error") is not None
+    assert "Markdown 文档未生成" in result["error"] or "Markdown 文档生成失败" in result["error"]
 
 
-def test_run_section_markdown_agent_uses_deterministic_markdown_when_model_returns_error(tmp_path) -> None:
+def test_run_section_markdown_agent_returns_error_when_model_returns_error(tmp_path) -> None:
     class RecordingLlm:
         pass
 
@@ -1849,10 +1934,8 @@ def test_run_section_markdown_agent_uses_deterministic_markdown_when_model_retur
     finally:
         module.ChatPromptTemplate = original_factory
 
-    assert "error" not in result
-    generated = result["course_knowledge"]["section_markdowns"]
-    assert set(generated) == {"1.1", "1.2", "1.3"}
-    assert all("模型无法生成结构化结果" not in value["markdown"] for value in generated.values())
+    assert result.get("error") is not None
+    assert "Markdown 文档未生成" in result["error"] or "Markdown 文档生成失败" in result["error"]
 
 
 def test_run_section_markdown_agent_accepts_plain_markdown_model_output(tmp_path) -> None:
@@ -1985,50 +2068,35 @@ def test_run_section_markdown_agent_accepts_loose_json_without_brief_metadata(tm
     assert markdown_data["animation_briefs"][0]["animation_id"] == "anim_1"
 
 
-def test_run_section_markdown_agent_retries_low_quality_markdown_without_local_fallback(tmp_path) -> None:
+def test_run_section_markdown_agent_generates_markdown_from_five_section_bodies_without_full_document_retry(tmp_path) -> None:
     class RecordingLlm:
         pass
 
-    def complete_markdown() -> str:
-        return _complete_section_markdown("1.1", "学习目标")
+    section_bodies = {
+        "学习目标": "本节目标是把 API 连通性测试和 Prompt 工程任务拆成可验收的五点教学内容。",
+        "核心概念": "### 功能边界\n功能边界要求学习者区分接口连通、请求封装、Prompt 约束和输出验收。",
+        "步骤讲解": (
+            "第一步：读取配置和小节上下文。第二步：生成五点正文。第三步：拼装资源占位符。\n\n"
+            "| 步骤 | 输入材料 | 具体动作 | 产出物 | 验收方式 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| 读取 | 课程上下文 | 提取字段 | payload | 字段完整 |\n"
+            "| 拼装 | 五点正文 | 插入资源占位符 | markdown | ID 一致 |"
+        ),
+        "练习任务": "请提交一份五点正文，并检查后端保存的 composed blocks 是否能被前端读取。",
+        "检查标准": (
+            "- [ ] 有学习目标。\n"
+            "- [ ] 有核心概念。\n"
+            "- [ ] 有步骤表格。\n"
+            "- [ ] 有前端可读的 composed markdown。"
+        ),
+    }
 
     class MarkdownChain:
         async def ainvoke(self, payload):
             captured["queries"].append(payload["query"])
             captured["attempts"] += 1
-            if captured["attempts"] == 1:
-                return SectionMarkdownOutput(
-                    section_id="1.1",
-                    parent_section_id="1",
-                    title="学习目标",
-                    markdown="# 学习目标\n\nKey Concept\n\n视频资源暂时不可用",
-                    video_briefs=[{"video_id": "video_1", "title": "导入视频", "purpose": "建立直觉"}],
-                    animation_briefs=[{"animation_id": "anim_1", "title": "动画", "concept": "目标流转"}],
-                )
-            return SectionMarkdownOutput(
-                section_id="1.1",
-                parent_section_id="1",
-                title="学习目标",
-                markdown=complete_markdown(),
-                video_briefs=[
-                    {
-                        "video_id": "video_1",
-                        "title": "学习目标导入视频",
-                        "purpose": "帮助学习者理解功能边界与验收标准",
-                    }
-                ],
-                animation_briefs=[
-                    {
-                        "animation_id": "anim_1",
-                        "title": "学习目标流程动画",
-                        "concept": "展示学习目标如何转成资源验收闭环",
-                        "visual_elements": ["功能边界", "视频 brief", "动画 brief"],
-                        "motion": "节点依次淡入并连成闭环。",
-                        "space": "正文宽度",
-                        "placement_hint": "练习任务之前",
-                    }
-                ],
-            )
+            parsed = _payload_from_query(payload["query"])
+            return section_bodies[parsed["markdown_expansion_section"]]
 
     class MarkdownPrompt:
         def __or__(self, _other):
@@ -2077,30 +2145,226 @@ def test_run_section_markdown_agent_retries_low_quality_markdown_without_local_f
         module.ChatPromptTemplate = original_factory
 
     assert "error" not in result
-    assert captured["attempts"] == 2
-    assert "markdown_quality_issue" in captured["queries"][1]
-    assert "JSON 文本无法通过校验" in captured["queries"][1]
+    assert captured["attempts"] == 5
+    assert all("markdown_expansion_section" in query for query in captured["queries"])
     markdown = result["course_knowledge"]["section_markdowns"]["1.1"]["markdown"]
     assert "### 功能边界" in markdown
-    assert "定义：" in markdown
-    assert "怎么用" in markdown
     assert "Key Concept" not in markdown
-    assert "## 本节定位" not in markdown
+    assert "section_composed_markdowns" in result["course_knowledge"]
     with Session(engine) as session:
         row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
     assert row is not None
     saved_markdown = row.outline_data["section_markdowns"]["1.1"]["markdown"]
     assert "### 功能边界" in saved_markdown
-    assert "Key Concept" not in saved_markdown
+    assert "1.1" in row.outline_data["section_composed_markdowns"]
 
 
-def test_run_section_markdown_agent_rewrites_repeated_short_model_output_with_quality_gate(tmp_path) -> None:
+def test_run_section_markdown_agent_expands_short_markdown_with_llm_content(tmp_path) -> None:
+    class RecordingLlm:
+        pass
+
+    short_markdown = "\n\n".join(
+        [
+            "# 1.1 学习目标",
+            "## 学习目标\n先建立目标。",
+            "## 核心概念\n### 功能边界\n先说明边界。",
+            "## 步骤讲解\n第一步：读取材料。\n\n| 步骤 | 输入材料 | 产出物 | 验收方式 |\n| --- | --- | --- | --- |\n| 目标 | 画像 | 目标句 | 可复述 |",
+            "<!-- video:id=video_1 -->",
+            "## 练习任务\n写一张任务卡。",
+            "<!-- animation:id=anim_1 -->",
+            "## 检查标准\n- [ ] 有目标。\n- [ ] 有任务。\n- [ ] 有资源。\n- [ ] 有证据。",
+        ]
+    )
+
+    section_bodies = {
+        "学习目标": (
+            "模型扩写内容会围绕 API 连通性测试、标准化请求封装、Prompt 输入输出边界、"
+            "错误响应观察、运行证据留存、任务卡提交和同伴复查展开。学习者要先明确本节不是泛泛了解接口，"
+            "而是把一次模型调用拆成密钥读取、请求体组织、超时设置、响应解析和日志记录五个可检查动作。"
+            "完成学习后，学习者应能说明为什么不能把 API Key 写死在代码里，为什么请求封装必须保留原始错误，"
+            "以及为什么 Prompt 的输入、输出和验收条件要在调用前就写清楚。"
+        ),
+        "核心概念": (
+            "### 功能边界\n"
+            "模型扩写内容会围绕 API 连通性测试、标准化请求封装、Prompt 输入输出边界、错误响应观察、运行证据留存、"
+            "任务卡提交和同伴复查展开。功能边界要求学习者把“能调通模型”拆成明确范围：本节只验证一条标准请求能稳定返回，"
+            "不处理多轮记忆、复杂工具调用和长上下文压缩。这样做的价值是让后续开发有一个可以复用的最小通信层，"
+            "每次出现 401、429、timeout 或空响应时，都能先回到这个最小层确认问题位置。\n\n"
+            "### 验收标准\n"
+            "验收标准不是写一句“接口可用”，而是要留下可复查证据：环境变量截图、请求 payload 示例、响应 JSON 片段、"
+            "异常日志和一次失败重试记录。学习者需要能解释每个证据对应哪一个风险点，例如密钥是否被加载、模型名是否正确、"
+            "messages 是否符合 OpenAI-compatible 协议、Prompt 是否约束了输出形状，以及失败时是否能定位到网络、鉴权或模型输出问题。"
+        ),
+        "步骤讲解": (
+            "第一步：准备输入材料。输入材料包括 `.env` 中的 API Key、base_url、model，以及一个只包含 system 与 user 的最小 messages。"
+            "具体动作是把这些字段写入请求封装函数的参数，而不是散落在业务代码中；判断依据是同伴只看函数签名就能知道调用需要什么；"
+            "产出物是一份最小请求配置。\n\n"
+            "第二步：执行标准请求。输入材料是请求配置和 Prompt 任务说明；具体动作是设置 timeout、发送 JSON payload、记录状态码和响应头；"
+            "判断依据是成功响应能解析出文本，失败响应能保留错误码；产出物是一段可复现的运行日志。\n\n"
+            "| 步骤 | 输入材料 | 具体动作 | 产出物 | 验收方式 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| 配置读取 | `.env`、模型名、base_url | 从环境变量加载并校验非空 | 请求配置对象 | 缺任一字段时能明确报错 |\n"
+            "| 请求封装 | messages、temperature、timeout | 组装 OpenAI-compatible payload | JSON 请求体 | payload 字段完整且可打印 |\n"
+            "| 响应解析 | HTTP 状态码、响应 JSON | 区分成功文本和错误信息 | 标准返回对象 | 成功与失败都有日志证据 |\n"
+            "| Prompt 验收 | 任务目标、输出格式 | 检查输出是否满足格式 | 验收记录 | 能指出不合格输出原因 |"
+        ),
+        "练习任务": (
+            "请完成一个 30 分钟任务卡：输入是一组接口配置字段和一个“生成三条学习建议”的 Prompt；操作步骤是先写 `call_llm_once` 函数，"
+            "再用环境变量注入密钥和模型名，然后分别运行一次正常请求、一次错误模型名请求和一次过短 Prompt 请求。输出包括三份日志、"
+            "一份 payload 示例和一段对比说明。提交物是 `llm_client.py`、运行截图、失败日志摘录和 Prompt 修改记录。完成标准是同伴可以"
+            "用你的文件复现一次成功调用，并能从失败日志里判断问题发生在配置、网络、鉴权还是输出格式。这个任务会把学习目标落到真实工程动作，"
+            "避免停留在“知道 API 可以调用”的口头理解。"
+        ),
+        "检查标准": (
+            "- [ ] 能提交一份不含明文 API Key 的 `llm_client.py`，并说明密钥从哪个环境变量读取。\n"
+            "- [ ] 能展示一次成功调用的 payload、状态码和响应片段，证明标准化请求封装真实可运行。\n"
+            "- [ ] 能展示一次失败调用的错误日志，并说明错误属于配置、鉴权、限流、超时还是输出格式问题。\n"
+            "- [ ] 能说明 Prompt 输入、输出格式和验收标准之间的关系，并指出一次不合格输出为什么需要重写 Prompt。\n"
+            "- [ ] 能把视频 brief、动画 brief 与正文占位符逐一核对，证明资源不是装饰，而是服务当前小节学习目标。"
+        ),
+    }
+
+    class MarkdownChain:
+        async def ainvoke(self, payload):
+            captured["queries"].append(payload["query"])
+            if "markdown_expansion_section" in payload["query"]:
+                captured["expansion_calls"] += 1
+                captured["active_expansions"] += 1
+                captured["max_active_expansions"] = max(
+                    captured["max_active_expansions"],
+                    captured["active_expansions"],
+                )
+                await asyncio.sleep(0.01)
+                captured["active_expansions"] -= 1
+                query = payload["query"]
+                for section_title, body in section_bodies.items():
+                    if f'"markdown_expansion_section": "{section_title}"' in query:
+                        return body
+                return section_bodies["学习目标"]
+            captured["markdown_calls"] += 1
+            return SectionMarkdownOutput(
+                section_id="1.1",
+                parent_section_id="1",
+                title="学习目标",
+                markdown=short_markdown,
+                video_briefs=[
+                    {
+                        "video_id": "video_1",
+                        "title": "学习目标导入视频",
+                        "purpose": "帮助学习者理解 API 连通性测试与标准化请求封装",
+                    }
+                ],
+                animation_briefs=[
+                    {
+                        "animation_id": "anim_1",
+                        "title": "学习目标流程动画",
+                        "concept": "展示 API 调用目标如何转成任务、资源和检查标准",
+                        "visual_elements": ["API 连通性测试", "标准化请求封装", "检查标准"],
+                        "motion": "节点依次通过 opacity 淡入，并用 transform 表现轻微位移。",
+                        "space": "正文宽度 100%，高度 320px。",
+                        "placement_hint": "练习任务之前。",
+                    }
+                ],
+            )
+
+    class MarkdownPrompt:
+        def __or__(self, _other):
+            return MarkdownChain()
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return MarkdownPrompt()
+
+    captured = {
+        "queries": [],
+        "markdown_calls": 0,
+        "expansion_calls": 0,
+        "active_expansions": 0,
+        "max_active_expansions": 0,
+    }
+    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-expansion.db'}")
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(User(uid="user-1", username="课程用户", identifier="course@example.com"))
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid="user-1",
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name="AI 应用开发",
+                outline_data=_outline(),
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+    original_factory = module.ChatPromptTemplate
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(
+            run_section_markdown_agent(
+                {
+                    "user_id": "user-1",
+                    "course_knowledge": _outline(),
+                    "profile": _profile(),
+                    "year_learning_paths": _year_learning_paths(),
+                    "messages": [],
+                },
+                RecordingLlm(),
+                {"course_id": "year_3_course_1", "section_id": "1.1", "scope": "single_section"},
+            )
+        )
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert "error" not in result
+    assert captured["markdown_calls"] == 0
+    assert captured["expansion_calls"] == 5
+    assert captured["max_active_expansions"] == 5
+    markdown = result["course_knowledge"]["section_markdowns"]["1.1"]["markdown"]
+    assert "模型扩写内容会围绕 API 连通性测试" in markdown
+    assert _markdown_quality_issue(
+        markdown,
+        _section_by_id(_outline(), "1.1"),
+        result["course_knowledge"]["section_markdowns"]["1.1"]["video_briefs"],
+        result["course_knowledge"]["section_markdowns"]["1.1"]["animation_briefs"],
+    ) is None
+
+
+def test_section_body_from_expansion_text_extracts_requested_heading_from_json_markdown() -> None:
+    raw = json.dumps(
+        {
+            "markdown": "\n\n".join(
+                [
+                    "# 1.1 API 连通性测试",
+                    "## 学习目标\n目标正文不能被误用。",
+                    "## 核心概念\n核心概念正文需要被提取。\n\n### API Key\n用环境变量管理密钥。",
+                    "## 步骤讲解\n步骤正文不能被误用。",
+                ]
+            )
+        },
+        ensure_ascii=False,
+    )
+
+    body = _section_body_from_expansion_text(raw, "核心概念")
+
+    assert "核心概念正文需要被提取" in body
+    assert "目标正文不能被误用" not in body
+    assert "步骤正文不能被误用" not in body
+
+
+def test_run_section_markdown_agent_returns_error_when_quality_repeatedly_fails(tmp_path) -> None:
     class RecordingLlm:
         pass
 
     class MarkdownChain:
-        async def ainvoke(self, _payload):
-            captured["attempts"] += 1
+        async def ainvoke(self, payload):
+            if "markdown_expansion_section" in payload["query"]:
+                captured["expansion_attempts"] += 1
+            else:
+                captured["attempts"] += 1
             return {
                 "section_id": "1.2",
                 "parent_section_id": "1",
@@ -2129,7 +2393,7 @@ def test_run_section_markdown_agent_rewrites_repeated_short_model_output_with_qu
         def from_messages(_messages):
             return MarkdownPrompt()
 
-    captured = {"attempts": 0}
+    captured = {"attempts": 0, "expansion_attempts": 0}
     engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-deterministic-rewrite.db'}")
     set_engine(engine)
     init_db(engine)
@@ -2166,54 +2430,40 @@ def test_run_section_markdown_agent_rewrites_repeated_short_model_output_with_qu
     finally:
         module.ChatPromptTemplate = original_factory
 
-    assert "error" not in result
-    assert captured["attempts"] == 3
-    markdown_data = result["course_knowledge"]["section_markdowns"]["1.2"]
-    section = _section_by_id(result["course_knowledge"], "1.2")
-    assert section is not None
-    assert _markdown_quality_issue(
-        markdown_data["markdown"],
-        section,
-        markdown_data["video_briefs"],
-        markdown_data["animation_briefs"],
-    ) is None
-    assert "太短" not in markdown_data["markdown"]
-    assert "模型短输出后进行确定性重写" in markdown_data["markdown"]
+    assert result.get("error") is not None
+    assert "Markdown 文档质量不合格" in result["error"] or "Markdown 文档未生成" in result["error"]
+    assert captured["expansion_attempts"] > 0
 
 
-def test_run_section_markdown_agent_runs_second_repair_for_resource_brief_mismatch(tmp_path) -> None:
+def test_run_section_markdown_agent_uses_backend_generated_resource_briefs(tmp_path) -> None:
     class RecordingLlm:
         pass
+
+    section_bodies = {
+        "学习目标": "本节目标是确认后端生成视频 brief 和动画 brief，并把它们插入 Markdown。",
+        "核心概念": "### 资源 brief\n资源 brief 由后端生成，正文模型只负责教学内容，不负责资源 ID。",
+        "步骤讲解": (
+            "第一步：生成正文。第二步：生成 brief。第三步：拼装占位符。\n\n"
+            "| 步骤 | 输入材料 | 具体动作 | 产出物 | 验收方式 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| 正文 | 小节上下文 | 生成五点 | section_bodies | 非空 |\n"
+            "| 资源 | 小节上下文 | 后端生成 brief | video_1/anim_1 | ID 一致 |"
+        ),
+        "练习任务": "请核对 Markdown 占位符、video_briefs 和 animation_briefs 三者 ID。",
+        "检查标准": (
+            "- [ ] video_1 出现在 Markdown。\n"
+            "- [ ] anim_1 出现在 Markdown。\n"
+            "- [ ] video_briefs 只包含 video_1。\n"
+            "- [ ] animation_briefs 只包含 anim_1。"
+        ),
+    }
 
     class MarkdownChain:
         async def ainvoke(self, payload):
             captured["queries"].append(payload["query"])
             captured["attempts"] += 1
-            if captured["attempts"] == 1:
-                return SectionMarkdownOutput(
-                    section_id="1.1",
-                    parent_section_id="1",
-                    title="学习目标",
-                    markdown=_complete_section_markdown("1.1", "学习目标", "video_1", "anim_1"),
-                    video_briefs=[
-                        {
-                            "video_id": "video_1",
-                            "title": "学习目标导入视频",
-                            "purpose": "帮助学习者理解需求边界",
-                        }
-                    ],
-                    animation_briefs=[],
-                )
-            if captured["attempts"] == 2:
-                return SectionMarkdownOutput(
-                    section_id="1.1",
-                    parent_section_id="1",
-                    title="学习目标",
-                    markdown=_complete_section_markdown("1.1", "学习目标", "video_1", "anim_1"),
-                    video_briefs=[],
-                    animation_briefs=[],
-                )
-            return _complete_markdown_output("1.1", "学习目标")
+            parsed = _payload_from_query(payload["query"])
+            return section_bodies[parsed["markdown_expansion_section"]]
 
     class MarkdownPrompt:
         def __or__(self, _other):
@@ -2262,7 +2512,7 @@ def test_run_section_markdown_agent_runs_second_repair_for_resource_brief_mismat
         module.ChatPromptTemplate = original_factory
 
     assert "error" not in result
-    assert captured["attempts"] == 3
+    assert captured["attempts"] == 5
     markdown = result["course_knowledge"]["section_markdowns"]["1.1"]["markdown"]
     assert "<!-- video:id=video_1 -->" in markdown
     assert "<!-- animation:id=anim_1 -->" in markdown
@@ -2273,14 +2523,33 @@ def test_run_section_markdown_agent_generates_child_sections_concurrently(tmp_pa
     class RecordingLlm:
         pass
 
+    section_bodies = {
+        "学习目标": "本节把目标拆成可验收的教学产出，并确认 Markdown、视频和动画都绑定当前小节。",
+        "核心概念": "### 任务拆解\n任务拆解要求把输入、处理、输出和验收证据写清楚，避免资源生成变成泛泛正文。",
+        "步骤讲解": (
+            "第一步：读取小节上下文并提取标题、描述和知识点。\n\n"
+            "| 步骤 | 输入材料 | 具体动作 | 产出物 | 验收方式 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| 读取 | 小节上下文 | 提取字段 | 上下文对象 | 字段非空 |\n"
+            "| 生成 | 上下文对象 | 生成五个正文点 | Markdown | 标题完整 |"
+        ),
+        "练习任务": "请提交一份五点正文和一份 composed blocks 结构，证明后端完成拼装。",
+        "检查标准": (
+            "- [ ] 有学习目标。\n"
+            "- [ ] 有核心概念。\n"
+            "- [ ] 有步骤表格。\n"
+            "- [ ] 有 composed markdown。"
+        ),
+    }
+
     class MarkdownChain:
         async def ainvoke(self, payload):
             captured["active"] += 1
             captured["max_active"] = max(captured["max_active"], captured["active"])
             try:
                 await asyncio.sleep(0.01)
-                section = _payload_from_query(payload["query"])["target_section"]
-                return _complete_markdown_output(section["section_id"], section["title"])
+                expansion_section = _payload_from_query(payload["query"])["markdown_expansion_section"]
+                return section_bodies[expansion_section]
             finally:
                 captured["active"] -= 1
 
@@ -2328,11 +2597,11 @@ def test_run_section_markdown_agent_generates_child_sections_concurrently(tmp_pa
     finally:
         module.ChatPromptTemplate = original_factory
 
-    assert captured["max_active"] == 3
+    assert captured["max_active"] == 15
     assert set(result["course_knowledge"]["section_markdowns"]) == {"1.1", "1.2", "1.3"}
 
 
-def test_run_section_markdown_agent_retries_failed_child_section_after_batch(tmp_path) -> None:
+def test_run_section_markdown_agent_returns_error_when_failed_section_cannot_be_retried(tmp_path) -> None:
     class RecordingLlm:
         pass
 
@@ -2341,8 +2610,7 @@ def test_run_section_markdown_agent_retries_failed_child_section_after_batch(tmp
             section = _payload_from_query(payload["query"])["target_section"]
             section_id = section["section_id"]
             captured["attempts"][section_id] = captured["attempts"].get(section_id, 0) + 1
-            attempt = captured["attempts"][section_id]
-            if section_id == "1.1" and attempt <= 3:
+            if section_id == "1.1":
                 return SectionMarkdownOutput(
                     section_id="1.1",
                     parent_section_id="1",
@@ -2399,12 +2667,8 @@ def test_run_section_markdown_agent_retries_failed_child_section_after_batch(tmp
     finally:
         module.ChatPromptTemplate = original_factory
 
-    assert "error" not in result
-    assert captured["attempts"]["1.1"] == 3
-    assert set(result["course_knowledge"]["section_markdowns"]) == {"1.1", "1.2", "1.3"}
-    markdown_value = result["course_knowledge"]["section_markdowns"]["1.1"]
-    assert "Key Concept" not in markdown_value["markdown"]
-    assert "视频资源暂时不可用" not in markdown_value["markdown"]
+    assert result.get("error") is not None
+    assert "Markdown 文档未生成" in result["error"] or "Markdown 文档质量不合格" in result["error"]
 
 
 def test_stream_chapter_resource_generation_reports_error_when_resource_llm_fails(tmp_path) -> None:
@@ -3613,7 +3877,7 @@ def test_run_section_html_animation_agent_generates_chapter_sections_concurrentl
     assert result["course_resource_result"]["animation_count"] == 3
 
 
-def test_run_section_html_animation_agent_uses_local_animation_when_llm_unavailable(tmp_path) -> None:
+def test_run_section_html_animation_agent_returns_error_when_llm_unavailable(tmp_path) -> None:
     class RecordingLlm:
         pass
 
@@ -3694,22 +3958,15 @@ def test_run_section_html_animation_agent_uses_local_animation_when_llm_unavaila
         module.ChatPromptTemplate = original_factory
 
     assert len(captured["queries"]) >= 2
-    assert "error" not in result
-    animations = result["course_knowledge"]["section_html_animations"]["1.1"]["animations"]
-    assert animations[0]["animation_id"] == "section-1-1-animation-1"
-    assert _normalized_animation_quality_issue(
-        animations,
-        outline["section_markdowns"]["1.1"]["animation_briefs"],
-        outline["sections"][1],
-    ) is None
+    assert result.get("error") == "课程资源生成失败：HTML 动画未生成，请稍后重试。"
+    assert result.get("hard_error") is True
     with Session(engine) as session:
         row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
     assert row is not None
-    assert "section_html_animations" in row.outline_data
-    assert "section_composed_markdowns" in row.outline_data
+    assert "section_html_animations" not in row.outline_data
 
 
-def test_resource_agents_reuse_existing_markdown_and_video_when_only_animation_missing(tmp_path, monkeypatch) -> None:
+def test_resource_agents_reuse_existing_markdown_and_video_but_fail_when_animation_missing(tmp_path, monkeypatch) -> None:
     class RecordingLlm:
         pass
 
@@ -3798,12 +4055,8 @@ def test_resource_agents_reuse_existing_markdown_and_video_when_only_animation_m
     finally:
         module.ChatPromptTemplate = original_factory
 
-    assert "error" not in animation_result
-    generated = animation_result["course_knowledge"]
-    assert set(generated["section_markdowns"]) == {"1.1", "1.2", "1.3"}
-    assert set(generated["section_video_links"]) == {"1.1", "1.2", "1.3"}
-    assert set(generated["section_html_animations"]) == {"1.1", "1.2", "1.3"}
-    assert set(generated["section_composed_markdowns"]) == {"1.1", "1.2", "1.3"}
+    assert animation_result.get("error") == "课程资源生成失败：HTML 动画未生成，请稍后重试。"
+    assert animation_result.get("hard_error") is True
 
 
 from app.orchestration.agents.course_resources import (
@@ -4043,6 +4296,31 @@ def test_normalize_animation_html_wraps_meta_and_visible_fallback_styles() -> No
     assert "功能边界" in normalized
 
 
+def test_normalize_animation_html_rewrites_model_hardcoded_colors_to_oklch() -> None:
+    brief = {
+        "animation_id": "anim_1",
+        "title": "API 连通性测试与标准化请求封装流程动画",
+        "concept": "展示 API 请求如何推进到验收证据",
+        "visual_elements": ["API Key 的安全存储与加载", "构建标准的 JSON 请求体"],
+    }
+    section = _outline()["sections"][1]
+    raw_html = (
+        "<div class=\"section-animation\" style=\"background:#f8fafc;color:#475569;box-shadow:0 4px 12px rgba(0,0,0,0.08)\">"
+        "<style>.node{background:white;border:2px solid #e2e8f0;color:rgb(71,85,105)}</style>"
+        "<div class=\"node\">API Key 的安全存储与加载</div>"
+        "</div>"
+    )
+
+    normalized = _normalize_animation_html(raw_html, brief)
+    animations = [{"animation_id": "anim_1", "title": brief["title"], "html": normalized}]
+
+    assert "#" not in normalized
+    assert "rgba(" not in normalized
+    assert "rgb(" not in normalized
+    assert "oklch(" in normalized
+    assert _normalized_animation_quality_issue(animations, [brief], section) is None
+
+
 def test_markdown_quality_gate_rejects_placeholder_and_missing_learning_sections() -> None:
     markdown = "\n".join([
         "# 学习目标",
@@ -4105,7 +4383,7 @@ def test_markdown_quality_gate_rejects_shallow_teaching_document() -> None:
     )
 
     assert issue is not None
-    assert "教学深度" in issue
+    assert "教学支架不足" in issue
 
 
 def test_markdown_quality_gate_rejects_missing_teaching_scaffold() -> None:
@@ -4613,8 +4891,24 @@ def test_stream_chapter_resource_generation_generates_bound_resources_for_each_c
     def payload_from_query(query: str) -> dict:
         return json.loads(query.split("输入：", 1)[1])
 
-    def long_markdown(section: dict, video_id: str, animation_id: str) -> str:
-        return _complete_section_markdown(section["section_id"], section["title"], video_id, animation_id)
+    markdown_bodies = {
+        "学习目标": "本节把目标拆成可验收的教学结果，并要求学习者说明输入材料、模型调用、资源 brief 和页面展示之间的关系。",
+        "核心概念": "### 资源绑定\n资源绑定要求 Markdown、视频和动画服务同一个小节目标，正文占位符 ID 必须与 brief 完全一致。",
+        "步骤讲解": (
+            "第一步：读取小节上下文。第二步：生成五个正文点。第三步：后端拼装资源占位符。\n\n"
+            "| 步骤 | 输入材料 | 具体动作 | 产出物 | 验收方式 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| 读取 | 小节上下文 | 提取标题和知识点 | 上下文对象 | 字段可复查 |\n"
+            "| 拼装 | 五段正文 | 插入 video 与 animation 占位符 | Markdown | ID 完全一致 |"
+        ),
+        "练习任务": "请提交一份小节 Markdown 和 composed blocks，证明视频块与动画块可以由后端插入。",
+        "检查标准": (
+            "- [ ] 能说明五个正文点的生成顺序。\n"
+            "- [ ] 能核对视频占位符。\n"
+            "- [ ] 能核对动画占位符。\n"
+            "- [ ] 能从前端响应读取 composed blocks。"
+        ),
+    }
 
     class ResourceLlm:
         pass
@@ -4626,33 +4920,8 @@ def test_stream_chapter_resource_generation_generates_bound_resources_for_each_c
             section = parsed["target_section"]
             section_id = section["section_id"]
             title = section["title"]
-            if "section_markdowns" not in parsed and "animation_briefs" not in parsed:
-                video_id = f"video_{section_id.replace('.', '_')}"
-                animation_id = f"anim_{section_id.replace('.', '_')}"
-                return SectionMarkdownOutput(
-                    section_id=section_id,
-                    parent_section_id=section["parent_section_id"],
-                    title=title,
-                    markdown=long_markdown(section, video_id, animation_id),
-                    video_briefs=[
-                        {
-                            "video_id": video_id,
-                            "title": f"{title}导入视频",
-                            "purpose": f"帮助学习者把{title}与{section['key_knowledge_points'][0]}连接起来",
-                        }
-                    ],
-                    animation_briefs=[
-                        {
-                            "animation_id": animation_id,
-                            "title": f"{title}流程动画",
-                            "concept": f"展示{title}如何从输入材料推进到可验收产出",
-                            "visual_elements": [title, section["key_knowledge_points"][0], "完成标准"],
-                            "motion": "三个节点依次淡入，连线只改变透明度和位移。",
-                            "space": "正文宽度 100%，高度 320px。",
-                            "placement_hint": "练习任务之前",
-                        }
-                    ],
-                )
+            if "markdown_expansion_section" in parsed:
+                return markdown_bodies[parsed["markdown_expansion_section"]]
             if "section_markdowns" in parsed:
                 brief = parsed["section_markdowns"][section_id]["video_briefs"][0]
                 parent_title = next(
@@ -4937,8 +5206,8 @@ def test_stream_chapter_resource_generation_accepts_plain_markdown_and_html_outp
         markdown = generated["section_markdowns"][section_id]
         animation = generated["section_html_animations"][section_id]["animations"][0]
         composed_blocks = generated["section_composed_markdowns"][section_id]["blocks"]
-        assert markdown["video_briefs"][0]["video_id"] == f"video_{section_id.replace('.', '_')}"
-        assert animation["animation_id"] == f"anim_{section_id.replace('.', '_')}"
+        assert markdown["video_briefs"][0]["video_id"] == "video_1"
+        assert animation["animation_id"] == "anim_1"
         assert "section-animation" in animation["html"]
         assert composed_blocks[1]["status"] == "available"
         assert composed_blocks[3]["status"] == "available"
@@ -5092,29 +5361,6 @@ def test_profile_learning_context_text_generates_natural_narrative():
     assert "偏好" not in text_only_major
 
 
-def test_deterministic_concept_block_template_pool_rotation():
-    from app.orchestration.agents.course_resources import _deterministic_concept_block
-    
-    section = {"title": "向量检索基础", "description": "学习向量空间映射与召回"}
-    
-    # Simulate three different indexes
-    block_1 = _deterministic_concept_block("特征提取", section, 1)
-    block_2 = _deterministic_concept_block("余弦相似度", section, 2)
-    block_3 = _deterministic_concept_block("向量数据库", section, 3) # 3 % 3 = 0
-    
-    # block_1 (1%3=1) -> Template A should contain Markdown table "|"
-    assert "|" in block_1
-    assert "特征提取 方案" in block_1
-    
-    # block_2 (2%3=2) -> Template B should contain Python code block "```python"
-    assert "```python" in block_2
-    assert "VectorIngestionPipeline" in block_2
-    
-    # block_3 (3%3=0) -> Template C should contain troubleshooting list
-    assert "常见错误与排查步骤" in block_3
-    assert "维度不匹配错误" in block_3
-
-
 def test_deterministic_animation_html_generates_interactive_glassmorphism():
     from app.orchestration.agents.course_resources import _deterministic_animation_html
     
@@ -5218,117 +5464,6 @@ def _rag_state() -> dict:
     }
 
 
-def test_e2e_deterministic_pipeline_produces_valid_composed_blocks():
-    """End-to-end: section → markdown → quality gate → animation → compose → blocks."""
-    outline = _rag_outline()
-    state = _rag_state()
-    section = _section_by_id(outline, "1.1")
-    assert section is not None, "Section 1.1 must exist in outline"
-
-    # Step 1: Generate deterministic markdown + briefs
-    md_data = _deterministic_section_markdown_data(state, outline, section)
-    markdown = md_data["markdown"]
-    video_briefs = md_data["video_briefs"]
-    animation_briefs = md_data["animation_briefs"]
-
-    assert md_data["section_id"] == "1.1"
-    assert md_data["title"] == "文本清洗与分块策略"
-    assert len(markdown) > 1800, f"Markdown too short: {len(markdown)} chars"
-    assert "## 学习目标" in markdown
-    assert "## 核心概念" in markdown
-    assert "## 步骤讲解" in markdown
-    assert "## 练习任务" in markdown
-    assert "## 检查标准" in markdown
-    assert "<!-- video:id=video_1 -->" in markdown
-    assert "<!-- animation:id=anim_1 -->" in markdown
-
-    # Step 2: Quality gate must accept the generated markdown
-    quality_issue = _markdown_quality_issue(markdown, section, video_briefs, animation_briefs)
-    assert quality_issue is None, f"Quality gate rejected: {quality_issue}"
-
-    # Step 3: Generate animation HTML from briefs
-    animations = _deterministic_animation_data(animation_briefs, section)
-    assert len(animations) == 1
-    anim_html = animations[0]["html"]
-    assert animations[0]["animation_id"] == "anim_1"
-    assert "section-animation" in anim_html
-    assert "backdrop-filter: blur" in anim_html
-    assert "@keyframes pulse" in anim_html
-    assert "data-animation-id=\"anim_1\"" in anim_html
-    assert "prefers-reduced-motion" in anim_html
-
-    # Step 4: Animation quality gate must accept
-    anim_issue = _normalized_animation_quality_issue(animations, animation_briefs, section)
-    assert anim_issue is None, f"Animation quality gate rejected: {anim_issue}"
-
-    # Step 5: Compose everything into frontend-ready blocks
-    video_links = {
-        "videos": [
-            {"brief_id": "video_1", "title": "文本清洗实战", "url": "https://example.com/video", "cover_url": "", "source": "example"}
-        ]
-    }
-    animation_data = {"animations": animations}
-    composed = _compose_section_content(md_data, video_links, animation_data)
-
-    assert composed["section_id"] == "1.1"
-    assert composed["title"] == "文本清洗与分块策略"
-    assert len(composed["blocks"]) >= 5, f"Expected ≥5 blocks, got {len(composed['blocks'])}"
-
-    # Verify block types and order
-    block_types = [b["type"] for b in composed["blocks"]]
-    assert "markdown" in block_types, "Must have markdown blocks"
-    assert "video" in block_types, "Must have video block"
-    assert "animation" in block_types, "Must have animation block"
-
-    # Verify video block structure
-    video_blocks = [b for b in composed["blocks"] if b["type"] == "video"]
-    assert len(video_blocks) == 1
-    vb = video_blocks[0]
-    assert vb["brief_id"] == "video_1"
-    assert vb["status"] == "available"
-    assert vb["videos"][0]["url"] == "https://example.com/video"
-
-    # Verify animation block structure
-    anim_blocks = [b for b in composed["blocks"] if b["type"] == "animation"]
-    assert len(anim_blocks) == 1
-    ab = anim_blocks[0]
-    assert ab["brief_id"] == "anim_1"
-    assert ab["status"] == "available"
-    assert "section-animation" in ab["html"]
-
-    # Verify markdown blocks contain expected headings
-    md_blocks = [b for b in composed["blocks"] if b["type"] == "markdown"]
-    all_md_text = "\n".join(b["markdown"] for b in md_blocks)
-    for heading in ("## 学习目标", "## 核心概念", "## 步骤讲解", "## 练习任务", "## 检查标准"):
-        assert heading in all_md_text, f"Missing heading {heading} in composed markdown blocks"
-
-
-def test_e2e_concept_block_rotation_produces_three_distinct_templates():
-    """Verify that 3 knowledge points produce 3 distinct template styles."""
-    from app.orchestration.agents.course_resources import _deterministic_concept_block
-
-    section = {
-        "title": "文本清洗与分块策略",
-        "description": "学习如何清洗原始文档并设计合理的分块策略",
-    }
-    points = ["数据清洗", "文本分块", "重叠率控制"]
-
-    blocks = [_deterministic_concept_block(p, section, i + 1) for i, p in enumerate(points)]
-
-    # Template A (index 1): comparison table
-    assert "|" in blocks[0], "Template A should have a comparison table"
-    assert "数据清洗 方案" in blocks[0]
-
-    # Template B (index 2): code block
-    assert "```python" in blocks[1], "Template B should have Python code"
-    assert "VectorIngestionPipeline" in blocks[1]
-
-    # Template C (index 0): troubleshooting list
-    assert "常见错误与排查步骤" in blocks[2], "Template C should have troubleshooting"
-    assert "维度不匹配错误" in blocks[2]
-
-    # All three must be different
-    assert blocks[0] != blocks[1] != blocks[2], "All three templates must be distinct"
 
 
 def test_e2e_profile_text_handles_realistic_and_edge_cases():
@@ -5402,4 +5537,3 @@ def test_e2e_animation_html_is_self_contained_and_accessible():
 
     # IIFE pattern for JS isolation
     assert "(function()" in html or "(function() {" in html
-

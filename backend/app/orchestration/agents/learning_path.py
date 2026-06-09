@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PATH_COMMANDS = ("默认", "直接", "随便帮我填", "不确定的你随便帮我填", "帮我生成")
 DEFAULT_TOPIC = "AI 应用开发"
-LEARNING_PATH_STRUCTURED_TIMEOUT_SECONDS = 25.0
+LEARNING_PATH_STRUCTURED_TIMEOUT_SECONDS = 120.0
 LEARNING_PATH_RETRY_ERROR = "学习路径生成失败，请重试生成学习路径。"
 
 
@@ -1185,8 +1185,8 @@ async def run_learning_path_agent(state: OrchestrationState, llm: BaseChatModel)
             timeout=LEARNING_PATH_STRUCTURED_TIMEOUT_SECONDS,
         )
     except Exception as exc:
-        logger.warning("LearningPathAgent structured output failed: %s", exc)
-        return {"error": LEARNING_PATH_RETRY_ERROR, "hard_error": True}
+        logger.warning("LearningPathAgent structured output failed: %s: %s", type(exc).__name__, exc)
+        return {"error": f"{LEARNING_PATH_RETRY_ERROR} ({type(exc).__name__}: {exc})", "hard_error": True}
 
     try:
         path_dict = _build_learning_path_from_plan(
@@ -1196,13 +1196,13 @@ async def run_learning_path_agent(state: OrchestrationState, llm: BaseChatModel)
             plan_data=result.model_dump(),
         )
     except Exception as exc:
-        logger.warning("LearningPathAgent plan expansion failed: %s", exc)
-        return {"error": LEARNING_PATH_RETRY_ERROR, "hard_error": True}
+        logger.warning("LearningPathAgent plan expansion failed: %s: %s", type(exc).__name__, exc)
+        return {"error": f"{LEARNING_PATH_RETRY_ERROR} (plan: {type(exc).__name__}: {exc})", "hard_error": True}
     path_dict = _apply_existing_progress_to_path(path_dict, grade_year, target_progress_snapshot)
     contract_error = _validate_learning_path_contract(path_dict)
     if contract_error:
         logger.warning("LearningPathAgent contract validation failed: %s", contract_error)
-        return {"error": LEARNING_PATH_RETRY_ERROR, "hard_error": True}
+        return {"error": f"{LEARNING_PATH_RETRY_ERROR} (contract: {contract_error})", "hard_error": True}
     _persist_learning_path(state["user_id"], grade_year, resolved_topic, path_dict)
 
     return {"year_learning_path": path_dict, "grade_year": grade_year}

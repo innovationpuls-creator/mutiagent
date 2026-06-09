@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Play, BookOpen, FileText, LayoutDashboard } from 'lucide-react';
 import type {
   LeafAnimationBlock,
@@ -15,7 +16,29 @@ interface LeafContentProps {
   lockedReason: string | null;
 }
 
-function renderVideo(block: LeafVideoBlock, index: number) {
+function escapeSvgText(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+}
+
+function buildFallbackVideoCoverDataUrl(title: string) {
+  const safeTitle = title.trim() || '课程视频';
+  const svg = [
+    "<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360' viewBox='0 0 640 360'>",
+    "<rect width='640' height='360' fill='oklch(22% 0.04 220)'/>",
+    "<circle cx='320' cy='150' r='54' fill='oklch(76% 0.12 55)' opacity='0.85'/>",
+    "<polygon points='305,122 305,178 352,150' fill='oklch(96% 0.025 75)'/>",
+    `<text x='320' y='255' text-anchor='middle' font-size='28' fill='oklch(92% 0.025 75)'>${escapeSvgText(safeTitle)}</text>`,
+    '</svg>',
+  ].join('');
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+function VideoCard({ block, index }: { block: LeafVideoBlock; index: number }) {
   const firstVideo = block.videos[0] ?? null;
   if (block.status !== 'available' || !firstVideo?.url) {
     return (
@@ -32,20 +55,38 @@ function renderVideo(block: LeafVideoBlock, index: number) {
     );
   }
 
+  const videoTitle = firstVideo.title || block.title;
+  const fallbackCoverSrc = buildFallbackVideoCoverDataUrl(videoTitle);
+  const normalizedCoverUrl = firstVideo.cover_url.trim();
+  const [coverSrc, setCoverSrc] = useState(normalizedCoverUrl || fallbackCoverSrc);
+
+  useEffect(() => {
+    setCoverSrc(normalizedCoverUrl || fallbackCoverSrc);
+  }, [fallbackCoverSrc, normalizedCoverUrl]);
+
   return (
     <section className="bg-[var(--glass-bg)] backdrop-blur-md rounded-2xl p-4 md:p-5 shadow-[var(--shadow-md)] border border-[var(--glass-border)] group" key={`${block.brief_id}-${index}`}>
       <a href={firstVideo.url} target="_blank" rel="noreferrer" className="block relative w-full aspect-video rounded-xl overflow-hidden bg-[var(--color-surface-inset)] cursor-pointer group-hover:shadow-[var(--shadow-lg)] transition-shadow">
+        <img
+          src={coverSrc}
+          alt={videoTitle}
+          className="absolute inset-0 h-full w-full object-cover"
+          onError={() => {
+            if (coverSrc !== fallbackCoverSrc) {
+              setCoverSrc(fallbackCoverSrc);
+            }
+          }}
+        />
+        <div className="absolute inset-0 bg-[var(--color-secondary)]/12" />
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <div className="w-16 h-16 bg-[var(--glass-bg)] backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 group-hover:bg-[var(--color-primary-soft)] group-hover:text-[var(--color-primary)] transition-all duration-300">
             <Play className="w-8 h-8 ml-1 text-[var(--color-text-primary)] group-hover:text-[var(--color-primary)]" fill="currentColor" />
           </div>
         </div>
 
-        <div className="w-full h-full bg-[var(--color-surface-raised)] opacity-80" />
-
         <div className="absolute bottom-0 left-0 w-full p-6 bg-[var(--glass-dark-bg)] flex justify-between items-end">
           <div>
-            <h3 className="font-medium text-base text-white">{firstVideo.title || block.title}</h3>
+            <h3 className="font-medium text-base text-white">{videoTitle}</h3>
             <p className="text-sm opacity-80 text-white mt-1 flex items-center gap-1">
               <Play className="w-3 h-3" /> 视频资源
             </p>
@@ -54,6 +95,10 @@ function renderVideo(block: LeafVideoBlock, index: number) {
       </a>
     </section>
   );
+}
+
+function renderVideo(block: LeafVideoBlock, index: number) {
+  return <VideoCard block={block} index={index} key={`${block.brief_id}-${index}`} />;
 }
 
 function renderAnimation(block: LeafAnimationBlock, index: number) {

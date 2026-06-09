@@ -252,8 +252,12 @@ def _section_display_title(section: dict) -> str:
     if not isinstance(title, str) or not title.strip():
         return ""
     if not isinstance(section_id, str) or "." in section_id:
-        if isinstance(section_id, str) and section_id.strip() and not title.strip().startswith(section_id.strip()):
-            return f"{section_id.strip()} {title.strip()}"
+        if isinstance(section_id, str) and section_id.strip():
+            sid = section_id.strip()
+            t = title.strip()
+            if t.startswith(f"{sid} ") or t.startswith(f"{sid}　") or t == sid:
+                return t
+            return f"{sid} {t}"
         return title.strip()
     if title.startswith("第"):
         return title.strip()
@@ -455,7 +459,7 @@ async def _stream_chat_events(
 
         if generation_request is not None:
             from app.orchestration.agents.course_resources import stream_chapter_resource_generation
-            from app.orchestration.llm import get_search_worker_llm, get_thinking_worker_llm
+            from app.orchestration.llm import get_search_worker_llm, get_worker_llm
             from app.services.forest_service import chapter_generation_is_available
 
             requested_course_id = generation_request["course_node_id"]
@@ -534,7 +538,7 @@ async def _stream_chat_events(
             try:
                 async for event in stream_chapter_resource_generation(
                     state,
-                    get_thinking_worker_llm(),
+                    get_worker_llm(),
                     get_search_worker_llm(),
                     course_id=requested_course_id,
                     chapter_section_id=requested_chapter_id,

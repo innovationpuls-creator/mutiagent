@@ -95,10 +95,23 @@ describe('ChatCard', () => {
     const onSendReply = vi.fn();
     render(<ChatCard message={questionProfile} onSendReply={onSendReply} />);
 
+    expect(screen.getByPlaceholderText('输入你的学习情况...')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '大一' }));
 
     expect(onSendReply).toHaveBeenCalledWith('大一');
     expect(screen.queryByRole('button', { name: '大一' })).toBeNull();
     expect(screen.queryByRole('button', { name: '大二' })).toBeNull();
+  });
+
+  it('keeps free-text input visible even when AI provides suggested options', () => {
+    const onSendReply = vi.fn();
+    render(<ChatCard message={questionProfile} onSendReply={onSendReply} />);
+
+    fireEvent.change(screen.getByPlaceholderText('输入你的学习情况...'), {
+      target: { value: '我是转专业过来的' },
+    });
+    fireEvent.keyDown(screen.getByPlaceholderText('输入你的学习情况...'), { key: 'Enter' });
+
+    expect(onSendReply).toHaveBeenCalledWith('我是转专业过来的');
   });
 });

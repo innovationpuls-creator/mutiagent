@@ -1291,10 +1291,7 @@ class TestChatEndpoints:
 
         with patch("app.orchestration.llm.get_thinking_worker_llm", return_value=thinking_worker_llm):
             with patch("app.orchestration.llm.get_search_worker_llm", return_value=search_llm):
-                with patch(
-                    "app.orchestration.llm.get_worker_llm",
-                    side_effect=AssertionError("叶子资源生成直连路径不应使用普通 worker"),
-                ):
+                with patch("app.orchestration.llm.get_worker_llm", return_value=thinking_worker_llm):
                     with patch(
                         "app.orchestration.agents.course_resources.stream_chapter_resource_generation",
                         side_effect=leaf_events,

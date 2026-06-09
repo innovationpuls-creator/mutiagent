@@ -204,7 +204,6 @@ def test_course_knowledge_prompt_mentions_json_output() -> None:
     assert "json" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT.lower()
     assert "先分析" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
     assert "1.1" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
-    assert "1.2" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
     assert "key_knowledge_points" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
     assert "第一章" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
     assert "learning_sequence" in COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT

@@ -143,16 +143,16 @@ class CourseItem(BaseModel):
 
 class LearningPathCourseSpecOutput(BaseModel):
     """学习路径规划骨架中的单门课程定义。"""
-    theme: str = Field(min_length=1, description="课程主题")
-    semester_scope: str = Field(min_length=1, description="建议安排学期或阶段时间说明")
-    duration: str = Field(min_length=1, description="持续时间")
-    pace_reason: str = Field(min_length=1, description="这样安排节奏的原因")
-    goal: str = Field(min_length=1, description="课程目标")
-    stage_titles: list[str] = Field(min_length=3, description="阶段标题，按学习顺序排列")
-    key_points: list[str] = Field(min_length=3, description="课程核心知识点")
-    difficult_points: list[str] = Field(min_length=1, description="课程难点")
-    acceptance_criteria: list[str] = Field(min_length=1, description="课程验收标准")
-    difficulty_level: str = Field(min_length=1, description="课程难度等级")
+    theme: str = Field(default="", min_length=1, description="课程主题")
+    semester_scope: str = Field(default="第1-16周", min_length=1, description="建议安排学期或阶段时间说明")
+    duration: str = Field(default="16周", min_length=1, description="持续时间")
+    pace_reason: str = Field(default="按课程标准节奏安排", min_length=1, description="这样安排节奏的原因")
+    goal: str = Field(default="", min_length=1, description="课程目标")
+    stage_titles: list[str] = Field(default=[], min_length=3, description="阶段标题，按学习顺序排列")
+    key_points: list[str] = Field(default=[], min_length=3, description="课程核心知识点")
+    difficult_points: list[str] = Field(default=[], min_length=1, description="课程难点")
+    acceptance_criteria: list[str] = Field(default=[], min_length=1, description="课程验收标准")
+    difficulty_level: str = Field(default="中级", min_length=1, description="课程难度等级")
 
     @field_validator("stage_titles", "key_points", "difficult_points", "acceptance_criteria", mode="before")
     @classmethod

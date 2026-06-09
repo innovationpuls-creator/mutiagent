@@ -266,6 +266,15 @@ def _final_response_from_state(final_state: dict[str, Any], supervisor_streaming
     if isinstance(response, str) and response.strip():
         return response.strip()
 
+    profile = final_state.get("profile")
+    if isinstance(profile, dict) and profile.get("type") == "collecting":
+        question_md = profile.get("question_md")
+        if isinstance(question_md, str) and question_md.strip():
+            return question_md.strip()
+        text = profile.get("text")
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+
     if supervisor_streaming_text.strip():
         return supervisor_streaming_text.strip()
 

@@ -1,7 +1,5 @@
 import type { BranchOverview, BranchYear, BranchCourseNode, BranchCourseStatus } from '../types/branch';
-import { notifyAuthInvalidFromError, readApiError } from './http';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
+import { API_BASE_URL, notifyAuthInvalidFromError, readApiError } from './http';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';

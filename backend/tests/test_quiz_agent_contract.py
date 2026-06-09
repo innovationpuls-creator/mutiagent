@@ -32,3 +32,72 @@ def test_normalize_grading_result_sets_passed_from_score() -> None:
 
     assert result["score"] == 71
     assert result["passed"] is True
+
+
+def test_normalize_quiz_questions_with_various_options() -> None:
+    # Test case 1: options are strings with letter prefixes
+    questions = normalize_quiz_questions([
+        {
+            "question_id": "q1",
+            "type": "single_choice",
+            "prompt": "以下哪个是正确的？",
+            "options": [
+                "A. 选项A内容",
+                "B: 选项B内容",
+                "C、选项C内容",
+                "D 选项D内容",
+            ],
+            "correct_option_id": "A. 选项A内容",
+            "points": 10,
+        }
+    ])
+    
+    assert questions[0]["correct_option_id"] == "A"
+    assert questions[0]["options"] == [
+        {"option_id": "A", "text": "选项A内容"},
+        {"option_id": "B", "text": "选项B内容"},
+        {"option_id": "C", "text": "选项C内容"},
+        {"option_id": "D", "text": "选项D内容"},
+    ]
+
+    # Test case 2: options are plain strings without prefixes
+    questions2 = normalize_quiz_questions([
+        {
+            "question_id": "q1",
+            "type": "single_choice",
+            "prompt": "以下哪个是正确的？",
+            "options": [
+                "选项一",
+                "选项二",
+            ],
+            "correct_option_id": "a",
+            "points": 10,
+        }
+    ])
+    assert questions2[0]["correct_option_id"] == "A"
+    assert questions2[0]["options"] == [
+        {"option_id": "A", "text": "选项一"},
+        {"option_id": "B", "text": "选项二"},
+    ]
+
+    # Test case 3: options are dictionaries
+    questions3 = normalize_quiz_questions([
+        {
+            "question_id": "q1",
+            "type": "single_choice",
+            "prompt": "以下哪个是正确的？",
+            "options": [
+                {"text": "选项A"},
+                {"label": "选项B"},
+                {"option_id": "C", "option_text": "选项C"},
+            ],
+            "correct_option_id": "b",
+            "points": 10,
+        }
+    ])
+    assert questions3[0]["correct_option_id"] == "B"
+    assert questions3[0]["options"] == [
+        {"option_id": "A", "text": "选项A"},
+        {"option_id": "B", "text": "选项B"},
+        {"option_id": "C", "text": "选项C"},
+    ]

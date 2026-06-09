@@ -17,6 +17,28 @@ from app.orchestration.agents.models import ProfileOutput
 from app.orchestration.rule_engine import AGENT_LEARNING_PATH, AGENT_PROFILE, evaluate
 
 
+class ScriptedStructuredLlm:
+    def __init__(self, responses: list[object]) -> None:
+        self.calls = 0
+        self._responses = list(responses)
+
+    def with_structured_output(self, *_args, **_kwargs):
+        async def invoke(_messages):
+            if self.calls >= len(self._responses):
+                raise AssertionError("unexpected extra structured llm call")
+            response = self._responses[self.calls]
+            self.calls += 1
+            if isinstance(response, Exception):
+                raise response
+            if isinstance(response, ProfileOutput):
+                return response
+            if isinstance(response, dict):
+                return ProfileOutput(**response)
+            raise AssertionError(f"unsupported scripted response: {type(response)!r}")
+
+        return invoke
+
+
 def _profile() -> dict:
     return {
         "type": "basic_profile",
@@ -189,9 +211,10 @@ def test_rule_engine_does_not_recall_agents_in_same_turn_as_learning_path_genera
 
 
 def test_run_profile_agent_local_default_profile_persists(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local default profile path should not call structured llm")
+    profile = _profile()
+    profile["confirmed_info"]["current_grade"] = "大3"
+    profile["text"] = "【基础学习画像总结】大3软件工程 AI 方向。"
+    llm = ScriptedStructuredLlm([profile])
 
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-fast-path.db'}")
     set_engine(engine)
@@ -203,14 +226,16 @@ def test_run_profile_agent_local_default_profile_persists(tmp_path: Path) -> Non
         "messages": [HumanMessage(content="大3，软件工程，ai，平时学习")],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["type"] == "basic_profile"
     assert result["profile"]["stage"] == "generated"
     assert result["profile"]["defaulted_fields"]
     assert result["response"] == result["profile"]["text"]
+    assert result["profile"]["summary_text"] == result["profile"]["text"]
     assert result["profile"]["confirmed_info"]["current_grade"] == "大3"
     assert result["profile"]["confirmed_info"]["major"] == "软件工程"
+    assert llm.calls == 1
 
     with Session(engine) as session:
         row = session.get(UserProfile, state["user_id"])
@@ -218,12 +243,11 @@ def test_run_profile_agent_local_default_profile_persists(tmp_path: Path) -> Non
     assert row is not None
     assert row.profile_data["type"] == "basic_profile"
     assert row.profile_data["confirmed_info"]["current_grade"] == "大3"
+    assert row.profile_data["summary_text"] == "【基础学习画像总结】大3软件工程 AI 方向。"
 
 
 def test_run_profile_agent_default_profile_ignores_greeting_as_major(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local default profile path should not call structured llm")
+    llm = ScriptedStructuredLlm([_profile()])
 
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-ignore-greeting.db'}")
     set_engine(engine)
@@ -235,17 +259,21 @@ def test_run_profile_agent_default_profile_ignores_greeting_as_major(tmp_path: P
         "messages": [HumanMessage(content="你好")],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["confirmed_info"]["current_grade"] == "大三"
     assert result["profile"]["confirmed_info"]["major"] == "软件工程"
     assert "你好" not in result["profile"]["summary_text"]
+    assert llm.calls == 1
 
 
 def test_run_profile_agent_keeps_pace_segment_out_of_major(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local profile update path should not call structured llm")
+    profile = _profile()
+    profile["confirmed_info"]["current_grade"] = "大四"
+    profile["confirmed_info"]["major"] = "计算机科学"
+    profile["confirmed_info"]["constraints"] = "周末集中"
+    profile["text"] = "【基础学习画像总结】大四计算机科学，继续围绕 AI 应用开发推进。"
+    llm = ScriptedStructuredLlm([profile])
 
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-major-pace.db'}")
     set_engine(engine)
@@ -258,21 +286,50 @@ def test_run_profile_agent_keeps_pace_segment_out_of_major(tmp_path: Path) -> No
         "messages": [HumanMessage(content="大四，计算机科学，AI，周末集中")],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["confirmed_info"]["current_grade"] == "大四"
     assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
     assert result["profile"]["confirmed_info"]["constraints"] == "周末集中"
+    assert llm.calls == 1
 
 
 def test_run_profile_agent_returns_collecting_for_unsupported_postgraduate_grade(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local profile path should not call structured llm")
-
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-unsupported-grade.db'}")
     set_engine(engine)
     init_db(engine)
+
+    llm = ScriptedStructuredLlm([{
+        "type": "collecting",
+        "stage": "basic_info",
+        "question_mode": "question_box",
+        "confirmed_info": {
+            **_profile()["confirmed_info"],
+            "current_grade": "研一",
+            "major": "软件工程",
+            "learning_stage": "",
+            "has_clear_goal": "",
+            "learning_method_preference": "",
+            "learning_pace_preference": "",
+            "content_preference": [],
+            "need_guidance": "",
+            "knowledge_foundation": "",
+            "strengths": "",
+            "weaknesses": "",
+            "experience": "",
+            "short_term_goal": "",
+            "long_term_goal": "",
+            "weekly_available_time": "",
+            "constraints": "",
+        },
+        "defaulted_fields": [],
+        "question_md": "当前学习路径只支持大一到大四。如果你想继续生成学习路径，请先告诉我对应的本科年级（大一到大四）。",
+        "question_box": {
+            "question": "当前学习路径只支持大一到大四。如果你想继续生成学习路径，请先告诉我对应的本科年级（大一到大四）。",
+            "options": [],
+        },
+        "text": "当前学习路径只支持大一到大四。如果你想继续生成学习路径，请先告诉我对应的本科年级（大一到大四）。",
+    }])
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000000015",
@@ -280,7 +337,7 @@ def test_run_profile_agent_returns_collecting_for_unsupported_postgraduate_grade
         "messages": [HumanMessage(content="研一，软件工程，AI，周末集中")],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["type"] == "collecting"
     assert result["profile"]["stage"] == "basic_info"
@@ -299,9 +356,10 @@ def test_run_profile_agent_returns_collecting_for_unsupported_postgraduate_grade
 
 
 def test_run_profile_agent_updates_explicit_major_field_without_treating_whole_sentence_as_major(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local profile update path should not call structured llm")
+    profile = _profile()
+    profile["confirmed_info"]["major"] = "计算机科学"
+    profile["text"] = "【基础学习画像总结】大三计算机科学 AI 方向。"
+    llm = ScriptedStructuredLlm([profile])
 
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-explicit-major.db'}")
     set_engine(engine)
@@ -314,17 +372,20 @@ def test_run_profile_agent_updates_explicit_major_field_without_treating_whole_s
         "messages": [HumanMessage(content="专业改成计算机科学")],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["confirmed_info"]["current_grade"] == "大三"
     assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
     assert "专业改成计算机科学" not in result["profile"]["summary_text"]
+    assert llm.calls == 1
 
 
 def test_run_profile_agent_rewrites_system_generated_knowledge_foundation_after_major_update(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local profile update path should not call structured llm")
+    profile_response = _profile()
+    profile_response["confirmed_info"]["major"] = "计算机科学"
+    profile_response["confirmed_info"]["knowledge_foundation"] = "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
+    profile_response["text"] = "【基础学习画像总结】大三计算机科学 AI 方向。"
+    llm = ScriptedStructuredLlm([profile_response])
 
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-generated-knowledge-foundation.db'}")
     set_engine(engine)
@@ -340,19 +401,23 @@ def test_run_profile_agent_rewrites_system_generated_knowledge_foundation_after_
         "messages": [HumanMessage(content="专业改成计算机科学")],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
     assert (
         result["profile"]["confirmed_info"]["knowledge_foundation"]
         == "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
     )
+    assert llm.calls == 1
 
 
 def test_run_profile_agent_restores_generated_knowledge_foundation_when_existing_complete_profile_field_is_empty(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local profile update path should not call structured llm")
+    profile_response = _profile()
+    profile_response["confirmed_info"]["major"] = "计算机科学"
+    profile_response["confirmed_info"]["constraints"] = "周末集中"
+    profile_response["confirmed_info"]["knowledge_foundation"] = "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
+    profile_response["text"] = "【基础学习画像总结】大三计算机科学，当前限制为周末集中。"
+    llm = ScriptedStructuredLlm([profile_response])
 
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-empty-generated-knowledge-foundation.db'}")
     set_engine(engine)
@@ -368,7 +433,7 @@ def test_run_profile_agent_restores_generated_knowledge_foundation_when_existing
         "messages": [HumanMessage(content="专业改成计算机科学，当前限制改成周末集中")],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
     assert result["profile"]["confirmed_info"]["constraints"] == "周末集中"
@@ -376,12 +441,15 @@ def test_run_profile_agent_restores_generated_knowledge_foundation_when_existing
         result["profile"]["confirmed_info"]["knowledge_foundation"]
         == "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
     )
+    assert llm.calls == 1
 
 
 def test_run_profile_agent_updates_multiple_explicit_fields_in_one_sentence(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local profile update path should not call structured llm")
+    profile = _profile()
+    profile["confirmed_info"]["major"] = "计算机科学"
+    profile["confirmed_info"]["constraints"] = "周末集中"
+    profile["text"] = "【基础学习画像总结】大三计算机科学，当前限制为周末集中。"
+    llm = ScriptedStructuredLlm([profile])
 
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-explicit-multi-field.db'}")
     set_engine(engine)
@@ -394,18 +462,22 @@ def test_run_profile_agent_updates_multiple_explicit_fields_in_one_sentence(tmp_
         "messages": [HumanMessage(content="专业改成计算机科学，当前限制改成周末集中")],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["confirmed_info"]["current_grade"] == "大三"
     assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
     assert result["profile"]["confirmed_info"]["constraints"] == "周末集中"
     assert "当前限制改成周末集中" not in result["profile"]["summary_text"]
+    assert llm.calls == 1
 
 
 def test_run_profile_agent_prefers_latest_explicit_profile_update_from_history(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local profile update path should not call structured llm")
+    profile_response = _profile()
+    profile_response["confirmed_info"]["major"] = "人工智能"
+    profile_response["confirmed_info"]["constraints"] = "每天少量"
+    profile_response["confirmed_info"]["knowledge_foundation"] = "已具备人工智能基础，AI 应用开发方向可从入门到基础逐步补全"
+    profile_response["text"] = "【基础学习画像总结】大三人工智能，当前以每天少量的节奏推进。"
+    llm = ScriptedStructuredLlm([profile_response])
 
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-explicit-history-latest.db'}")
     set_engine(engine)
@@ -423,7 +495,7 @@ def test_run_profile_agent_prefers_latest_explicit_profile_update_from_history(t
         ],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["confirmed_info"]["major"] == "人工智能"
     assert result["profile"]["confirmed_info"]["constraints"] == "每天少量"
@@ -431,12 +503,16 @@ def test_run_profile_agent_prefers_latest_explicit_profile_update_from_history(t
         result["profile"]["confirmed_info"]["knowledge_foundation"]
         == "已具备人工智能基础，AI 应用开发方向可从入门到基础逐步补全"
     )
+    assert llm.calls == 1
 
 
 def test_run_profile_agent_prefers_latest_implicit_grade_and_major_from_history(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local profile update path should not call structured llm")
+    profile = _profile()
+    profile["confirmed_info"]["current_grade"] = "大四"
+    profile["confirmed_info"]["major"] = "计算机科学"
+    profile["confirmed_info"]["constraints"] = "周末集中"
+    profile["text"] = "【基础学习画像总结】大四计算机科学，当前限制为周末集中。"
+    llm = ScriptedStructuredLlm([profile])
 
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-implicit-history-latest.db'}")
     set_engine(engine)
@@ -454,21 +530,53 @@ def test_run_profile_agent_prefers_latest_implicit_grade_and_major_from_history(
         ],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["confirmed_info"]["current_grade"] == "大四"
     assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
     assert result["profile"]["confirmed_info"]["constraints"] == "周末集中"
+    assert llm.calls == 1
 
 
 def test_run_profile_agent_first_profile_requests_missing_major_in_collecting_mode(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("collecting fallback should not call structured llm")
-
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-first-signal.db'}")
     set_engine(engine)
     init_db(engine)
+
+    llm = ScriptedStructuredLlm([{
+        "type": "collecting",
+        "stage": "basic_info",
+        "question_mode": "question_box",
+        "confirmed_info": {
+            **_profile()["confirmed_info"],
+            "current_grade": "大三",
+            "major": "",
+            "learning_stage": "",
+            "has_clear_goal": "",
+            "learning_method_preference": "",
+            "learning_pace_preference": "",
+            "content_preference": [],
+            "need_guidance": "",
+            "knowledge_foundation": "",
+            "strengths": "",
+            "weaknesses": "",
+            "experience": "",
+            "short_term_goal": "",
+            "long_term_goal": "",
+            "weekly_available_time": "",
+            "constraints": "",
+        },
+        "defaulted_fields": [],
+        "question_md": "为了生成基础画像，请先告诉我你的专业。",
+        "question_box": {
+            "question": "为了生成基础画像，请先告诉我你的专业。",
+            "options": [
+                {"label": "软件工程", "value": "软件工程", "description": "常见软件开发相关专业方向", "target_fields": ["major"], "fills": {"major": "软件工程"}},
+                {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+            ],
+        },
+        "text": "为了生成基础画像，请先告诉我你的专业。",
+    }])
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000000002",
@@ -479,13 +587,15 @@ def test_run_profile_agent_first_profile_requests_missing_major_in_collecting_mo
         ],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["type"] == "collecting"
     assert result["profile"]["stage"] == "basic_info"
-    assert result["profile"]["question_mode"] == "question_md"
+    assert result["profile"]["question_mode"] == "question_box"
     assert result["profile"]["confirmed_info"]["current_grade"] == "大三"
     assert result["profile"]["confirmed_info"]["major"] == ""
+    assert result["profile"]["question_box"]["question"] == "为了生成基础画像，请先告诉我你的专业。"
+    assert result["profile"]["question_box"]["options"]
     assert "请先告诉我你的专业" in result["response"]
     assert result["response"] == result["profile"]["text"]
 
@@ -498,13 +608,44 @@ def test_run_profile_agent_first_profile_requests_missing_major_in_collecting_mo
 
 
 def test_run_profile_agent_uses_existing_collecting_profile_to_finish_basic_profile(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local follow-up profile completion should not call structured llm")
-
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-follow-up.db'}")
     set_engine(engine)
     init_db(engine)
+
+    llm = ScriptedStructuredLlm([{
+        "type": "collecting",
+        "stage": "learning_preference",
+        "question_mode": "question_box",
+        "confirmed_info": {
+            **_profile()["confirmed_info"],
+            "current_grade": "大三",
+            "major": "软件工程",
+            "learning_stage": "",
+            "has_clear_goal": "",
+            "learning_method_preference": "",
+            "learning_pace_preference": "",
+            "content_preference": [],
+            "need_guidance": "",
+            "knowledge_foundation": "",
+            "strengths": "",
+            "weaknesses": "",
+            "experience": "",
+            "short_term_goal": "",
+            "long_term_goal": "",
+            "weekly_available_time": "",
+            "constraints": "",
+        },
+        "defaulted_fields": [],
+        "question_md": "你目前的学习阶段是？",
+        "question_box": {
+            "question": "你目前的学习阶段是？",
+            "options": [
+                {"label": "有基础", "value": "有基础", "description": "已学过相关课程，有一定基础", "target_fields": ["learning_stage"], "fills": {"learning_stage": "有基础"}},
+                {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+            ],
+        },
+        "text": "你目前的学习阶段是？",
+    }])
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000000003",
@@ -542,36 +683,167 @@ def test_run_profile_agent_uses_existing_collecting_profile_to_finish_basic_prof
         ],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["type"] == "collecting"
-    assert result["profile"]["stage"] == "basic_info"
+    assert result["profile"]["stage"] == "learning_preference"
+    assert result["profile"]["question_mode"] == "question_box"
     assert result["profile"]["confirmed_info"]["current_grade"] == "大三"
     assert result["profile"]["confirmed_info"]["major"] == "软件工程"
-    assert "还需要确认" in result["response"]
+    assert result["profile"]["question_box"]["options"]
     assert result["response"] == result["profile"]["text"]
 
 
-def test_run_profile_agent_maps_user_delimited_profile_without_fake_fields(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local profile path should not call structured llm")
+def test_run_profile_agent_uses_current_collecting_question_to_parse_free_text_answer(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-current-question-parse.db'}")
+    set_engine(engine)
+    init_db(engine)
 
+    major_state = {
+        "user_id": "00000000-0000-0000-0000-000000000022",
+        "query": "软件工程",
+        "profile": {
+            "type": "collecting",
+            "stage": "basic_info",
+            "question_mode": "question_box",
+            "confirmed_info": {
+                "current_grade": "大三",
+                "major": "",
+                "learning_stage": "",
+                "has_clear_goal": "",
+                "learning_method_preference": "",
+                "learning_pace_preference": "",
+                "content_preference": ["文档"],
+                "need_guidance": "需要强引导",
+                "knowledge_foundation": "",
+                "strengths": "",
+                "weaknesses": "",
+                "experience": "",
+                "short_term_goal": "学习vibecoding",
+                "long_term_goal": "",
+                "weekly_available_time": "",
+                "constraints": "",
+            },
+            "defaulted_fields": [],
+            "question_md": "为了生成基础画像，请先告诉我你的专业。",
+            "question_box": {
+                "question": "为了生成基础画像，请先告诉我你的专业。",
+                "options": [
+                    {"label": "计算机科学", "value": "计算机科学", "description": "", "target_fields": ["major"], "fills": {"major": "计算机科学"}},
+                    {"label": "软件工程", "value": "软件工程", "description": "", "target_fields": ["major"], "fills": {"major": "软件工程"}},
+                    {"label": "其他", "value": "__free_text__", "description": "", "target_fields": [], "fills": {}},
+                ],
+            },
+            "text": "为了生成基础画像，请先告诉我你的专业。",
+        },
+        "messages": [HumanMessage(content="软件工程")],
+    }
+
+    major_llm = ScriptedStructuredLlm([{
+        "type": "collecting",
+        "stage": "learning_preference",
+        "question_mode": "question_box",
+        "confirmed_info": {
+            **major_state["profile"]["confirmed_info"],
+            "major": "软件工程",
+        },
+        "defaulted_fields": [],
+        "question_md": "你目前的学习阶段是？",
+        "question_box": {
+            "question": "你目前的学习阶段是？",
+            "options": [
+                {"label": "刚入门", "value": "刚入门", "description": "刚开始接触这个领域", "target_fields": ["learning_stage"], "fills": {"learning_stage": "刚入门"}},
+                {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+            ],
+        },
+        "text": "你目前的学习阶段是？",
+    }])
+    major_result = asyncio.run(run_profile_agent(major_state, major_llm))
+
+    assert major_result["profile"]["confirmed_info"]["major"] == "软件工程"
+    assert major_result["profile"]["stage"] == "learning_preference"
+    assert major_result["profile"]["question_mode"] == "question_box"
+    assert major_result["profile"]["question_box"]["question"] == "你目前的学习阶段是？"
+
+    learning_stage_state = {
+        "user_id": "00000000-0000-0000-0000-000000000022",
+        "query": "初学者",
+        "profile": major_result["profile"],
+        "messages": [HumanMessage(content="初学者")],
+    }
+
+    learning_stage_llm = ScriptedStructuredLlm([{
+        "type": "collecting",
+        "stage": "learning_preference",
+        "question_mode": "question_box",
+        "confirmed_info": {
+            **major_result["profile"]["confirmed_info"],
+            "learning_stage": "刚入门",
+        },
+        "defaulted_fields": [],
+        "question_md": "你的学习目标清晰吗？",
+        "question_box": {
+            "question": "你的学习目标清晰吗？",
+            "options": [
+                {"label": "目标明确", "value": "是", "description": "清楚自己要学什么", "target_fields": ["has_clear_goal"], "fills": {"has_clear_goal": "是"}},
+                {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+            ],
+        },
+        "text": "你的学习目标清晰吗？",
+    }])
+    learning_stage_result = asyncio.run(run_profile_agent(learning_stage_state, learning_stage_llm))
+
+    assert learning_stage_result["profile"]["confirmed_info"]["learning_stage"] == "刚入门"
+    assert learning_stage_result["profile"]["stage"] == "learning_preference"
+    assert learning_stage_result["profile"]["question_mode"] == "question_box"
+    assert learning_stage_result["profile"]["question_box"]["question"] == "你的学习目标清晰吗？"
+
+
+def test_run_profile_agent_maps_user_delimited_profile_without_fake_fields(tmp_path: Path) -> None:
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-delimited-real-input.db'}")
     set_engine(engine)
     init_db(engine)
 
     user_text = "大三、软件工程、找工作、喜欢自己摸索，学习vibecoding"
+    llm = ScriptedStructuredLlm([{
+        "type": "collecting",
+        "stage": "learning_preference",
+        "question_mode": "question_box",
+        "confirmed_info": {
+            **_profile()["confirmed_info"],
+            "current_grade": "大三",
+            "major": "软件工程",
+            "learning_stage": "",
+            "has_clear_goal": "",
+            "learning_method_preference": "喜欢自己摸索",
+            "learning_pace_preference": "",
+            "content_preference": [],
+            "need_guidance": "",
+            "knowledge_foundation": "",
+            "strengths": "",
+            "weaknesses": "",
+            "experience": "",
+            "short_term_goal": "找工作，学习vibecoding",
+            "long_term_goal": "",
+            "weekly_available_time": "",
+            "constraints": "",
+        },
+        "defaulted_fields": [],
+        "question_md": "你目前的学习阶段是？",
+        "question_box": {"question": "你目前的学习阶段是？", "options": []},
+        "text": "你目前的学习阶段是？",
+    }])
     state = {
         "user_id": "00000000-0000-0000-0000-000000000004",
         "query": user_text,
         "messages": [HumanMessage(content=user_text)],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     confirmed = result["profile"]["confirmed_info"]
     assert result["profile"]["type"] == "collecting"
+    assert result["profile"]["question_mode"] == "question_box"
     assert confirmed["current_grade"] == "大三"
     assert confirmed["major"] == "软件工程"
     assert confirmed["short_term_goal"] == "找工作，学习vibecoding"
@@ -583,45 +855,94 @@ def test_run_profile_agent_maps_user_delimited_profile_without_fake_fields(tmp_p
     assert confirmed["experience"] == ""
     assert confirmed["weekly_available_time"] == ""
     assert result["profile"]["defaulted_fields"] == []
-    assert "还需要确认" in result["response"]
+    assert result["profile"]["question_box"]["question"] == "你目前的学习阶段是？"
 
 
 def test_run_profile_agent_maps_major_before_grade_in_delimited_profile(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local profile path should not call structured llm")
-
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-delimited-major-before-grade.db'}")
     set_engine(engine)
     init_db(engine)
 
     user_text = "软件工程、大三、找工作、喜欢自己摸索，学习vibecoding"
+    llm = ScriptedStructuredLlm([{
+        "type": "collecting",
+        "stage": "learning_preference",
+        "question_mode": "question_box",
+        "confirmed_info": {
+            **_profile()["confirmed_info"],
+            "current_grade": "大三",
+            "major": "软件工程",
+            "learning_stage": "",
+            "has_clear_goal": "",
+            "learning_method_preference": "喜欢自己摸索",
+            "learning_pace_preference": "",
+            "content_preference": [],
+            "need_guidance": "",
+            "knowledge_foundation": "",
+            "strengths": "",
+            "weaknesses": "",
+            "experience": "",
+            "short_term_goal": "找工作，学习vibecoding",
+            "long_term_goal": "",
+            "weekly_available_time": "",
+            "constraints": "",
+        },
+        "defaulted_fields": [],
+        "question_md": "你目前的学习阶段是？",
+        "question_box": {"question": "你目前的学习阶段是？", "options": []},
+        "text": "你目前的学习阶段是？",
+    }])
     state = {
         "user_id": "00000000-0000-0000-0000-000000000005",
         "query": user_text,
         "messages": [HumanMessage(content=user_text)],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     confirmed = result["profile"]["confirmed_info"]
     assert result["profile"]["type"] == "collecting"
+    assert result["profile"]["question_mode"] == "question_box"
     assert confirmed["current_grade"] == "大三"
     assert confirmed["major"] == "软件工程"
     assert confirmed["short_term_goal"] == "找工作，学习vibecoding"
     assert confirmed["learning_method_preference"] == "喜欢自己摸索"
-    assert "还需要确认" in result["response"]
+    assert result["profile"]["question_box"]["question"] == "你目前的学习阶段是？"
 
 
 def test_run_profile_agent_collecting_profile_understands_english_grade_without_corrupting_major(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("local collecting completion path should not call structured llm")
-
     engine = build_engine(f"sqlite:///{tmp_path / 'profile-english-grade.db'}")
     set_engine(engine)
     init_db(engine)
 
+    llm = ScriptedStructuredLlm([{
+        "type": "collecting",
+        "stage": "basic_info",
+        "question_mode": "question_box",
+        "confirmed_info": {
+            **_profile()["confirmed_info"],
+            "current_grade": "大三",
+            "major": "",
+            "learning_stage": "",
+            "has_clear_goal": "",
+            "learning_method_preference": "",
+            "learning_pace_preference": "",
+            "content_preference": [],
+            "need_guidance": "",
+            "knowledge_foundation": "",
+            "strengths": "",
+            "weaknesses": "",
+            "experience": "",
+            "short_term_goal": "",
+            "long_term_goal": "",
+            "weekly_available_time": "",
+            "constraints": "",
+        },
+        "defaulted_fields": [],
+        "question_md": "为了生成基础画像，请先告诉我你的专业。",
+        "question_box": {"question": "为了生成基础画像，请先告诉我你的专业。", "options": []},
+        "text": "为了生成基础画像，请先告诉我你的专业。",
+    }])
     state = {
         "user_id": "00000000-0000-0000-0000-000000000018",
         "query": (
@@ -639,11 +960,72 @@ def test_run_profile_agent_collecting_profile_understands_english_grade_without_
         ],
     }
 
-    result = asyncio.run(run_profile_agent(state, ExplodingLlm()))
+    result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["type"] == "collecting"
     assert result["profile"]["confirmed_info"]["current_grade"] == "大三"
     assert result["profile"]["confirmed_info"]["major"] == ""
+    assert "请先告诉我你的专业" in result["response"]
+
+
+def test_run_profile_agent_does_not_treat_learning_preference_sentence_as_major(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-learning-preference-not-major.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    user_text = "我现在大三、准备学习agent开发和vibecoding、我喜欢看文档，一步一步跟着操作"
+    llm = ScriptedStructuredLlm([{
+        "type": "collecting",
+        "stage": "basic_info",
+        "question_mode": "question_box",
+        "confirmed_info": {
+            **_profile()["confirmed_info"],
+            "current_grade": "大三",
+            "major": "",
+            "learning_stage": "",
+            "has_clear_goal": "",
+            "learning_method_preference": "",
+            "learning_pace_preference": "",
+            "content_preference": ["文档"],
+            "need_guidance": "需要强引导",
+            "knowledge_foundation": "",
+            "strengths": "",
+            "weaknesses": "",
+            "experience": "",
+            "short_term_goal": "学习vibecoding",
+            "long_term_goal": "",
+            "weekly_available_time": "",
+            "constraints": "",
+        },
+        "defaulted_fields": [],
+        "question_md": "为了生成基础画像，请先告诉我你的专业。",
+        "question_box": {
+            "question": "为了生成基础画像，请先告诉我你的专业。",
+            "options": [
+                {"label": "软件工程", "value": "软件工程", "description": "", "target_fields": ["major"], "fills": {"major": "软件工程"}},
+                {"label": "其他", "value": "__free_text__", "description": "", "target_fields": [], "fills": {}},
+            ],
+        },
+        "text": "为了生成基础画像，请先告诉我你的专业。",
+    }])
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000000021",
+        "query": user_text,
+        "messages": [HumanMessage(content=user_text)],
+    }
+
+    result = asyncio.run(run_profile_agent(state, llm))
+
+    assert result["profile"]["type"] == "collecting"
+    assert result["profile"]["stage"] == "basic_info"
+    assert result["profile"]["question_mode"] == "question_box"
+    assert result["profile"]["confirmed_info"]["current_grade"] == "大三"
+    assert result["profile"]["confirmed_info"]["major"] == ""
+    assert result["profile"]["confirmed_info"]["content_preference"] == ["文档"]
+    assert result["profile"]["confirmed_info"]["need_guidance"] == "需要强引导"
+    assert result["profile"]["question_box"]["question"] == "为了生成基础画像，请先告诉我你的专业。"
+    assert result["profile"]["question_box"]["options"]
+    assert result["response"] == result["profile"]["text"]
     assert "请先告诉我你的专业" in result["response"]
 
 
@@ -717,3 +1099,187 @@ def test_run_profile_agent_uses_structured_llm_for_rich_first_profile_message(tm
 
     assert row is not None
     assert row.profile_data["confirmed_info"]["major"] == "软件工程"
+
+
+def test_run_profile_agent_converts_unknown_values_to_collecting(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-unknown-values.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    existing_profile = _profile()
+    existing_profile["type"] = "collecting"
+    existing_profile["stage"] = "basic_info"
+    existing_profile["confirmed_info"]["knowledge_foundation"] = ""
+    existing_profile["confirmed_info"]["long_term_goal"] = ""
+    existing_profile["confirmed_info"]["weekly_available_time"] = ""
+
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000000019",
+        "query": "和我讨论重新生成个人画像",
+        "profile": existing_profile,
+        "messages": [HumanMessage(content="和我讨论重新生成个人画像")],
+    }
+
+    llm = ScriptedStructuredLlm([
+        {
+            **_profile(),
+            "confirmed_info": {
+                **_profile()["confirmed_info"],
+                "knowledge_foundation": "未知",
+                "long_term_goal": "未知",
+                "weekly_available_time": "未知",
+            },
+        },
+        {
+            "type": "collecting",
+            "stage": "ability_basis",
+            "question_mode": "question_box",
+            "confirmed_info": {
+                **existing_profile["confirmed_info"],
+                "current_grade": "大三",
+                "major": "软件工程",
+            },
+            "defaulted_fields": [],
+            "question_md": "你目前的知识基础是什么？",
+            "question_box": {
+                "question": "你目前的知识基础是什么？",
+                "options": [
+                    {"label": "有前后端基础", "value": "有前后端基础", "description": "了解 Web 开发基本流程", "target_fields": ["knowledge_foundation"], "fills": {"knowledge_foundation": "有前后端基础"}},
+                    {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+                ],
+            },
+            "text": "你目前的知识基础是什么？",
+        },
+    ])
+
+    result = asyncio.run(run_profile_agent(state, llm))
+
+    assert result["profile"]["type"] == "collecting"
+    assert result["profile"]["question_mode"] == "question_box"
+    assert result["profile"]["confirmed_info"]["knowledge_foundation"] == ""
+    assert result["profile"]["confirmed_info"]["long_term_goal"] == ""
+    assert result["profile"]["confirmed_info"]["weekly_available_time"] == ""
+    assert "未知" not in result["response"]
+    assert result["profile"]["question_box"]["options"]
+
+    with Session(engine) as session:
+        row = session.get(UserProfile, state["user_id"])
+
+    assert row is not None
+    assert row.profile_data["type"] == "collecting"
+
+
+def test_run_profile_agent_converts_empty_llm_values_to_collecting(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-empty-values.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    existing_profile = _profile()
+    existing_profile["type"] = "collecting"
+    existing_profile["confirmed_info"]["knowledge_foundation"] = ""
+    existing_profile["confirmed_info"]["long_term_goal"] = ""
+    existing_profile["confirmed_info"]["weekly_available_time"] = ""
+
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000000020",
+        "query": "和我讨论重新生成个人画像",
+        "profile": existing_profile,
+        "messages": [HumanMessage(content="和我讨论重新生成个人画像")],
+    }
+
+    llm = ScriptedStructuredLlm([
+        {
+            **_profile(),
+            "confirmed_info": {
+                **_profile()["confirmed_info"],
+                "knowledge_foundation": "",
+                "long_term_goal": "",
+                "weekly_available_time": "",
+                "content_preference": [],
+            },
+        },
+        {
+            "type": "collecting",
+            "stage": "learning_preference",
+            "question_mode": "question_box",
+            "confirmed_info": {
+                **existing_profile["confirmed_info"],
+                "current_grade": "大三",
+                "major": "软件工程",
+            },
+            "defaulted_fields": [],
+            "question_md": "你偏好什么内容形式？",
+            "question_box": {
+                "question": "你偏好什么内容形式？",
+                "options": [
+                    {"label": "文档为主", "value": "文档", "description": "喜欢阅读文档学习", "target_fields": ["content_preference"], "fills": {"content_preference": ["文档"]}},
+                    {"label": "其他", "value": "__free_text__", "description": "以上都不符合，我来输入", "target_fields": [], "fills": {}},
+                ],
+            },
+            "text": "你偏好什么内容形式？",
+        },
+    ])
+
+    result = asyncio.run(run_profile_agent(state, llm))
+
+    assert result["profile"]["type"] == "collecting"
+    assert result["profile"]["question_mode"] == "question_box"
+    assert result["profile"]["confirmed_info"]["knowledge_foundation"] == ""
+    assert result["profile"]["confirmed_info"]["long_term_goal"] == ""
+    assert result["profile"]["confirmed_info"]["weekly_available_time"] == ""
+    assert result["profile"]["question_box"]["options"]
+
+
+def test_run_profile_agent_repairs_stage_type_mismatch_before_persisting(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-repair-stage-type.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    broken_profile = {
+        **_profile(),
+        "type": "collecting",
+        "stage": "generated",
+        "text": "",
+        "question_md": "",
+        "question_box": {"question": "", "options": []},
+    }
+    repaired_profile = {
+        "type": "collecting",
+        "stage": "learning_preference",
+        "question_mode": "question_box",
+        "confirmed_info": {
+            **_profile()["confirmed_info"],
+            "learning_stage": "",
+            "has_clear_goal": "",
+            "learning_method_preference": "",
+            "learning_pace_preference": "",
+            "content_preference": [],
+            "need_guidance": "",
+            "knowledge_foundation": "",
+            "strengths": "",
+            "weaknesses": "",
+            "experience": "",
+            "short_term_goal": "",
+            "long_term_goal": "",
+            "weekly_available_time": "",
+            "constraints": "",
+        },
+        "defaulted_fields": [],
+        "question_md": "你目前的学习阶段是？",
+        "question_box": {"question": "你目前的学习阶段是？", "options": []},
+        "text": "你目前的学习阶段是？",
+    }
+    llm = ScriptedStructuredLlm([broken_profile, repaired_profile])
+
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000000023",
+        "query": "我现在大三，软件工程，想继续完善基础画像",
+        "messages": [HumanMessage(content="我现在大三，软件工程，想继续完善基础画像")],
+    }
+
+    result = asyncio.run(run_profile_agent(state, llm))
+
+    assert llm.calls == 2
+    assert result["profile"]["type"] == "collecting"
+    assert result["profile"]["stage"] == "learning_preference"
+    assert result["profile"]["question_box"]["question"] == "你目前的学习阶段是？"

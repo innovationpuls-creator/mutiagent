@@ -128,6 +128,9 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData }
 
   const submitOptionAnswer = (option: QuestionBoxOption) => {
     if (disabled) return;
+    if (option.value === '__free_text__') {
+      return;
+    }
     onSendReply?.(option.label);
     setHasSubmittedReply(true);
   };
@@ -220,21 +223,41 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData }
           </section>
 
           {showReplyControls && (message.question_mode === 'question_box' ? (
-            <div className="options-grid">
-              {options.map((option) => (
-                <button
-                  key={`${option.label}:${option.value}`}
-                  aria-label={option.label}
-                  className="option-btn"
+            <>
+              {options.length > 0 && (
+                <div className="options-grid">
+                  {options.map((option) => (
+                    <button
+                      key={`${option.label}:${option.value}`}
+                      aria-label={option.label}
+                      className="option-btn"
+                      disabled={disabled}
+                      onClick={() => submitOptionAnswer(option)}
+                      type="button"
+                    >
+                      <span>{option.label}</span>
+                      {option.description ? <small>{option.description}</small> : null}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="input-groove">
+                <input
+                  type="text"
+                  className="input-pebble"
+                  placeholder="输入你的学习情况..."
+                  value={inputValue}
                   disabled={disabled}
-                  onClick={() => submitOptionAnswer(option)}
-                  type="button"
-                >
-                  <span>{option.label}</span>
-                  {option.description ? <small>{option.description}</small> : null}
+                  onChange={(event) => setInputValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') submitInlineAnswer();
+                  }}
+                />
+                <button type="button" disabled={disabled || !inputValue.trim()} onClick={submitInlineAnswer}>
+                  +
                 </button>
-              ))}
-            </div>
+              </div>
+            </>
           ) : (
             <div className="input-groove">
               <input

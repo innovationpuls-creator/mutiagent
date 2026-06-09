@@ -9,7 +9,16 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from app.core.security import hash_password
-from app.models import ConversationSession, User, UserCourseKnowledgeOutline, UserProfile, UserYearLearningPath
+from app.models import (
+    ChapterProgress,
+    ChapterQuiz,
+    ChapterQuizAttempt,
+    ConversationSession,
+    User,
+    UserCourseKnowledgeOutline,
+    UserProfile,
+    UserYearLearningPath,
+)
 from app.schemas import (
     AdminAccountBatchRequest,
     AdminAccountCreateRequest,
@@ -119,8 +128,11 @@ def batch_accounts(session: Session, payload: AdminAccountBatchRequest, current_
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="不能删除当前登录管理员",
                 )
+        with session.no_autoflush:
+            for user in users:
+                _delete_user_owned_rows(session, user.uid)
+        session.flush()
         for user in users:
-            _delete_user_owned_rows(session, user.uid)
             session.delete(user)
         session.commit()
         return list_accounts(session)
@@ -234,6 +246,9 @@ def export_accounts(session: Session) -> str:
 
 def _delete_user_owned_rows(session: Session, uid: str) -> None:
     for model in (
+        ChapterQuizAttempt,
+        ChapterQuiz,
+        ChapterProgress,
         ConversationSession,
         UserCourseKnowledgeOutline,
         UserYearLearningPath,

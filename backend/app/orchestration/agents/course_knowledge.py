@@ -147,6 +147,18 @@ def _strip_top_level_title_prefix(title: str) -> str:
     return title
 
 
+def _strip_subsection_id_prefix(title: str, section_id: str) -> str:
+    if not title or not section_id:
+        return title
+    prefix = f"{section_id} "
+    if title.startswith(prefix):
+        return title[len(prefix):].strip()
+    prefix_no_space = f"{section_id}　"
+    if title.startswith(prefix_no_space):
+        return title[len(prefix_no_space):].strip()
+    return title
+
+
 def _chapter_label(section_id: str) -> str:
     return f"第{section_id}章" if "." not in section_id else section_id
 
@@ -336,6 +348,8 @@ def _normalize_generated_sections(raw_sections: object) -> list[dict]:
         section_id = _clean_text(payload.get("section_id")) or str(index)
         if "." not in section_id:
             title = _strip_top_level_title_prefix(title)
+        else:
+            title = _strip_subsection_id_prefix(title, section_id)
         parent_section_id = payload.get("parent_section_id")
         if parent_section_id is not None:
             parent_section_id = _clean_text(parent_section_id) or None

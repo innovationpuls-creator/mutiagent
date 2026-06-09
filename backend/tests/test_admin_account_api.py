@@ -1,8 +1,11 @@
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlmodel import Session, create_engine, select
 
 from app.main import create_app
+from app.models import ChapterProgress, ChapterQuiz, ChapterQuizAttempt, User, UserCourseKnowledgeOutline, UserYearLearningPath
+from app.services.forest_service import generate_or_read_quiz
 
 
 def make_client(tmp_path: Path, monkeypatch) -> TestClient:
@@ -148,6 +151,100 @@ def test_admin_batch_updates_accounts(tmp_path: Path, monkeypatch) -> None:
     )
     assert delete_response.status_code == 200
     assert all(account["uid"] not in {first["uid"], second["uid"]} for account in delete_response.json())
+
+
+def test_admin_batch_delete_removes_forest_rows(tmp_path: Path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    token = login_token(client, "13297540721", "123456")
+    headers = {"Authorization": f"Bearer {token}"}
+    created = client.post(
+        "/api/admin/accounts",
+        headers=headers,
+        json={
+            "username": "森林学员",
+            "identifier": "forest-admin-delete@example.com",
+            "password": "forest-password-123",
+            "role": "student",
+            "is_active": True,
+        },
+    ).json()
+    database_url = f"sqlite:///{tmp_path / 'admin-test.db'}"
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+
+    with Session(engine) as session:
+        session.add(
+            UserYearLearningPath(
+                user_uid=created["uid"],
+                grade_year="year_3",
+                learning_topic="AI",
+                path_data={},
+            )
+        )
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid=created["uid"],
+                course_id="year_3_course_2",
+                grade_year="year_3",
+                course_name="AI Agent 开发",
+                outline_data={
+                    "course_id": "year_3_course_2",
+                    "course_name": "AI Agent 开发",
+                    "grade_year": "year_3",
+                    "personalization_summary": "",
+                    "sections": [
+                        {
+                            "section_id": "1",
+                            "parent_section_id": None,
+                            "depth": 1,
+                            "title": "第一章",
+                            "order_index": 1,
+                            "description": "",
+                            "key_knowledge_points": [],
+                        }
+                    ],
+                    "learning_sequence": ["第一章"],
+                    "total_estimated_hours": "1 小时",
+                    "section_composed_markdowns": {},
+                },
+            )
+        )
+        session.commit()
+        generate_or_read_quiz(
+            session,
+            created["uid"],
+            "year_3_course_2",
+            "1",
+            [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}],
+            regenerate=False,
+        )
+        quiz = session.exec(select(ChapterQuiz).where(ChapterQuiz.user_uid == created["uid"])).one()
+        session.add(
+            ChapterQuizAttempt(
+                attempt_id="attempt-admin-delete",
+                quiz_id=quiz.quiz_id,
+                user_uid=created["uid"],
+                answers={"q1": "A"},
+                score=100,
+                passed=True,
+                grading_result={"score": 100, "passed": True},
+            )
+        )
+        session.commit()
+
+    delete_response = client.post(
+        "/api/admin/accounts/batch",
+        headers=headers,
+        json={"action": "delete", "uids": [created["uid"]]},
+    )
+
+    assert delete_response.status_code == 200
+    assert all(account["uid"] != created["uid"] for account in delete_response.json())
+
+    with Session(engine) as session:
+        assert session.get(User, created["uid"]) is None
+        assert session.exec(select(ChapterQuiz).where(ChapterQuiz.user_uid == created["uid"])).all() == []
+        assert session.exec(select(ChapterQuizAttempt).where(ChapterQuizAttempt.user_uid == created["uid"])).all() == []
+        assert session.exec(select(ChapterProgress).where(ChapterProgress.user_uid == created["uid"])).all() == []
 
 
 def test_admin_import_updates_existing_and_exports_csv(tmp_path: Path, monkeypatch) -> None:

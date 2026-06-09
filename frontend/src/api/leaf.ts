@@ -8,9 +8,7 @@ import type {
   LeafSection,
   LeafVideoBlock,
 } from '../types/leaf';
-import { notifyAuthInvalidFromError, readApiError } from './http';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
+import { API_BASE_URL, notifyAuthInvalidFromError, readApiError } from './http';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
@@ -51,6 +49,20 @@ function normalizeSection(value: unknown): LeafSection {
   return value as unknown as LeafSection;
 }
 
+function normalizeVideoItem(value: unknown): LeafVideoBlock['videos'][number] {
+  if (!isRecord(value) || typeof value.url !== 'string') {
+    throw new Error('叶茂内容格式不正确');
+  }
+
+  return {
+    title: typeof value.title === 'string' ? value.title : '',
+    url: value.url,
+    cover_url: typeof value.cover_url === 'string' ? value.cover_url : '',
+    cover_status: typeof value.cover_status === 'string' ? value.cover_status : '',
+    source: typeof value.source === 'string' ? value.source : '',
+  };
+}
+
 function normalizeVideoBlock(value: Record<string, unknown>): LeafVideoBlock {
   if (
     typeof value.brief_id !== 'string'
@@ -61,7 +73,14 @@ function normalizeVideoBlock(value: Record<string, unknown>): LeafVideoBlock {
   ) {
     throw new Error('叶茂内容格式不正确');
   }
-  return value as unknown as LeafVideoBlock;
+  return {
+    type: 'video',
+    brief_id: value.brief_id,
+    title: value.title,
+    purpose: value.purpose,
+    status: value.status,
+    videos: value.videos.map(normalizeVideoItem),
+  };
 }
 
 function normalizeAnimationBlock(value: Record<string, unknown>): LeafAnimationBlock {

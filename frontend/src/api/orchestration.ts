@@ -7,9 +7,7 @@ import {
   type LearningPathResult,
 } from '../types/chat';
 import { hasCompleteBasicProfileRecord } from '../lib/profileContract';
-import { notifyAuthInvalidFromError, readApiError, type ApiErrorResponse } from './http';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000';
+import { API_BASE_URL, notifyAuthInvalidFromError, readApiError, type ApiErrorResponse } from './http';
 
 interface UnknownRecord {
   [key: string]: unknown;

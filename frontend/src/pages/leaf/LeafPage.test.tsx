@@ -97,6 +97,11 @@ function leafPayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function decodeSvgDataUrl(value: string) {
+  const parts = value.split(',', 2);
+  return parts[1] ? decodeURIComponent(parts[1]) : '';
+}
+
 function renderLeaf(initialPath = '/leaf/year_3_course_1') {
   stubAuth();
   return render(
@@ -168,6 +173,126 @@ describe('LeafPage', () => {
     expect(screen.getByRole('columnheader', { name: '步骤' })).toBeTruthy();
     expect(screen.getByRole('cell', { name: '可验收学习目标' })).toBeTruthy();
     expect(screen.getByText('{"model":"qwen","messages":[]}')).toBeTruthy();
+  });
+
+  it('renders the video cover when a video resource is available', async () => {
+    fetchLeafCourseMock.mockResolvedValue(leafPayload({
+      section_composed_markdowns: {
+        '1.1': {
+          section_id: '1.1',
+          parent_section_id: '1',
+          title: '学习目标',
+          markdown: '# 学习目标',
+          generated_at: '2026-06-06T00:00:00Z',
+          blocks: [
+            {
+              type: 'video',
+              brief_id: 'video_1',
+              title: '导入视频',
+              purpose: '建立直觉',
+              status: 'available',
+              videos: [
+                {
+                  title: '深入 LangChain 系列 - PromptTemplate',
+                  url: 'https://www.youtube.com/watch?v=nQX61qSL-uE',
+                  cover_url: 'https://img.youtube.com/vi/nQX61qSL-uE/hqdefault.jpg',
+                  cover_status: 'provided',
+                  source: 'youtube',
+                },
+              ],
+            },
+          ],
+        },
+      },
+    }));
+
+    renderLeaf();
+
+    const image = await screen.findByAltText('深入 LangChain 系列 - PromptTemplate');
+    expect(image.getAttribute('src')).toBe('https://img.youtube.com/vi/nQX61qSL-uE/hqdefault.jpg');
+    expect(screen.getByText('深入 LangChain 系列 - PromptTemplate')).toBeTruthy();
+  });
+
+  it('falls back to a local svg cover when cover_url is empty', async () => {
+    fetchLeafCourseMock.mockResolvedValue(leafPayload({
+      section_composed_markdowns: {
+        '1.1': {
+          section_id: '1.1',
+          parent_section_id: '1',
+          title: '学习目标',
+          markdown: '# 学习目标',
+          generated_at: '2026-06-06T00:00:00Z',
+          blocks: [
+            {
+              type: 'video',
+              brief_id: 'video_1',
+              title: '导入视频',
+              purpose: '建立直觉',
+              status: 'available',
+              videos: [
+                {
+                  title: 'PromptTemplate 实战',
+                  url: 'https://www.youtube.com/watch?v=nQX61qSL-uE',
+                  cover_url: '',
+                  cover_status: '',
+                  source: 'youtube',
+                },
+              ],
+            },
+          ],
+        },
+      },
+    }));
+
+    renderLeaf();
+
+    const image = await screen.findByAltText('PromptTemplate 实战');
+    const src = image.getAttribute('src') ?? '';
+    expect(src.startsWith('data:image/svg+xml;utf8,')).toBe(true);
+    expect(decodeSvgDataUrl(src)).toContain('PromptTemplate 实战');
+  });
+
+  it('falls back to a local svg cover when the remote image fails to load', async () => {
+    fetchLeafCourseMock.mockResolvedValue(leafPayload({
+      section_composed_markdowns: {
+        '1.1': {
+          section_id: '1.1',
+          parent_section_id: '1',
+          title: '学习目标',
+          markdown: '# 学习目标',
+          generated_at: '2026-06-06T00:00:00Z',
+          blocks: [
+            {
+              type: 'video',
+              brief_id: 'video_1',
+              title: '导入视频',
+              purpose: '建立直觉',
+              status: 'available',
+              videos: [
+                {
+                  title: 'LCEL 表达式基础',
+                  url: 'https://www.youtube.com/watch?v=nQX61qSL-uE',
+                  cover_url: 'https://img.youtube.com/vi/nQX61qSL-uE/missing.jpg',
+                  cover_status: 'provided',
+                  source: 'youtube',
+                },
+              ],
+            },
+          ],
+        },
+      },
+    }));
+
+    renderLeaf();
+
+    const image = await screen.findByAltText('LCEL 表达式基础');
+    expect(image.getAttribute('src')).toBe('https://img.youtube.com/vi/nQX61qSL-uE/missing.jpg');
+
+    fireEvent.error(image);
+
+    const src = image.getAttribute('src') ?? '';
+    expect(src.startsWith('data:image/svg+xml;utf8,')).toBe(true);
+    expect(decodeSvgDataUrl(src)).toContain('LCEL 表达式基础');
   });
 
   it('opens AI draft prompt from first chapter generation entry', async () => {

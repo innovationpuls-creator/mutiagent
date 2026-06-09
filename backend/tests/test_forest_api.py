@@ -339,3 +339,36 @@ def test_stream_forest_ai_api_returns_sse_chunks(tmp_path: Path) -> None:
     assert '"chunk": "第一段"' in response.text
     assert '"chunk": "第二段"' in response.text
     assert "event: forest_ai_completed" in response.text
+
+
+def test_read_forest_quiz_session_with_string_options(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'forest-read-options.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    user_uid = _seed_forest_data(database_url)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+
+    questions = [
+        {
+            "question_id": "q1",
+            "type": "single_choice",
+            "prompt": "以下哪个是正确的？",
+            "options": [
+                "A. 选项一",
+                "B. 选项二",
+            ],
+            "correct_option_id": "A",
+            "points": 100
+        }
+    ]
+
+    with Session(engine) as session:
+        generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+        result = read_forest_quiz_session(session, user_uid, "year_3_course_2", "1")
+
+    assert result.quiz is not None
+    assert result.quiz.status == "ready"
+    assert len(result.quiz.questions) == 1
+    assert result.quiz.questions[0].options == [
+        {"option_id": "A", "text": "选项一"},
+        {"option_id": "B", "text": "选项二"},
+    ]

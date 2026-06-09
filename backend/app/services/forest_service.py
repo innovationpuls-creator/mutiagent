@@ -94,17 +94,61 @@ def _progress_to_read(progress: ChapterProgress) -> ForestChapterProgressRead:
     )
 
 
+def _normalize_options(options_raw: object) -> list[dict[str, str]]:
+    if not isinstance(options_raw, list):
+        return []
+    normalized_opts = []
+    for idx, opt in enumerate(options_raw):
+        if isinstance(opt, dict):
+            option_id = _clean_text(opt.get("option_id"))
+            text = _clean_text(opt.get("text"))
+            if not option_id:
+                option_id = chr(65 + idx)
+            if not text:
+                text = _clean_text(opt.get("option_text")) or _clean_text(opt.get("label")) or ""
+            normalized_opts.append({"option_id": option_id, "text": text})
+        elif isinstance(opt, str):
+            opt_str = opt.strip()
+            option_id = ""
+            text = opt_str
+            if len(opt_str) > 2 and opt_str[0].isalpha() and opt_str[1] in (".", ":", "、", " "):
+                option_id = opt_str[0].upper()
+                text = opt_str[2:].strip()
+            elif len(opt_str) > 1 and opt_str[0].isalpha() and opt_str[0].isupper() and idx < 26:
+                expected_letter = chr(65 + idx)
+                if opt_str.startswith(expected_letter):
+                    option_id = expected_letter
+                    text = opt_str[len(expected_letter):].strip()
+                    if text.startswith((".", ":", "、", " ")):
+                        text = text[1:].strip()
+            
+            if not option_id:
+                option_id = chr(65 + idx)
+            normalized_opts.append({"option_id": option_id, "text": text})
+    return normalized_opts
+
+
 def _quiz_to_read(quiz: ChapterQuiz) -> ForestQuizRead:
+    questions = []
+    for question in quiz.questions:
+        if isinstance(question, dict):
+            questions.append(
+                ForestQuizQuestionRead(
+                    question_id=question.get("question_id") or "",
+                    type=question.get("type") or "single_choice",
+                    prompt=question.get("prompt") or "",
+                    options=_normalize_options(question.get("options")),
+                    starter_code=question.get("starter_code") or "",
+                    image_prompt=question.get("image_prompt") or "",
+                    points=question.get("points") or 0,
+                )
+            )
     return ForestQuizRead(
         quiz_id=quiz.quiz_id,
         course_node_id=quiz.course_node_id,
         chapter_id=quiz.chapter_id,
         status=quiz.status,
-        questions=[
-            ForestQuizQuestionRead(**question)
-            for question in quiz.questions
-            if isinstance(question, dict)
-        ],
+        questions=questions,
         generation_error=quiz.generation_error,
         created_at=quiz.created_at,
         updated_at=quiz.updated_at,

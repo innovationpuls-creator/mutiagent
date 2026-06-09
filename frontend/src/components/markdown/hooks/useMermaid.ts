@@ -1,10 +1,11 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 
-export function useMermaid() {
+export function useMermaid(enabled = true) {
   const [isLoaded, setIsLoaded] = useState(false);
   const mermaidRef = useRef<any>(null);
 
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
 
     import('mermaid').then((module) => {
@@ -17,7 +18,7 @@ export function useMermaid() {
     });
 
     return () => { active = false; };
-  }, []);
+  }, [enabled]);
 
   const renderDiagram = useCallback(
     async (code: string): Promise<string> => {

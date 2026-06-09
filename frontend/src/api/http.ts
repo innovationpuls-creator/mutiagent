@@ -24,3 +24,11 @@ export function notifyAuthInvalidFromError(status: number, error: ApiErrorRespon
 
   window.dispatchEvent(new Event(AUTH_INVALID_EVENT));
 }
+
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? (
+  typeof process !== 'undefined' && process.env.NODE_ENV === 'test'
+    ? 'http://127.0.0.1:8000'
+    : (typeof window !== 'undefined' && window.location.hostname
+        ? `${window.location.protocol}//${window.location.hostname}:8000`
+        : 'http://127.0.0.1:8000')
+);

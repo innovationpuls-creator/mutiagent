@@ -3,7 +3,3 @@ export function extractLanguage(className: string | undefined): string {
   const match = /language-(\w+)/.exec(className);
   return match ? match[1] : '';
 }
-
-export function isCodeBlock(className: string | undefined): boolean {
-  return !!className && className.includes('language-');
-}
