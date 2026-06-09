@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Share2, Lock, PanelLeftClose, ListTree } from 'lucide-react';
+import { ChevronDown, ChevronRight, Share2, Lock, PanelLeftClose, ListTree, Check } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { motionTokens } from '../../styles/motion-tokens';
 import type { LeafCourseResponse, LeafSection } from '../../types/leaf';
@@ -94,8 +94,38 @@ function LeafMarkmapNode({
 }: LeafMarkmapNodeProps) {
   const childSections = getLeafChildSections(response.sections, section.section_id);
   const isCollapsed = collapsedSectionIds.has(section.section_id);
-  const isSelected = selectedSectionId === section.section_id;
   const hasChildren = childSections.length > 0;
+
+  // Determine status
+  let status: 'running' | 'completed' | 'waiting' | 'neutral' = 'neutral';
+  if (section.section_id === selectedSectionId) {
+    status = 'running';
+  } else if (hasLeafComposedContent(response, section.section_id)) {
+    status = 'completed';
+  } else if (response.first_generatable_chapter_id === section.section_id) {
+    status = 'waiting';
+  }
+
+  // Determine content media types of the section (micro-badges)
+  const composed = response.section_composed_markdowns[section.section_id];
+  const badges: string[] = [];
+  if (composed) {
+    const hasVideo = composed.blocks.some((b) => b.type === 'video');
+    const hasAnimation = composed.blocks.some((b) => b.type === 'animation');
+    const hasMarkdown =
+      composed.blocks.some((b) => b.type === 'markdown') ||
+      (composed.markdown && composed.markdown.trim().length > 0);
+
+    if (hasVideo) {
+      badges.push('//');
+    }
+    if (hasAnimation) {
+      badges.push('*');
+    }
+    if (!hasVideo && !hasAnimation && hasMarkdown) {
+      badges.push('+');
+    }
+  }
 
   return (
     <div className="relative flex flex-col w-full">
@@ -104,25 +134,58 @@ function LeafMarkmapNode({
         <div className="absolute -left-4 top-1/2 w-4 h-[2px] bg-[var(--color-border)] rounded-sm pointer-events-none"></div>
 
         <div
-          className={`px-4 py-1.5 rounded-full inline-flex items-center gap-2 border cursor-pointer transition-colors relative z-10 ${
-            isSelected
-              ? 'bg-[var(--color-surface)] border-[var(--color-primary)] shadow-sm'
-              : 'bg-[var(--glass-bg)] border-[var(--glass-border)] hover:border-[var(--color-primary-soft)]'
-          }`}
+          className={`leaf-markmap-card ${status === 'running' ? 'running' : ''}`}
           onClick={() => onSelectSection(section.section_id)}
         >
-          {isSelected ? (
-            <span className="w-2 h-2 rounded-full bg-[var(--color-primary)] shrink-0"></span>
-          ) : null}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            {/* Status Indicator */}
+            <div className="flex items-center justify-center w-5 h-5 shrink-0">
+              {status === 'running' && (
+                <span className="w-2.5 h-2.5 rounded-full bg-[var(--status-running)] animate-pulse" />
+              )}
+              {status === 'completed' && (
+                <div className="flex items-center justify-center w-5 h-5 rounded-full bg-[var(--color-success-bg)] text-[var(--color-success)]">
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                </div>
+              )}
+              {status === 'waiting' && (
+                <span className="w-2.5 h-2.5 rounded-full bg-[var(--status-waiting)]" />
+              )}
+              {status === 'neutral' && (
+                <span className="w-2.5 h-2.5 rounded-full bg-[var(--status-neutral)]" />
+              )}
+            </div>
 
-          <span className={`text-sm ${isSelected ? 'text-[var(--color-primary)] font-medium' : 'text-[var(--color-text-secondary)]'}`}>
-            {getLeafSectionHeading(section)}
-          </span>
+            {/* Title */}
+            <span
+              className={`text-sm truncate font-medium ${
+                status === 'running'
+                  ? 'text-[var(--color-text-primary)] font-semibold'
+                  : 'text-[var(--color-text-secondary)]'
+              }`}
+            >
+              {getLeafSectionHeading(section)}
+            </span>
+
+            {/* Micro-badges */}
+            {badges.length > 0 && (
+              <div className="flex items-center gap-1 shrink-0 ml-1.5">
+                {badges.map((badge, i) => (
+                  <span
+                    key={i}
+                    className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-[var(--color-surface-inset)] text-[var(--color-text-secondary)] rounded-md border border-[var(--color-border)] leading-none select-none"
+                  >
+                    {badge}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
 
           {hasChildren && (
             <button
               type="button"
-              className="p-1 hover:bg-[var(--color-surface-inset)] rounded-full transition-colors ml-1"
+              className="p-1 hover:bg-[var(--color-surface-inset)] rounded-full transition-colors ml-2 shrink-0"
               onClick={(e) => {
                 e.stopPropagation();
                 toggleCollapsedSection(
@@ -132,7 +195,7 @@ function LeafMarkmapNode({
                 );
               }}
             >
-              {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              {isCollapsed ? <ChevronRight className="w-3 h-3 text-[var(--color-text-secondary)]" /> : <ChevronDown className="w-3 h-3 text-[var(--color-text-secondary)]" />}
             </button>
           )}
         </div>

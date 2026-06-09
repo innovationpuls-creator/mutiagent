@@ -89,8 +89,7 @@
 .leaf-generate-button,
 .leaf-markmap-handle,
 .leaf-markmap-collapse,
-.leaf-markmap-toggle,
-.leaf-markmap-node {
+.leaf-markmap-toggle {
   font: inherit;
   cursor: pointer;
 }
@@ -132,8 +131,7 @@
 .leaf-generate-button:hover,
 .leaf-markmap-handle:hover,
 .leaf-markmap-collapse:hover,
-.leaf-markmap-toggle:hover,
-.leaf-markmap-node:hover {
+.leaf-markmap-toggle:hover {
   transform: translateY(calc(var(--space-4) * -1));
 }
 
@@ -142,8 +140,7 @@
 .leaf-generate-button:active,
 .leaf-markmap-handle:active,
 .leaf-markmap-collapse:active,
-.leaf-markmap-toggle:active,
-.leaf-markmap-node:active {
+.leaf-markmap-toggle:active {
   transform: translateY(0);
 }
 
@@ -374,18 +371,38 @@
     opacity var(--duration-lazy-hover) var(--ease-lazy);
 }
 
-.leaf-markmap-node {
-  min-inline-size: 0;
-  display: grid;
-  gap: var(--space-4);
-  border-radius: var(--radius-md);
+.leaf-markmap-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  width: 100%;
   padding: var(--space-8) var(--space-12);
-  background: transparent;
-  color: inherit;
-  text-align: start;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: var(--glass-bg);
+  cursor: pointer;
+  position: relative;
+  z-index: 10;
+  min-width: 0;
   transition:
     transform var(--duration-lazy-hover) var(--ease-lazy),
+    background-color var(--duration-lazy-hover) var(--ease-lazy),
+    border-color var(--duration-lazy-hover) var(--ease-lazy),
+    box-shadow var(--duration-lazy-hover) var(--ease-lazy),
     opacity var(--duration-lazy-hover) var(--ease-lazy);
+}
+
+.leaf-markmap-card:hover {
+  transform: translateX(4px);
+  background-color: var(--color-hover-wash);
+  border-color: var(--color-primary-soft);
+  box-shadow: var(--shadow-sm);
+}
+
+.leaf-markmap-card.running {
+  border-color: var(--color-primary);
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .leaf-markmap-node-label {
@@ -674,7 +691,7 @@
   .leaf-back-button,
   .leaf-generate-button,
   .leaf-markmap-collapse,
-  .leaf-markmap-node {
+  .leaf-markmap-card {
     transition: opacity var(--duration-instant) ease;
     transform: none;
   }
