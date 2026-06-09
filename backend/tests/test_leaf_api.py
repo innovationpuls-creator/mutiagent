@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, create_engine, select
 
 from app.main import create_app
-from app.models import User, UserCourseKnowledgeOutline, UserYearLearningPath
+from app.models import ChapterProgress, User, UserCourseKnowledgeOutline, UserYearLearningPath
 
 
 def _register(client: TestClient, identifier: str) -> tuple[str, str]:
@@ -126,8 +126,17 @@ def _outline(course_id: str, course_name: str) -> dict:
                 "description": "明确本章目标。",
                 "key_knowledge_points": ["学习目标"],
             },
+            {
+                "section_id": "2",
+                "parent_section_id": None,
+                "depth": 1,
+                "title": "第二章：工具编排",
+                "order_index": 3,
+                "description": "编排工具调用。",
+                "key_knowledge_points": ["工具编排"],
+            },
         ],
-        "learning_sequence": ["第一章：需求拆解"],
+        "learning_sequence": ["第一章：需求拆解", "第二章：工具编排"],
         "total_estimated_hours": "8 小时",
         "section_composed_markdowns": {
             "1.1": {
@@ -207,6 +216,36 @@ def test_leaf_course_returns_current_course_with_outline_and_composed_content(tm
     assert body["sections"][0]["section_id"] == "1"
     assert body["section_composed_markdowns"]["1.1"]["markdown"].startswith("# 学习目标")
     assert body["generation_status"] is None
+
+
+def test_leaf_course_opens_next_generatable_chapter_after_quiz_pass(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'leaf-next-chapter.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    token = _seed(client, database_url, "leaf-next-chapter@example.com")
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.identifier == "leaf-next-chapter@example.com")).one()
+        session.add(
+            ChapterProgress(
+                user_uid=user.uid,
+                course_node_id="year_3_course_2",
+                chapter_id="1",
+                state="passed",
+                best_score=82,
+            )
+        )
+        session.commit()
+
+    response = client.get(
+        "/api/leaf/courses/year_3_course_2",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["can_generate"] is True
+    assert body["first_generatable_chapter_id"] == "2"
 
 
 def test_leaf_course_keeps_sections_empty_when_composed_content_missing(tmp_path: Path) -> None:

@@ -6,6 +6,7 @@ from sqlmodel import Session
 from app.schemas import LeafCourseRead, LeafCourseReadResponse, LeafGenerationStatusRead
 from app.services.course_generation_status_service import get_course_generation_status
 from app.services.course_knowledge_service import get_user_course_knowledge_outline
+from app.services.forest_service import first_generatable_chapter_id
 from app.services.learning_path_service import (
     compare_grade_years,
     get_all_year_learning_paths,
@@ -109,6 +110,12 @@ def read_leaf_course(session: Session, user_uid: str, course_node_id: str) -> Le
             locked_reason="这门课程还未解锁。",
         )
 
+    first_chapter_id = (
+        first_generatable_chapter_id(session, user_uid, course_node_id, outline)
+        if course_status == "current"
+        else None
+    )
+
     return LeafCourseReadResponse(
         access_state="available",
         course=leaf_course,
@@ -117,6 +124,6 @@ def read_leaf_course(session: Session, user_uid: str, course_node_id: str) -> Le
         section_composed_markdowns=composed,
         generation_status=generation_status,
         can_generate=course_status == "current",
-        first_generatable_chapter_id="1" if course_status == "current" else None,
+        first_generatable_chapter_id=first_chapter_id,
         locked_reason=None,
     )

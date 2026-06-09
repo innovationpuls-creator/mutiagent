@@ -18,6 +18,7 @@ from app.database import build_engine
 from app.main import create_app
 from app.models import (
     ConversationSession,
+    ChapterProgress,
     User,
     UserCourseKnowledgeOutline,
     UserProfile,
@@ -346,9 +347,18 @@ def _course_outline() -> dict:
                 "order_index": 1,
                 "description": "确认功能边界与验收标准。",
                 "key_knowledge_points": ["功能边界", "验收标准"],
-            }
+            },
+            {
+                "section_id": "2",
+                "parent_section_id": None,
+                "depth": 1,
+                "title": "接口接入",
+                "order_index": 2,
+                "description": "完成接口接入与最小闭环演示。",
+                "key_knowledge_points": ["接口接入", "最小闭环"],
+            },
         ],
-        "learning_sequence": ["第一章：需求拆解"],
+        "learning_sequence": ["第一章：需求拆解", "第二章：接口接入"],
         "total_estimated_hours": "8 小时",
     }
 
@@ -1424,6 +1434,64 @@ class TestChatEndpoints:
 
         assert response.status_code == 200
         assert "通过章节测验后会开放下一章内容生成。" in response.text
+
+    def test_send_message_leaf_generation_allows_next_chapter_after_quiz_pass(self, tmp_path: Path) -> None:
+        identifier = "leaf-next-after-quiz@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        captured = {}
+
+        async def leaf_events(state, _llm, _search_llm, *, course_id, chapter_section_id, regeneration_focus=""):
+            captured["course_id"] = course_id
+            captured["chapter_section_id"] = chapter_section_id
+            yield {"event": "message_completed", "full_text": "本章教学内容已生成。"}
+            yield {
+                "event": "session_completed",
+                "session_id": state["session_id"],
+                "has_profile": True,
+                "has_paths": True,
+                "has_outline": True,
+            }
+
+        with patch("app.orchestration.llm.get_worker_llm", return_value=object()):
+            with patch("app.orchestration.llm.get_thinking_worker_llm", return_value=object()):
+                with patch("app.orchestration.llm.get_search_worker_llm", return_value=object()):
+                    with patch(
+                        "app.orchestration.agents.course_resources.stream_chapter_resource_generation",
+                        side_effect=leaf_events,
+                    ):
+                        with chat_app(tmp_path) as client:
+                            token = _register_user(client, identifier, "leaf123456")
+                            _seed_existing_learning_data(database_url, identifier)
+                            engine = build_engine(database_url)
+                            with Session(engine) as session:
+                                user = session.exec(select(User).where(User.identifier == identifier)).one()
+                                session.add(
+                                    ChapterProgress(
+                                        user_uid=user.uid,
+                                        course_node_id="year_3_course_1",
+                                        chapter_id="1",
+                                        state="passed",
+                                        best_score=82,
+                                    )
+                                )
+                                session.commit()
+                            start_resp = client.post(
+                                "/api/chat/start",
+                                json={"query": "开始"},
+                                headers=_auth_header(token),
+                            )
+                            session_id = start_resp.json()["session_id"]
+
+                            response = client.post(
+                                "/api/chat/message",
+                                json={"session_id": session_id, "message": _leaf_generation_prompt("year_3_course_1", "2")},
+                                headers=_auth_header(token),
+                            )
+
+        assert response.status_code == 200
+        assert "本章教学内容已生成。" in response.text
+        assert captured["course_id"] == "year_3_course_1"
+        assert captured["chapter_section_id"] == "2"
 
     def test_send_message_leaf_generation_asks_focus_before_regenerating_existing_content(self, tmp_path: Path) -> None:
         identifier = "leaf-regen@example.com"

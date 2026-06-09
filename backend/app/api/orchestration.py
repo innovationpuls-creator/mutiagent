@@ -456,6 +456,7 @@ async def _stream_chat_events(
         if generation_request is not None:
             from app.orchestration.agents.course_resources import stream_chapter_resource_generation
             from app.orchestration.llm import get_search_worker_llm, get_thinking_worker_llm
+            from app.services.forest_service import chapter_generation_is_available
 
             requested_course_id = generation_request["course_node_id"]
             requested_chapter_id = generation_request["chapter_section_id"]
@@ -474,7 +475,13 @@ async def _stream_chat_events(
                     },
                 )
                 return
-            if requested_chapter_id != "1":
+            if not chapter_generation_is_available(
+                db_session,
+                user_uid,
+                requested_course_id,
+                requested_chapter_id,
+                course_knowledge,
+            ):
                 completed_text = "通过章节测验后会开放下一章内容生成。"
                 _append_turn_with_user_fallback(db_session, session_id, current_user_message, completed_text)
                 yield _sse("message_completed", {"full_text": completed_text})

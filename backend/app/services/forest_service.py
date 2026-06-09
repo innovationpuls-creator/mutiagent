@@ -171,6 +171,46 @@ def _chapter_is_available(
     return previous_progress is not None and previous_progress.state == "passed"
 
 
+def first_generatable_chapter_id(
+    session: Session,
+    user_uid: str,
+    course_node_id: str,
+    outline: dict | None,
+) -> str | None:
+    if not isinstance(outline, dict):
+        return "1"
+    chapters = _top_level_sections(outline)
+    if not chapters:
+        return "1"
+    for index, chapter in enumerate(chapters):
+        chapter_id = chapter.get("section_id")
+        if not isinstance(chapter_id, str):
+            continue
+        current_progress = session.get(ChapterProgress, (user_uid, course_node_id, chapter_id))
+        if current_progress is not None and current_progress.state == "passed":
+            continue
+        if index == 0:
+            return chapter_id
+        previous_id = chapters[index - 1].get("section_id")
+        if not isinstance(previous_id, str):
+            return None
+        previous_progress = session.get(ChapterProgress, (user_uid, course_node_id, previous_id))
+        if previous_progress is not None and previous_progress.state == "passed":
+            return chapter_id
+        return None
+    return None
+
+
+def chapter_generation_is_available(
+    session: Session,
+    user_uid: str,
+    course_node_id: str,
+    chapter_id: str,
+    outline: dict | None,
+) -> bool:
+    return first_generatable_chapter_id(session, user_uid, course_node_id, outline) == chapter_id
+
+
 def _course_to_read_dict(course_node_id: str, grade_year: str, course: dict) -> dict:
     title = _clean_text(course.get("course_or_chapter_theme")) or course_node_id
     goal = _clean_text(course.get("course_goal")) or "继续沿着学习路径稳步推进。"
