@@ -524,6 +524,115 @@
 }
 
 /* =========================================
+   Syntax Highlighting (Prism.js)
+   ========================================= */
+
+.markdown-renderer .token.comment,
+.markdown-renderer .token.prolog,
+.markdown-renderer .token.doctype,
+.markdown-renderer .token.cdata {
+  color: var(--color-text-whisper);
+  font-style: italic;
+}
+
+.markdown-renderer .token.punctuation {
+  color: var(--color-text-secondary);
+}
+
+.markdown-renderer .token.property,
+.markdown-renderer .token.tag,
+.markdown-renderer .token.boolean,
+.markdown-renderer .token.number,
+.markdown-renderer .token.constant,
+.markdown-renderer .token.symbol,
+.markdown-renderer .token.deleted {
+  color: var(--color-warning);
+}
+
+.markdown-renderer .token.selector,
+.markdown-renderer .token.attr-name,
+.markdown-renderer .token.string,
+.markdown-renderer .token.char,
+.markdown-renderer .token.builtin,
+.markdown-renderer .token.inserted {
+  color: var(--color-success);
+}
+
+.markdown-renderer .token.operator,
+.markdown-renderer .token.entity,
+.markdown-renderer .token.url {
+  color: var(--color-text-secondary);
+}
+
+.markdown-renderer .token.atrule,
+.markdown-renderer .token.attr-value,
+.markdown-renderer .token.keyword {
+  color: var(--color-primary);
+}
+
+.markdown-renderer .token.function,
+.markdown-renderer .token.class-name {
+  color: var(--color-info);
+}
+
+.markdown-renderer .token.regex,
+.markdown-renderer .token.important,
+.markdown-renderer .token.variable {
+  color: var(--color-warning);
+}
+
+/* =========================================
+   Math Formulas (MathJax)
+   ========================================= */
+
+.markdown-renderer .math-block {
+  margin: var(--space-24) 0;
+  padding: var(--space-16);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  text-align: center;
+}
+
+.markdown-renderer .math-inline {
+  display: inline;
+  font-size: var(--text-body-sm);
+  vertical-align: middle;
+}
+
+.markdown-renderer mjx-container {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* =========================================
+   Mermaid Diagrams
+   ========================================= */
+
+.markdown-renderer .mermaid-container {
+  margin: var(--space-24) 0;
+  padding: var(--space-16);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  text-align: center;
+  overflow-x: auto;
+}
+
+.markdown-renderer .mermaid-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown-renderer .mermaid-error {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  padding: var(--space-16);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+}
+
+/* =========================================
    Reduced Motion
    ========================================= */
 
