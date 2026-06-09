@@ -42,6 +42,7 @@ async def _stream_forest_ai_events(payload: ForestAiStreamRequest) -> AsyncGener
             get_worker_llm(),
             message=payload.message,
             context=payload.active_question_context.model_dump(),
+            image_attachment=payload.image_attachment,
         ):
             yield _sse("forest_ai_text_chunk", {"chunk": chunk})
         yield _sse("forest_ai_completed", {"message": "completed"})

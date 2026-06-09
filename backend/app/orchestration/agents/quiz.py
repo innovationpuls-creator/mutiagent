@@ -180,13 +180,33 @@ async def grade_quiz_answers(llm: Any, *, questions: list[dict[str, Any]], answe
     return normalize_grading_result(json.loads(str(content)))
 
 
-async def stream_forest_ai_response(llm: Any, *, message: str, context: dict[str, Any]) -> AsyncGenerator[str, None]:
-    prompt = (
-        "你是 Forest AI，只围绕当前章节测验答疑。"
-        "根据当前题目、用户答案和判题结果给出清晰解析。\n"
-        f"context:\n{json.dumps(context, ensure_ascii=False)}\n"
-        f"user_message:\n{message}"
-    )
+async def stream_forest_ai_response(
+    llm: Any,
+    *,
+    message: str,
+    context: dict[str, Any],
+    image_attachment: str | None = None,
+) -> AsyncGenerator[str, None]:
+    if image_attachment:
+        prompt = [
+            {
+                "type": "text",
+                "text": (
+                    "你是 Forest AI，只围绕当前章节测验答疑。"
+                    "根据当前题目、用户答案和判题结果给出清晰解析。\n"
+                    f"context:\n{json.dumps(context, ensure_ascii=False)}\n"
+                    f"user_message:\n{message}"
+                )
+            },
+            {"type": "image_url", "image_url": {"url": image_attachment}}
+        ]
+    else:
+        prompt = (
+            "你是 Forest AI，只围绕当前章节测验答疑。"
+            "根据当前题目、用户答案和判题结果给出清晰解析。\n"
+            f"context:\n{json.dumps(context, ensure_ascii=False)}\n"
+            f"user_message:\n{message}"
+        )
     if not hasattr(llm, "astream"):
         yield "我会先看当前题目、你的答案和判题反馈，再给出解析。"
         return
