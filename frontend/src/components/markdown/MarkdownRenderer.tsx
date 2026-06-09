@@ -10,6 +10,11 @@ interface MarkdownRendererProps {
   variant?: 'default' | 'editorial' | 'compact';
 }
 
+interface CheckboxInputProps {
+  type?: string;
+  checked?: boolean;
+}
+
 function getTextContent(children: React.ReactNode): string {
   let text = '';
   React.Children.forEach(children, (child) => {
@@ -28,7 +33,7 @@ function cleanAlertPrefix(children: React.ReactNode): React.ReactNode {
       return child.replace(/\[!(NOTE|IMPORTANT|WARNING|TIP|CAUTION)\]/g, '').trim();
     }
     if (React.isValidElement(child) && child.props && child.props.children) {
-      return React.cloneElement(child as React.ReactElement<any>, {
+      return React.cloneElement(child as React.ReactElement<{ children?: React.ReactNode }>, {
         children: cleanAlertPrefix(child.props.children),
       });
     }
@@ -57,10 +62,10 @@ const markdownComponents: Components = {
       if (
         React.isValidElement(child) &&
         child.type === 'input' &&
-        (child.props as any).type === 'checkbox'
+        (child.props as CheckboxInputProps).type === 'checkbox'
       ) {
         isCheckbox = true;
-        isChecked = !!(child.props as any).checked;
+        isChecked = !!(child.props as CheckboxInputProps).checked;
         return null;
       }
       return child;
@@ -120,7 +125,16 @@ const markdownComponents: Components = {
           <span className="code-block-lang">{lang}</span>
           <button
             className="code-block-copy"
-            onClick={() => navigator.clipboard.writeText(codeString)}
+            onClick={(e) => {
+              const button = e.currentTarget;
+              navigator.clipboard.writeText(codeString).then(() => {
+                button.textContent = 'COPIED!';
+                setTimeout(() => { button.textContent = 'COPY'; }, 2000);
+              }).catch(() => {
+                button.textContent = 'FAILED';
+                setTimeout(() => { button.textContent = 'COPY'; }, 2000);
+              });
+            }}
           >
             COPY
           </button>
