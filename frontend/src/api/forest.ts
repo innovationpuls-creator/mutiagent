@@ -103,6 +103,7 @@ export async function streamForestAi(
   context: ForestAiContext,
   message: string,
   onEvent: (event: ForestAiEvent) => void,
+  imageAttachment?: string | null,
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/forest/ai/stream`, {
     method: 'POST',
@@ -117,6 +118,7 @@ export async function streamForestAi(
       question_id: context.question_id,
       message,
       active_question_context: context,
+      image_attachment: imageAttachment || undefined,
     }),
   });
   if (!response.ok) throw await readForestError(response, 'Forest AI 暂时不可用');

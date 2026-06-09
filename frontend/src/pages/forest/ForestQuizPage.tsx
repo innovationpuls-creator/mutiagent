@@ -17,7 +17,17 @@ import type {
   ForestQuizSession,
 } from '../../types/forest';
 import { MarkdownRenderer } from '../../components/markdown/MarkdownRenderer';
+import { MessageBubble } from '../../components/onboarding/MessageBubble';
+import { HandwritingCanvas } from '../../components/ui/HandwritingCanvas';
+import { PenTool } from 'lucide-react';
 import './forest-quiz.css';
+
+interface ForestMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  imageAttachment?: string | null;
+}
 
 type ForestPageStatus = 'idle' | 'loading' | 'ready' | 'error';
 type ForestAiStatus = 'idle' | 'streaming' | 'error';
@@ -63,9 +73,9 @@ interface ForestAiPanelProps {
   attempt: ForestAttempt | null;
   selectedQuestion: ForestQuizQuestion | null;
   aiStatus: ForestAiStatus;
-  aiText: string;
+  messages: ForestMessage[];
   reduceMotion: boolean;
-  onAskForestAi(): void;
+  onAskForestAi(customMessage?: string, attachment?: string | null): void;
 }
 
 function getAnswerValue(answers: ForestAnswerDraft[], questionId: string): unknown {
@@ -301,10 +311,14 @@ function ForestAiPanel({
   attempt,
   selectedQuestion,
   aiStatus,
-  aiText,
+  messages,
   reduceMotion,
   onAskForestAi,
 }: ForestAiPanelProps) {
+  const [showCanvas, setShowCanvas] = useState(false);
+  const [imageAttachment, setImageAttachment] = useState<string | null>(null);
+  const [inputValue, setInputValue] = useState('');
+
   return (
     <motion.aside
       className="forest-ai-panel"
@@ -322,15 +336,122 @@ function ForestAiPanel({
         <span>{attempt ? `得分 ${attempt.score}` : '等待提交结果'}</span>
       </div>
       <div className="forest-ai-response" aria-live="polite">
-        {aiText ? (
-          <MarkdownRenderer content={aiText} />
+        {messages.length > 0 ? (
+          <div className="forest-ai-messages-list">
+            {messages.map((message) => {
+              if (message.role === 'user') {
+                return (
+                  <div key={message.id} className="forest-message-bubble-user-container">
+                    <MessageBubble
+                      content={message.content}
+                      imageAttachment={message.imageAttachment}
+                    />
+                  </div>
+                );
+              } else {
+                return (
+                  <div key={message.id} className="forest-message-bubble-assistant">
+                    <MarkdownRenderer content={message.content} />
+                  </div>
+                );
+              }
+            })}
+          </div>
         ) : (
           <p>选择题目或提交答案后，可以让我解释为什么这样判断。</p>
         )}
       </div>
-      <button type="button" onClick={onAskForestAi} disabled={aiStatus === 'streaming' || !quiz}>
-        {aiStatus === 'streaming' ? '解析中' : aiStatus === 'error' ? '重新解析' : '请 Forest AI 解析'}
-      </button>
+
+      {messages.length === 0 && (
+        <button
+          type="button"
+          className="forest-ask-initial-button"
+          onClick={() => onAskForestAi()}
+          disabled={aiStatus === 'streaming' || !quiz}
+          style={{
+            paddingInline: 'var(--space-32)',
+            minBlockSize: 'calc(var(--space-40) + var(--space-8))',
+            borderRadius: 'var(--radius-full)',
+            fontWeight: 'var(--font-weight-medium)',
+            cursor: 'pointer',
+            background: 'var(--gradient-coral)',
+            color: 'var(--color-text-inverse)',
+            boxShadow: 'var(--shadow-sm)',
+            border: 'none',
+          }}
+        >
+          {aiStatus === 'streaming' ? '解析中' : '请 Forest AI 解析'}
+        </button>
+      )}
+
+      {quiz && (
+        <div className="forest-composer-container">
+          {imageAttachment && (
+            <div className="image-preview-box">
+              <img src={imageAttachment} alt="Preview" className="preview-thumbnail" />
+              <button
+                type="button"
+                className="delete-preview-button"
+                onClick={() => setImageAttachment(null)}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          <form
+            className="chat-composer"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (aiStatus === 'streaming' || (!inputValue.trim() && !imageAttachment)) return;
+              onAskForestAi(inputValue, imageAttachment);
+              setInputValue('');
+              setImageAttachment(null);
+            }}
+          >
+            <button
+              type="button"
+              className="pen-button"
+              onClick={() => setShowCanvas(true)}
+              title="手写画板"
+              disabled={aiStatus === 'streaming'}
+            >
+              <PenTool className="w-4 h-4" />
+            </button>
+            <textarea
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="自定义追问或手写演算草稿..."
+              disabled={aiStatus === 'streaming'}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (aiStatus === 'streaming' || (!inputValue.trim() && !imageAttachment)) return;
+                  onAskForestAi(inputValue, imageAttachment);
+                  setInputValue('');
+                  setImageAttachment(null);
+                }
+              }}
+            />
+            <button
+              type="submit"
+              className="submit-button"
+              disabled={aiStatus === 'streaming' || (!inputValue.trim() && !imageAttachment)}
+            >
+              发送
+            </button>
+          </form>
+        </div>
+      )}
+
+      {showCanvas && (
+        <HandwritingCanvas
+          onSave={(data) => {
+            setImageAttachment(data);
+            setShowCanvas(false);
+          }}
+          onClose={() => setShowCanvas(false)}
+        />
+      )}
     </motion.aside>
   );
 }
@@ -353,6 +474,11 @@ export function ForestQuizPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [aiStatus, setAiStatus] = useState<ForestAiStatus>('idle');
   const [aiText, setAiText] = useState('');
+  const [messages, setMessages] = useState<ForestMessage[]>([]);
+
+  useEffect(() => {
+    setMessages([]);
+  }, [selectedQuestionId]);
 
   const selectedQuestion = useMemo(() => {
     if (!quiz) return null;
@@ -425,29 +551,64 @@ export function ForestQuizPage() {
     }
   }, [chapterId, courseNodeId, token]);
 
-  const askForestAi = useCallback(async (nextAttempt: ForestAttempt | null) => {
+  const askForestAi = useCallback(async (
+    customMessage?: string,
+    attachment?: string | null,
+    nextAttempt: ForestAttempt | null = attempt
+  ) => {
     if (!token || !courseNodeId || !chapterId) return;
     const context = buildAiContext(courseNodeId, chapterId, quiz, selectedQuestion, selectedAnswer, nextAttempt);
+
+    const promptText = customMessage || '请结合当前题目、我的答案与判题结果，给出简洁解析。';
+
+    const userMsg: ForestMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: promptText,
+      imageAttachment: attachment,
+    };
+
+    const assistantMsgId = `assistant-${Date.now()}`;
+    const assistantMsg: ForestMessage = {
+      id: assistantMsgId,
+      role: 'assistant',
+      content: '',
+    };
+
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setAiStatus('streaming');
-    setAiText('');
+
     try {
-      await streamForestAi(token, context, '请结合当前题目、我的答案与判题结果，给出简洁解析。', (event) => {
+      await streamForestAi(token, context, promptText, (event) => {
         if (event.event === 'forest_ai_text_chunk' && event.chunk) {
-          setAiText((currentText) => `${currentText}${event.chunk}`);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMsgId ? { ...msg, content: msg.content + event.chunk } : msg
+            )
+          );
         }
         if (event.event === 'forest_error') {
           setAiStatus('error');
-          setAiText(event.message ?? 'Forest AI 暂时不可用');
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMsgId ? { ...msg, content: event.message ?? 'Forest AI 暂时不可用' } : msg
+            )
+          );
         }
         if (event.event === 'forest_ai_completed') {
           setAiStatus('idle');
         }
-      });
+      }, attachment);
     } catch (error) {
       setAiStatus('error');
-      setAiText(error instanceof Error ? error.message : 'Forest AI 暂时不可用');
+      const errMsg = error instanceof Error ? error.message : 'Forest AI 暂时不可用';
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantMsgId ? { ...msg, content: errMsg } : msg
+        )
+      );
     }
-  }, [chapterId, courseNodeId, quiz, selectedAnswer, selectedQuestion, token]);
+  }, [chapterId, courseNodeId, quiz, selectedAnswer, selectedQuestion, token, attempt]);
 
   const handleSubmit = useCallback(async () => {
     if (!token || !quiz || !canSubmit) return;
@@ -456,7 +617,7 @@ export function ForestQuizPage() {
     try {
       const nextAttempt = await submitForestQuizAttempt(token, quiz.quiz_id, { answers: toAnswerRecord(answers) });
       setAttempt(nextAttempt);
-      void askForestAi(nextAttempt);
+      void askForestAi(undefined, null, nextAttempt);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '测验提交失败');
     } finally {
@@ -464,8 +625,8 @@ export function ForestQuizPage() {
     }
   }, [answers, askForestAi, canSubmit, quiz, token]);
 
-  const handleAskForestAi = useCallback(() => {
-    void askForestAi(attempt);
+  const handleAskForestAi = useCallback((customMessage?: string, attachment?: string | null) => {
+    void askForestAi(customMessage, attachment, attempt);
   }, [askForestAi, attempt]);
 
   if (!token || !courseNodeId) {
@@ -531,7 +692,7 @@ export function ForestQuizPage() {
           attempt={attempt}
           selectedQuestion={selectedQuestion}
           aiStatus={aiStatus}
-          aiText={aiText}
+          messages={messages}
           reduceMotion={reduceMotion}
           onAskForestAi={handleAskForestAi}
         />

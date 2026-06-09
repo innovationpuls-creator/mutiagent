@@ -159,4 +159,77 @@ describe('ForestQuizPage', () => {
     ));
     await waitFor(() => expect(screen.getByText('先看题干，再看答案。')).toBeTruthy());
   });
+
+  it('allows user to send custom follow-up message with handwriting canvas drawing', async () => {
+    HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
+      scale: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      clearRect: vi.fn(),
+    });
+    HTMLCanvasElement.prototype.toDataURL = vi.fn().mockReturnValue('data:image/png;base64,drawingdata');
+
+    fetchForestQuizSessionMock.mockResolvedValue(forestSession({
+      quiz: {
+        quiz_id: 'quiz_1',
+        course_node_id: 'year_3_course_2',
+        chapter_id: '1',
+        status: 'ready',
+        generation_error: '',
+        created_at: '2026-06-09T00:00:00Z',
+        updated_at: '2026-06-09T00:00:00Z',
+        questions: [
+          {
+            question_id: 'q1',
+            type: 'single_choice',
+            prompt: '本章首要目标是什么？',
+            options: [{ option_id: 'A', text: '确认边界' }],
+            starter_code: '',
+            image_prompt: '',
+            points: 100,
+          },
+        ],
+      },
+    }));
+
+    streamForestAiMock.mockImplementation(async (_token, _context, message, onEvent) => {
+      onEvent({ event: 'forest_ai_text_chunk', chunk: `解析自定义问题：${message}` });
+      onEvent({ event: 'forest_ai_completed', message: 'completed' });
+    });
+
+    renderForest();
+
+    const textarea = await screen.findByPlaceholderText('自定义追问或手写演算草稿...');
+    const penButton = screen.getByTitle('手写画板');
+    fireEvent.click(penButton);
+
+    expect(screen.getByText('手写笔记/草图')).toBeTruthy();
+
+    const saveButton = screen.getByRole('button', { name: '确认导出' });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => expect(screen.queryByText('手写笔记/草图')).toBeNull());
+    expect(screen.getByAltText('Preview')).toBeTruthy();
+
+    fireEvent.change(textarea, { target: { value: '为什么这里的A是正确答案？' } });
+
+    const sendButton = screen.getByRole('button', { name: '发送' });
+    fireEvent.click(sendButton);
+
+    await waitFor(() => {
+      expect(streamForestAiMock).toHaveBeenCalledWith(
+        'token-1',
+        expect.any(Object),
+        '为什么这里的A是正确答案？',
+        expect.any(Function),
+        'data:image/png;base64,drawingdata'
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('解析自定义问题：为什么这里的A是正确答案？')).toBeTruthy();
+    });
+  });
 });

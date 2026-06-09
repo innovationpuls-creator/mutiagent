@@ -355,3 +355,154 @@
     transform: none;
   }
 }
+
+.forest-ai-messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+  width: 100%;
+}
+
+.forest-message-bubble-user-container {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.forest-message-bubble-assistant {
+  border-radius: var(--radius-md);
+  padding: var(--space-16);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-sm);
+  line-height: 1.6;
+}
+
+.forest-composer-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin-block-start: var(--space-16);
+  width: 100%;
+}
+
+.forest-composer-container .image-preview-box {
+  position: relative;
+  inline-size: fit-content;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  margin-inline-start: var(--space-12);
+}
+
+.forest-composer-container .preview-thumbnail {
+  max-block-size: 80px;
+  max-inline-size: 120px;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+}
+
+.forest-composer-container .delete-preview-button {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: var(--color-surface-inset);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--duration-lazy-hover) var(--ease-lazy);
+}
+
+.forest-composer-container .delete-preview-button:hover {
+  transform: scale(1.1);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+
+.forest-composer-container .chat-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-8);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8) var(--space-12);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.forest-composer-container .chat-composer textarea {
+  flex: 1;
+  min-block-size: var(--space-32);
+  max-block-size: var(--space-96);
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.6;
+}
+
+.forest-composer-container .pen-button {
+  min-inline-size: var(--space-32);
+  min-block-size: var(--space-32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-inset);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    transform var(--duration-lazy-hover) var(--ease-lazy),
+    background-color var(--duration-lazy-hover) var(--ease-lazy);
+}
+
+.forest-composer-container .pen-button:hover {
+  transform: translateY(-2px);
+  background: var(--color-primary-soft);
+  color: var(--color-secondary);
+}
+
+.forest-composer-container .pen-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.forest-composer-container .submit-button {
+  min-inline-size: calc(var(--space-40) + var(--space-8));
+  min-block-size: var(--space-32);
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--gradient-coral);
+  color: var(--color-text-inverse);
+  cursor: pointer;
+  transition:
+    transform var(--duration-lazy-hover) var(--ease-lazy),
+    opacity var(--duration-lazy-hover) var(--ease-lazy);
+}
+
+.forest-composer-container .submit-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.forest-composer-container .submit-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+}
