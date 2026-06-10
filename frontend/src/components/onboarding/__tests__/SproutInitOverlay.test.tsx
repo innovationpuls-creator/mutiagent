@@ -112,6 +112,7 @@ test('uses opacity and transform motion props instead of filter-based animation'
 });
 
 test('keeps the blur overlay mounted through center input and completes only when collapsed to widget', async () => {
+  vi.useFakeTimers();
   const onComplete = vi.fn();
 
   render(
@@ -121,17 +122,27 @@ test('keeps the blur overlay mounted through center input and completes only whe
     </AiWidgetProvider>,
   );
 
-  await waitFor(() => {
-    expect(screen.getByTestId('widget-state').textContent).toBe('HIDDEN');
+  // Advance timers by 7500ms to complete the introduction timeline and trigger CENTER_INPUT
+  act(() => {
+    vi.advanceTimersByTime(7500);
   });
 
+  expect(screen.getByTestId('widget-state').textContent).toBe('CENTER_INPUT');
   expect(onComplete).not.toHaveBeenCalled();
 
   act(() => {
     screen.getByRole('button', { name: 'set-widget' }).click();
   });
 
-  await waitFor(() => {
-    expect(onComplete).toHaveBeenCalledTimes(1);
+  // Advance timers by 1200ms to execute the exit animation delay
+  act(() => {
+    vi.advanceTimersByTime(1200);
   });
+
+  // Flush promise microtasks to allow the async sequence function to complete
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(onComplete).toHaveBeenCalledTimes(1);
 });

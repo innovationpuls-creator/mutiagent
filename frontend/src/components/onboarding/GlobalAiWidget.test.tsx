@@ -6,6 +6,14 @@ import { AiWidgetProvider, useAiWidget } from '../../context/AiWidgetContext';
 import { AuthProvider } from '../../contexts/AuthContext';
 import { useAuth } from '../../contexts/AuthContext';
 
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => vi.fn(),
+  };
+});
+
 vi.mock('framer-motion', async () => {
   const actual = await vi.importActual<typeof import('framer-motion')>('framer-motion');
 

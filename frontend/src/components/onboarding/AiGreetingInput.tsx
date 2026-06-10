@@ -911,6 +911,11 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
                 </div>
 
                 <div className="composer-container">
+                  {hasCompleteProfileRef.current && (
+                    <div className="composer-completed-hint">
+                      <span>✨ 定制课程已生成！点击上方卡片中的“开启我的学习路径”开始学习</span>
+                    </div>
+                  )}
                   {imageAttachment && (
                     <div className="image-preview-box">
                       <img
@@ -1509,6 +1514,30 @@ const StyledWrapper = styled.div`
     gap: var(--space-8);
   }
 
+  .composer-completed-hint {
+    font-size: var(--text-caption);
+    color: var(--color-primary);
+    background: var(--color-primary-soft);
+    padding: var(--space-8) var(--space-12);
+    border-radius: var(--radius-md);
+    margin-inline-start: var(--space-12);
+    margin-inline-end: var(--space-12);
+    text-align: center;
+    border: 1px solid oklch(90% 0.04 140 / 0.3);
+    animation: fade-in-hint 0.5s var(--ease-editorial);
+  }
+
+  @keyframes fade-in-hint {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   .image-preview-box {
     position: relative;
     inline-size: fit-content;
@@ -1632,7 +1661,8 @@ const StyledWrapper = styled.div`
     .agent-step-dot,
     .agent-event-log,
     .agent-step-row,
-    .global-error {
+    .global-error,
+    .composer-completed-hint {
       animation: none;
     }
 

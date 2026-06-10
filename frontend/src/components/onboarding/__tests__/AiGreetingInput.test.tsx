@@ -5,6 +5,14 @@ import { AiGreetingInput } from '../AiGreetingInput';
 import { AiWidgetProvider, useAiWidget } from '../../../context/AiWidgetContext';
 import { AuthProvider } from '../../../contexts/AuthContext';
 
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => vi.fn(),
+  };
+});
+
 function ExpandedWidget() {
   const { setWidgetState } = useAiWidget();
 

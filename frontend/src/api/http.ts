@@ -25,10 +25,22 @@ export function notifyAuthInvalidFromError(status: number, error: ApiErrorRespon
   window.dispatchEvent(new Event(AUTH_INVALID_EVENT));
 }
 
+function getBrowserApiBaseUrl(): string {
+  if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
+    return 'http://127.0.0.1:8000';
+  }
+
+  if (typeof window === 'undefined' || !window.location.hostname) {
+    return 'http://127.0.0.1:8000';
+  }
+
+  if (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') {
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+
+  return window.location.origin;
+}
+
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? (
-  typeof process !== 'undefined' && process.env.NODE_ENV === 'test'
-    ? 'http://127.0.0.1:8000'
-    : (typeof window !== 'undefined' && window.location.hostname
-        ? `${window.location.protocol}//${window.location.hostname}:8000`
-        : 'http://127.0.0.1:8000')
+  getBrowserApiBaseUrl()
 );
