@@ -11,7 +11,7 @@ import {
 } from '../../api/orchestration';
 import { useAiWidget } from '../../context/AiWidgetContext';
 import { useAuth } from '../../contexts/AuthContext';
-import type { AgentRunStep, AgentRunStepKind, ChatMessage, SessionMessage } from '../../types/chat';
+import type { AgentRunStep, AgentRunStepKind, ChatMessage, SessionMessage, ChatStage } from '../../types/chat';
 import { chatReducer, initialChatStore, nextMessageId } from '../../onboarding/chatReducer';
 import { type SessionRecoveryMeta, useChatSession } from '../../onboarding/hooks/useChatSession';
 import { CourseKnowledgeCard } from '../learning/CourseKnowledgeCard';
@@ -249,6 +249,95 @@ function AssistantMessageFrame({ message, children }: AssistantMessageFrameProps
         />
       )}
       {children}
+    </div>
+  );
+}
+
+const ONBOARDING_STAGES = [
+  { id: 'basic_info', label: '基础信息' },
+  { id: 'learning_preference', label: '学习偏好' },
+  { id: 'ability_basis', label: '能力基础' },
+  { id: 'goal_constraint', label: '目标约束' },
+] as const;
+
+interface StepProgressBarProps {
+  messages: ChatMessage[];
+}
+
+function StepProgressBar({ messages }: StepProgressBarProps) {
+  const latestSessionMessage = [...messages]
+    .reverse()
+    .find((m) => m.sessionMessage)?.sessionMessage;
+
+  const currentStage = latestSessionMessage?.stage || 'basic_info';
+  const confirmedInfo = latestSessionMessage?.confirmed_info;
+
+  const STAGE_ORDER: ChatStage[] = ['basic_info', 'learning_preference', 'ability_basis', 'goal_constraint', 'generated'];
+
+  const hasFields = (stage: ChatStage): boolean => {
+    if (!confirmedInfo) return false;
+    switch (stage) {
+      case 'basic_info':
+        return !!(confirmedInfo.current_grade || confirmedInfo.major);
+      case 'learning_preference':
+        return !!(
+          confirmedInfo.learning_stage ||
+          confirmedInfo.has_clear_goal ||
+          confirmedInfo.learning_method_preference ||
+          confirmedInfo.learning_pace_preference ||
+          (confirmedInfo.content_preference && confirmedInfo.content_preference.length > 0) ||
+          confirmedInfo.need_guidance
+        );
+      case 'ability_basis':
+        return !!(
+          confirmedInfo.knowledge_foundation ||
+          confirmedInfo.strengths ||
+          confirmedInfo.weaknesses ||
+          confirmedInfo.experience
+        );
+      case 'goal_constraint':
+        return !!(
+          confirmedInfo.short_term_goal ||
+          confirmedInfo.long_term_goal ||
+          confirmedInfo.weekly_available_time ||
+          confirmedInfo.constraints
+        );
+      default:
+        return false;
+    }
+  };
+
+  return (
+    <div className="onboarding-step-bar">
+      {ONBOARDING_STAGES.map((stage, index) => {
+        const currentIndex = STAGE_ORDER.indexOf(currentStage);
+        const stageIndex = STAGE_ORDER.indexOf(stage.id);
+
+        let status: 'completed' | 'active' | 'pending' = 'pending';
+        if (currentStage === 'generated' || stageIndex < currentIndex) {
+          status = 'completed';
+        } else if (stage.id === currentStage) {
+          status = 'active';
+        } else if (hasFields(stage.id)) {
+          status = 'completed';
+        }
+
+        return (
+          <React.Fragment key={stage.id}>
+            <div className={`step-node ${status}`} data-status={status}>
+              <div className="step-number">
+                {status === 'completed' ? '✓' : index + 1}
+              </div>
+              <div className="step-label">{stage.label}</div>
+            </div>
+            {index < ONBOARDING_STAGES.length - 1 && (
+              <div
+                className={`step-connector ${status === 'completed' ? 'completed' : ''}`}
+              />
+            )}
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }
@@ -895,10 +984,11 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
 
             <div className="session-workbench">
               <main className="chat-column" aria-label="对话内容">
+                <StepProgressBar messages={store.messages} />
                 <div className="chat-flow">
                   {store.messages.length === 0 && (
                     <div className="chat-empty-state">
-                      告诉我你的年级、专业、学习偏好或近期目标，我会先判断意图，再进入基础画像对话。
+                      🌱 欢迎！告诉我你的年级、专业或学习方向。定制你的自适应课程藤蔓仅需约 1-2 分钟。
                     </div>
                   )}
 
@@ -1490,6 +1580,88 @@ const StyledWrapper = styled.div`
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);
+  }
+
+  .onboarding-step-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-12) var(--space-16);
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
+    gap: var(--space-4);
+  }
+
+  .step-node {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+  }
+
+  .step-number {
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--text-caption);
+    font-family: var(--font-body);
+    font-weight: var(--font-weight-medium);
+    border: 1.5px solid var(--color-border);
+    background: var(--color-surface-raised);
+    color: var(--color-text-muted);
+    transition: all 0.3s ease;
+  }
+
+  .step-node.active .step-number {
+    background: var(--color-primary-soft);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    box-shadow: 0 0 6px var(--color-focus-ring);
+  }
+
+  .step-node.completed .step-number {
+    background: var(--color-success);
+    border-color: var(--color-success);
+    color: var(--color-text-inverse);
+  }
+
+  .step-label {
+    font-size: var(--text-caption);
+    font-family: var(--font-body);
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    transition: all 0.3s ease;
+  }
+
+  .step-node.active .step-label {
+    color: var(--color-primary);
+    font-weight: var(--font-weight-medium);
+  }
+
+  .step-node.completed .step-label {
+    color: var(--color-text-primary);
+  }
+
+  .step-connector {
+    flex: 1;
+    height: 1.5px;
+    background: var(--color-border);
+    transition: background 0.3s ease;
+  }
+
+  .step-connector.completed {
+    background: var(--color-success);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .step-number,
+    .step-label,
+    .step-connector {
+      transition: none !important;
+    }
   }
 
   .chat-empty-state {

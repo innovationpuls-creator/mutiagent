@@ -1,9 +1,30 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React, { useEffect } from 'react';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, expect, test, vi, it } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import { AiGreetingInput } from '../AiGreetingInput';
 import { AiWidgetProvider, useAiWidget } from '../../../context/AiWidgetContext';
 import { AuthProvider } from '../../../contexts/AuthContext';
+
+function TestExpandedWrapper({ children }: { children: React.ReactNode }) {
+  const { setWidgetState } = useAiWidget();
+  useEffect(() => {
+    setWidgetState('EXPANDED');
+  }, [setWidgetState]);
+  return <>{children}</>;
+}
+
+function renderWithRouter(ui: React.ReactElement) {
+  return render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <MemoryRouter>
+          <TestExpandedWrapper>{ui}</TestExpandedWrapper>
+        </MemoryRouter>
+      </AiWidgetProvider>
+    </AuthProvider>
+  );
+}
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -3641,3 +3662,12 @@ test('allows using handwriting canvas, previews sketch, and submits message with
     expect(screen.getByText('已收到您的图片')).toBeTruthy();
   });
 }, 10000);
+
+it('renders progress bar indicating the active collection stage', () => {
+  renderWithRouter(<AiGreetingInput />);
+  expect(screen.getByText(/欢迎！告诉我你的年级、专业或学习方向。/)).toBeTruthy();
+  expect(screen.getByText('基础信息')).toBeTruthy();
+  expect(screen.getByText('学习偏好')).toBeTruthy();
+  expect(screen.getByText('能力基础')).toBeTruthy();
+  expect(screen.getByText('目标约束')).toBeTruthy();
+});
