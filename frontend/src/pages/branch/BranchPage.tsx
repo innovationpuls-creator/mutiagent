@@ -208,6 +208,137 @@ function StageIcon({ kind }: { kind: string }) {
   );
 }
 
+interface Point {
+  x: number;
+  y: number;
+}
+
+function bezierPoint(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
+  const oneMinusT = 1 - t;
+  const mt2 = oneMinusT * oneMinusT;
+  const mt3 = mt2 * oneMinusT;
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return {
+    x: mt3 * p0.x + 3 * mt2 * t * p1.x + 3 * oneMinusT * t2 * p2.x + t3 * p3.x,
+    y: mt3 * p0.y + 3 * mt2 * t * p1.y + 3 * oneMinusT * t2 * p2.y + t3 * p3.y,
+  };
+}
+
+function getBezierTangent(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
+  const oneMinusT = 1 - t;
+  const mt2 = oneMinusT * oneMinusT;
+  const t2 = t * t;
+  const dx = 3 * mt2 * (p1.x - p0.x) + 6 * oneMinusT * t * (p2.x - p1.x) + 3 * t2 * (p3.x - p2.x);
+  const dy = 3 * mt2 * (p1.y - p0.y) + 6 * oneMinusT * t * (p2.y - p1.y) + 3 * t2 * (p3.y - p2.y);
+  return { x: dx, y: dy };
+}
+
+function generateWigglySegment(
+  p0: Point,
+  p1: Point,
+  p2: Point,
+  p3: Point,
+  steps = 50,
+  offsetAmp = 8,
+  freq1 = 4,
+  freq2 = 10,
+): Point[] {
+  const points: Point[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const pt = bezierPoint(p0, p1, p2, p3, t);
+
+    if (t > 0.02 && t < 0.98) {
+      const tangent = getBezierTangent(p0, p1, p2, p3, t);
+      const len = Math.sqrt(tangent.x * tangent.x + tangent.y * tangent.y);
+      if (len > 0) {
+        const nx = -tangent.y / len;
+        const ny = tangent.x / len;
+        const wiggle = Math.sin(t * Math.PI * freq1) * Math.cos(t * Math.PI * freq2);
+        const fade = Math.sin(t * Math.PI);
+        const offset = wiggle * offsetAmp * fade;
+        pt.x += nx * offset;
+        pt.y += ny * offset;
+      }
+    }
+    points.push(pt);
+  }
+  return points;
+}
+
+function pointsToPath(points: Point[]): string {
+  if (points.length === 0) return '';
+  let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+  for (let i = 1; i < points.length; i++) {
+    d += ` L ${points[i].x.toFixed(1)} ${points[i].y.toFixed(1)}`;
+  }
+  return d;
+}
+
+function generateTendrilPath(startPt: Point, normal: Point, length = 50, dir = 1): string {
+  const p0 = startPt;
+  const p1 = {
+    x: startPt.x + normal.x * length * 0.4,
+    y: startPt.y + normal.y * length * 0.4,
+  };
+  const p2 = {
+    x: p1.x + (normal.y * dir) * length * 0.4,
+    y: p1.y - (normal.x * dir) * length * 0.4,
+  };
+  const p3 = {
+    x: p2.x - normal.x * length * 0.2,
+    y: p2.y - normal.y * length * 0.2,
+  };
+
+  const points: Point[] = [];
+  for (let i = 0; i <= 15; i++) {
+    const t = i / 15;
+    points.push(bezierPoint(p0, p1, p2, p3, t));
+  }
+  return pointsToPath(points);
+}
+
+function VineLeaf({ point, tangent, scale = 1 }: { point: Point; tangent: Point; scale?: number }) {
+  const angle = Math.atan2(tangent.y, tangent.x) * (180 / Math.PI);
+  return (
+    <path
+      d="M 0 0 C 8 -8, 16 -4, 20 0 C 16 4, 8 8, 0 0"
+      fill="oklch(78% 0.06 140 / 0.48)"
+      stroke="oklch(74% 0.08 140 / 0.68)"
+      strokeWidth={1.2}
+      transform={`translate(${point.x}, ${point.y}) rotate(${angle}) scale(${scale})`}
+      style={{ transformOrigin: '0px 0px', transition: 'all 0.3s ease' }}
+    />
+  );
+}
+
+const seg1_p0 = { x: 0, y: 200 };
+const seg1_p1 = { x: 250, y: 200 };
+const seg1_p2 = { x: 300, y: 250 };
+const seg1_p3 = { x: 500, y: 250 };
+
+const seg2_p0 = { x: 500, y: 250 };
+const seg2_p1 = { x: 700, y: 250 };
+const seg2_p2 = { x: 750, y: 300 };
+const seg2_p3 = { x: 1000, y: 300 };
+
+const points1 = generateWigglySegment(seg1_p0, seg1_p1, seg1_p2, seg1_p3, 50, 7, 3.5, 9);
+const points2 = generateWigglySegment(seg2_p0, seg2_p1, seg2_p2, seg2_p3, 50, 7, 3.5, 9);
+
+const mainVinePoints = [...points1, ...points2.slice(1)];
+const mainVinePath = pointsToPath(mainVinePoints);
+
+const tangent1 = getBezierTangent(seg1_p0, seg1_p1, seg1_p2, seg1_p3, 0.35);
+const len1 = Math.sqrt(tangent1.x * tangent1.x + tangent1.y * tangent1.y);
+const normal1 = len1 > 0 ? { x: -tangent1.y / len1, y: tangent1.x / len1 } : { x: 0, y: 0 };
+const tendril1Path = generateTendrilPath(points1[18], normal1, 40, 1);
+
+const tangent2 = getBezierTangent(seg2_p0, seg2_p1, seg2_p2, seg2_p3, 0.65);
+const len2 = Math.sqrt(tangent2.x * tangent2.x + tangent2.y * tangent2.y);
+const normal2 = len2 > 0 ? { x: -tangent2.y / len2, y: tangent2.x / len2 } : { x: 0, y: 0 };
+const tendril2Path = generateTendrilPath(points2[32], { x: -normal2.x, y: -normal2.y }, 35, -1);
+
 function PathSession({
   gradeName,
   courses,
@@ -280,10 +411,78 @@ function PathSession({
         {stageCourses.length > 0 ? (
           <div className="branch-stage-canvas">
             <svg className="branch-stage-curve" aria-hidden="true" viewBox="0 0 1000 500" preserveAspectRatio="none">
+              {/* Drop-shadow glow behind the main vine */}
               <path
-                className="branch-stage-curve-path"
-                d="M 0 200 C 250 200, 300 250, 500 250 C 700 250, 750 300, 1000 300"
+                d={mainVinePath}
+                fill="none"
+                stroke="oklch(78% 0.06 140 / 0.15)"
+                strokeWidth={8}
+                strokeLinecap="round"
               />
+              
+              {/* Main organic Vine stem */}
+              <path
+                d={mainVinePath}
+                fill="none"
+                stroke="oklch(78% 0.06 140 / 0.65)"
+                strokeWidth={4.5}
+                strokeLinecap="round"
+              />
+
+              {/* A secondary thin winding fiber to add organic complexity */}
+              <path
+                d={mainVinePath}
+                fill="none"
+                stroke="oklch(80% 0.09 56 / 0.45)"
+                strokeWidth={1.5}
+                strokeLinecap="round"
+                strokeDasharray="6 8"
+              />
+
+              {/* Tendril 1 */}
+              <path
+                d={tendril1Path}
+                fill="none"
+                stroke="oklch(78% 0.06 140 / 0.48)"
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+
+              {/* Tendril 2 */}
+              <path
+                d={tendril2Path}
+                fill="none"
+                stroke="oklch(78% 0.06 140 / 0.48)"
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+
+              {/* Vine Leaves */}
+              <VineLeaf point={points1[10]} tangent={getBezierTangent(seg1_p0, seg1_p1, seg1_p2, seg1_p3, 0.2)} scale={0.8} />
+              <VineLeaf point={points1[28]} tangent={getBezierTangent(seg1_p0, seg1_p1, seg1_p2, seg1_p3, 0.55)} scale={0.7} />
+              <VineLeaf point={points2[22]} tangent={getBezierTangent(seg2_p0, seg2_p1, seg2_p2, seg2_p3, 0.45)} scale={0.85} />
+              <VineLeaf point={points2[40]} tangent={getBezierTangent(seg2_p0, seg2_p1, seg2_p2, seg2_p3, 0.8)} scale={0.75} />
+
+              {/* Flowing micro-particles (disabled when prefers-reduced-motion is true) */}
+              {!reduceMotion && (
+                <>
+                  <circle r="3.5" fill="oklch(80% 0.09 56 / 0.85)">
+                    <animateMotion
+                      path={mainVinePath}
+                      dur="14s"
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+                  <circle r="2.5" fill="oklch(78% 0.06 140 / 0.85)">
+                    <animateMotion
+                      path={mainVinePath}
+                      dur="20s"
+                      begin="7s"
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+                </>
+              )}
             </svg>
             <div className="branch-stage-layout">
               {stage.left ? (
