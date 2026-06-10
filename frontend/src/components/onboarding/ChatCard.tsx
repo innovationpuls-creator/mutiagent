@@ -1,5 +1,7 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
+import { useAiWidget } from '../../context/AiWidgetContext';
 import { MarkdownRenderer } from '../markdown';
 import type { ConfirmedInfo, PartialStructuredData, QuestionBoxOption, SessionMessage } from '../../types/chat';
 
@@ -100,6 +102,14 @@ function normalizeQuestionOption(option: QuestionBoxOption | string): QuestionBo
 }
 
 export function ChatCard({ message, onSendReply, disabled = false, partialData }: ChatCardProps) {
+  const navigate = useNavigate();
+  const { setWidgetState } = useAiWidget();
+
+  const handleOpenPath = () => {
+    setWidgetState('WIDGET');
+    navigate('/branch');
+  };
+
   const [inputValue, setInputValue] = React.useState('');
   const [hasSubmittedReply, setHasSubmittedReply] = React.useState(false);
   const confirmed = filledFields(message.confirmed_info);
@@ -144,6 +154,30 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData }
 
       {message.type === 'basic_profile' ? (
         <>
+          <div className="profile-transition-banner">
+            <div className="completed-badge">
+              <span className="badge-dot" />
+              <span>基础画像分析完成</span>
+            </div>
+            <div className="sprout-avatar-container">
+              <div className="sprout-orb">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22V12"></path>
+                  <path d="M12 12c0-2.8 2.2-5 5-5h2"></path>
+                  <path d="M12 15c0-2.8-2.2-5-5-5H5"></path>
+                </svg>
+              </div>
+            </div>
+            <h3>了解自己，是成长的第一步。</h3>
+            <p className="transition-explanation">
+              我们已经根据你的年级、专业以及优势与瓶颈，为你定制编织了一条专属的课程藤蔓。在你的学习路径中，已自动弱化你熟悉的领域，并为你的薄弱点融入了专项强化章节。
+            </p>
+            <button className="cta-open-path-btn" onClick={handleOpenPath} type="button">
+              <span>开启我的学习路径</span>
+              <span className="arrow">➔</span>
+            </button>
+          </div>
+
           <div className="profile-hero">
             <span className="profile-eyebrow">基础画像</span>
             <h3>画像已整理成可继续更新的学习底稿</h3>
@@ -641,6 +675,118 @@ const CardWrapper = styled.article`
     .profile-section div[data-streaming='true'] {
       animation: none;
     }
+
+    .badge-dot {
+      animation: none;
+    }
+
+    .cta-open-path-btn,
+    .cta-open-path-btn .arrow {
+      transition: none;
+      transform: none;
+    }
+  }
+
+  .profile-transition-banner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    border-radius: var(--radius-md);
+    background: var(--color-primary-soft);
+    padding: var(--space-24) var(--space-20);
+    margin-bottom: var(--space-16);
+    border: 1px solid oklch(90% 0.04 140 / 0.3);
+  }
+
+  .completed-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-6);
+    background: var(--color-surface);
+    padding: var(--space-4) var(--space-12);
+    border-radius: var(--radius-full);
+    font-size: var(--text-caption);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+    margin-bottom: var(--space-16);
+  }
+
+  .badge-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--color-success);
+    border-radius: var(--radius-full);
+    box-shadow: 0 0 6px var(--color-success);
+    animation: status-pulse 1.6s ease-in-out infinite alternate;
+  }
+
+  .sprout-avatar-container {
+    display: flex;
+    justify-content: center;
+    margin-bottom: var(--space-12);
+  }
+
+  .sprout-orb {
+    width: 72px;
+    height: 72px;
+    background: radial-gradient(circle, oklch(92% 0.06 140) 0%, oklch(98% 0.02 140) 100%);
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .profile-transition-banner h3 {
+    font-size: var(--text-h5);
+    color: var(--color-text-primary);
+    margin-bottom: var(--space-8);
+  }
+
+  .transition-explanation {
+    font-size: var(--text-body-sm);
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+    margin-bottom: var(--space-16);
+    text-wrap: pretty;
+  }
+
+  .cta-open-path-btn {
+    width: 100%;
+    max-width: 240px;
+    padding: var(--space-10) var(--space-20);
+    border: none;
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-6);
+    box-shadow: var(--shadow-sm);
+    transition: transform var(--duration-lazy-hover) var(--ease-lazy);
+  }
+
+  .cta-open-path-btn:hover {
+    transform: translateY(-2px);
+  }
+
+  .cta-open-path-btn .arrow {
+    transition: transform var(--duration-lazy-hover) var(--ease-lazy);
+  }
+
+  .cta-open-path-btn:hover .arrow {
+    transform: translateX(4px);
+  }
+
+  @keyframes status-pulse {
+    from { opacity: 0.4; }
+    to { opacity: 1; }
   }
 
   @keyframes field-pulse {

@@ -1,7 +1,24 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, cleanup } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionMessage } from '../../../types/chat';
 import { ChatCard } from '../ChatCard';
+
+const mockNavigate = vi.fn();
+const mockSetWidgetState = vi.fn();
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
+vi.mock('../../../context/AiWidgetContext', () => ({
+  useAiWidget: () => ({
+    setWidgetState: mockSetWidgetState,
+  }),
+}));
 
 const generatedProfile: SessionMessage = {
   type: 'basic_profile',
@@ -78,6 +95,10 @@ const questionProfile: SessionMessage = {
 };
 
 describe('ChatCard', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it('renders generated profile as structured readable sections', () => {
     render(<ChatCard message={generatedProfile} />);
 
@@ -113,5 +134,19 @@ describe('ChatCard', () => {
     fireEvent.keyDown(screen.getByPlaceholderText('输入你的学习情况...'), { key: 'Enter' });
 
     expect(onSendReply).toHaveBeenCalledWith('我是转专业过来的');
+  });
+
+  it('renders the completed profile transition card and handles path opening', () => {
+    render(<ChatCard message={generatedProfile} />);
+
+    expect(screen.getByText('基础画像分析完成')).toBeTruthy();
+    expect(screen.getByText('了解自己，是成长的第一步。')).toBeTruthy();
+    expect(screen.getByText('开启我的学习路径')).toBeTruthy();
+
+    const ctaBtn = screen.getByRole('button', { name: '开启我的学习路径 ➔' });
+    fireEvent.click(ctaBtn);
+
+    expect(mockSetWidgetState).toHaveBeenCalledWith('WIDGET');
+    expect(mockNavigate).toHaveBeenCalledWith('/branch');
   });
 });
