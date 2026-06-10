@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -15,6 +17,12 @@ from app.database import DATABASE_URL, build_engine, create_session_dependency, 
 from app.schemas import HealthResponse
 
 
+def _build_cors_origin_regex() -> str:
+    if os.getenv("ENVIRONMENT") == "development":
+        return r"https?://(127\.0\.0\.1|localhost)(:\d+)?"
+    return r"https?://.*"
+
+
 def create_app(database_url: str = DATABASE_URL) -> FastAPI:
     engine = build_engine(database_url)
     set_engine(engine)
@@ -24,7 +32,7 @@ def create_app(database_url: str = DATABASE_URL) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
-        allow_origin_regex=r"http://(127\.0\.0\.1|localhost):517\d",
+        allow_origin_regex=_build_cors_origin_regex(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

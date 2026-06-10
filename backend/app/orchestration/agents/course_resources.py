@@ -644,6 +644,52 @@ def _fallback_cover_data_url(title: str) -> str:
     return "data:image/svg+xml;utf8," + encoded_svg.replace(quote(safe_title), safe_title)
 
 
+def _fallback_video_search_url(query: str) -> str:
+    clean_query = _clean_text(query) or "课程教学视频"
+    return f"https://search.bilibili.com/video?keyword={quote(clean_query)}"
+
+
+def _fallback_videos_for_briefs(
+    video_briefs: object,
+    section: dict,
+    outline: dict | None = None,
+) -> list[dict]:
+    if not isinstance(video_briefs, list):
+        return []
+
+    fallback_videos: list[dict] = []
+    section_title = _clean_text(section.get("title")) or "教学小节"
+    knowledge_points = _text_items(section.get("key_knowledge_points"))
+
+    for brief in video_briefs:
+        if not isinstance(brief, dict):
+            continue
+        brief_id = _clean_text(brief.get("video_id"))
+        if not brief_id:
+            continue
+        brief_title = _clean_text(brief.get("title"))
+        brief_purpose = _clean_text(brief.get("purpose"))
+        title = brief_title or section_title
+        if knowledge_points:
+            title = f"{title}：{knowledge_points[0]}"
+        query = next(
+            iter(_video_search_queries([brief], section, outline)),
+            f"{section_title} 教程",
+        )
+        fallback_videos.append(
+            {
+                "brief_id": brief_id,
+                "title": title,
+                "url": _fallback_video_search_url(query),
+                "cover_url": _fallback_cover_data_url(title),
+                "cover_status": "fallback",
+                "source": "Bilibili 搜索兜底",
+                "summary": brief_purpose,
+            }
+        )
+    return fallback_videos
+
+
 def _tool_args(state: OrchestrationState, explicit_args: dict | None) -> dict:
     if isinstance(explicit_args, dict):
         return explicit_args
@@ -2147,6 +2193,20 @@ def _has_related_video_topic(
     )
 
 
+def _matches_video_domain_or_section_topic(
+    text: str,
+    section: dict,
+    outline: dict | None = None,
+) -> bool:
+    domain_anchor_terms = _video_quality_keywords(_video_domain_anchor_terms(section, outline))
+    section_terms = _video_quality_keywords(
+        _video_topic_keywords([_clean_text(section.get("title")), *_text_items(section.get("key_knowledge_points"))])
+    )
+    matched_domain = _matched_video_keywords(text, domain_anchor_terms)
+    matched_section = _matched_video_keywords(text, section_terms)
+    return bool(matched_domain) or bool(matched_section)
+
+
 def _contains_any_video_keyword(text: str, keywords: list[str]) -> bool:
     return bool(_matched_video_keywords(text, keywords))
 
@@ -2320,13 +2380,9 @@ def _normalized_video_quality_issue(
                     continue
                 return "视频标题未体现小节主题或 brief 目的。"
             continue
-        domain_anchor_terms = _video_quality_keywords(_video_domain_anchor_terms(section, outline))
-        section_terms = _video_quality_keywords(
-            _video_topic_keywords([_clean_text(section.get("title")), *_text_items(section.get("key_knowledge_points"))])
-        )
-        if domain_anchor_terms and not _contains_any_video_keyword(title_source, domain_anchor_terms):
-            return "视频标题未体现当前课程领域或小节主题。"
-        if section_terms and not _contains_any_video_keyword(title_source, section_terms):
+        if not _matches_video_domain_or_section_topic(title_source, section, outline):
+            if _has_related_video_topic(title_source, video_briefs, section, outline):
+                continue
             return "视频标题未体现当前课程领域或小节主题。"
     return None
 
@@ -3444,6 +3500,17 @@ async def run_section_video_search_agent(
 
         if quality_issue:
             logger.warning("Video quality issue for section %s: %s", target_section_id, quality_issue)
+            fallback_videos = _fallback_videos_for_briefs(video_briefs, section, outline)
+            if fallback_videos:
+                return target_section_id, {
+                    "section_id": target_section_id,
+                    "parent_section_id": section.get("parent_section_id"),
+                    "title": _section_title(outline, section),
+                    "query": query,
+                    "videos": fallback_videos,
+                    "generated_at": _now_iso(),
+                    "fallback_reason": quality_issue,
+                }
             return target_section_id, {"error": f"{target_section_id} 视频资源质量不合格。"}
 
         return target_section_id, {

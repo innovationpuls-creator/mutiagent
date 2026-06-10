@@ -2675,24 +2675,6 @@ def test_stream_chapter_resource_generation_reports_error_when_resource_llm_fail
     class ResourceLlm:
         pass
 
-    class ResourceChain:
-        async def ainvoke(self, payload):
-            parsed = _payload_from_query(payload["query"])
-            if "section_markdowns" not in parsed:
-                section = _payload_from_query(payload["query"])["target_section"]
-                return _complete_markdown_output(section["section_id"], section["title"])
-            raise RuntimeError("resource generation timeout")
-
-    class ResourcePrompt:
-        def __or__(self, _llm):
-            return ResourceChain()
-
-    class PromptFactory:
-        @staticmethod
-        def from_messages(_messages):
-            return ResourcePrompt()
-
-    captured = {}
     engine = build_engine(f"sqlite:///{tmp_path / 'section-stream-fallback.db'}")
     set_engine(engine)
     init_db(engine)
@@ -2706,12 +2688,50 @@ def test_stream_chapter_resource_generation_reports_error_when_resource_llm_fail
                 course_name="AI 应用开发",
                 outline_data=_outline(),
             )
-        )
+            )
         session.commit()
 
     import app.orchestration.agents.course_resources as module
+
+    async def markdown_agent(state, _llm, explicit_args=None):
+        outline = _outline()
+        section_markdowns = {}
+        for section in outline["sections"]:
+            if section["parent_section_id"] != "1":
+                continue
+            markdown_data = _complete_markdown_output(section["section_id"], section["title"]).model_dump()
+            section_markdowns[section["section_id"]] = markdown_data
+        updated_outline = dict(outline)
+        updated_outline["section_markdowns"] = section_markdowns
+        return {
+            "course_knowledge": updated_outline,
+            "course_resource_plan": {
+                "course_id": "year_3_course_1",
+                "target_section_ids": ["1.1", "1.2", "1.3"],
+                "markdown_section_ids": ["1.1", "1.2", "1.3"],
+                "video_section_ids": [],
+                "animation_section_ids": [],
+            },
+        }
+
+    class FailingAnimationPrompt:
+        async def ainvoke(self, _payload):
+            raise RuntimeError("resource generation timeout")
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            class ResourcePrompt:
+                def __or__(self, _llm):
+                    return FailingAnimationPrompt()
+
+            return ResourcePrompt()
+
     original_factory = module.ChatPromptTemplate
+    original_markdown_agent = module.run_section_markdown_agent
     module.ChatPromptTemplate = PromptFactory
+    module.run_section_markdown_agent = markdown_agent
+
     async def empty_verified_search(_video_briefs, _section, _outline=None):
         return []
 
@@ -2735,20 +2755,22 @@ def test_stream_chapter_resource_generation_reports_error_when_resource_llm_fail
                     chapter_section_id="1",
                 )
             ]
-
         events = asyncio.run(collect_events())
     finally:
         module.ChatPromptTemplate = original_factory
+        module.run_section_markdown_agent = original_markdown_agent
         module._find_verified_video_from_search = original_verified_search
 
     assert any(event["event"] == "error" for event in events)
     assert events[-1]["event"] == "error"
-    assert "课程资源生成失败" in events[-1]["message"]
+    assert events[-1]["phase"] == "animation"
+    assert events[-1]["message"] == "课程资源生成失败：HTML 动画未生成，请稍后重试。"
     assert not any(event["event"] == "message_completed" for event in events)
     assert not any(event["event"] == "session_completed" for event in events)
     with Session(engine) as session:
         row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
     assert row is not None
+    assert set(row.outline_data["section_video_links"]) == {"1.1", "1.2", "1.3"}
     assert "section_composed_markdowns" not in row.outline_data
 
 
@@ -3563,6 +3585,171 @@ def test_run_section_video_search_agent_accepts_course_specific_video_metadata(t
     assert captured["verified_search"] == 1
     videos = result["course_knowledge"]["section_video_links"]["1.1"]["videos"]
     assert videos[0]["title"] == "Embedding 原理与向量数据库实战"
+
+
+def test_run_section_video_search_agent_accepts_section_topic_match_without_course_name(tmp_path, monkeypatch) -> None:
+    class RecordingLlm:
+        pass
+
+    async def verified_search(_video_briefs, _section, _outline=None):
+        return [
+            {
+                "brief_id": "video_1",
+                "title": "State对象设计与序列化约束 TypedDict 与 Pydantic 实战讲解",
+                "url": "https://example.com/langgraph-state",
+                "cover_url": "",
+                "source": "LangGraph 教学",
+            }
+        ]
+
+    outline = {
+        "course_id": "year_3_course_1",
+        "course_name": "基于状态图的Agent流程编排实战",
+        "grade_year": "year_3",
+        "sections": [
+            {
+                "section_id": "1",
+                "parent_section_id": None,
+                "depth": 1,
+                "order_index": 1,
+                "title": "LangGraph核心抽象与最小流程搭建",
+                "description": "围绕最小状态图搭建首个可执行流程。",
+                "key_knowledge_points": ["State", "Node", "Edge"],
+            },
+            {
+                "section_id": "1.2",
+                "parent_section_id": "1",
+                "depth": 2,
+                "order_index": 2,
+                "title": "State对象设计与序列化约束",
+                "description": "理解状态对象字段设计和序列化边界。",
+                "key_knowledge_points": ["TypedDict", "Pydantic", "序列化约束"],
+            },
+        ],
+        "section_markdowns": {
+            "1.2": {
+                "section_id": "1.2",
+                "parent_section_id": "1",
+                "title": "State对象设计与序列化约束",
+                "markdown": _complete_section_markdown("1.2", "State对象设计与序列化约束"),
+                "video_briefs": [
+                    {
+                        "video_id": "video_1",
+                        "title": "State对象设计与序列化约束导入视频",
+                        "purpose": "帮助学习者理解 TypedDict 与 Pydantic 在 State 设计中的选型差异。",
+                    }
+                ],
+                "animation_briefs": [],
+                "generated_at": "2026-06-06T00:00:00Z",
+            }
+        },
+    }
+    engine = build_engine(f"sqlite:///{tmp_path / 'section-video-langgraph-topic.db'}")
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(User(uid="user-1", username="课程用户", identifier="course@example.com"))
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid="user-1",
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name=outline["course_name"],
+                outline_data=outline,
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+    monkeypatch.setattr(module, "_find_verified_video_from_search", verified_search)
+
+    result = asyncio.run(
+        run_section_video_search_agent(
+            {
+                "user_id": "user-1",
+                "course_knowledge": outline,
+                "course_resource_plan": {
+                    "course_id": "year_3_course_1",
+                    "target_section_ids": ["1.2"],
+                },
+                "messages": [],
+            },
+            RecordingLlm(),
+        )
+    )
+
+    assert "error" not in result
+    videos = result["course_knowledge"]["section_video_links"]["1.2"]["videos"]
+    assert videos[0]["url"] == "https://example.com/langgraph-state"
+
+
+def test_run_section_video_search_agent_falls_back_when_verified_search_stays_empty(tmp_path, monkeypatch) -> None:
+    class RecordingLlm:
+        pass
+
+    async def verified_search(_video_briefs, _section, _outline=None):
+        return []
+
+    outline = _outline()
+    outline["section_markdowns"] = {
+        "1.1": {
+            "section_id": "1.1",
+            "parent_section_id": "1",
+            "title": "学习目标",
+            "markdown": _complete_section_markdown("1.1", "学习目标"),
+            "video_briefs": [
+                {
+                    "video_id": "video_1",
+                    "title": "学习目标导入视频",
+                    "purpose": "帮助学习者建立功能边界与验收标准的直觉",
+                }
+            ],
+            "animation_briefs": [],
+            "generated_at": "2026-06-06T00:00:00Z",
+        }
+    }
+    engine = build_engine(f"sqlite:///{tmp_path / 'section-video-search-fallback.db'}")
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(User(uid="user-1", username="课程用户", identifier="course@example.com"))
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid="user-1",
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name="AI 应用开发",
+                outline_data=outline,
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+    monkeypatch.setattr(module, "_find_verified_video_from_search", verified_search)
+
+    result = asyncio.run(
+        run_section_video_search_agent(
+            {
+                "user_id": "user-1",
+                "course_knowledge": outline,
+                "course_resource_plan": {
+                    "course_id": "year_3_course_1",
+                    "target_section_ids": ["1.1"],
+                },
+                "messages": [],
+            },
+            RecordingLlm(),
+        )
+    )
+
+    assert "error" not in result
+    section_video = result["course_knowledge"]["section_video_links"]["1.1"]
+    assert section_video["fallback_reason"] == "视频资源为空或未绑定 brief。"
+    videos = section_video["videos"]
+    assert videos[0]["brief_id"] == "video_1"
+    assert videos[0]["url"].startswith("https://search.bilibili.com/video?keyword=")
+    assert videos[0]["cover_status"] == "fallback"
+    assert videos[0]["source"] == "Bilibili 搜索兜底"
 
 
 from app.orchestration.agents.course_resources import run_section_html_animation_agent
