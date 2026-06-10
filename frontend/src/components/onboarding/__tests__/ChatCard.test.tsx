@@ -97,6 +97,7 @@ const questionProfile: SessionMessage = {
 describe('ChatCard', () => {
   afterEach(() => {
     cleanup();
+    vi.clearAllMocks();
   });
 
   it('renders generated profile as structured readable sections', () => {
