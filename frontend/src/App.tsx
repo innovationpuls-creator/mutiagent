@@ -10,6 +10,8 @@ import { LeafPage } from './pages/leaf/LeafPage';
 import { ForestQuizPage } from './pages/forest/ForestQuizPage';
 import { AdminAccountsPage } from './pages/admin/AdminAccountsPage';
 import { TeacherPage } from './pages/teacher/TeacherPage';
+import { CanopyPage } from './pages/canopy/CanopyPage';
+import { ScratchpadCanvas } from './pages/canvas/ScratchpadCanvas';
 import { useAuth } from './contexts/AuthContext';
 import type { AuthRole } from './types/auth';
 
@@ -90,8 +92,8 @@ function AnimatedRoutes() {
                 <Route path="/leaf/:courseNodeId" element={<LeafPage />} />
                 <Route path="/forest" element={<BlankPage title="成林" />} />
                 <Route path="/forest/:courseNodeId" element={<ForestQuizPage />} />
-                <Route path="/canopy" element={<BlankPage title="成森" />} />
-                <Route path="/canvas" element={<div style={{ padding: 'var(--space-32)', color: 'var(--color-text-primary)' }}>Welcome to the Canvas!</div>} />
+                <Route path="/canopy" element={<CanopyPage />} />
+                <Route path="/canvas" element={<ScratchpadCanvas />} />
               </Route>
             </Route>
           </Route>

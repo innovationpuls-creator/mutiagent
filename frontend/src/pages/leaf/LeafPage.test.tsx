@@ -175,6 +175,39 @@ describe('LeafPage', () => {
     expect(screen.getByText('{"model":"qwen","messages":[]}')).toBeTruthy();
   });
 
+  it('renders fenced code blocks without a language as block code', async () => {
+    fetchLeafCourseMock.mockResolvedValue(leafPayload({
+      section_composed_markdowns: {
+        '1.1': {
+          section_id: '1.1',
+          parent_section_id: '1',
+          title: '学习目标',
+          markdown: '# 学习目标',
+          generated_at: '2026-06-06T00:00:00Z',
+          blocks: [
+            {
+              type: 'markdown',
+              markdown: [
+                '普通说明文字',
+                '',
+                '```',
+                'plain block line',
+                '```',
+              ].join('\n'),
+            },
+          ],
+        },
+      },
+    }));
+
+    const view = renderLeaf();
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: '1.1 学习目标', level: 1 })).toBeTruthy());
+    expect(screen.getByText('plain block line')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy code to clipboard' })).toBeTruthy();
+    expect(view.container.querySelector('.code-block pre code')?.textContent).toContain('plain block line');
+  });
+
   it('renders the video cover when a video resource is available', async () => {
     fetchLeafCourseMock.mockResolvedValue(leafPayload({
       section_composed_markdowns: {

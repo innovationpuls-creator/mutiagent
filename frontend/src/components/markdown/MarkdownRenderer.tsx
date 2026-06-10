@@ -23,6 +23,10 @@ interface CheckboxInputProps {
   checked?: boolean;
 }
 
+interface MarkdownCodeElementProps extends React.HTMLAttributes<HTMLElement> {
+  node?: unknown;
+}
+
 function getTextContent(children: React.ReactNode): string {
   let text = '';
   React.Children.forEach(children, (child) => {
@@ -47,6 +51,39 @@ function cleanAlertPrefix(children: React.ReactNode): React.ReactNode {
     }
     return child;
   });
+}
+
+function isMarkdownCodeElement(
+  child: React.ReactNode,
+): child is React.ReactElement<MarkdownCodeElementProps> {
+  return React.isValidElement<MarkdownCodeElementProps>(child);
+}
+
+function getCodeBlockText(children: React.ReactNode): string {
+  return getTextContent(children).replace(/\n$/, '');
+}
+
+function renderCodeBlockFrame(
+  language: string,
+  codeText: string,
+  content: React.ReactNode,
+  copyAriaLabel = 'Copy code to clipboard',
+) {
+  return (
+    <div className="code-block">
+      <div className="code-block-header">
+        <span className="code-block-lang">{language || 'code'}</span>
+        <button
+          className="code-block-copy"
+          aria-label={copyAriaLabel}
+          onClick={(e) => copyToClipboard(codeText, e.currentTarget)}
+        >
+          COPY
+        </button>
+      </div>
+      {content}
+    </div>
+  );
 }
 
 const markdownComponents: Components = {
@@ -117,34 +154,21 @@ const markdownComponents: Components = {
   ),
   th: ({ node, ...props }) => <th {...props} />,
   td: ({ node, ...props }) => <td {...props} />,
-  code: ({ node, className, children, ...props }) => {
-    const inline = !className || !className.includes('language-');
-    if (inline) {
-      return <code {...props}>{children}</code>;
+  code: ({ node, ...props }) => <code {...props} />,
+  pre: ({ node, children, ...props }) => {
+    const codeChild = React.Children.toArray(children).find(isMarkdownCodeElement);
+    if (!codeChild) {
+      return <pre {...props}>{children}</pre>;
     }
 
-    const match = /language-(\w+)/.exec(className || '');
-    const lang = match ? match[1] : 'code';
-    const codeString = String(children).replace(/\n$/, '');
-
-    return (
-      <div className="code-block">
-        <div className="code-block-header">
-          <span className="code-block-lang">{lang}</span>
-            <button
-            className="code-block-copy"
-            aria-label="Copy code to clipboard"
-            onClick={(e) => copyToClipboard(codeString, e.currentTarget)}
-          >
-            COPY
-          </button>
-        </div>
-        <pre>
-          <code className={className} {...props}>
-            {children}
-          </code>
-        </pre>
-      </div>
+    const language = extractLanguage(codeChild.props.className);
+    const codeText = getCodeBlockText(codeChild.props.children);
+    return renderCodeBlockFrame(
+      language,
+      codeText,
+      <pre {...props}>
+        <code {...codeChild.props}>{codeChild.props.children}</code>
+      </pre>,
     );
   },
   hr: ({ node, ...props }) => <hr {...props} />,
@@ -198,39 +222,51 @@ function HighlightedCodeBlock({ code, language, highlight }: { code: string; lan
   }, [code, language, highlight]);
 
   if (error) {
-    return (
-      <div className="code-block">
-        <div className="code-block-header">
-          <span className="code-block-lang">{language}</span>
-          <button
-            className="code-block-copy"
-            onClick={(e) => copyToClipboard(code, e.currentTarget)}
-          >
-            COPY
-          </button>
-        </div>
-        <pre>
-          <code>{code}</code>
-        </pre>
-      </div>
+    return renderCodeBlockFrame(
+      language,
+      code,
+      <pre>
+        <code>{code}</code>
+      </pre>,
     );
   }
 
-  return (
-    <div className="code-block">
-      <div className="code-block-header">
-        <span className="code-block-lang">{language}</span>
-        <button
-          className="code-block-copy"
-          onClick={(e) => copyToClipboard(code, e.currentTarget)}
-        >
-          COPY
-        </button>
-      </div>
-      <pre>
-        <code dangerouslySetInnerHTML={{ __html: highlightedCode }} />
-      </pre>
-    </div>
+  return renderCodeBlockFrame(
+    language,
+    code,
+    <pre>
+      <code dangerouslySetInnerHTML={{ __html: highlightedCode }} />
+    </pre>,
+  );
+}
+
+function renderEnhancedCodeBlock(
+  codeChild: React.ReactElement<MarkdownCodeElementProps>,
+  options: {
+    enableMermaid: boolean;
+    enableSyntaxHighlight: boolean;
+    highlight: (code: string, language: string) => Promise<string>;
+    renderDiagram: (code: string) => Promise<string>;
+  },
+  preProps: React.HTMLAttributes<HTMLPreElement>,
+) {
+  const language = extractLanguage(codeChild.props.className);
+  const codeText = getCodeBlockText(codeChild.props.children);
+
+  if (options.enableMermaid && language === 'mermaid') {
+    return <MermaidDiagram code={codeText} renderDiagram={options.renderDiagram} />;
+  }
+
+  if (options.enableSyntaxHighlight && language) {
+    return <HighlightedCodeBlock code={codeText} language={language} highlight={options.highlight} />;
+  }
+
+  return renderCodeBlockFrame(
+    language,
+    codeText,
+    <pre {...preProps}>
+      <code {...codeChild.props}>{codeChild.props.children}</code>
+    </pre>,
   );
 }
 
@@ -261,41 +297,16 @@ export function MarkdownRenderer({
 
   const enhancedComponents: Components = {
     ...markdownComponents,
-    code: ({ node, className, children, ...props }) => {
-      const inline = !className || !className.includes('language-');
-      
-      if (inline) {
-        return <code {...props}>{children}</code>;
+    pre: ({ node, children, ...props }) => {
+      const codeChild = React.Children.toArray(children).find(isMarkdownCodeElement);
+      if (!codeChild) {
+        return <pre {...props}>{children}</pre>;
       }
 
-      const lang = extractLanguage(className);
-      const codeString = String(children).replace(/\n$/, '');
-
-      if (enableMermaid && lang === 'mermaid') {
-        return <MermaidDiagram code={codeString} renderDiagram={renderDiagram} />;
-      }
-
-      if (enableSyntaxHighlight && lang) {
-        return <HighlightedCodeBlock code={codeString} language={lang} highlight={highlight} />;
-      }
-
-      return (
-        <div className="code-block">
-          <div className="code-block-header">
-            <span className="code-block-lang">{lang || 'code'}</span>
-            <button
-              className="code-block-copy"
-              onClick={(e) => copyToClipboard(codeString, e.currentTarget)}
-            >
-              COPY
-            </button>
-          </div>
-          <pre>
-            <code className={className} {...props}>
-              {children}
-            </code>
-          </pre>
-        </div>
+      return renderEnhancedCodeBlock(
+        codeChild,
+        { enableMermaid, enableSyntaxHighlight, highlight, renderDiagram },
+        props,
       );
     },
   };
