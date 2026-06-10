@@ -329,14 +329,9 @@ function ForestAiPanel({
     >
       <header className="forest-ai-header">
         <span>// Forest AI</span>
-        <h2>常驻解析</h2>
       </header>
-      <div className="forest-ai-context">
-        <p>{selectedQuestion?.prompt ?? '生成题目后，我会读取当前题目。'}</p>
-        <span>{attempt ? `得分 ${attempt.score}` : '等待提交结果'}</span>
-      </div>
-      <div className="forest-ai-response" aria-live="polite">
-        {messages.length > 0 ? (
+      {messages.length > 0 && (
+        <div className="forest-ai-messages-scroll">
           <div className="forest-ai-messages-list">
             {messages.map((message) => {
               if (message.role === 'user') {
@@ -357,11 +352,8 @@ function ForestAiPanel({
               }
             })}
           </div>
-        ) : (
-          <p>选择题目或提交答案后，可以让我解释为什么这样判断。</p>
-        )}
-      </div>
-
+        </div>
+      )}
       {messages.length === 0 && (
         <button
           type="button"
@@ -388,7 +380,7 @@ function ForestAiPanel({
         <div className="forest-composer-container">
           {imageAttachment && (
             <div className="image-preview-box">
-              <img src={imageAttachment} alt="Preview" className="preview-thumbnail" />
+              <img src={imageAttachment} alt="预览" className="preview-thumbnail" />
               <button
                 type="button"
                 className="delete-preview-button"
@@ -669,6 +661,7 @@ export function ForestQuizPage() {
   return (
     <section className="forest-quiz-page" aria-label={`${session.chapter.title}章节测验`}>
       <div className="forest-ambient-sun" aria-hidden="true" />
+      <div className="forest-paper-canvas" aria-hidden="true" />
       <main className="forest-quiz-shell">
         <ForestQuestionPanel
           session={session}

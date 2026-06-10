@@ -13,6 +13,7 @@ from app.orchestration.rule_engine import (
     AGENT_PROFILE,
     evaluate,
     is_course_outline_regeneration_query,
+    is_default_profile_query,
     is_learning_path_refresh_query,
     has_pending_profile_update_followup,
     is_navigation_query,
@@ -80,6 +81,14 @@ class TestIntentDetection:
         assert is_learning_path_refresh_query("继续生成大三学习路径")
         assert is_learning_path_refresh_query("重新生成 year_3 学习路径")
         assert not is_learning_path_refresh_query("继续补充个人画像")
+
+    def test_default_profile_query_requires_explicit_default_fill_intent(self):
+        assert is_default_profile_query("你直接按照默认给我一份基础画像")
+        assert is_default_profile_query("不确定的你随便帮我填")
+        assert is_default_profile_query("缺的字段随便帮我填")
+        assert not is_default_profile_query("请直接补充你当前还没确认的学习阶段")
+        assert not is_default_profile_query("继续帮我生成学习路径")
+        assert not is_default_profile_query("帮我生成学习路径")
 
 
 class TestHardRules:

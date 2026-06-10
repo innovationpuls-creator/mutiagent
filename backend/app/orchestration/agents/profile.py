@@ -13,11 +13,11 @@ from app.orchestration.grade_contract import is_supported_current_grade, unsuppo
 from app.orchestration.agents.models import ProfileOutput
 from app.orchestration.agents.prompts import PROFILE_AGENT_REPAIR_SYSTEM_PROMPT, PROFILE_AGENT_SYSTEM_PROMPT
 from app.orchestration.agents.utils import extract_last_tool_call_args, extract_last_tool_call_id
+from app.orchestration.default_fill import allows_default_profile_fill
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PROFILE_COMMANDS = ("默认", "直接", "随便帮我填", "不确定的你随便帮我填", "帮我生成")
 REQUIRED_CONFIRMED_INFO_KEYS = frozenset({
     "current_grade",
     "major",
@@ -121,6 +121,7 @@ LEARNING_PREFERENCE_BLOCKED_SEGMENTS = ("喜欢看", "一步一步", "跟着操�
 GOAL_SEGMENTS = ("找工作", "就业", "实习", "考研")
 TOPIC_PREFIXES = ("想学习", "想学", "学习", "学")
 TOPIC_BLOCKED_VALUES = frozenset({"", "路径", "学习路径", "课程", "画像", "什么", "下一步"})
+TOPIC_TEXT_PATTERN = re.compile(r"(?:想学习|想学|学习|学)(?P<topic>[^，,、；;／/。！？!?\n]+)")
 NARRATIVE_PUNCTUATION = ("。", "？", "?", "！", "!", "\n")
 BRIEF_PROFILE_SEGMENT_LIMIT = 8
 BRIEF_PROFILE_SEGMENT_LENGTH_LIMIT = 18
@@ -439,7 +440,7 @@ def is_complete_profile_data(profile: dict | None) -> bool:
 
 
 def _allows_default_fill(text: str) -> bool:
-    return any(command in text for command in DEFAULT_PROFILE_COMMANDS)
+    return allows_default_profile_fill(text)
 
 
 def _message_content_text(content: object) -> str:
@@ -479,7 +480,7 @@ def _build_profile_input(state: OrchestrationState, conversation_summary: str) -
         for message in messages[-8:]
     ]
     query = state.get("query", "")
-    allow_default_fill = _allows_default_fill(query) or _allows_default_fill(conversation_summary)
+    allow_default_fill = _allows_default_fill(str(query))
     profile_context = json.dumps(_profile_context_payload(state), ensure_ascii=False, indent=2)
 
     parts = [
@@ -571,6 +572,12 @@ def _topic_from_segment(segment: str) -> str:
 
 
 def _extract_topic(texts: list[str], segments: list[str]) -> str:
+    for text in reversed(texts):
+        for match in TOPIC_TEXT_PATTERN.finditer(text):
+            topic = _clean_topic_value(match.group("topic"))
+            if topic and topic not in TOPIC_BLOCKED_VALUES:
+                return topic
+
     for segment in reversed(segments):
         topic = _topic_from_segment(segment)
         if topic:
@@ -1636,7 +1643,14 @@ async def run_profile_agent(state: OrchestrationState, llm: BaseChatModel) -> di
     """One-shot profile generation: receives conversation summary, outputs structured profile."""
     tool_args = extract_last_tool_call_args(state)
     conversation_summary = tool_args.get("conversation_summary", state["query"])
-    profile_dict = await _invoke_profile_output_with_retries(state, llm, conversation_summary)
+    query = str(state.get("query", "")).strip()
+    allow_default_fill = _allows_default_fill(query)
+    if not allow_default_fill and _is_complete_profile(state.get("profile")):
+        profile_dict = _build_local_profile(state, allow_default_fill=False)
+    elif query and not allow_default_fill and "画像" not in query and _looks_like_brief_profile_query(query):
+        profile_dict = _build_collecting_profile(state)
+    else:
+        profile_dict = await _invoke_profile_output_with_retries(state, llm, conversation_summary)
     _persist_profile(state["user_id"], profile_dict)
 
     return {"profile": profile_dict, "response": profile_dict.get("text", "")}

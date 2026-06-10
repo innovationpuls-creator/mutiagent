@@ -98,6 +98,27 @@ def test_build_profile_input_includes_history_and_default_instruction() -> None:
     assert "输出 SessionMessage JSON" in text
 
 
+def test_build_profile_input_does_not_allow_default_fill_from_summary_only() -> None:
+    state = {
+        "query": "我现在大三、软件工程、想学习agent开发vibe coding",
+        "messages": [
+            HumanMessage(content="我现在大三、软件工程、想学习agent开发vibe coding"),
+            AIMessage(content="我先继续帮你整理基础画像。请直接补充你当前还没确认的学习阶段、目标、学习方式、时间安排或能力基础。"),
+            HumanMessage(content="我现在大三、软件工程、想学习agent开发vibe coding"),
+        ],
+    }
+    conversation_summary = (
+        "我先继续帮你整理基础画像。"
+        "请直接补充你当前还没确认的学习阶段、目标、学习方式、时间安排或能力基础。\n"
+        "我现在大三、软件工程、想学习agent开发vibe coding"
+    )
+
+    text = _build_profile_input(state, conversation_summary)
+
+    assert "是否允许系统补全缺失字段：否" in text
+    assert "允许系统补全所有缺失字段" not in text
+
+
 def test_rule_engine_allows_learning_path_after_complete_profile() -> None:
     result = evaluate({"query": "继续", "profile": _profile(), "year_learning_paths": None})
 
@@ -291,7 +312,7 @@ def test_run_profile_agent_keeps_pace_segment_out_of_major(tmp_path: Path) -> No
     assert result["profile"]["confirmed_info"]["current_grade"] == "大四"
     assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
     assert result["profile"]["confirmed_info"]["constraints"] == "周末集中"
-    assert llm.calls == 1
+    assert llm.calls == 0
 
 
 def test_run_profile_agent_returns_collecting_for_unsupported_postgraduate_grade(tmp_path: Path) -> None:
@@ -377,7 +398,7 @@ def test_run_profile_agent_updates_explicit_major_field_without_treating_whole_s
     assert result["profile"]["confirmed_info"]["current_grade"] == "大三"
     assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
     assert "专业改成计算机科学" not in result["profile"]["summary_text"]
-    assert llm.calls == 1
+    assert llm.calls == 0
 
 
 def test_run_profile_agent_rewrites_system_generated_knowledge_foundation_after_major_update(tmp_path: Path) -> None:
@@ -408,7 +429,7 @@ def test_run_profile_agent_rewrites_system_generated_knowledge_foundation_after_
         result["profile"]["confirmed_info"]["knowledge_foundation"]
         == "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
     )
-    assert llm.calls == 1
+    assert llm.calls == 0
 
 
 def test_run_profile_agent_restores_generated_knowledge_foundation_when_existing_complete_profile_field_is_empty(tmp_path: Path) -> None:
@@ -441,7 +462,7 @@ def test_run_profile_agent_restores_generated_knowledge_foundation_when_existing
         result["profile"]["confirmed_info"]["knowledge_foundation"]
         == "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
     )
-    assert llm.calls == 1
+    assert llm.calls == 0
 
 
 def test_run_profile_agent_updates_multiple_explicit_fields_in_one_sentence(tmp_path: Path) -> None:
@@ -468,7 +489,7 @@ def test_run_profile_agent_updates_multiple_explicit_fields_in_one_sentence(tmp_
     assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
     assert result["profile"]["confirmed_info"]["constraints"] == "周末集中"
     assert "当前限制改成周末集中" not in result["profile"]["summary_text"]
-    assert llm.calls == 1
+    assert llm.calls == 0
 
 
 def test_run_profile_agent_prefers_latest_explicit_profile_update_from_history(tmp_path: Path) -> None:
@@ -503,7 +524,7 @@ def test_run_profile_agent_prefers_latest_explicit_profile_update_from_history(t
         result["profile"]["confirmed_info"]["knowledge_foundation"]
         == "已具备人工智能基础，AI 应用开发方向可从入门到基础逐步补全"
     )
-    assert llm.calls == 1
+    assert llm.calls == 0
 
 
 def test_run_profile_agent_prefers_latest_implicit_grade_and_major_from_history(tmp_path: Path) -> None:
@@ -535,7 +556,7 @@ def test_run_profile_agent_prefers_latest_implicit_grade_and_major_from_history(
     assert result["profile"]["confirmed_info"]["current_grade"] == "大四"
     assert result["profile"]["confirmed_info"]["major"] == "计算机科学"
     assert result["profile"]["confirmed_info"]["constraints"] == "周末集中"
-    assert llm.calls == 1
+    assert llm.calls == 0
 
 
 def test_run_profile_agent_first_profile_requests_missing_major_in_collecting_mode(tmp_path: Path) -> None:
@@ -853,6 +874,52 @@ def test_run_profile_agent_maps_user_delimited_profile_without_fake_fields(tmp_p
     assert confirmed["strengths"] == ""
     assert confirmed["weaknesses"] == ""
     assert confirmed["experience"] == ""
+    assert confirmed["weekly_available_time"] == ""
+    assert result["profile"]["defaulted_fields"] == []
+    assert result["profile"]["question_box"]["question"] == "你目前的学习阶段是？"
+
+
+def test_run_profile_agent_rejects_llm_completed_profile_for_brief_profile_input(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-brief-no-fake-completion.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    user_text = "我现在大三、软件工程、想学习agent开发vibe coding"
+    completed_profile = _profile()
+    completed_profile["confirmed_info"]["learning_stage"] = "项目实践"
+    completed_profile["confirmed_info"]["has_clear_goal"] = "是"
+    completed_profile["confirmed_info"]["learning_method_preference"] = "AI 交互式学习"
+    completed_profile["confirmed_info"]["learning_pace_preference"] = "按项目里程碑推进"
+    completed_profile["confirmed_info"]["content_preference"] = ["代码实践", "项目案例", "AI 对话调试"]
+    completed_profile["confirmed_info"]["need_guidance"] = "需要轻量提醒"
+    completed_profile["confirmed_info"]["knowledge_foundation"] = "软件工程基础"
+    completed_profile["confirmed_info"]["strengths"] = "工程能力强"
+    completed_profile["confirmed_info"]["weaknesses"] = "缺少 Agent 开发全链路经验"
+    completed_profile["confirmed_info"]["experience"] = "常规软件开发经验"
+    completed_profile["confirmed_info"]["short_term_goal"] = "独立完成一个 AI Agent"
+    completed_profile["confirmed_info"]["long_term_goal"] = "成为 AI Native 应用开发者"
+    completed_profile["confirmed_info"]["weekly_available_time"] = "每周 10-15 小时"
+    completed_profile["confirmed_info"]["constraints"] = "需要平衡学校课程"
+    completed_profile["text"] = "用户为软件工程专业大三学生，目标明确指向 Agent 开发与 Vibe Coding 学习。"
+    llm = ScriptedStructuredLlm([completed_profile])
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000000024",
+        "query": user_text,
+        "messages": [HumanMessage(content=user_text)],
+    }
+
+    result = asyncio.run(run_profile_agent(state, llm))
+
+    confirmed = result["profile"]["confirmed_info"]
+    assert llm.calls == 0
+    assert result["profile"]["type"] == "collecting"
+    assert result["profile"]["stage"] == "learning_preference"
+    assert confirmed["current_grade"] == "大三"
+    assert confirmed["major"] == "软件工程"
+    assert confirmed["short_term_goal"] == "学习agent开发vibe coding"
+    assert confirmed["learning_stage"] == ""
+    assert confirmed["has_clear_goal"] == ""
+    assert confirmed["knowledge_foundation"] == ""
     assert confirmed["weekly_available_time"] == ""
     assert result["profile"]["defaulted_fields"] == []
     assert result["profile"]["question_box"]["question"] == "你目前的学习阶段是？"

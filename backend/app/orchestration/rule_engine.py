@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from app.orchestration.agents.profile import EXPLICIT_PROFILE_FIELD_PREFIXES, is_complete_profile_data
+from app.orchestration.default_fill import allows_default_profile_fill
 
 # ── Agent keys ───────────────────────────────────────────────────────────
 AGENT_PROFILE = "profile_agent"
@@ -90,7 +91,6 @@ _PROFILE_UPDATE_NO_CHANGE_KEYWORDS = {
     "不用更新",
     "还没想好",
 }
-_DEFAULT_PROFILE_COMMANDS = ("默认", "直接", "随便帮我填", "不确定的你随便帮我填", "帮我生成")
 _COMPLETED_REPLAN_RESPONSE_PREFIX = "当前所有任务已经完成。"
 _PROFILE_UPDATE_PROMPT_PREFIX = "可以。更新个人画像前，我需要先确认这次是否值得更新。"
 _GRADE_PATTERN = re.compile(r"(大[一二三四]|大[1234]|[一二三四]年级|研[一二三])")
@@ -260,8 +260,7 @@ def is_profile_update_no_change_query(query: str) -> bool:
 
 
 def is_default_profile_query(query: str) -> bool:
-    q = query.strip()
-    return any(kw in q for kw in _DEFAULT_PROFILE_COMMANDS)
+    return allows_default_profile_fill(query)
 
 
 def _parse_key_value_block(body: str, allowed_keys: set[str]) -> dict[str, str]:

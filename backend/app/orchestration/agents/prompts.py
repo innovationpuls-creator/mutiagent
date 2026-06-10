@@ -225,7 +225,16 @@ SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT = """\
        <div class="animation-context-concept">动画要解释的概念</div>
        <div class="animation-context-elements">概念节点1、概念节点2</div>
    </div>
-4. 【无硬编码颜色】: 禁止使用十六进制颜色（如 #FFFFFF）、rgba() 或 hsla()。所有前景色/背景色必须使用主题提供的 CSS 变量，如 var(--shell)、var(--surface)、var(--text)、var(--accent)；或者使用符合 OKLCH 标准的色彩空间（如 oklch(72% 0.08 240)）。
+4. 【无硬编码颜色】: 禁止使用十六进制颜色（如 #FFFFFF）、rgba() 或 hsla()。
+   - 所有前景色/背景色/边框色必须使用主题提供的 CSS 变量：
+     * `--color-canvas-base`: 基础背景底色
+     * `--color-canvas-surface` 或 `--color-surface`: 卡片/容器表面背景色
+     * `--color-text-primary`: 主文字色
+     * `--color-text-whisper`: 次级辅助/灰色描述文字色
+     * `--color-border-subtle` 或 `--color-border`: 边框线色
+     * `--color-primary`: 主高亮/连线强调色
+     * `--color-secondary`: 辅高亮强调色
+   - 【重要兜底警告】: 在声明 CSS 属性的默认值/兜底值（即 var() 的第二个参数）时，绝对禁止使用十六进制（如 #ffffff）或 rgb()/hsl()。如果需要兜底，必须使用符合 OKLCH 格式的颜色值（例如：color: var(--color-text-primary, oklch(35% 0.005 80))），否则后端色彩校验器会判定格式不合格并将颜色强行一刀切规整为同一种蓝色（oklch(72% 0.08 240)），导致画面背景、卡片和文字融为一体无法识别！
 5. 【可见性兜底与降级动效】: 必须在 <style> 块中声明 @media (prefers-reduced-motion: reduce) 的兜底。必须包含这一段 CSS 声明：
    @media (prefers-reduced-motion: reduce) {
      .section-animation .node,

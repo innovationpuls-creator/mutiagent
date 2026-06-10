@@ -7,10 +7,16 @@ from sqlmodel import Session, select
 
 from app.core.security import create_get_current_user
 from app.models import User, UserCourseKnowledgeOutline
-from app.schemas import BranchCourseNodeRead, BranchOverviewReadResponse, BranchYearRead
+from app.schemas import (
+    BranchCourseNodeRead,
+    BranchOverviewReadResponse,
+    BranchYearRead,
+    CanopyOverviewResponse,
+)
 from app.services.learning_path_service import (
     compare_grade_years,
     get_all_year_learning_paths,
+    get_canopy_overview,
     get_current_grade_year_from_path,
     get_current_learning_course,
     get_grade_courses,
@@ -120,6 +126,13 @@ def _has_outline_payload(outline_data: object, course_id: str, grade_id: str) ->
 def create_branch_router(session_dependency: SessionDependency) -> APIRouter:
     router = APIRouter(prefix="/api/branch", tags=["branch"])
     get_current_user = create_get_current_user(session_dependency)
+
+    @router.get("/canopy", response_model=CanopyOverviewResponse)
+    def read_canopy_overview(
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(session_dependency),
+    ) -> CanopyOverviewResponse:
+        return CanopyOverviewResponse(**get_canopy_overview(session, current_user.uid))
 
     @router.get("/overview", response_model=BranchOverviewReadResponse)
     def read_branch_overview(

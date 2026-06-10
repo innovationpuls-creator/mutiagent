@@ -204,6 +204,33 @@ class BranchOverviewReadResponse(BaseModel):
     updated_at: datetime | None = None
 
 
+class CanopyCourseNode(BaseModel):
+    id: str
+    title: str
+    grade: str
+    status: str
+    score: int | None = None
+    description: str
+    prerequisite_ids: list[str] = Field(default_factory=list)
+
+
+class CanopyMilestone(BaseModel):
+    date: str
+    title: str
+    desc: str
+    reached: bool
+
+
+class CanopyOverviewResponse(BaseModel):
+    courses: list[CanopyCourseNode] = Field(default_factory=list)
+    growth_stage: int
+    completed_count: int
+    active_rate: int
+    avg_score: int
+    focused_hours: float
+    milestones: list[CanopyMilestone] = Field(default_factory=list)
+
+
 LeafAccessState = Literal["available", "locked"]
 
 

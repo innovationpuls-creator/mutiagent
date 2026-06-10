@@ -24,6 +24,7 @@ from app.models import (
     UserProfile,
     UserYearLearningPath,
 )
+from app.orchestration.agents.models import ProfileOutput
 from app.orchestration.rule_engine import (
     parse_leaf_regeneration_pending_marker,
     parse_leaf_resource_generation_request,
@@ -617,6 +618,142 @@ class TestChatEndpoints:
             data = response.json()
             assert data["session_id"] == session_id
             assert data["messages"] == []
+
+    def test_send_message_keeps_brief_profile_collecting_across_repeated_turns(self, tmp_path: Path) -> None:
+        identifier = "brief-profile-repeat@example.com"
+        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        graph_module._graph = None
+
+        first_collecting_profile = {
+            "type": "collecting",
+            "stage": "basic_info",
+            "question_mode": "question_box",
+            "confirmed_info": {
+                "current_grade": "大三",
+                "major": "软件工程",
+                "learning_stage": "",
+                "has_clear_goal": "",
+                "learning_method_preference": "",
+                "learning_pace_preference": "",
+                "content_preference": [],
+                "need_guidance": "",
+                "knowledge_foundation": "",
+                "strengths": "",
+                "weaknesses": "",
+                "experience": "",
+                "short_term_goal": "学习agent开发vibe coding",
+                "long_term_goal": "",
+                "weekly_available_time": "",
+                "constraints": "",
+            },
+            "defaulted_fields": [],
+            "question_md": "我先继续帮你整理基础画像。请直接补充你当前还没确认的学习阶段、目标、学习方式、时间安排或能力基础。",
+            "question_box": {
+                "question": "我先继续帮你整理基础画像。请直接补充你当前还没确认的学习阶段、目标、学习方式、时间安排或能力基础。",
+                "options": [],
+            },
+            "text": "我先继续帮你整理基础画像。请直接补充你当前还没确认的学习阶段、目标、学习方式、时间安排或能力基础。",
+        }
+        bad_completed_profile = {
+            "type": "basic_profile",
+            "stage": "generated",
+            "question_mode": "question_box",
+            "confirmed_info": {
+                **first_collecting_profile["confirmed_info"],
+                "learning_stage": "项目实践",
+                "has_clear_goal": "是",
+                "learning_method_preference": "AI 交互式学习",
+                "learning_pace_preference": "按项目里程碑推进",
+                "content_preference": ["代码实践", "项目案例", "AI 对话调试"],
+                "need_guidance": "需要轻量提醒",
+                "knowledge_foundation": "具备软件工程基础",
+                "strengths": "工程能力强",
+                "weaknesses": "缺少 Agent 开发全链路经验",
+                "experience": "常规软件开发经验",
+                "long_term_goal": "成为 AI Native 应用开发者",
+                "weekly_available_time": "每周 10-15 小时",
+                "constraints": "需要平衡学校课程",
+            },
+            "defaulted_fields": [],
+            "question_md": "画像已生成，下一步要继续生成学习路径吗？",
+            "question_box": {"question": "画像已生成，下一步要继续生成学习路径吗？", "options": []},
+            "text": "用户为软件工程专业大三学生，目标明确指向 Agent 开发与 Vibe Coding 学习。",
+        }
+
+        class ProfileLlm:
+            def __init__(self) -> None:
+                self.calls = 0
+                self._responses = [first_collecting_profile, bad_completed_profile]
+
+            def bind_tools(self, _tools):
+                return self
+
+            async def ainvoke(self, _messages):
+                raise AssertionError("规则强制调用画像智能体时不应调用 supervisor LLM")
+
+            def with_structured_output(self, *_args, **_kwargs):
+                async def invoke(_messages):
+                    response = self._responses[self.calls]
+                    self.calls += 1
+                    return ProfileOutput(**response)
+
+                return invoke
+
+        class WorkerPlaceholderLlm:
+            pass
+
+        profile_llm = ProfileLlm()
+        user_text = "我现在大三、软件工程、想学习agent开发vibe coding"
+
+        with patch("app.orchestration.graph.get_supervisor_llm", return_value=profile_llm), \
+             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
+             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()), \
+             patch("app.orchestration.graph.get_search_worker_llm", return_value=WorkerPlaceholderLlm()):
+            with chat_app(tmp_path) as client:
+                token = _register_user(client, identifier, "brief123456")
+
+                start_resp = client.post(
+                    "/api/chat/start",
+                    json={"query": "开始"},
+                    headers=_auth_header(token),
+                )
+                session_id = start_resp.json()["session_id"]
+
+                first_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": user_text},
+                    headers=_auth_header(token),
+                )
+                assert first_response.status_code == 200
+                assert "\"has_profile\": false" in first_response.text
+
+                second_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": user_text},
+                    headers=_auth_header(token),
+                )
+                assert second_response.status_code == 200
+                assert "\"has_profile\": false" in second_response.text
+                assert "你目前的学习阶段是？" in second_response.text
+                assert "画像已生成" not in second_response.text
+                assert profile_llm.calls == 0
+
+                engine = build_engine(database_url)
+                with Session(engine) as session:
+                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    profile_row = session.get(UserProfile, user.uid)
+                    assert profile_row is not None
+                    assert profile_row.profile_data["type"] == "collecting"
+                    assert profile_row.profile_data["confirmed_info"]["current_grade"] == "大三"
+                    assert profile_row.profile_data["confirmed_info"]["major"] == "软件工程"
+                    assert profile_row.profile_data["confirmed_info"]["short_term_goal"] == "学习agent开发vibe coding"
+                    assert profile_row.profile_data["confirmed_info"]["learning_stage"] == ""
+
+                    conversation_row = session.get(ConversationSession, session_id)
+                    assert conversation_row is not None
+                    assert len(conversation_row.messages) == 4
+
+        graph_module._graph = None
 
     @patch("app.api.orchestration.stream_orchestration_events")
     def test_send_message_streams_sse(self, mock_stream, tmp_path: Path) -> None:

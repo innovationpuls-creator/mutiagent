@@ -4,13 +4,31 @@ import copy
 from datetime import datetime, timezone
 from collections.abc import Iterator
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.models import UserYearLearningPath
+from app.models import (
+    ChapterProgress,
+    ChapterQuiz,
+    ChapterQuizAttempt,
+    UserCourseKnowledgeOutline,
+    UserProfile,
+    UserYearLearningPath,
+)
 
 
 YEAR_ORDER = ("year_1", "year_2", "year_3", "year_4")
 YEAR_INDEX = {grade_year: index for index, grade_year in enumerate(YEAR_ORDER)}
+MILESTONE_DEFINITIONS = {
+    1: {"title": "萌芽期 - 画像建立完成", "desc": "完成 AI 多轮对话评估，生成专属树苗。"},
+    2: {"title": "繁枝期 - 学习路径规划完成", "desc": "成功生成完整四学年路径树分支。"},
+    3: {"title": "叶茂期 - 点亮第一门课程", "desc": "获取并确认首门课程大纲与详细知识树。"},
+    4: {"title": "成林期 - 开启首次章节测验", "desc": "系统生成首套定制测验题，开启深度评估。"},
+    5: {"title": "成森期 - 顺利通过首门测验", "desc": "成功通关首个章节测验，达成成森里程碑。"},
+}
+GROWTH_TREE_SEED_STAGE = 1
+GROWTH_TREE_MAX_ADVANCED_STEPS = 5
+GROWTH_TREE_MAX_STAGE = GROWTH_TREE_SEED_STAGE + GROWTH_TREE_MAX_ADVANCED_STEPS
 
 
 def _normalize_current_learning_course_progress(course: dict) -> dict:
@@ -258,6 +276,177 @@ def get_latest_grade_year(session: Session, user_uid: str) -> str:
     if latest is None:
         return ""
     return latest.grade_year
+
+
+def _date_text(value: datetime | None) -> str:
+    return value.strftime("%Y.%m.%d") if value is not None else "--"
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+def _canopy_course_status(
+    rendered_grade_id: str,
+    current_grade_id: str,
+    current_index: int | None,
+    index: int,
+    current_progress_state: str,
+) -> str:
+    grade_compare = compare_grade_years(rendered_grade_id, current_grade_id)
+    if grade_compare < 0:
+        return "completed"
+    if grade_compare > 0:
+        return "locked"
+    if current_index is None:
+        return "locked"
+    if index < current_index:
+        return "completed"
+    if index == current_index:
+        if current_progress_state == "completed":
+            return "completed"
+        return "current"
+    return "locked"
+
+
+def _canopy_courses_from_paths(paths_by_year: dict[str, dict]) -> list[dict[str, object]]:
+    courses: list[dict[str, object]] = []
+    for grade_id in YEAR_ORDER:
+        path_data = paths_by_year.get(grade_id, {})
+        grade_courses = get_grade_courses(path_data, grade_id)
+        current = get_current_learning_course(path_data)
+        current_grade_id = get_current_grade_year_from_path(path_data)
+        current_course_id = ""
+        current_progress_state = ""
+        if isinstance(current, dict):
+            course_id = current.get("course_node_id")
+            progress_state = current.get("progress_state")
+            current_course_id = course_id.strip() if isinstance(course_id, str) and course_id.strip() else ""
+            current_progress_state = (
+                progress_state.strip()
+                if isinstance(progress_state, str) and progress_state.strip()
+                else ""
+            )
+        current_index = next(
+            (
+                index
+                for index, course in enumerate(grade_courses)
+                if course.get("course_node_id") == current_course_id
+            ),
+            None,
+        )
+
+        for index, course in enumerate(grade_courses):
+            course_id = course.get("course_node_id")
+            if not isinstance(course_id, str) or not course_id.strip():
+                continue
+            title = course.get("course_or_chapter_theme")
+            description = course.get("course_goal")
+            courses.append(
+                {
+                    "id": course_id.strip(),
+                    "title": title.strip() if isinstance(title, str) and title.strip() else course_id.strip(),
+                    "grade": grade_id,
+                    "status": _canopy_course_status(
+                        grade_id,
+                        current_grade_id,
+                        current_index,
+                        index,
+                        current_progress_state,
+                    ),
+                    "score": None,
+                    "description": (
+                        description.strip()
+                        if isinstance(description, str) and description.strip()
+                        else "继续沿着学习路径稳步推进。"
+                    ),
+                    "prerequisite_ids": _string_list(course.get("prerequisite_node_ids")),
+                }
+            )
+    return courses
+
+
+def _canopy_growth_stage(completed_chapters: int) -> int:
+    advanced_steps = min(completed_chapters, GROWTH_TREE_MAX_ADVANCED_STEPS)
+    return GROWTH_TREE_SEED_STAGE + advanced_steps
+
+
+def _canopy_active_rate(growth_stage: int) -> int:
+    advanced_steps = growth_stage - GROWTH_TREE_SEED_STAGE
+    return round((advanced_steps / GROWTH_TREE_MAX_ADVANCED_STEPS) * 100)
+
+
+def get_canopy_overview(session: Session, user_uid: str) -> dict[str, object]:
+    profile = session.get(UserProfile, user_uid)
+    path_rows = list(
+        session.exec(
+            select(UserYearLearningPath).where(UserYearLearningPath.user_uid == user_uid)
+        ).all()
+    )
+    outline_rows = list(
+        session.exec(
+            select(UserCourseKnowledgeOutline).where(UserCourseKnowledgeOutline.user_uid == user_uid)
+        ).all()
+    )
+    quiz_rows = list(
+        session.exec(select(ChapterQuiz).where(ChapterQuiz.user_uid == user_uid)).all()
+    )
+    passed_chapters = list(
+        session.exec(
+            select(ChapterProgress).where(
+                ChapterProgress.user_uid == user_uid,
+                ChapterProgress.state == "passed",
+            )
+        ).all()
+    )
+
+    completed_count = len(passed_chapters)
+    growth_stage = _canopy_growth_stage(completed_count)
+
+    dates = [
+        profile.created_at if profile is not None else None,
+        min((row.created_at for row in path_rows), default=None),
+        min((row.created_at for row in outline_rows), default=None),
+        min((row.created_at for row in quiz_rows), default=None),
+        min((row.passed_at for row in passed_chapters if row.passed_at), default=None),
+    ]
+    milestones = []
+    for stage_num in range(1, 6):
+        definition = MILESTONE_DEFINITIONS[stage_num]
+        milestone_date = dates[stage_num - 1]
+        reached = milestone_date is not None
+        milestones.append(
+            {
+                "date": _date_text(milestone_date),
+                "title": definition["title"],
+                "desc": definition["desc"],
+                "reached": reached,
+            }
+        )
+
+    scores = [row.best_score for row in passed_chapters if row.best_score > 0]
+    avg_score = round(sum(scores) / len(scores)) if scores else 0
+    attempts_count = session.exec(
+        select(func.count(ChapterQuizAttempt.attempt_id)).where(
+            ChapterQuizAttempt.user_uid == user_uid
+        )
+    ).one()
+    focused_hours = len(passed_chapters) * 3.5 + int(attempts_count or 0) * 0.5
+
+    courses = _canopy_courses_from_paths(get_all_year_learning_paths(session, user_uid))
+    active_rate = _canopy_active_rate(growth_stage)
+
+    return {
+        "courses": courses,
+        "growth_stage": growth_stage,
+        "completed_count": completed_count,
+        "active_rate": active_rate,
+        "avg_score": avg_score,
+        "focused_hours": focused_hours,
+        "milestones": milestones,
+    }
 
 
 def iter_year_learning_paths(

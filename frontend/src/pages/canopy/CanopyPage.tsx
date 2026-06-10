@@ -1,281 +1,342 @@
-import React, { useState } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
+import { GrowthTreeSVG } from '../../components/canopy/GrowthTreeSVG';
+import { fetchCanopyOverview } from '../../api/branch';
+import { useAuth } from '../../contexts/AuthContext';
 import { motionTokens } from '../../styles/motion-tokens';
+import type { CanopyCourseNode, CanopyCourseStatus, CanopyMilestone } from '../../types/canopy';
 
-interface CourseNode {
-  id: string;
-  title: string;
-  grade: 'Year 1' | 'Year 2' | 'Year 3' | 'Year 4';
-  status: 'completed' | 'in_progress' | 'locked';
-  score?: number;
-  description: string;
+interface SlotPoint {
   x: number;
   y: number;
-  connections: string[];
 }
 
-const INITIAL_COURSES: CourseNode[] = [
-  // Year 1 - Seed & Roots
-  { id: 'c1', title: '计算思维与算法基础', grade: 'Year 1', status: 'completed', score: 92, description: '掌握程序逻辑的基本单元与算法复杂度分析。', x: 200, y: 150, connections: ['c2', 'c3'] },
-  { id: 'c2', title: '数据结构与高级应用', grade: 'Year 1', status: 'completed', score: 88, description: '树、图及哈希结构在解决实际工程问题中的应用。', x: 150, y: 280, connections: ['c4'] },
-  { id: 'c3', title: 'Python 系统编程', grade: 'Year 1', status: 'completed', score: 95, description: '熟练运用异步编程、元编程及高并发开发模型。', x: 280, y: 240, connections: ['c4', 'c5'] },
+interface PositionedCourse extends CanopyCourseNode, SlotPoint {
+  gradeLabel: string;
+}
 
-  // Year 2 - Stem & Sprout
-  { id: 'c4', title: '网络协议与微服务架构', grade: 'Year 2', status: 'completed', score: 90, description: '深入 TCP/IP、HTTP/3 及现代服务网格的通信原理。', x: 380, y: 340, connections: ['c6'] },
-  { id: 'c5', title: '数据库内核与并发控制', grade: 'Year 2', status: 'in_progress', description: '探索 SQL 解析、锁机制与事务隔离级别的底层实现。', x: 480, y: 220, connections: ['c7'] },
-  { id: 'c6', title: '机器学习算法导论', grade: 'Year 2', status: 'completed', score: 85, description: '从线性回归到深度神经网络的数学推导与代码实现。', x: 350, y: 480, connections: ['c8'] },
+interface CourseConnection {
+  id: string;
+  source: PositionedCourse;
+  target: PositionedCourse;
+}
 
-  // Year 3 - Branch & Leaf
-  { id: 'c7', title: '大语言模型微调与 RAG', grade: 'Year 3', status: 'in_progress', description: '研究提示词工程、向量检索与模型参数高效微调技术。', x: 620, y: 200, connections: ['c9'] },
-  { id: 'c8', title: '智能体(Agent) 决策流设计', grade: 'Year 3', status: 'in_progress', description: '利用 ReAct 框架、多分支反思树设计自主规划智能体。', x: 550, y: 450, connections: ['c9', 'c10'] },
-
-  // Year 4 - Canopy & Bloom
-  { id: 'c9', title: '多智能体协同与 Supervisor 架构', grade: 'Year 4', status: 'locked', description: '掌握复杂智能体网络的分级调度与共识协议。', x: 750, y: 320, connections: [] },
-  { id: 'c10', title: '大模型系统化部署与端侧优化', grade: 'Year 4', status: 'locked', description: '在硬件受限设备上运行高效模型量化与分布式推理。', x: 700, y: 490, connections: [] },
+const PREDEFINED_SLOTS: SlotPoint[] = [
+  { x: 180, y: 150 },
+  { x: 130, y: 260 },
+  { x: 260, y: 230 },
+  { x: 370, y: 320 },
+  { x: 470, y: 210 },
+  { x: 340, y: 450 },
+  { x: 600, y: 180 },
+  { x: 530, y: 410 },
+  { x: 650, y: 320 },
+  { x: 780, y: 230 },
+  { x: 740, y: 440 },
+  { x: 820, y: 350 },
 ];
 
-const MILESTONES = [
-  { date: '2026.06.01', title: '萌芽期 - 冷启动完成', desc: '成功分析用户画像并生成专属树苗' },
-  { date: '2026.06.04', title: '繁枝期 - 点亮第一门选课', desc: '成功生成完整四学年路径树分支' },
-  { date: '2026.06.07', title: '叶茂期 - 首次测验高分通关', desc: '《计算思维与算法基础》测验获得92分' },
-  { date: '2026.06.09', title: '成林期 - 开启 AI 多模态手写', desc: '首次使用画板草图追问 AI 完成解题' },
-];
+const GRADE_TO_SLOT_OFFSET: Record<string, number> = {
+  year_1: 0,
+  year_2: 3,
+  year_3: 6,
+  year_4: 9,
+};
+
+const GRADE_LABELS: Record<string, string> = {
+  year_1: '大一',
+  year_2: '大二',
+  year_3: '大三',
+  year_4: '大四',
+};
+
+const STAGE_LABELS: Record<number, string> = {
+  1: '种子',
+  2: '萌芽',
+  3: '繁枝',
+  4: '叶茂',
+  5: '成林',
+  6: '成森',
+};
+
+function statusLabel(status: CanopyCourseStatus): string {
+  switch (status) {
+    case 'completed':
+      return '已点亮';
+    case 'in_progress':
+      return '生长中';
+    default:
+      return '锁定中';
+  }
+}
+
+function truncateLabel(title: string): string {
+  return title.length > 12 ? `${title.slice(0, 12)}...` : title;
+}
+
+function mapCoursesToSlots(courses: CanopyCourseNode[]): PositionedCourse[] {
+  const countsByGrade: Record<string, number> = {};
+  const positioned: PositionedCourse[] = [];
+
+  courses.forEach((course) => {
+    const offset = GRADE_TO_SLOT_OFFSET[course.grade];
+    if (offset === undefined) {
+      return;
+    }
+
+    const indexInGrade = countsByGrade[course.grade] ?? 0;
+    countsByGrade[course.grade] = indexInGrade + 1;
+    const slot = PREDEFINED_SLOTS[offset + indexInGrade];
+    if (!slot) {
+      return;
+    }
+
+    positioned.push({
+      ...course,
+      x: slot.x,
+      y: slot.y,
+      gradeLabel: GRADE_LABELS[course.grade] ?? course.grade,
+    });
+  });
+
+  return positioned;
+}
+
+function mapConnections(courses: PositionedCourse[]): CourseConnection[] {
+  const byId = new Map(courses.map((course) => [course.id, course]));
+  return courses.flatMap((target) =>
+    target.prerequisite_ids.flatMap((sourceId) => {
+      const source = byId.get(sourceId);
+      return source ? [{ id: `${source.id}-${target.id}`, source, target }] : [];
+    }),
+  );
+}
+
+function milestoneState(milestones: CanopyMilestone[], index: number): string {
+  const milestone = milestones[index];
+  if (!milestone.reached) {
+    return 'locked';
+  }
+  const nextMilestone = milestones[index + 1];
+  return !nextMilestone || !nextMilestone.reached ? 'active' : 'reached';
+}
 
 export function CanopyPage() {
-  const [courses, setCourses] = useState<CourseNode[]>(INITIAL_COURSES);
-  const [selectedCourse, setSelectedCourse] = useState<CourseNode | null>(null);
+  const reduceMotion = useReducedMotion();
+  const navigate = useNavigate();
+  const { token, isAuthReady } = useAuth();
+  const [courses, setCourses] = useState<CanopyCourseNode[]>([]);
+  const [milestones, setMilestones] = useState<CanopyMilestone[]>([]);
+  const [growthStage, setGrowthStage] = useState(1);
+  const [completedCount, setCompletedCount] = useState(0);
+  const [activeRate, setActiveRate] = useState(0);
+  const [avgScore, setAvgScore] = useState(0);
+  const [focusedHours, setFocusedHours] = useState(0);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Statistics
-  const completedCount = courses.filter((c) => c.status === 'completed').length;
-  const activeRate = Math.round((completedCount / courses.length) * 100);
-  const avgScore = Math.round(
-    courses
-      .filter((c) => c.status === 'completed' && c.score !== undefined)
-      .reduce((acc, c) => acc + (c.score ?? 0), 0) / (completedCount || 1),
-  );
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCanopy() {
+      if (!isAuthReady) {
+        return;
+      }
+
+      if (!token) {
+        if (!cancelled) {
+          setLoading(false);
+          setError('登录后可查看成森进度。');
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setLoading(true);
+        setError(null);
+      }
+
+      try {
+        const overview = await fetchCanopyOverview(token);
+        if (cancelled) {
+          return;
+        }
+        setCourses(overview.courses);
+        setMilestones(overview.milestones);
+        setGrowthStage(overview.growthStage);
+        setCompletedCount(overview.completedCount);
+        setActiveRate(overview.activeRate);
+        setAvgScore(overview.avgScore);
+        setFocusedHours(overview.focusedHours);
+      } catch (loadError) {
+        if (cancelled) {
+          return;
+        }
+        setCourses([]);
+        setMilestones([]);
+        setError(loadError instanceof Error ? loadError.message : '成森数据加载失败');
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadCanopy();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthReady, token]);
+
+  const positionedCourses = useMemo(() => mapCoursesToSlots(courses), [courses]);
+  const connections = useMemo(() => mapConnections(positionedCourses), [positionedCourses]);
+  const stageLabel = STAGE_LABELS[growthStage] ?? STAGE_LABELS[1];
+
+  function handleCourseClick(course: PositionedCourse) {
+    navigate(`/leaf/${course.id}`);
+  }
+
+  function handleCourseKeyDown(event: KeyboardEvent<SVGGElement>, course: PositionedCourse) {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+    event.preventDefault();
+    handleCourseClick(course);
+  }
 
   return (
     <PageWrapper aria-label="成森知识雨林页面">
       <div className="forest-ambient-sun" aria-hidden="true" />
+      <div className="forest-paper-canvas" aria-hidden="true" />
 
-      <main className="canopy-layout">
-        {/* Left Side: Interactive Network Graph */}
+      <motion.main
+        className="canopy-layout"
+        initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+        animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -16 }}
+        transition={motionTokens.editorial}
+      >
         <section className="graph-section" aria-label="知识雨林图谱">
           <header className="section-header">
             <span>// knowledge canopy</span>
             <h2>知识雨林图谱</h2>
-            <p>展示四学年学习节点的互联网络，星光相接代表知识序列的蔓延。</p>
+            <p>当前阶段：{stageLabel} · 雨林点亮率 {activeRate}%</p>
           </header>
 
           <div className="network-container">
-            <svg viewBox="0 0 900 600" className="network-svg">
-              <defs>
-                {/* Node gradient effects */}
-                <radialGradient id="completed-glow" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stopColor="oklch(78% 0.06 140 / 0.4)" />
-                  <stop offset="100%" stopColor="oklch(78% 0.06 140 / 0)" />
-                </radialGradient>
-                <radialGradient id="inprogress-glow" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stopColor="oklch(76% 0.11 75 / 0.4)" />
-                  <stop offset="100%" stopColor="oklch(76% 0.11 75 / 0)" />
-                </radialGradient>
-              </defs>
+            {loading ? (
+              <div className="feedback-panel" role="status">
+                <p>正在加载成森进度</p>
+                <span>请稍候片刻。</span>
+              </div>
+            ) : error ? (
+              <div className="feedback-panel" role="alert">
+                <p>成森进度暂时不可用</p>
+                <span>{error}</span>
+              </div>
+            ) : (
+              <>
+                <svg viewBox="0 0 900 600" className="network-svg" aria-hidden={positionedCourses.length === 0}>
+                  <defs>
+                    <radialGradient id="completed-glow" cx="50%" cy="50%" r="50%">
+                      <stop offset="0%" stopColor="oklch(75% 0.09 135 / 0.42)" />
+                      <stop offset="100%" stopColor="oklch(75% 0.09 135 / 0)" />
+                    </radialGradient>
+                    <radialGradient id="inprogress-glow" cx="50%" cy="50%" r="50%">
+                      <stop offset="0%" stopColor="oklch(76% 0.12 55 / 0.42)" />
+                      <stop offset="100%" stopColor="oklch(76% 0.12 55 / 0)" />
+                    </radialGradient>
+                  </defs>
 
-              {/* Connections (Lines) */}
-              <g className="links">
-                {courses.map((source) =>
-                  source.connections.map((targetId) => {
-                    const target = courses.find((c) => c.id === targetId);
-                    if (!target) return null;
-                    const isHighlighted =
-                      hoveredNode === source.id || hoveredNode === target.id;
-                    const isCompletedConnection =
-                      source.status === 'completed' && target.status === 'completed';
+                  <g className="links">
+                    {connections.map((connection) => {
+                      const isHighlighted =
+                        hoveredNode === connection.source.id || hoveredNode === connection.target.id;
+                      const isCompletedConnection =
+                        connection.source.status === 'completed' && connection.target.status === 'completed';
 
-                    return (
-                      <line
-                        key={`${source.id}-${targetId}`}
-                        x1={source.x}
-                        y1={source.y}
-                        x2={target.x}
-                        y2={target.y}
-                        stroke={
-                          isHighlighted
-                            ? 'var(--color-primary)'
-                            : isCompletedConnection
-                            ? 'oklch(78% 0.06 140 / 0.4)'
-                            : 'oklch(80% 0.02 240 / 0.12)'
-                        }
-                        strokeWidth={isHighlighted ? 2.5 : isCompletedConnection ? 2 : 1}
-                        strokeDasharray={source.status === 'in_progress' ? '4,4' : undefined}
-                        style={{ transition: 'stroke 0.3s, stroke-width 0.3s, all 0.3s ease' }}
-                      />
-                    );
-                  })
-                )}
-              </g>
-
-              {/* Nodes */}
-              <g className="nodes">
-                {courses.map((course) => {
-                  const isHovered = hoveredNode === course.id;
-                  const isSelected = selectedCourse?.id === course.id;
-
-                  let fill = 'oklch(90% 0.01 240)'; // Locked (neutral)
-                  let glowId = '';
-                  let stroke = 'oklch(80% 0.02 240)';
-
-                  if (course.status === 'completed') {
-                    fill = 'oklch(78% 0.06 140)'; // Sage Green
-                    glowId = 'completed-glow';
-                    stroke = 'oklch(74% 0.08 140 / 0.6)';
-                  } else if (course.status === 'in_progress') {
-                    fill = 'oklch(76% 0.11 75)'; // Soft Coral/Orange
-                    glowId = 'inprogress-glow';
-                    stroke = 'oklch(72% 0.12 75 / 0.6)';
-                  }
-
-                  return (
-                    <g
-                      key={course.id}
-                      transform={`translate(${course.x}, ${course.y})`}
-                      onClick={() => setSelectedCourse(course)}
-                      onMouseEnter={() => setHoveredNode(course.id)}
-                      onMouseLeave={() => setHoveredNode(null)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      {/* Glow Behind */}
-                      {glowId && (
-                        <circle
-                          r={30}
-                          fill={`url(#${glowId})`}
-                          className="node-glow"
-                          style={{
-                            transform: isHovered || isSelected ? 'scale(1.3)' : 'scale(1)',
-                            transition: 'transform 0.4s cubic-bezier(0.25, 1, 0.5, 1)',
-                          }}
+                      return (
+                        <line
+                          key={connection.id}
+                          x1={connection.source.x}
+                          y1={connection.source.y}
+                          x2={connection.target.x}
+                          y2={connection.target.y}
+                          className={[
+                            'network-link',
+                            isHighlighted ? 'is-highlighted' : '',
+                            isCompletedConnection ? 'is-completed' : '',
+                          ].join(' ')}
+                          strokeDasharray={connection.target.status === 'in_progress' ? '4 8' : undefined}
                         />
-                      )}
+                      );
+                    })}
+                  </g>
 
-                      {/* Main Node Circle */}
-                      <circle
-                        r={isHovered || isSelected ? 12 : 9}
-                        fill={fill}
-                        stroke={stroke}
-                        strokeWidth={isHovered || isSelected ? 3 : 1.5}
-                        style={{
-                          transition: 'r 0.4s cubic-bezier(0.25, 1, 0.5, 1), stroke-width 0.4s',
-                        }}
-                      />
+                  <g className="nodes">
+                    {positionedCourses.map((course) => {
+                      const isHovered = hoveredNode === course.id;
+                      return (
+                        <g
+                          key={course.id}
+                          className={`course-node course-node-${course.status} ${isHovered ? 'is-hovered' : ''}`}
+                          transform={`translate(${course.x}, ${course.y})`}
+                          role="link"
+                          tabIndex={0}
+                          aria-label={`${course.title}，${statusLabel(course.status)}`}
+                          onClick={() => handleCourseClick(course)}
+                          onKeyDown={(event) => handleCourseKeyDown(event, course)}
+                          onMouseEnter={() => setHoveredNode(course.id)}
+                          onMouseLeave={() => setHoveredNode(null)}
+                          onFocus={() => setHoveredNode(course.id)}
+                          onBlur={() => setHoveredNode(null)}
+                        >
+                          <title>{`${course.gradeLabel} · ${course.title}`}</title>
+                          <circle className="node-glow" r="42" />
+                          <circle className="node-shell" r="15" />
+                          <circle className="node-core" r="7" />
+                          <text y="-30" textAnchor="middle" className="node-text">
+                            {truncateLabel(course.title)}
+                          </text>
+                          <text y="40" textAnchor="middle" className="node-meta">
+                            {course.gradeLabel}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </g>
+                </svg>
 
-                      {/* Title Tag */}
-                      <text
-                        y={-20}
-                        textAnchor="middle"
-                        fill="var(--color-text-primary)"
-                        fontSize="11px"
-                        fontFamily="var(--font-body)"
-                        className="node-text"
-                        style={{
-                          opacity: isHovered || isSelected ? 1 : 0.72,
-                          fontWeight: isHovered || isSelected ? 500 : 400,
-                          transition: 'opacity 0.3s, font-weight 0.3s',
-                        }}
-                      >
-                        {course.title}
-                      </text>
-                    </g>
-                  );
-                })}
-              </g>
-            </svg>
-
-            {/* Course Detail Card (Framer Motion overlay) */}
-            <AnimatePresence>
-              {selectedCourse && (
-                <motion.div
-                  className="course-overlay"
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -12 }}
-                  transition={motionTokens.lazy}
-                >
-                  <div className="overlay-header">
-                    <span className="overlay-kicker">{selectedCourse.grade}</span>
-                    <button onClick={() => setSelectedCourse(null)}>✕</button>
+                {positionedCourses.length === 0 ? (
+                  <div className="empty-state" role="status">
+                    <span aria-hidden="true">*</span>
+                    <p>画像评估尚未完成，请先进行冷启动评估生成你专属的学业树。</p>
                   </div>
-                  <h3>{selectedCourse.title}</h3>
-                  <p className="overlay-desc">{selectedCourse.description}</p>
-                  <div className="overlay-status-row">
-                    <span className={`status-badge ${selectedCourse.status}`}>
-                      {selectedCourse.status === 'completed'
-                        ? '已点亮'
-                        : selectedCourse.status === 'in_progress'
-                        ? '生长中'
-                        : '锁定中'}
-                    </span>
-                    {selectedCourse.score !== undefined && (
-                      <span className="overlay-score">测验得分: {selectedCourse.score}</span>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                ) : null}
+              </>
+            )}
           </div>
         </section>
 
-        {/* Right Side: Growth Rings & Stats Dashboard */}
-        <section className="stats-section" aria-label="年轮与统计指标">
-          {/* Growth Rings */}
-          <article className="stats-card rings-card">
+        <section className="stats-section" aria-label="成森统计指标">
+          <article className="stats-card tree-card">
             <header className="card-header">
-              <span>// growth rings</span>
-              <h3>成长年轮</h3>
+              <span>// growth tree</span>
+              <h3>成长树</h3>
             </header>
-            <div className="rings-visualizer">
-              <svg viewBox="0 0 200 200" className="rings-svg">
-                {/* Tree Rings representing completed courses */}
-                <circle cx="100" cy="100" r="90" fill="none" stroke="oklch(80% 0.02 240 / 0.06)" strokeWidth="6" />
-                <circle cx="100" cy="100" r="72" fill="none" stroke="oklch(80% 0.02 240 / 0.1)" strokeWidth="5" />
-                <circle cx="100" cy="100" r="54" fill="none" stroke="oklch(80% 0.02 240 / 0.16)" strokeWidth="4" />
-                <circle cx="100" cy="100" r="36" fill="none" stroke="oklch(80% 0.02 240 / 0.22)" strokeWidth="3" />
-                <circle cx="100" cy="100" r="18" fill="none" stroke="oklch(80% 0.02 240 / 0.28)" strokeWidth="2.5" />
-
-                {/* Animated progress pointer */}
-                <motion.circle
-                  cx="100"
-                  cy="100"
-                  r="54"
-                  fill="none"
-                  stroke="var(--color-primary)"
-                  strokeWidth="2.5"
-                  strokeDasharray="339"
-                  initial={{ strokeDashoffset: 339 }}
-                  animate={{ strokeDashoffset: 339 - (339 * activeRate) / 100 }}
-                  transition={{ duration: 1.5, ease: 'easeOut' }}
-                />
-              </svg>
-              <div className="rings-label">
-                <span className="percentage">{activeRate}%</span>
-                <span className="desc">雨林点亮率</span>
-              </div>
+            <div className="growth-tree-panel">
+              <GrowthTreeSVG stage={growthStage} />
             </div>
-            <div className="milestones-list">
-              {MILESTONES.map((m, idx) => (
-                <div key={idx} className="milestone-item">
-                  <span className="date">{m.date}</span>
-                  <div className="details">
-                    <strong>{m.title}</strong>
-                    <p>{m.desc}</p>
-                  </div>
-                </div>
-              ))}
+            <div className="tree-stage-label">
+              <strong>{stageLabel}</strong>
+              <span>{activeRate}%</span>
             </div>
           </article>
 
-          {/* Stats Grid */}
           <div className="stats-grid">
             <article className="stats-card mini-card">
               <span>已点亮叶片数</span>
@@ -287,11 +348,34 @@ export function CanopyPage() {
             </article>
             <article className="stats-card mini-card full-width">
               <span>专注学习时长</span>
-              <div className="value">48.5小时</div>
+              <div className="value">{focusedHours.toFixed(1)}小时</div>
             </article>
           </div>
+
         </section>
-      </main>
+
+        <article className="stats-card timeline-card">
+          <header className="card-header">
+            <span>// milestones</span>
+            <h3>成长里程</h3>
+          </header>
+          <div className="milestones-list">
+            {milestones.map((milestone, index) => {
+              const state = milestoneState(milestones, index);
+              return (
+                <div key={milestone.title} className={`milestone-item milestone-${state}`}>
+                  <span className="milestone-dot" aria-hidden="true" />
+                  <span className="date">{milestone.date}</span>
+                  <div className="details">
+                    <strong>{milestone.title}</strong>
+                    <p>{milestone.desc}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </article>
+      </motion.main>
     </PageWrapper>
   );
 }
@@ -301,33 +385,53 @@ const PageWrapper = styled.section`
   min-block-size: 100svh;
   overflow-x: hidden;
   padding-block: calc(var(--space-80) + var(--space-48)) var(--space-64);
-  padding-inline: var(--section-padding-x, var(--space-64));
+  padding-inline: var(--space-64);
   color: var(--color-text-primary);
-  background:
-    radial-gradient(circle at 18% 10%, oklch(99% 0.02 80 / 0.48), transparent 32%),
-    radial-gradient(circle at 86% 16%, oklch(84% 0.12 63 / 0.22), transparent 34%),
-    var(--gradient-paper);
+  background-color: oklch(96% 0.02 75);
+  background-image:
+    radial-gradient(circle at 85% 95%, oklch(80% 0.05 320 / 0.8) 0%, transparent 55%),
+    radial-gradient(circle at 10% 75%, oklch(85% 0.1 55 / 0.8) 0%, transparent 65%),
+    radial-gradient(circle at 15% 15%, oklch(96% 0.04 75 / 0.6) 0%, transparent 50%),
+    linear-gradient(135deg, oklch(96% 0.03 75) 0%, oklch(93% 0.04 70) 100%);
 
   .forest-ambient-sun {
     position: absolute;
-    inset-block-start: calc(var(--space-64) * -1);
-    inset-inline-end: calc(var(--space-64) * -1);
+    inset-block-start: calc(var(--space-120) * -1);
+    inset-inline-end: calc(var(--space-120) * -1);
     inline-size: min(calc(var(--space-120) * 4), 72vw);
-    aspect-ratio: 1;
+    block-size: min(calc(var(--space-120) * 4), 72vw);
     border-radius: var(--radius-full);
-    background: var(--effect-sun-glow);
-    filter: var(--effect-blur-sun);
-    opacity: 0.68;
+    background: linear-gradient(135deg, oklch(98% 0.05 85), oklch(84% 0.14 55));
+    filter: blur(2px);
+    box-shadow:
+      0 0 var(--space-120) 0 oklch(88% 0.12 60 / 0.4),
+      inset calc(var(--space-24) * -1) calc(var(--space-24) * -1) var(--space-64) 0 oklch(75% 0.16 45 / 0.15);
+    z-index: 0;
     pointer-events: none;
+    animation: forest-sun-breathe 15000ms ease-in-out infinite alternate;
+  }
+
+  .forest-paper-canvas {
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    opacity: 0.06;
+    mix-blend-mode: multiply;
+    pointer-events: none;
+    z-index: 1;
   }
 
   .canopy-layout {
     position: relative;
-    z-index: 1;
+    z-index: 10;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+    grid-template-columns: minmax(0, 1.72fr) minmax(calc(var(--space-80) * 4), 0.88fr);
+    grid-template-areas:
+      "graph stats"
+      "timeline timeline";
+    align-items: start;
     gap: var(--gap-lg);
-    inline-size: min(1180px, 100%);
+    inline-size: min(1520px, 100%);
     margin-inline: auto;
   }
 
@@ -341,14 +445,16 @@ const PageWrapper = styled.section`
   }
 
   .graph-section {
+    grid-area: graph;
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);
     padding: var(--space-40);
-    position: relative;
+    min-block-size: min(760px, calc(100svh - var(--space-120)));
   }
 
-  .section-header {
+  .section-header,
+  .card-header {
     display: grid;
     gap: var(--space-8);
   }
@@ -375,8 +481,9 @@ const PageWrapper = styled.section`
   }
 
   .section-header p,
-  .overlay-desc,
-  .milestone-item p {
+  .milestone-item p,
+  .feedback-panel span,
+  .empty-state p {
     margin: 0;
     color: var(--color-text-secondary);
     font-size: var(--text-body-sm);
@@ -385,9 +492,10 @@ const PageWrapper = styled.section`
   }
 
   .network-container {
+    flex: 1;
     position: relative;
     width: 100%;
-    aspect-ratio: 9/6;
+    min-block-size: calc(var(--space-120) * 4.5);
     border-radius: var(--radius-md);
     background: var(--color-surface-inset);
     border: 1px solid var(--color-border);
@@ -399,85 +507,159 @@ const PageWrapper = styled.section`
     height: 100%;
   }
 
-  .course-overlay {
+  .network-link {
+    stroke: oklch(42% 0.035 235 / 0.18);
+    stroke-width: 2.25;
+    opacity: 0.72;
+  }
+
+  .network-link.is-completed {
+    stroke: oklch(75% 0.09 135 / 0.48);
+  }
+
+  .network-link.is-highlighted {
+    stroke: var(--color-primary);
+    opacity: 1;
+  }
+
+  .course-node {
+    cursor: pointer;
+    outline: none;
+  }
+
+  .course-node .node-glow,
+  .course-node .node-shell,
+  .course-node .node-core {
+    transform-box: fill-box;
+    transform-origin: center;
+    transition:
+      transform var(--duration-lazy-hover) var(--ease-lazy),
+      opacity var(--duration-lazy-hover) var(--ease-lazy);
+  }
+
+  .course-node .node-glow {
+    opacity: 0;
+  }
+
+  .course-node-completed .node-glow {
+    fill: url(#completed-glow);
+    opacity: 0.9;
+  }
+
+  .course-node-in_progress .node-glow {
+    fill: url(#inprogress-glow);
+    opacity: 0.9;
+    animation: canopy-breathe var(--duration-breathe) var(--ease-breathe) infinite alternate;
+  }
+
+  .course-node-locked .node-glow {
+    fill: oklch(80% 0.02 240 / 0.18);
+    opacity: 0.34;
+  }
+
+  .course-node-completed .node-shell {
+    fill: oklch(75% 0.09 135);
+    stroke: oklch(66% 0.09 135);
+  }
+
+  .course-node-in_progress .node-shell {
+    fill: var(--color-primary);
+    stroke: var(--color-primary-hover);
+  }
+
+  .course-node-locked .node-shell {
+    fill: oklch(90% 0.01 240);
+    stroke: oklch(80% 0.02 240);
+  }
+
+  .node-shell {
+    stroke-width: 2;
+  }
+
+  .node-core {
+    fill: var(--color-surface-raised);
+    opacity: 0.84;
+  }
+
+  .course-node.is-hovered .node-glow,
+  .course-node:focus-visible .node-glow {
+    transform: scale(1.22);
+    opacity: 1;
+  }
+
+  .course-node.is-hovered .node-shell,
+  .course-node:focus-visible .node-shell {
+    transform: scale(1.12);
+  }
+
+  .node-text,
+  .node-meta {
+    fill: var(--color-text-primary);
+    font-family: var(--font-body);
+    letter-spacing: 0;
+    pointer-events: none;
+    transition: opacity var(--duration-lazy-hover) var(--ease-lazy);
+  }
+
+  .node-text {
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-weight-medium);
+    opacity: 0.78;
+  }
+
+  .node-meta {
+    font-size: var(--text-caption);
+    fill: var(--color-text-muted);
+    opacity: 0.7;
+  }
+
+  .course-node.is-hovered .node-text,
+  .course-node:focus-visible .node-text,
+  .course-node.is-hovered .node-meta,
+  .course-node:focus-visible .node-meta {
+    opacity: 1;
+  }
+
+  .feedback-panel,
+  .empty-state {
     position: absolute;
-    bottom: var(--space-16);
-    left: var(--space-16);
-    right: var(--space-16);
-    padding: var(--space-24);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-md);
+    inset: var(--space-24);
     display: flex;
     flex-direction: column;
-    gap: var(--space-12);
-  }
-
-  .overlay-header {
-    display: flex;
-    justify-content: space-between;
     align-items: center;
+    justify-content: center;
+    gap: var(--space-12);
+    border-radius: var(--radius-md);
+    background: oklch(97% 0.02 75 / 0.72);
+    text-align: center;
+    backdrop-filter: var(--glass-blur);
   }
 
-  .overlay-header button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: var(--text-body);
-    color: var(--color-text-secondary);
-  }
-
-  .overlay-header button:hover {
-    color: var(--color-text-primary);
-  }
-
-  .overlay-kicker {
-    font-size: var(--text-caption);
-    color: var(--color-primary);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .course-overlay h3 {
+  .feedback-panel p {
     margin: 0;
-    font-size: var(--text-h4);
     color: var(--color-secondary);
-  }
-
-  .overlay-status-row {
-    display: flex;
-    gap: var(--space-12);
-    align-items: center;
-  }
-
-  .status-badge {
-    padding: var(--space-4) var(--space-12);
-    border-radius: var(--radius-full);
-    font-size: var(--text-caption);
+    font-size: var(--text-h5);
     font-weight: var(--font-weight-medium);
   }
 
-  .status-badge.completed {
-    background: oklch(78% 0.06 140 / 0.12);
-    color: oklch(74% 0.08 140);
+  .empty-state span {
+    display: grid;
+    place-items: center;
+    inline-size: var(--space-48);
+    block-size: var(--space-48);
+    border-radius: var(--radius-full);
+    background: var(--color-primary-soft);
+    color: var(--color-primary);
+    font-size: var(--text-h3);
+    font-weight: var(--font-weight-medium);
   }
 
-  .status-badge.in_progress {
-    background: oklch(76% 0.11 75 / 0.12);
-    color: oklch(72% 0.12 75);
-  }
-
-  .status-badge.locked {
-    background: var(--color-surface-inset);
-    color: var(--color-text-secondary);
-  }
-
-  .overlay-score {
-    font-size: var(--text-caption);
-    color: var(--color-text-secondary);
+  .empty-state p {
+    max-inline-size: calc(var(--space-120) * 3);
   }
 
   .stats-section {
+    grid-area: stats;
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);
@@ -490,72 +672,70 @@ const PageWrapper = styled.section`
     padding: var(--space-32);
   }
 
-  .rings-visualizer {
+  .growth-tree-panel {
     position: relative;
-    width: 160px;
-    height: 160px;
-    margin: 0 auto;
-  }
-
-  .rings-svg {
-    width: 100%;
-    height: 100%;
-    transform: rotate(-90deg);
-  }
-
-  .rings-label {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-  }
-
-  .rings-label .percentage {
-    font-size: var(--text-h2);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-secondary);
-    line-height: 1;
-  }
-
-  .rings-label .desc {
-    font-size: var(--text-caption);
-    color: var(--color-text-secondary);
-    margin-block-start: var(--space-4);
-  }
-
-  .milestones-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-16);
-    border-block-start: 1px solid var(--color-border);
-    padding-block-start: var(--space-20);
-  }
-
-  .milestone-item {
-    display: flex;
-    gap: var(--space-12);
-    align-items: flex-start;
-  }
-
-  .milestone-item .date {
-    font-size: var(--text-caption);
-    color: var(--color-primary);
-    font-weight: var(--font-weight-medium);
-    font-family: var(--font-code);
+    display: grid;
+    place-items: center;
+    inline-size: min(100%, calc(var(--space-120) * 3.2));
+    margin-inline: auto;
+    aspect-ratio: 1;
+    border-radius: var(--radius-full);
     background: var(--color-surface-inset);
-    padding: var(--space-4) var(--space-8);
-    border-radius: var(--radius-sm);
-    white-space: nowrap;
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-inset);
+    overflow: hidden;
   }
 
-  .milestone-item .details strong {
-    font-size: var(--text-body-sm);
-    color: var(--color-text-primary);
-    display: block;
-    margin-block-end: var(--space-4);
+  .growth-tree-svg {
+    inline-size: 88%;
+    block-size: 88%;
+    overflow: visible;
+  }
+
+  .tree-stage {
+    opacity: 0;
+    transform-box: fill-box;
+    transform-origin: center;
+    transform: translateY(var(--space-12)) scale(0.96);
+    transition:
+      opacity var(--duration-reveal) var(--ease-editorial),
+      transform var(--duration-reveal) var(--ease-editorial);
+  }
+
+  .tree-stage.is-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  .canopy-breathe {
+    animation: canopy-breathe var(--duration-breathe) var(--ease-breathe) infinite alternate;
+  }
+
+  .tree-stage.canopy-breathe {
+    animation: none;
+  }
+
+  .tree-stage.is-visible.canopy-breathe {
+    animation: canopy-breathe var(--duration-breathe) var(--ease-breathe) infinite alternate;
+  }
+
+  .tree-stage-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-12);
+    border-radius: var(--radius-full);
+    background: oklch(99% 0.01 80 / 0.72);
+    border: 1px solid var(--glass-border);
+    padding: var(--space-8) var(--space-16);
+    backdrop-filter: var(--glass-blur);
+  }
+
+  .tree-stage-label strong,
+  .tree-stage-label span {
+    font-size: var(--text-caption);
+    color: var(--color-secondary);
+    font-weight: var(--font-weight-medium);
   }
 
   .stats-grid {
@@ -565,9 +745,7 @@ const PageWrapper = styled.section`
   }
 
   .mini-card {
-    padding: var(--space-20);
-    display: flex;
-    flex-direction: column;
+    padding: var(--space-24);
     gap: var(--space-8);
   }
 
@@ -580,15 +758,154 @@ const PageWrapper = styled.section`
     font-size: var(--text-h3);
     color: var(--color-secondary);
     font-weight: var(--font-weight-medium);
+    line-height: 1.2;
   }
 
   .full-width {
     grid-column: span 2;
   }
 
+  .timeline-card {
+    grid-area: timeline;
+  }
+
+  .milestones-list {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: var(--gap-md);
+  }
+
+  .milestone-item {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--space-24) minmax(0, 1fr);
+    gap: var(--space-12);
+    align-items: flex-start;
+    align-content: start;
+    padding-block-start: var(--space-40);
+  }
+
+  .milestone-item::before {
+    content: '';
+    position: absolute;
+    inset-block-start: var(--space-12);
+    inset-inline-start: var(--space-24);
+    inset-inline-end: calc(var(--gap-md) * -1);
+    border-block-start: 1px dashed oklch(84% 0.03 73);
+  }
+
+  .milestone-item:last-child::before {
+    display: none;
+  }
+
+  .milestone-dot {
+    inline-size: var(--space-24);
+    block-size: var(--space-24);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-inset);
+    border: 1px solid var(--color-border);
+  }
+
+  .milestone-reached .milestone-dot,
+  .milestone-active .milestone-dot {
+    background: var(--color-accent-sage);
+    border-color: var(--color-accent-sage);
+  }
+
+  .milestone-active .milestone-dot {
+    box-shadow: var(--shadow-glow);
+  }
+
+  .milestone-locked {
+    opacity: 0.58;
+  }
+
+  .milestone-item .date {
+    grid-column: 2;
+    width: fit-content;
+    font-size: var(--text-caption);
+    color: var(--color-primary);
+    font-weight: var(--font-weight-medium);
+    font-family: var(--font-mono);
+    background: var(--color-surface-inset);
+    padding: var(--space-4) var(--space-8);
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+  }
+
+  .milestone-item .details strong {
+    display: block;
+    margin-block-end: var(--space-4);
+    color: var(--color-text-primary);
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  .milestone-item .details {
+    grid-column: 2;
+  }
+
+  @keyframes canopy-breathe {
+    from {
+      transform: scale(0.98);
+      opacity: 0.72;
+    }
+    to {
+      transform: scale(1.03);
+      opacity: 0.9;
+    }
+  }
+
+  @keyframes forest-sun-breathe {
+    from {
+      transform: scale(0.98) translate(var(--space-4), calc(var(--space-4) * -1));
+    }
+    to {
+      transform: scale(1.02) translate(calc(var(--space-4) * -1), var(--space-4));
+    }
+  }
+
   @media (max-width: 960px) {
     .canopy-layout {
       grid-template-columns: 1fr;
+      grid-template-areas:
+        "graph"
+        "stats"
+        "timeline";
+    }
+
+    .graph-section {
+      min-block-size: auto;
+    }
+
+    .network-container {
+      min-block-size: auto;
+      aspect-ratio: 3 / 2;
+    }
+
+    .milestones-list {
+      grid-template-columns: 1fr;
+    }
+
+    .milestone-item {
+      grid-template-columns: var(--space-24) auto 1fr;
+      padding-block-start: 0;
+    }
+
+    .milestone-item::before {
+      inset-block-start: var(--space-24);
+      inset-block-end: calc(var(--space-16) * -1);
+      inset-inline-start: var(--space-12);
+      inset-inline-end: auto;
+      transform: translateX(-50%);
+      border-block-start: none;
+      border-inline-start: 1px dashed oklch(84% 0.03 73);
+    }
+
+    .milestone-item .date,
+    .milestone-item .details {
+      grid-column: auto;
     }
   }
 
@@ -599,6 +916,27 @@ const PageWrapper = styled.section`
     .graph-section,
     .stats-card {
       padding: var(--space-24);
+    }
+
+    .stats-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .full-width {
+      grid-column: auto;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .forest-ambient-sun,
+    .canopy-breathe,
+    .course-node .node-glow,
+    .course-node .node-shell,
+    .course-node .node-core,
+    .tree-stage {
+      animation: none;
+      transition: opacity var(--duration-instant) ease;
+      transform: none;
     }
   }
 `;

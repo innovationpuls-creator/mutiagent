@@ -128,9 +128,25 @@ def batch_accounts(session: Session, payload: AdminAccountBatchRequest, current_
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="不能删除当前登录管理员",
                 )
-        with session.no_autoflush:
-            for user in users:
-                _delete_user_owned_rows(session, user.uid)
+        uids = [u.uid for u in users]
+        # Delete dependent rows first, flush to enforce FK order
+        for model in (ChapterQuizAttempt,):
+            rows = session.exec(select(model).where(model.user_uid.in_(uids))).all()
+            for row in rows:
+                session.delete(row)
+        session.flush()
+        # Now delete rows that depended on the above
+        for model in (
+            ChapterQuiz,
+            ChapterProgress,
+            ConversationSession,
+            UserCourseKnowledgeOutline,
+            UserYearLearningPath,
+            UserProfile,
+        ):
+            rows = session.exec(select(model).where(model.user_uid.in_(uids))).all()
+            for row in rows:
+                session.delete(row)
         session.flush()
         for user in users:
             session.delete(user)
@@ -245,8 +261,12 @@ def export_accounts(session: Session) -> str:
 
 
 def _delete_user_owned_rows(session: Session, uid: str) -> None:
+    # Delete ChapterQuizAttempt first (depends on ChapterQuiz via FK), then flush
+    rows = session.exec(select(ChapterQuizAttempt).where(ChapterQuizAttempt.user_uid == uid)).all()
+    for row in rows:
+        session.delete(row)
+    session.flush()
     for model in (
-        ChapterQuizAttempt,
         ChapterQuiz,
         ChapterProgress,
         ConversationSession,

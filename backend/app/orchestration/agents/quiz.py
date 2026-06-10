@@ -169,7 +169,8 @@ async def generate_quiz_questions(
 async def grade_quiz_answers(llm: Any, *, questions: list[dict[str, Any]], answers: dict[str, Any]) -> dict[str, Any]:
     prompt = (
         "请根据题目和用户答案给出 0-100 分整数分数。"
-        "只输出 JSON 对象，字段为 score、question_results、summary。\n"
+        "只输出 JSON 对象，字段为 score、question_results、summary。"
+        "summary 必须使用中文，简要说明判题依据。\n"
         f"questions:\n{json.dumps(questions, ensure_ascii=False)}\n"
         f"answers:\n{json.dumps(answers, ensure_ascii=False)}"
     )
