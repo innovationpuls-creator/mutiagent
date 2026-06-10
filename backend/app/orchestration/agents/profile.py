@@ -115,6 +115,13 @@ MAJOR_BLOCKED_TERMS = (
     "然后",
     "路径",
     "课程",
+    "小时",
+    "小時",
+    "分钟",
+    "分鐘",
+    "每周",
+    "每天",
+    "投入",
 )
 LEARNING_METHOD_SEGMENTS = ("喜欢自己摸索", "自己摸索", "自主学习", "自学")
 LEARNING_PREFERENCE_BLOCKED_SEGMENTS = ("喜欢看", "一步一步", "跟着操作")
@@ -138,6 +145,7 @@ SYSTEM_GENERATED_KNOWLEDGE_FOUNDATION_PATTERN = re.compile(
     r"^已具备(?P<major>.+?)基础，(?P<suffix>(?:.+方向可从入门到基础逐步补全|AI 基础由系统补全为入门到基础))$"
 )
 ASCII_TOKEN_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+NUMERIC_SEGMENT_PATTERN = re.compile(r"^\d+(?:[-~—]\d+)?$")
 PROFILE_REPAIR_MAX_ATTEMPTS = 3
 
 _FIELD_QUESTIONS: dict[str, dict[str, object]] = {
@@ -705,6 +713,8 @@ def _major_from_segment(segment: str) -> str:
         return ""
     if len(value) > 16:
         return ""
+    if NUMERIC_SEGMENT_PATTERN.fullmatch(value):
+        return ""
     if ASCII_TOKEN_PATTERN.fullmatch(value):
         return ""
     lowered_value = value.lower()
@@ -1171,10 +1181,10 @@ def _build_collecting_profile(state: OrchestrationState) -> dict:
     merged = _empty_confirmed_info()
 
     for key in merged:
-        if key in existing_confirmed and existing_confirmed.get(key):
-            merged[key] = existing_confirmed[key]
-        elif key in updates and updates.get(key):
+        if key in updates and updates.get(key):
             merged[key] = updates[key]
+        elif key in existing_confirmed and existing_confirmed.get(key):
+            merged[key] = existing_confirmed[key]
 
     current_grade = merged.get("current_grade")
     if isinstance(current_grade, str) and current_grade.strip() and not is_supported_current_grade(current_grade):
@@ -1565,25 +1575,7 @@ def _should_use_local_profile(state: OrchestrationState) -> bool:
 
 
 def _fallback_collecting_profile(state: OrchestrationState) -> dict[str, object]:
-    context = _profile_context_payload(state)
-    confirmed_info = context["confirmed_info"] if isinstance(context.get("confirmed_info"), dict) else _empty_confirmed_info()
-    stage = str(context.get("stage", "basic_info") or "basic_info")
-    if stage == "generated":
-        stage = "basic_info"
-    question = (
-        "我先继续帮你整理基础画像。"
-        "请直接补充你当前还没确认的学习阶段、目标、学习方式、时间安排或能力基础。"
-    )
-    return {
-        "type": "collecting",
-        "stage": stage,
-        "question_mode": "question_box",
-        "confirmed_info": confirmed_info,
-        "defaulted_fields": [],
-        "question_md": question,
-        "question_box": {"question": question, "options": []},
-        "text": question,
-    }
+    return _build_collecting_profile(state)
 
 
 async def _invoke_profile_output_with_retries(
@@ -1645,10 +1637,17 @@ async def run_profile_agent(state: OrchestrationState, llm: BaseChatModel) -> di
     conversation_summary = tool_args.get("conversation_summary", state["query"])
     query = str(state.get("query", "")).strip()
     allow_default_fill = _allows_default_fill(query)
-    if not allow_default_fill and _is_complete_profile(state.get("profile")):
-        profile_dict = _build_local_profile(state, allow_default_fill=False)
-    elif query and not allow_default_fill and "画像" not in query and _looks_like_brief_profile_query(query):
+    updates = _extract_profile_updates(state, include_defaults=False)
+    current_grade = updates.get("current_grade")
+    if (
+        not allow_default_fill
+        and isinstance(current_grade, str)
+        and current_grade.strip()
+        and not is_supported_current_grade(current_grade)
+    ):
         profile_dict = _build_collecting_profile(state)
+    elif not allow_default_fill and _is_complete_profile(state.get("profile")):
+        profile_dict = _build_local_profile(state, allow_default_fill=False)
     else:
         profile_dict = await _invoke_profile_output_with_retries(state, llm, conversation_summary)
     _persist_profile(state["user_id"], profile_dict)

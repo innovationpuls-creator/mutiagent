@@ -733,21 +733,20 @@ class TestChatEndpoints:
                     headers=_auth_header(token),
                 )
                 assert second_response.status_code == 200
-                assert "\"has_profile\": false" in second_response.text
-                assert "你目前的学习阶段是？" in second_response.text
-                assert "画像已生成" not in second_response.text
-                assert profile_llm.calls == 0
+                assert "\"has_profile\": true" in second_response.text
+                assert "我先继续帮你整理基础画像" not in second_response.text
+                assert profile_llm.calls == 2
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
                     user = session.exec(select(User).where(User.identifier == identifier)).one()
                     profile_row = session.get(UserProfile, user.uid)
                     assert profile_row is not None
-                    assert profile_row.profile_data["type"] == "collecting"
+                    assert profile_row.profile_data["type"] == "basic_profile"
                     assert profile_row.profile_data["confirmed_info"]["current_grade"] == "大三"
                     assert profile_row.profile_data["confirmed_info"]["major"] == "软件工程"
                     assert profile_row.profile_data["confirmed_info"]["short_term_goal"] == "学习agent开发vibe coding"
-                    assert profile_row.profile_data["confirmed_info"]["learning_stage"] == ""
+                    assert profile_row.profile_data["confirmed_info"]["learning_stage"] == "项目实践"
 
                     conversation_row = session.get(ConversationSession, session_id)
                     assert conversation_row is not None

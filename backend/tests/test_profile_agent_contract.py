@@ -879,8 +879,8 @@ def test_run_profile_agent_maps_user_delimited_profile_without_fake_fields(tmp_p
     assert result["profile"]["question_box"]["question"] == "你目前的学习阶段是？"
 
 
-def test_run_profile_agent_rejects_llm_completed_profile_for_brief_profile_input(tmp_path: Path) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-brief-no-fake-completion.db'}")
+def test_run_profile_agent_allows_llm_to_judge_brief_profile_input(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-brief-llm-judgement.db'}")
     set_engine(engine)
     init_db(engine)
 
@@ -911,18 +911,17 @@ def test_run_profile_agent_rejects_llm_completed_profile_for_brief_profile_input
     result = asyncio.run(run_profile_agent(state, llm))
 
     confirmed = result["profile"]["confirmed_info"]
-    assert llm.calls == 0
-    assert result["profile"]["type"] == "collecting"
-    assert result["profile"]["stage"] == "learning_preference"
+    assert llm.calls == 1
+    assert result["profile"]["type"] == "basic_profile"
+    assert result["profile"]["stage"] == "generated"
     assert confirmed["current_grade"] == "大三"
     assert confirmed["major"] == "软件工程"
-    assert confirmed["short_term_goal"] == "学习agent开发vibe coding"
-    assert confirmed["learning_stage"] == ""
-    assert confirmed["has_clear_goal"] == ""
-    assert confirmed["knowledge_foundation"] == ""
-    assert confirmed["weekly_available_time"] == ""
-    assert result["profile"]["defaulted_fields"] == []
-    assert result["profile"]["question_box"]["question"] == "你目前的学习阶段是？"
+    assert confirmed["short_term_goal"] == "独立完成一个 AI Agent"
+    assert confirmed["learning_stage"] == "项目实践"
+    assert confirmed["has_clear_goal"] == "是"
+    assert confirmed["knowledge_foundation"] == "软件工程基础"
+    assert confirmed["weekly_available_time"] == "每周 10-15 小时"
+    assert result["profile"]["question_box"]["question"] == "下一步做什么？"
 
 
 def test_run_profile_agent_maps_major_before_grade_in_delimited_profile(tmp_path: Path) -> None:
