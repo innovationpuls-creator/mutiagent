@@ -15,6 +15,7 @@ from app.models import (
     UserProfile,
     UserYearLearningPath,
 )
+from app.services.resource_quality_service import get_quality_scores_for_user
 
 
 YEAR_ORDER = ("year_1", "year_2", "year_3", "year_4")
@@ -437,6 +438,7 @@ def get_canopy_overview(session: Session, user_uid: str) -> dict[str, object]:
 
     courses = _canopy_courses_from_paths(get_all_year_learning_paths(session, user_uid))
     active_rate = _canopy_active_rate(growth_stage)
+    quality_scores = get_quality_scores_for_user(session, user_uid)
 
     return {
         "courses": courses,
@@ -446,6 +448,7 @@ def get_canopy_overview(session: Session, user_uid: str) -> dict[str, object]:
         "avg_score": avg_score,
         "focused_hours": focused_hours,
         "milestones": milestones,
+        "quality_scores": quality_scores,
     }
 
 
