@@ -991,7 +991,7 @@ def _markdown_expansion_input(
         "existing_video_placeholder_ids": video_ids,
         "existing_animation_placeholder_ids": animation_ids,
     }
-    return (
+    query = (
         "请为 markdown_expansion_section 生成可直接放入完整教学文档的 Markdown 章节正文。"
         "不要输出 JSON，不要输出章节标题，不要输出视频或动画占位符。"
         "补充内容必须绑定 target_section.title、target_section.description 和 target_section.key_knowledge_points，"
@@ -1002,6 +1002,13 @@ def _markdown_expansion_input(
         "核心概念、步骤讲解请输出 650 到 1000 个中文字符。\n\n"
         f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )
+
+    profile = state.get("profile")
+    profile_summary = _profile_summary_for_prompt(profile)
+    if profile_summary:
+        query = f"{query}\n\n{profile_summary}"
+
+    return query
 
 
 def _text_items(value: object) -> list[str]:
