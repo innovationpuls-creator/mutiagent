@@ -136,7 +136,16 @@ function renderAnimation(block: LeafAnimationBlock, index: number) {
 
 function renderContentBlock(block: LeafContentBlock, index: number) {
   if (block.type === 'markdown') {
-    return <MarkdownRenderer content={block.markdown} key={`markdown-${index}`} />;
+    return (
+      <div key={`markdown-${index}`}>
+        <MarkdownRenderer content={block.markdown} />
+        {block.recommendation_reason && (
+          <p className="text-xs text-[var(--color-text-muted)] mt-2 pl-1 italic opacity-70">
+            {block.recommendation_reason}
+          </p>
+        )}
+      </div>
+    );
   }
   if (block.type === 'video') return renderVideo(block, index);
   return renderAnimation(block, index);
