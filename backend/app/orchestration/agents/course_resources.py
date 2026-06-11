@@ -3481,6 +3481,18 @@ async def run_section_markdown_agent(
         logger.error("Failed to persist course resources for user %s: %s", state.get("user_id", ""), exc)
         return {"error": "课程资源保存失败，请稍后重试。", "hard_error": True}
 
+    try:
+        from app.models import UserProfile
+        from app.services.resource_quality_service import score_course_resources
+        user_id = str(state.get("user_id", ""))
+        course_id = updated_outline.get("course_id", "")
+        with Session(get_engine()) as quality_session:
+            profile_row = quality_session.get(UserProfile, user_id)
+            profile_data = profile_row.profile_data if profile_row and isinstance(profile_row.profile_data, dict) else None
+            score_course_resources(quality_session, user_id, course_id, updated_outline, profile_data)
+    except Exception as exc:
+        logger.warning("Quality scoring failed for user %s, course %s: %s", state.get("user_id", ""), updated_outline.get("course_id", ""), exc)
+
     markdown_section_ids = list(section_markdowns.keys())
     return {
         "course_knowledge": updated_outline,
