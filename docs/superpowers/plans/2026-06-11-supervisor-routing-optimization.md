@@ -154,7 +154,7 @@
 **Files:**
 - Modify: `backend/app/orchestration/agents/supervisor.py`
 
-- [ ] **Step 1: Refine tool docstrings in `create_tools_for_llm`**
+- [x] **Step 1: Refine tool docstrings in `create_tools_for_llm`**
   Modify tool definitions in `backend/app/orchestration/agents/supervisor.py:127-208` to include clear prohibitions on generic Q&A calls.
 
   Update the docstring for `course_knowledge_agent`:
@@ -190,11 +190,11 @@
           return ""
   ```
 
-- [ ] **Step 2: Run pytest to verify all tests pass**
+- [x] **Step 2: Run pytest to verify all tests pass**
   Run: `.venv/bin/pytest tests/test_supervisor_force_call.py`
   Expected: PASS
 
-- [ ] **Step 3: Commit tool docstring changes**
+- [x] **Step 3: Commit tool docstring changes**
   ```bash
   git add app/orchestration/agents/supervisor.py
   git commit -m "feat: refine tool descriptions to add Q&A calling restrictions"
