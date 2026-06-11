@@ -1381,15 +1381,24 @@ def test_profile_form_builder_and_submission(tmp_path: Path) -> None:
     assert learning_stage_q["input_type"] == "single_choice"
     assert len(learning_stage_q["options"]) > 0
 
-    # 2. Test Parser handles form submission
+    # Test Field Configuration Stage Inconsistencies Fix
+    from app.orchestration.agents.profile import _FIELD_QUESTIONS
+    assert _FIELD_QUESTIONS["short_term_goal"]["stage"] == "learning_preference"
+    assert _FIELD_QUESTIONS["weekly_available_time"]["stage"] == "learning_preference"
+
+    # 2. Test Parser handles form submission & precedence
     texts = [
         "画像表单提交：\n"
         "learning_stage: 刚入门\n"
         "content_preference: 代码实践、项目案例、AI 对话调试\n"
+        "weekly_available_time: 每周 5 小时\n",
+        "画像表单提交：\n"
+        "learning_stage: 项目实践\n"
         "weekly_available_time: 每周 10-15 小时\n"
     ]
     updates = _extract_explicit_profile_updates(texts)
-    assert updates["learning_stage"] == "刚入门"
+    # The newest message (latter in texts, processed first in reversed) should take precedence.
+    assert updates["learning_stage"] == "项目实践"
     assert updates["content_preference"] == ["代码实践", "项目案例", "AI 对话调试"]
     assert updates["weekly_available_time"] == "每周 10-15 小时"
 
@@ -1417,4 +1426,5 @@ def test_profile_form_builder_and_submission(tmp_path: Path) -> None:
     assert profile_dict["question_form"]["title"] == "完善学习偏好"
     assert profile_dict["question_box"]["question"] == "完善学习偏好"
     assert profile_dict["question_box"]["options"] == []
+
 

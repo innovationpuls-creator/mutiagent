@@ -255,7 +255,7 @@ _FIELD_QUESTIONS: dict[str, dict[str, object]] = {
     },
     "short_term_goal": {
         "question": "你的近期目标是什么？",
-        "stage": "goal_constraint",
+        "stage": "learning_preference",
         "options": [
             {"label": "找工作", "value": "找工作", "description": "以就业为近期目标", "target_fields": ["short_term_goal"], "fills": {"short_term_goal": "找工作"}},
             {"label": "考研", "value": "考研", "description": "以考研为近期目标", "target_fields": ["short_term_goal"], "fills": {"short_term_goal": "考研"}},
@@ -276,7 +276,7 @@ _FIELD_QUESTIONS: dict[str, dict[str, object]] = {
     },
     "weekly_available_time": {
         "question": "每周可投入多少时间学习？",
-        "stage": "goal_constraint",
+        "stage": "learning_preference",
         "options": [
             {"label": "每周 6-10 小时", "value": "每周 6-10 小时", "description": "中等投入", "target_fields": ["weekly_available_time"], "fills": {"weekly_available_time": "每周 6-10 小时"}},
             {"label": "每周 10-15 小时", "value": "每周 10-15 小时", "description": "较高投入", "target_fields": ["weekly_available_time"], "fills": {"weekly_available_time": "每周 10-15 小时"}},
@@ -431,13 +431,6 @@ def _build_field_question_box(field_name: str) -> dict[str, object]:
         "question": str(field["question"]),
         "options": list(field["options"]),
     }
-
-
-def _collecting_stage_for_field(field_name: str) -> str:
-    field = _FIELD_QUESTIONS.get(field_name)
-    if field:
-        return str(field.get("stage", "basic_info"))
-    return "basic_info"
 
 
 def _has_unknown_values(confirmed_info: dict[str, object]) -> bool:
@@ -953,6 +946,8 @@ def _extract_explicit_profile_updates(texts: list[str]) -> dict[str, object]:
                     field_name = parts[0].strip()
                     field_value = parts[1].strip()
                     if field_name in REQUIRED_CONFIRMED_INFO_KEYS:
+                        if field_name in updates:
+                            continue
                         if not field_value:
                             continue
                         if field_name == "content_preference":
