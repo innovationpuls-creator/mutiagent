@@ -63,13 +63,21 @@ describe('AdminAccountsPage', () => {
     const adminApi: AdminAccountApi = {
       listAccounts: vi.fn().mockResolvedValue([adminAccount]),
       createAccount: vi.fn().mockResolvedValue(teacherAccount),
-      updateAccount: vi.fn().mockResolvedValue({
-        ...teacherAccount,
-        username: '王教师二号',
-        identifier: 'teacher-2@example.com',
-        role: 'student',
-        is_active: false,
-      }),
+      updateAccount: vi.fn()
+        .mockResolvedValueOnce({
+          ...teacherAccount,
+          username: '王教师二号',
+          identifier: 'teacher-2@example.com',
+          role: 'student',
+          is_active: true,
+        })
+        .mockResolvedValueOnce({
+          ...teacherAccount,
+          username: '王教师二号',
+          identifier: 'teacher-2@example.com',
+          role: 'student',
+          is_active: false,
+        }),
       deleteAccount: vi.fn().mockResolvedValue(undefined),
       batchAccounts: vi.fn().mockResolvedValue([adminAccount]),
       importAccounts: vi.fn().mockResolvedValue({ created: 0, updated: 0, failed: 0, failures: [] }),
@@ -97,7 +105,8 @@ describe('AdminAccountsPage', () => {
     fireEvent.change(screen.getByLabelText('密码'), {
       target: { value: 'teacher-password-123' },
     });
-    fireEvent.change(screen.getByLabelText('角色'), {
+    const roleSelects = screen.getAllByLabelText('角色');
+    fireEvent.change(roleSelects[roleSelects.length - 1], {
       target: { value: 'teacher' },
     });
     fireEvent.click(screen.getByRole('button', { name: '创建账号' }));
@@ -132,7 +141,8 @@ describe('AdminAccountsPage', () => {
     fireEvent.change(screen.getByLabelText('登录标识'), {
       target: { value: 'teacher-2@example.com' },
     });
-    fireEvent.change(screen.getByLabelText('角色'), {
+    const editRoleSelects = screen.getAllByLabelText('角色');
+    fireEvent.change(editRoleSelects[editRoleSelects.length - 1], {
       target: { value: 'student' },
     });
     fireEvent.click(screen.getByRole('button', { name: '保存修改' }));

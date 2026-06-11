@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
 from app.core.security import create_get_current_user
-from app.models import ChapterQuiz, User
+from app.models import ChapterQuiz, ChapterWeakness, User
 from app.orchestration.agents.quiz import (
     generate_quiz_questions,
     grade_quiz_answers,
@@ -30,6 +30,16 @@ from app.services.forest_service import (
 )
 
 SessionDependency = Callable[[], Generator[Session, None, None]]
+
+
+def _extract_knowledge_point_ids(chapter: dict) -> list[str]:
+    """从章节大纲数据中提取所有知识点 ID。"""
+    kp_ids: list[str] = []
+    kp_ids.extend(chapter.get("core_knowledge_point_ids", []))
+    for hierarchy in chapter.get("knowledge_hierarchy", []):
+        if isinstance(hierarchy, dict):
+            kp_ids.extend(hierarchy.get("knowledge_point_ids", []))
+    return list(dict.fromkeys(kp_ids))
 
 
 def _sse(event: str, payload: dict) -> str:
@@ -88,6 +98,7 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:
             chapter_id=chapter_id,
             chapter_title=str(quiz_session.chapter.get("title", "")),
             chapter_context=json.dumps(quiz_session.chapter, ensure_ascii=False),
+            knowledge_point_ids=_extract_knowledge_point_ids(quiz_session.chapter),
         )
         return generate_or_read_quiz(
             session,
@@ -114,7 +125,71 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:
             questions=quiz.questions,
             answers=payload.answers,
         )
-        return submit_quiz_attempt(session, current_user.uid, quiz.quiz_id, payload.answers, grading_result)
+        attempt, _weaknesses = submit_quiz_attempt(session, current_user.uid, quiz.quiz_id, payload.answers, grading_result)
+        return attempt
+
+    @router.post("/quizzes/{quiz_id}/attempts/stream")
+    async def submit_quiz_attempt_stream(
+        quiz_id: str,
+        payload: ForestQuizAttemptCreateRequest,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(session_dependency),
+    ) -> StreamingResponse:
+        quiz = session.get(ChapterQuiz, quiz_id)
+        if quiz is None or quiz.user_uid != current_user.uid:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="测验不存在")
+
+        async def event_generator() -> AsyncGenerator[str, None]:
+            yield _sse("status", {"phase": "grading", "message": "正在批改你的答案..."})
+
+            grading_result = await grade_quiz_answers(
+                get_worker_llm(),
+                questions=quiz.questions,
+                answers=payload.answers,
+            )
+
+            yield _sse("status", {"phase": "analyzing", "message": "正在分析薄弱知识点..."})
+
+            attempt, weaknesses = submit_quiz_attempt(
+                session, current_user.uid, quiz.quiz_id, payload.answers, grading_result,
+            )
+
+            weakness_data = [
+                {
+                    "knowledge_point_id": w.knowledge_point_id,
+                    "knowledge_point_name": w.knowledge_point_name,
+                    "severity": w.severity,
+                }
+                for w in weaknesses
+            ]
+
+            if weakness_data:
+                yield _sse("status", {
+                    "phase": "weakness_found",
+                    "message": f"发现 {len(weakness_data)} 个薄弱知识点",
+                    "weak_points": weakness_data,
+                })
+
+            yield _sse("status", {"phase": "unlocking", "message": "正在解锁下一章节..."})
+
+            yield _sse("done", {
+                "attempt": {
+                    "attempt_id": attempt.attempt_id,
+                    "quiz_id": attempt.quiz_id,
+                    "score": attempt.score,
+                    "passed": attempt.passed,
+                    "answers": attempt.answers,
+                    "grading_result": attempt.grading_result,
+                    "created_at": attempt.created_at.isoformat(),
+                },
+                "weaknesses": weakness_data,
+            })
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @router.post("/ai/stream")
     async def stream_forest_ai(

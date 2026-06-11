@@ -211,7 +211,7 @@ describe('ForestQuizPage', () => {
     fireEvent.click(saveButton);
 
     await waitFor(() => expect(screen.queryByText('手写笔记/草图')).toBeNull());
-    expect(screen.getByAltText('Preview')).toBeTruthy();
+    expect(screen.getByAltText('预览')).toBeTruthy();
 
     fireEvent.change(textarea, { target: { value: '为什么这里的A是正确答案？' } });
 

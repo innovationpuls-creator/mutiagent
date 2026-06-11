@@ -189,7 +189,7 @@ def test_submit_quiz_attempt_passes_and_opens_next_chapter(tmp_path: Path) -> No
 
     with Session(engine) as session:
         quiz = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
-        result = submit_quiz_attempt(
+        result, _weaknesses = submit_quiz_attempt(
             session,
             user_uid,
             quiz.quiz_id,

@@ -107,7 +107,7 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData }
 
   const handleOpenPath = () => {
     setWidgetState('WIDGET');
-    navigate('/branch');
+    navigate('/branch', { state: { justGeneratedProfile: true } });
   };
 
   const [inputValue, setInputValue] = React.useState('');

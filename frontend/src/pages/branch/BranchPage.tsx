@@ -778,8 +778,7 @@ export function BranchPage() {
       <AnimatePresence>
         {showPathOverlay && (
           <PathInitOverlay
-            onComplete={(e) => {
-              e?.stopPropagation();
+            onComplete={() => {
               setShowPathOverlay(false);
               setShowCoachmark(true);
             }}

@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { motionTokens, DURATION_INSTANT } from '../../styles/motion-tokens';
 
 interface Props {
-  onComplete?: (e?: React.MouseEvent<HTMLButtonElement>) => void;
+  onComplete?: () => void;
 }
 
 export function PathInitOverlay({ onComplete }: Props) {
@@ -50,7 +50,7 @@ export function PathInitOverlay({ onComplete }: Props) {
           transition={motionTokens.editorial}
           style={{
             fontFamily: 'var(--font-heading)',
-            fontSize: 'var(--text-h2)',
+            fontSize: '32px',
             color: 'oklch(28% 0.01 60)',
             fontWeight: 400,
             margin: '0 0 var(--space-24) 0',
@@ -67,7 +67,7 @@ export function PathInitOverlay({ onComplete }: Props) {
               transition={motionTokens.editorial}
               style={{
                 fontFamily: 'var(--font-body)',
-                fontSize: 'var(--text-body-lg)',
+                fontSize: '18px',
                 color: 'oklch(55% 0.02 60)',
                 lineHeight: 1.8,
                 margin: '0 0 var(--space-32) 0',
@@ -85,14 +85,14 @@ export function PathInitOverlay({ onComplete }: Props) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={motionTokens.lazy}
-              onClick={(e) => onComplete?.(e)}
+              onClick={onComplete}
               style={{
                 padding: 'var(--space-12) var(--space-32)',
                 borderRadius: 'var(--radius-full)',
                 background: 'var(--color-primary)',
                 color: 'var(--color-text-inverse)',
                 fontFamily: 'var(--font-body)',
-                fontSize: 'var(--text-body)',
+                fontSize: '16px',
                 fontWeight: 'var(--font-weight-medium)',
                 border: 'none',
                 cursor: 'pointer',

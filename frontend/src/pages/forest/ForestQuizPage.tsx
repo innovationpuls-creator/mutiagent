@@ -464,6 +464,7 @@ export function ForestQuizPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatusMessage, setSubmitStatusMessage] = useState<string | null>(null);
   const [aiStatus, setAiStatus] = useState<ForestAiStatus>('idle');
   const [aiText, setAiText] = useState('');
   const [messages, setMessages] = useState<ForestMessage[]>([]);

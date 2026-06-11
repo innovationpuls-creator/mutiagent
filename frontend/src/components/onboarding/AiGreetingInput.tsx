@@ -26,6 +26,7 @@ import { hasCompleteBasicProfileSessionMessage } from '../../lib/profileContract
 import { dispatchLeafGenerationCompleted, dispatchLeafGenerationEvent } from '../../pages/leaf/leafGenerationEvents';
 import { HandwritingCanvas } from '../ui/HandwritingCanvas';
 import { PenTool } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const AGENT_LABELS: Record<string, string> = {
   main_agent: '主智能体',
@@ -349,6 +350,7 @@ interface AiGreetingInputProps {
 }
 
 export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInputProps) {
+  const navigate = useNavigate();
   const {
     widgetState,
     setWidgetState,
@@ -356,6 +358,11 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
     clearPendingMessage,
   } = useAiWidget();
   const { token, user } = useAuth();
+
+  const handleOpenPath = () => {
+    setWidgetState('WIDGET');
+    navigate('/branch', { state: { justGeneratedProfile: true } });
+  };
   const cardRef = useRef<HTMLDivElement>(null);
   const [store, dispatch] = useReducer(chatReducer, initialChatStore);
   const [inputValue, setInputValue] = useState('');
@@ -1001,11 +1008,6 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
                 </div>
 
                 <div className="composer-container">
-                  {hasCompleteProfileRef.current && (
-                    <div className="composer-completed-hint">
-                      <span>✨ 定制课程已生成！点击上方卡片中的“开启我的学习路径”开始学习</span>
-                    </div>
-                  )}
                   {imageAttachment && (
                     <div className="image-preview-box">
                       <img
@@ -1023,47 +1025,52 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
                       </button>
                     </div>
                   )}
-                  <form
-                    className="chat-composer"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      handleSubmit();
-                    }}
-                  >
-                    <textarea
-                      rows={1}
-                      placeholder={
-                        hasCompleteProfileRef.current
-                          ? '画像已生成，可以继续补充或追问...'
-                          : '输入你的学习情况...'
-                      }
-                      value={inputValue}
-                      disabled={isPending}
-                      onChange={(event) => setInputValue(event.target.value)}
-                      onKeyDown={(event) => {
-                        if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                          handleSubmit();
-                        }
+                  {hasCompleteProfileRef.current ? (
+                    <div className="composer-completed-cta-panel">
+                      <button className="cta-completed-btn" onClick={handleOpenPath} type="button">
+                        <span>开启我的学习路径</span>
+                        <span className="arrow">➔</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <form
+                      className="chat-composer"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        handleSubmit();
                       }}
-                    />
-                    <button
-                      type="button"
-                      className="pen-button"
-                      disabled={isPending}
-                      onClick={() => setShowCanvas(true)}
-                      aria-label="手写/绘图输入"
                     >
-                      <PenTool className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="submit"
-                      className="submit-button"
-                      disabled={isPending || (!inputValue.trim() && !imageAttachment)}
-                      aria-label="发送消息"
-                    >
-                      <span aria-hidden="true">+</span>
-                    </button>
-                  </form>
+                      <textarea
+                        rows={1}
+                        placeholder="输入你的学习情况..."
+                        value={inputValue}
+                        disabled={isPending}
+                        onChange={(event) => setInputValue(event.target.value)}
+                        onKeyDown={(event) => {
+                          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                            handleSubmit();
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="pen-button"
+                        disabled={isPending}
+                        onClick={() => setShowCanvas(true)}
+                        aria-label="手写/绘图输入"
+                      >
+                        <PenTool className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="submit"
+                        className="submit-button"
+                        disabled={isPending || (!inputValue.trim() && !imageAttachment)}
+                        aria-label="发送消息"
+                      >
+                        <span aria-hidden="true">+</span>
+                      </button>
+                    </form>
+                  )}
                 </div>
               </main>
 
@@ -1821,10 +1828,65 @@ const StyledWrapper = styled.div`
     opacity: 0.64;
   }
 
+  .composer-completed-cta-panel {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: var(--radius-full);
+    padding: var(--space-4);
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: var(--shadow-sm), inset 0 1px 1px oklch(100% 0 0 / 0.4);
+    flex-shrink: 0;
+  }
+
+  .cta-completed-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-8);
+    inline-size: 100%;
+    min-block-size: var(--space-48);
+    border: none;
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition:
+      transform var(--duration-lazy-hover) var(--ease-lazy),
+      background-color var(--duration-lazy-hover) var(--ease-lazy),
+      box-shadow var(--duration-lazy-hover) var(--ease-lazy);
+  }
+
+  .cta-completed-btn:hover {
+    background: var(--color-primary-hover);
+    transform: translateY(calc(var(--space-2) * -1)) scale(1.01);
+    box-shadow: var(--shadow-md);
+  }
+
+  .cta-completed-btn:active {
+    transform: translateY(0) scale(0.995);
+  }
+
+  .cta-completed-btn .arrow {
+    display: inline-block;
+    transition: transform var(--duration-lazy-hover) var(--ease-lazy);
+  }
+
+  .cta-completed-btn:hover .arrow {
+    transform: translateX(var(--space-4));
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .card,
     .collapse-button,
-    .submit-button {
+    .submit-button,
+    .cta-completed-btn,
+    .cta-completed-btn .arrow {
       transition: opacity var(--duration-instant) ease;
       transform: none;
     }

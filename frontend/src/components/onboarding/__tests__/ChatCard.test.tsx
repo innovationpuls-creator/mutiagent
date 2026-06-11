@@ -148,6 +148,6 @@ describe('ChatCard', () => {
     fireEvent.click(ctaBtn);
 
     expect(mockSetWidgetState).toHaveBeenCalledWith('WIDGET');
-    expect(mockNavigate).toHaveBeenCalledWith('/branch');
+    expect(mockNavigate).toHaveBeenCalledWith('/branch', { state: { justGeneratedProfile: true } });
   });
 });

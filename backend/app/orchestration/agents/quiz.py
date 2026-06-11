@@ -28,6 +28,7 @@ def build_fallback_quiz_questions(chapter_id: str, chapter_title: str) -> list[d
             ],
             "correct_option_id": "A",
             "points": 30,
+            "knowledge_point_ids": [],
         },
         {
             "question_id": "q2",
@@ -36,6 +37,7 @@ def build_fallback_quiz_questions(chapter_id: str, chapter_title: str) -> list[d
             "options": [],
             "starter_code": "def check_goal(result):\n    pass\n",
             "points": 40,
+            "knowledge_point_ids": [],
         },
         {
             "question_id": "q3",
@@ -44,6 +46,7 @@ def build_fallback_quiz_questions(chapter_id: str, chapter_title: str) -> list[d
             "options": [],
             "image_prompt": "请上传本章思路图，或填写图片说明。",
             "points": 30,
+            "knowledge_point_ids": [],
         },
     ]
 
@@ -104,6 +107,12 @@ def normalize_quiz_questions(value: object) -> list[dict[str, Any]]:
         else:
             correct_option_id = correct_val.upper()
 
+        kp_ids = item.get("knowledge_point_ids")
+        if isinstance(kp_ids, list):
+            knowledge_point_ids = [str(kp).strip() for kp in kp_ids if str(kp).strip()]
+        else:
+            knowledge_point_ids = []
+
         normalized.append(
             {
                 "question_id": question_id,
@@ -114,6 +123,7 @@ def normalize_quiz_questions(value: object) -> list[dict[str, Any]]:
                 "starter_code": _clean_text(item.get("starter_code")),
                 "image_prompt": _clean_text(item.get("image_prompt")),
                 "points": int(points) if isinstance(points, int) else 0,
+                "knowledge_point_ids": knowledge_point_ids,
             }
         )
     return normalized
@@ -144,7 +154,17 @@ async def generate_quiz_questions(
     chapter_id: str,
     chapter_title: str,
     chapter_context: str,
+    knowledge_point_ids: list[str] | None = None,
 ) -> list[dict[str, Any]]:
+    kp_instruction = ""
+    if knowledge_point_ids:
+        kp_list = ", ".join(knowledge_point_ids)
+        kp_instruction = (
+            f"\n【知识点标注要求】\n"
+            f"本章节包含以下知识点 ID：{kp_list}\n"
+            f"每道题必须包含 `knowledge_point_ids` 字段，从上述列表中选取与该题考查内容最相关的知识点 ID（可多选）。\n"
+        )
+
     prompt = (
         "请为当前章节生成 3 道测验题，必须覆盖 single_choice、code、image_upload。\n"
         "【重要设计要求】\n"
@@ -152,8 +172,9 @@ async def generate_quiz_questions(
         "1. 单选题 (single_choice)：考查「练习任务」或「检查标准」中的核心概念、要求或关键知识点。\n"
         "2. 代码题 (code)：要求用户编写一段代码或伪代码，来完成/辅助完成「练习任务」，或者编写测试/验证代码以验证「检查标准」中的某项指标是否通过。必须包含 starter_code 作为起点。\n"
         "3. 图片上传题 (image_upload)：要求用户上传完成「练习任务」后的运行效果截图、架构/思路图或结果图，并在 prompt 中说明具体的截图/图片要求。\n\n"
-        "只输出 JSON 数组，每题包含 question_id、type、prompt、options、correct_option_id（如果是单选题，请填写正确选项 ID，如 A、B 等）、starter_code、image_prompt、points。\n"
+        "只输出 JSON 数组，每题包含 question_id、type、prompt、options、correct_option_id（如果是单选题，请填写正确选项 ID，如 A、B 等）、starter_code、image_prompt、points、knowledge_point_ids。\n"
         "【特别注意】：如果是单选题 (single_choice)，其 options 字段必须为包含选项字典的数组，每个选项字典格式为：{\"option_id\": \"选项ID，如A/B/C/D\", \"text\": \"选项内容\"}。如果是代码题或图片上传题，options 字段为空数组 []。\n"
+        f"{kp_instruction}"
         f"chapter_id: {chapter_id}\nchapter_title: {chapter_title}\nchapter_context:\n{chapter_context}"
     )
     if not hasattr(llm, "ainvoke"):

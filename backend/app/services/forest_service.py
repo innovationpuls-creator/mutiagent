@@ -6,7 +6,7 @@ from uuid import uuid4
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
-from app.models import ChapterProgress, ChapterQuiz, ChapterQuizAttempt
+from app.models import ChapterProgress, ChapterQuiz, ChapterQuizAttempt, ChapterWeakness
 from app.schemas import (
     ForestAttemptRead,
     ForestChapterProgressRead,
@@ -389,13 +389,66 @@ def _next_chapter_id(chapter_ids: list[str], chapter_id: str) -> str | None:
     return chapter_ids[index + 1]
 
 
+def _analyze_weakness(
+    session: Session,
+    *,
+    user_uid: str,
+    course_node_id: str,
+    chapter_id: str,
+    questions: list[dict],
+    grading_result: dict,
+) -> list[ChapterWeakness]:
+    question_results = grading_result.get("question_results", [])
+    if not isinstance(question_results, list):
+        return []
+
+    question_map = {}
+    for q in questions:
+        if isinstance(q, dict):
+            question_map[q.get("question_id", "")] = q
+
+    weak_points: dict[str, int] = {}
+    for qr in question_results:
+        if not isinstance(qr, dict):
+            continue
+        qid = qr.get("question_id", "")
+        score = qr.get("score", 0)
+        max_score = qr.get("max_score", 0)
+        if max_score > 0 and score < max_score:
+            question = question_map.get(qid, {})
+            kp_ids = question.get("knowledge_point_ids", [])
+            if not isinstance(kp_ids, list):
+                continue
+            for kp_id in kp_ids:
+                kp_str = str(kp_id).strip()
+                if kp_str:
+                    weak_points[kp_str] = weak_points.get(kp_str, 0) + 1
+
+    weaknesses = []
+    for kp_id, count in weak_points.items():
+        severity = min(3, count)
+        weakness = ChapterWeakness(
+            weakness_id=make_id("weakness"),
+            user_uid=user_uid,
+            course_node_id=course_node_id,
+            chapter_id=chapter_id,
+            knowledge_point_id=kp_id,
+            knowledge_point_name="",
+            severity=severity,
+        )
+        session.add(weakness)
+        weaknesses.append(weakness)
+
+    return weaknesses
+
+
 def submit_quiz_attempt(
     session: Session,
     user_uid: str,
     quiz_id: str,
     answers: dict,
     grading_result: dict,
-) -> ForestAttemptRead:
+) -> tuple[ForestAttemptRead, list[ChapterWeakness]]:
     quiz = session.get(ChapterQuiz, quiz_id)
     if quiz is None or quiz.user_uid != user_uid:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="测验不存在")
@@ -412,6 +465,15 @@ def submit_quiz_attempt(
         grading_result=grading_result,
     )
     session.add(attempt)
+
+    weaknesses = _analyze_weakness(
+        session,
+        user_uid=user_uid,
+        course_node_id=quiz.course_node_id,
+        chapter_id=quiz.chapter_id,
+        questions=quiz.questions if isinstance(quiz.questions, list) else [],
+        grading_result=grading_result,
+    )
 
     now = datetime.now(timezone.utc)
     current_progress = _ensure_progress(session, user_uid, quiz.course_node_id, quiz.chapter_id, "available")
@@ -435,7 +497,7 @@ def submit_quiz_attempt(
     session.add(current_progress)
     session.commit()
     session.refresh(attempt)
-    return _attempt_to_read(attempt)  # type: ignore[return-value]
+    return _attempt_to_read(attempt), weaknesses  # type: ignore[return-value]
 
 
 def make_id(prefix: str) -> str:

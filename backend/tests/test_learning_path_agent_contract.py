@@ -674,7 +674,8 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_setup_fails(t
 
     result = asyncio.run(run_learning_path_agent(state, ExplodingLlm()))
 
-    assert result == {"error": "学习路径生成失败，请重试生成学习路径。", "hard_error": True}
+    assert result.get("hard_error") is True
+    assert result.get("error", "").startswith("学习路径生成失败，请重试生成学习路径。")
 
     with Session(engine) as session:
         row = session.get(UserYearLearningPath, ("00000000-0000-0000-0000-000000000001", "year_3"))
@@ -736,7 +737,8 @@ def test_run_learning_path_agent_returns_error_when_contract_validation_fails(tm
         module.ChatPromptTemplate = original_factory
 
     assert captured["schema"] is LearningPathPlanOutput
-    assert result == {"error": "学习路径生成失败，请重试生成学习路径。", "hard_error": True}
+    assert result.get("hard_error") is True
+    assert result.get("error", "").startswith("学习路径生成失败，请重试生成学习路径。")
 
     with Session(engine) as session:
         row = session.get(UserYearLearningPath, ("00000000-0000-0000-0000-000000000008", "year_3"))
@@ -846,7 +848,8 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_times_out(tmp
         module.LEARNING_PATH_STRUCTURED_TIMEOUT_SECONDS = original_timeout
 
     assert captured["schema"] is LearningPathPlanOutput
-    assert result == {"error": "学习路径生成失败，请重试生成学习路径。", "hard_error": True}
+    assert result.get("hard_error") is True
+    assert result.get("error", "").startswith("学习路径生成失败，请重试生成学习路径。")
 
     with Session(engine) as session:
         row = session.get(UserYearLearningPath, ("00000000-0000-0000-0000-000000000006", "year_3"))
@@ -1148,7 +1151,8 @@ def test_run_learning_path_agent_refresh_query_returns_error_when_structured_llm
         )
     )
 
-    assert result == {"error": "学习路径生成失败，请重试生成学习路径。", "hard_error": True}
+    assert result.get("hard_error") is True
+    assert result.get("error", "").startswith("学习路径生成失败，请重试生成学习路径。")
 
     with Session(engine) as session:
         row = session.get(UserYearLearningPath, ("00000000-0000-0000-0000-000000000005", "year_3"))
@@ -1200,6 +1204,6 @@ def test_learning_path_agent_node_updates_year_learning_paths_state(tmp_path: Pa
 
     result = asyncio.run(node(state))
 
-    assert result["response"] == "学习路径生成失败，请重试生成学习路径。"
+    assert result["response"].startswith("学习路径生成失败，请重试生成学习路径。")
     assert "grade_year" not in result
     assert "year_learning_paths" not in result

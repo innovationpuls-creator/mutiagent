@@ -26,11 +26,13 @@ function renderWithRouter(ui: React.ReactElement) {
   );
 }
 
+const mockNavigate = vi.fn();
+
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return {
     ...actual,
-    useNavigate: () => vi.fn(),
+    useNavigate: () => mockNavigate,
   };
 });
 
@@ -889,7 +891,8 @@ test('recovers a persisted basic_profile card from local session cache after ref
     expect(screen.getByText('软件工程')).toBeTruthy();
   });
 
-  expect(screen.getByPlaceholderText('画像已生成，可以继续补充或追问...')).toBeTruthy();
+  expect(screen.queryByPlaceholderText('输入你的学习情况...')).toBeNull();
+  expect(document.querySelector('.composer-completed-cta-panel .cta-completed-btn')).toBeTruthy();
 });
 
 test('recovers a generated basic_profile card from the server when local cache is missing', async () => {
@@ -969,7 +972,8 @@ test('recovers a generated basic_profile card from the server when local cache i
     expect(screen.getByText('软件工程')).toBeTruthy();
   });
 
-  expect(screen.getByPlaceholderText('画像已生成，可以继续补充或追问...')).toBeTruthy();
+  expect(screen.queryByPlaceholderText('输入你的学习情况...')).toBeNull();
+  expect(document.querySelector('.composer-completed-cta-panel .cta-completed-btn')).toBeTruthy();
 });
 
 test('keeps completed-profile composer mode when a cached path-only session stores hasCompleteProfile', async () => {
@@ -1030,7 +1034,8 @@ test('keeps completed-profile composer mode when a cached path-only session stor
   });
 
   expect(screen.queryByText('画像已整理成可继续更新的学习底稿')).toBeNull();
-  expect(screen.getByPlaceholderText('画像已生成，可以继续补充或追问...')).toBeTruthy();
+  expect(screen.queryByPlaceholderText('输入你的学习情况...')).toBeNull();
+  expect(document.querySelector('.composer-completed-cta-panel .cta-completed-btn')).toBeTruthy();
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
@@ -1102,7 +1107,8 @@ test('keeps completed-profile composer mode when the server recovers an outline-
   });
 
   expect(screen.queryByText('画像已整理成可继续更新的学习底稿')).toBeNull();
-  expect(screen.getByPlaceholderText('画像已生成，可以继续补充或追问...')).toBeTruthy();
+  expect(screen.queryByPlaceholderText('输入你的学习情况...')).toBeNull();
+  expect(document.querySelector('.composer-completed-cta-panel .cta-completed-btn')).toBeTruthy();
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 
@@ -2555,13 +2561,13 @@ test('reuses the same session after profile completion instead of creating a new
     expect(screen.getByText('基础画像已完成')).toBeTruthy();
   });
 
-  const followUpInput = screen.getByPlaceholderText('画像已生成，可以继续补充或追问...');
-  fireEvent.change(followUpInput, { target: { value: '继续帮我生成学习路径' } });
-  fireEvent.click(screen.getByLabelText('发送消息'));
+  expect(screen.queryByPlaceholderText('输入你的学习情况...')).toBeNull();
+  const ctaBtn = document.querySelector('.composer-completed-cta-panel .cta-completed-btn');
+  expect(ctaBtn).toBeTruthy();
 
-  await waitFor(() => {
-    expect(screen.getByText('学习路径 · learning_path.v2.course_node')).toBeTruthy();
-  });
+  fireEvent.click(ctaBtn!);
+
+  expect(mockNavigate).toHaveBeenCalledWith('/branch', { state: { justGeneratedProfile: true } });
 
   const startCalls = fetchMock.mock.calls.filter(
     ([url]) => url === 'http://127.0.0.1:8000/api/chat/start',
@@ -2571,12 +2577,9 @@ test('reuses the same session after profile completion instead of creating a new
   );
 
   expect(startCalls).toHaveLength(1);
-  expect(messageCalls).toHaveLength(2);
+  expect(messageCalls).toHaveLength(1);
   expect(messageCalls[0]?.[1]?.body).toBe(
     JSON.stringify({ session_id: 'session-follow-up', message: '我现在大三，软件工程专业' }),
-  );
-  expect(messageCalls[1]?.[1]?.body).toBe(
-    JSON.stringify({ session_id: 'session-follow-up', message: '继续帮我生成学习路径' }),
   );
 });
 
