@@ -135,6 +135,7 @@ export function CanopyPage() {
   const [avgScore, setAvgScore] = useState(0);
   const [focusedHours, setFocusedHours] = useState(0);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [qualityScores, setQualityScores] = useState<Record<string, import('../../types/canopy').CourseQualityScore>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -171,6 +172,7 @@ export function CanopyPage() {
         setActiveRate(overview.activeRate);
         setAvgScore(overview.avgScore);
         setFocusedHours(overview.focusedHours);
+        setQualityScores(overview.qualityScores ?? {});
       } catch (loadError) {
         if (cancelled) {
           return;
@@ -305,11 +307,69 @@ export function CanopyPage() {
                           <text y="40" textAnchor="middle" className="node-meta">
                             {course.gradeLabel}
                           </text>
+                          {qualityScores[course.id] && (
+                            <g transform="translate(18, -18)">
+                              <circle
+                                r="8"
+                                fill={
+                                  qualityScores[course.id].overall >= 80
+                                    ? 'oklch(75% 0.12 145)'
+                                    : qualityScores[course.id].overall >= 60
+                                      ? 'oklch(78% 0.12 85)'
+                                      : 'oklch(65% 0.15 25)'
+                                }
+                              />
+                              <text
+                                textAnchor="middle"
+                                dominantBaseline="central"
+                                fill="oklch(99% 0 0)"
+                                fontSize="8"
+                                fontWeight="600"
+                              >
+                                {qualityScores[course.id].overall >= 80 ? '✓' : qualityScores[course.id].overall >= 60 ? '~' : '!'}
+                              </text>
+                            </g>
+                          )}
                         </g>
                       );
                     })}
                   </g>
                 </svg>
+
+                {hoveredNode && qualityScores[hoveredNode] && (
+                  <div
+                    style={{
+                      background: 'var(--glass-bg)',
+                      backdropFilter: 'blur(12px)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: 'var(--radius-lg)',
+                      padding: 'var(--space-16)',
+                      marginTop: 'var(--space-12)',
+                    }}
+                  >
+                    <h4 style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 'var(--space-8)' }}>资源质量评估</h4>
+                    {[
+                      { label: '内容准确性', value: qualityScores[hoveredNode].accuracy },
+                      { label: '难度适配度', value: qualityScores[hoveredNode].difficulty_fit },
+                      { label: '内容完整性', value: qualityScores[hoveredNode].completeness },
+                    ].map((item) => (
+                      <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-8)', fontSize: '0.8rem', marginBottom: 'var(--space-4)' }}>
+                        <span style={{ minWidth: '5rem' }}>{item.label}</span>
+                        <div style={{ flex: 1, height: '6px', background: 'var(--color-surface-inset)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${item.value}%`, background: 'var(--color-primary)', borderRadius: '3px' }} />
+                        </div>
+                        <span>{item.value}</span>
+                      </div>
+                    ))}
+                    {qualityScores[hoveredNode].suggestions.length > 0 && (
+                      <ul style={{ marginTop: 'var(--space-8)', fontSize: '0.75rem', color: 'var(--color-text-muted)', listStyle: 'disc', paddingLeft: 'var(--space-16)' }}>
+                        {qualityScores[hoveredNode].suggestions.map((s, i) => (
+                          <li key={i}>{s}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
 
                 {positionedCourses.length === 0 ? (
                   <div className="empty-state" role="status">
