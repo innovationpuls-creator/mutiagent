@@ -15,7 +15,7 @@
 **Files:**
 - Modify: `backend/tests/test_supervisor_force_call.py`
 
-- [ ] **Step 1: Write a failing test for general Q&A query**
+- [x] **Step 1: Write a failing test for general Q&A query**
   Add a new test `test_supervisor_node_direct_text_reply_for_chitchat_and_qa` that sets up a completed profile state, mock LLM, and runs the supervisor node with the query "什么是 FastAPI". Verify that the mock LLM receives instructions restricting tool usage, and that the result does not contain tool calls.
 
   Add the following code to `backend/tests/test_supervisor_force_call.py`:
@@ -61,11 +61,11 @@
       assert "FastAPI 是一个" in result["response"]
   ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `.venv/bin/pytest tests/test_supervisor_force_call.py -k test_supervisor_node_direct_text_reply_for_chitchat_and_qa`
   Expected: FAIL (AssertionError on system_msg check, since "## 核心决策逻辑" is not in the system prompt yet)
 
-- [ ] **Step 3: Commit the test**
+- [x] **Step 3: Commit the test**
   ```bash
   git add tests/test_supervisor_force_call.py
   git commit -m "test: add test case for conversational query routing"
