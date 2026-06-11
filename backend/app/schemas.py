@@ -221,6 +221,15 @@ class CanopyMilestone(BaseModel):
     reached: bool
 
 
+class CourseQualityScore(BaseModel):
+    accuracy: int = Field(default=0, ge=0, le=100)
+    difficulty_fit: int = Field(default=0, ge=0, le=100)
+    completeness: int = Field(default=0, ge=0, le=100)
+    overall: int = Field(default=0, ge=0, le=100)
+    suggestions: list[str] = Field(default_factory=list)
+    scored_at: str | None = None
+
+
 class CanopyOverviewResponse(BaseModel):
     courses: list[CanopyCourseNode] = Field(default_factory=list)
     growth_stage: int
@@ -229,6 +238,7 @@ class CanopyOverviewResponse(BaseModel):
     avg_score: int
     focused_hours: float
     milestones: list[CanopyMilestone] = Field(default_factory=list)
+    quality_scores: dict[str, CourseQualityScore] = Field(default_factory=dict)
 
 
 LeafAccessState = Literal["available", "locked"]
