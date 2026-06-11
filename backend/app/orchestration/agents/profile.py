@@ -313,6 +313,47 @@ _COLLECTING_FIELD_ORDER = (
     "constraints",
 )
 
+_COLLECTING_STAGES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (
+        "learning_preference",
+        "你目前学到什么阶段？有明确的学习目标吗？想学什么方向？偏好哪种学习方式？",
+        ("learning_stage", "has_clear_goal", "short_term_goal", "learning_method_preference"),
+    ),
+    (
+        "ability_basis",
+        "你目前的技术基础和相关经验是什么？有什么优势和薄弱点？",
+        ("knowledge_foundation", "strengths", "weaknesses", "experience"),
+    ),
+)
+
+_AUTO_DEFAULT_FIELDS: frozenset[str] = frozenset({
+    "content_preference",
+    "need_guidance",
+    "learning_pace_preference",
+    "weekly_available_time",
+    "long_term_goal",
+    "constraints",
+})
+
+
+def _stage_missing_fields(merged: dict[str, object], stage_fields: tuple[str, ...]) -> list[str]:
+    missing: list[str] = []
+    for field_name in stage_fields:
+        value = merged.get(field_name)
+        if field_name == "content_preference":
+            if not isinstance(value, list) or not value:
+                missing.append(field_name)
+        elif not isinstance(value, str) or not value.strip():
+            missing.append(field_name)
+    return missing
+
+
+def _build_stage_question_box(stage_name: str, question: str, missing_fields: list[str]) -> dict[str, object]:
+    first_field = missing_fields[0] if missing_fields else ""
+    field = _FIELD_QUESTIONS.get(first_field)
+    options = list(field.get("options", [])) if field else []
+    return {"question": question, "options": options}
+
 
 def _next_incomplete_field(confirmed_info: dict[str, object]) -> str | None:
     for field_name in _COLLECTING_FIELD_ORDER:
@@ -1236,21 +1277,20 @@ def _build_collecting_profile(state: OrchestrationState) -> dict:
             "text": question,
         }
 
-    next_field = _next_incomplete_field(merged)
-    if next_field:
-        question_box = _build_field_question_box(next_field)
-        stage = _collecting_stage_for_field(next_field)
-        question_text = str(question_box.get("question", ""))
-        return {
-            "type": "collecting",
-            "stage": stage,
-            "question_mode": "question_box",
-            "confirmed_info": merged,
-            "defaulted_fields": [],
-            "question_md": question_text,
-            "question_box": question_box,
-            "text": question_text,
-        }
+    for stage_name, stage_question, stage_fields in _COLLECTING_STAGES:
+        missing = _stage_missing_fields(merged, stage_fields)
+        if missing:
+            question_box = _build_stage_question_box(stage_name, stage_question, missing)
+            return {
+                "type": "collecting",
+                "stage": stage_name,
+                "question_mode": "question_box",
+                "confirmed_info": merged,
+                "defaulted_fields": [],
+                "question_md": stage_question,
+                "question_box": question_box,
+                "text": stage_question,
+            }
 
     question = "画像信息已全部确认，可以生成完整画像了。"
     return {

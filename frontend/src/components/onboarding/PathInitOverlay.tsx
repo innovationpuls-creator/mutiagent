@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { motionTokens, DURATION_INSTANT } from '../../styles/motion-tokens';
+import { useAiWidget } from '../../context/AiWidgetContext';
 
 interface Props {
   onComplete?: () => void;
@@ -8,7 +9,9 @@ interface Props {
 
 export function PathInitOverlay({ onComplete }: Props) {
   const [phase, setPhase] = useState<number>(0);
+  const [isStarting, setIsStarting] = useState(false);
   const reduceMotion = useReducedMotion();
+  const { openWithMessage } = useAiWidget();
 
   useEffect(() => {
     if (reduceMotion) {
@@ -85,7 +88,11 @@ export function PathInitOverlay({ onComplete }: Props) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={motionTokens.lazy}
-              onClick={onComplete}
+              onClick={() => {
+                setIsStarting(true);
+                openWithMessage('开始第一门课');
+                onComplete?.();
+              }}
               style={{
                 padding: 'var(--space-12) var(--space-32)',
                 borderRadius: 'var(--radius-full)',
@@ -99,7 +106,7 @@ export function PathInitOverlay({ onComplete }: Props) {
                 boxShadow: 'var(--shadow-md)',
               }}
             >
-              开始第一门课
+              {isStarting ? '正在启动课程...' : '开始第一门课'}
             </motion.button>
           )}
         </AnimatePresence>
