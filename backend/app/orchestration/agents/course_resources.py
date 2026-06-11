@@ -55,6 +55,11 @@ SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT = """\
 如果 markdown_expansion_section 是 步骤讲解，必须包含 Markdown 表格或 fenced code block。
 如果 markdown_expansion_section 是 检查标准，必须输出至少 4 条 `- [ ]` 可验收清单。
 其他章节输出可直接拼入教学文档的 Markdown 正文。
+
+{profile_context}
+
+在正文末尾追加一行 HTML 注释，格式：<!-- recommendation_reason: 你的推荐理由 -->
+推荐理由需结合上述用户画像维度，说明为什么这个章节内容适合该用户。
 """
 
 
@@ -104,6 +109,7 @@ def _chapter_resource_error_event(
 _RESOURCE_PLACEHOLDER_PATTERN = re.compile(
     r"<!--\s*(?P<kind>video|animation):id=(?P<id>[A-Za-z0-9_.:-]+)\s*-->"
 )
+_REASON_PATTERN = re.compile(r"<!--\s*recommendation_reason:\s*(?P<reason>.*?)\s*-->")
 _JSON_CODE_BLOCK_PATTERN = re.compile(r"^```(?:json)?\s*(?P<body>.*?)```\s*$", re.DOTALL | re.IGNORECASE)
 _MARKDOWN_CODE_BLOCK_PATTERN = re.compile(r"^```(?:markdown|md)?\s*(?P<body>.*?)```\s*$", re.DOTALL | re.IGNORECASE)
 
@@ -171,9 +177,12 @@ async def _invoke_markdown_expansion_chain(
     query: str,
     *,
     timeout_seconds: float = _MARKDOWN_TIMEOUT_SECONDS,
+    profile_context: str = "",
 ) -> str:
+    if profile_context:
+        query = f"{profile_context}\n\n{query}"
     output = await asyncio.wait_for(
-        chain.ainvoke({"query": query}),
+        chain.ainvoke({"query": query, "profile_context": profile_context}),
         timeout=timeout_seconds,
     )
     if hasattr(output, "content"):
@@ -234,6 +243,45 @@ def _plain_html_text(text: str) -> str:
     if html_start >= 0:
         return clean_text[html_start:].strip()
     return clean_text
+
+
+def _build_profile_context_for_resource(state: OrchestrationState) -> str:
+    profile = state.get("profile")
+    if not isinstance(profile, dict):
+        return ""
+    confirmed = profile.get("confirmed_info")
+    if not isinstance(confirmed, dict):
+        return ""
+    dimensions: list[str] = []
+    weaknesses = _clean_text(confirmed.get("weaknesses"))
+    if weaknesses:
+        dimensions.append(f"薄弱方向：{weaknesses}")
+    method_pref = _clean_text(confirmed.get("learning_method_preference"))
+    if method_pref:
+        dimensions.append(f"偏好学习方式：{method_pref}")
+    content_pref = confirmed.get("content_preference")
+    if isinstance(content_pref, list):
+        clean_items = [_clean_text(item) for item in content_pref if _clean_text(item)]
+        if clean_items:
+            dimensions.append(f"偏好内容形式：{'、'.join(clean_items)}")
+    learning_stage = _clean_text(confirmed.get("learning_stage"))
+    if learning_stage:
+        dimensions.append(f"学习阶段：{learning_stage}")
+    foundation = _clean_text(confirmed.get("knowledge_foundation"))
+    if foundation:
+        dimensions.append(f"知识基础：{foundation}")
+    if not dimensions:
+        return ""
+    return "用户画像维度：\n" + "\n".join(f"- {dim}" for dim in dimensions)
+
+
+def _extract_recommendation_reason(markdown: str) -> tuple[str, str]:
+    match = _REASON_PATTERN.search(markdown)
+    if not match:
+        return markdown, ""
+    reason = match.group("reason").strip()
+    cleaned = markdown[:match.start()].rstrip() + markdown[match.end():]
+    return cleaned, reason
 
 
 def _section_markdown_data_from_plain_text(text: str, query: str) -> dict:
@@ -3255,6 +3303,8 @@ async def run_section_markdown_agent(
     if not isinstance(outline, dict):
         return {"error": "请先生成课程大纲。", "hard_error": True}
 
+    profile_context = _build_profile_context_for_resource(state)
+
     args = _tool_args(state, explicit_args)
     section_id = _clean_text(args.get("section_id", ""))
     scope = _clean_text(args.get("scope", "")) or "default_first_chapter"
@@ -3301,6 +3351,7 @@ async def run_section_markdown_agent(
                         expansion_chain,
                         query,
                         timeout_seconds=_MARKDOWN_TIMEOUT_SECONDS,
+                        profile_context=profile_context,
                     )
                 except Exception as exc:
                     logger.warning(
@@ -3353,13 +3404,17 @@ async def run_section_markdown_agent(
 
         animation_briefs = markdown_data.get("animation_briefs")
         video_briefs = markdown_data.get("video_briefs")
+        final_markdown, recommendation_reason = _extract_recommendation_reason(
+            _clean_text(markdown_data.get("markdown")),
+        )
         return target_section_id, {
             "section_id": target_section_id,
             "parent_section_id": section.get("parent_section_id"),
             "title": _clean_text(section.get("title")) or _clean_text(markdown_data.get("title")),
-            "markdown": _clean_text(markdown_data.get("markdown")),
+            "markdown": final_markdown,
             "video_briefs": video_briefs if isinstance(video_briefs, list) else [],
             "animation_briefs": animation_briefs if isinstance(animation_briefs, list) else [],
+            "recommendation_reason": recommendation_reason,
             "generated_at": _now_iso(),
         }
 
