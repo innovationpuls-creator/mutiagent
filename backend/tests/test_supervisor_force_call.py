@@ -472,10 +472,10 @@ def test_force_call_response_pauses_profile_update_when_followup_has_no_change()
 
 def test_supervisor_node_returns_completion_reply_when_course_change_has_no_next_course() -> None:
     class GuardLlm:
-        def bind_tools(self, _tools):
+        def bind_tools(self, _tools: list) -> GuardLlm:
             return self
 
-        async def ainvoke(self, _messages):
+        async def ainvoke(self, _messages: list) -> AIMessage:
             raise AssertionError("force_call path should bypass llm invocation")
 
     supervisor_node = create_supervisor_node(GuardLlm())
@@ -594,21 +594,27 @@ def test_build_system_prompt_marks_summary_only_profile_as_incomplete() -> None:
 
 
 def test_supervisor_node_direct_text_reply_for_chitchat_and_qa() -> None:
+    errors: list[AssertionError] = []
+
     class MockLlm:
-        def __init__(self):
-            self.tools = []
+        def __init__(self) -> None:
+            self.tools: list = []
             
-        def bind_tools(self, tools):
+        def bind_tools(self, tools: list) -> MockLlm:
             self.tools = tools
             return self
 
-        async def ainvoke(self, messages):
-            # Check if the prompt instructs LLM not to use tools for general Q&A
-            system_msg = messages[0].content
-            assert "## 核心决策逻辑" in system_msg
-            assert "直接回复" in system_msg
-            # Return a text reply instead of a tool call
-            return AIMessage(content="FastAPI 是一个用于构建 API 的现代、快速（高性能）的 Web 框架。")
+        async def ainvoke(self, messages: list) -> AIMessage:
+            try:
+                # Check if the prompt instructs LLM not to use tools for general Q&A
+                system_msg = messages[0].content
+                assert "## 核心决策逻辑" in system_msg
+                assert "直接回复" in system_msg
+                # Return a text reply instead of a tool call
+                return AIMessage(content="FastAPI 是一个用于构建 API 的现代、快速（高性能）的 Web 框架。")
+            except AssertionError as exc:
+                errors.append(exc)
+                raise exc
 
     supervisor_node = create_supervisor_node(MockLlm())
     
@@ -629,6 +635,9 @@ def test_supervisor_node_direct_text_reply_for_chitchat_and_qa() -> None:
             }
         )
     )
+
+    if errors:
+        raise errors[0]
 
     assert not result["messages"][0].tool_calls
     assert "FastAPI 是一个" in result["response"]
