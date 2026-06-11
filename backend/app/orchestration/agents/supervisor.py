@@ -156,10 +156,8 @@ def create_tools_for_llm() -> list:
     async def course_knowledge_agent(course_id: str = "") -> str:
         """为学习路径中的课程生成详细的章节大纲。
         前提：该年级的学习路径已生成。
-        如果不指定 course_id，生成当前学习课程的大纲。
-        如果用户指定某门课，传入对应 course_id，只刷新这一门课。
-        只有用户明确要求当前年级全部课程大纲时，course_id 才传 "__all_current_grade__"。
-
+        注意：仅在为特定课程生成大纲结构时使用。如果是通用的问答或概念解释，绝对禁止调用此工具。
+        
         Args:
             course_id: 课程 ID（可选，留空则生成当前课程；"__all_current_grade__" 表示当前年级全部课程）
         """
@@ -171,7 +169,8 @@ def create_tools_for_llm() -> list:
         section_id: str = "",
         scope: str = "default_first_chapter",
     ) -> str:
-        """为当前课程的小节生成 Markdown 教学文档。
+        """为当前大纲中已存在的具体章节小节生成结构化的 Markdown 教学文档。
+        注意：仅在生成课程小节内容时调用。如果用户是询问通用概念（如“什么是 FastAPI”、“如何学习后端”），绝对禁止调用此工具，应直接以文本形式回复用户。
 
         Args:
             course_id: 课程 ID，留空时使用当前课程
