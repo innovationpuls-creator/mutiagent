@@ -123,6 +123,42 @@ class ChapterProgress(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ChapterWeakness(SQLModel, table=True):
+    """薄弱知识点记录，由测验表现分析产生。"""
+    __table_args__ = (
+        Index("idx_chapter_weakness_user_course", "user_uid", "course_node_id"),
+        Index("idx_chapter_weakness_consumed", "user_uid", "consumed"),
+    )
+
+    weakness_id: str = Field(primary_key=True, max_length=64)
+    user_uid: str = Field(foreign_key="user.uid", index=True)
+    course_node_id: str = Field(max_length=128)
+    chapter_id: str = Field(max_length=64)
+    knowledge_point_id: str = Field(max_length=128)
+    knowledge_point_name: str = Field(default="", max_length=256)
+    severity: int = Field(default=1, ge=1, le=3)
+    consumed: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class CourseResourceQuality(SQLModel, table=True):
+    """Automated quality scores for generated course resources."""
+    __table_args__ = (
+        Index("idx_resource_quality_user_course", "user_uid", "course_node_id"),
+    )
+
+    user_uid: str = Field(foreign_key="user.uid", primary_key=True)
+    course_node_id: str = Field(primary_key=True, max_length=128)
+    accuracy_score: int = Field(default=0, ge=0, le=100)
+    difficulty_fit_score: int = Field(default=0, ge=0, le=100)
+    completeness_score: int = Field(default=0, ge=0, le=100)
+    overall_score: int = Field(default=0, ge=0, le=100)
+    suggestions: list = Field(default_factory=list, sa_column=Column(_jsonb))
+    scored_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class ConversationSession(SQLModel, table=True):
     """持久化会话消息，替代 LangGraph MemorySaver。"""
     __table_args__ = (
