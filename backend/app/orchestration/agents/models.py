@@ -438,7 +438,6 @@ class SectionAnimationBriefOutput(BaseModel):
     animation_id: str = Field(description="动画 ID")
     title: str = Field(description="动画标题")
     concept: str = Field(description="需要动画解释的概念")
-    recommendation_reason: str = Field(default="", description="推荐理由，关联用户画像维度")
     visual_elements: list[str] = Field(default_factory=list, description="动画中必须出现的视觉元素")
     motion: str = Field(default="", description="动画如何运动，包含节奏、方向与状态变化")
     space: str = Field(default="", description="动画空间尺寸或页面占位要求")
@@ -512,7 +511,6 @@ class SectionVideoBriefOutput(BaseModel):
     video_id: str = Field(description="视频 brief ID")
     title: str = Field(description="视频检索标题")
     purpose: str = Field(description="视频用途说明")
-    recommendation_reason: str = Field(default="", description="推荐理由，关联用户画像维度")
 
     @field_validator("video_id", "title", "purpose")
     @classmethod
@@ -525,9 +523,9 @@ class SectionMarkdownOutput(BaseModel):
     parent_section_id: str | None = Field(description="父章节 ID")
     title: str = Field(description="小节标题")
     markdown: str = Field(description="完整 Markdown 教学内容")
-    recommendation_reason: str = Field(default="", description="推荐理由，关联用户画像维度")
     video_briefs: list[SectionVideoBriefOutput] = Field(default_factory=list)
     animation_briefs: list[SectionAnimationBriefOutput] = Field(default_factory=list)
+    recommendation_reason: str = Field(default="", description="推荐理由，关联用户画像维度")
 
     @field_validator("section_id", "title", "markdown")
     @classmethod
