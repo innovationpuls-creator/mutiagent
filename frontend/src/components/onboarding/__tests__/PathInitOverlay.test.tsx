@@ -44,6 +44,13 @@ vi.mock('framer-motion', () => {
   };
 });
 
+vi.mock('../../../context/AiWidgetContext', () => ({
+  useAiWidget: () => ({
+    setWidgetState: vi.fn(),
+    openWithMessage: vi.fn(),
+  }),
+}));
+
 afterEach(() => {
   cleanup();
   reduceMotionValue = false;

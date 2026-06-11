@@ -386,6 +386,36 @@ export interface ResourceDirection {
   difficulty_level: DifficultyLevel;
 }
 
+export interface AgentCollaborationNode {
+  agent: string;
+  label: string;
+  status: 'waiting' | 'running' | 'success' | 'error' | 'skipped';
+  latestStepId: string;
+  inputSummary: string;
+  outputSummary: string;
+  dependsOn: string[];
+  parallelGroup: string | null;
+  durationMs?: number;
+  stepCount: number;
+}
+
+export interface QuestionFormQuestion {
+  field_name: keyof ConfirmedInfo;
+  label: string;
+  description: string;
+  input_type: 'single_choice' | 'multi_choice' | 'free_text';
+  required: boolean;
+  options: QuestionBoxOption[];
+}
+
+export interface QuestionForm {
+  title: string;
+  description: string;
+  stage: ChatStage;
+  questions: QuestionFormQuestion[];
+  submit_label: string;
+}
+
 export interface SessionMessage {
   type: 'collecting' | 'basic_profile';
   stage: ChatStage;
@@ -394,6 +424,7 @@ export interface SessionMessage {
   defaulted_fields: string[];
   question_md: string;
   question_box: QuestionBox;
+  question_form?: QuestionForm | null;
   text: string;
 }
 

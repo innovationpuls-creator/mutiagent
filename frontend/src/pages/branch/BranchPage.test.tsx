@@ -4,6 +4,15 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BranchPage } from './BranchPage';
 import { AuthProvider } from '../../contexts/AuthContext';
+import { AiWidgetProvider } from '../../context/AiWidgetContext';
+
+vi.mock('../../context/AiWidgetContext', () => ({
+  useAiWidget: () => ({
+    setWidgetState: vi.fn(),
+    openWithMessage: vi.fn(),
+  }),
+  AiWidgetProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 
 const fetchBranchOverviewMock = vi.fn();
 const fetchProfileDashboardMock = vi.fn();
@@ -55,9 +64,11 @@ function renderBranchPage() {
 
   return render(
     <AuthProvider>
-      <MemoryRouter>
-        <BranchPage />
-      </MemoryRouter>
+      <AiWidgetProvider>
+        <MemoryRouter>
+          <BranchPage />
+        </MemoryRouter>
+      </AiWidgetProvider>
     </AuthProvider>,
   );
 }
@@ -70,12 +81,14 @@ function LocationProbe() {
 function renderBranchWithLeafRoute() {
   return render(
     <AuthProvider>
-      <MemoryRouter initialEntries={['/branch']}>
-        <Routes>
-          <Route path="/branch" element={<><LocationProbe /><BranchPage /></>} />
-          <Route path="/leaf/:courseNodeId" element={<LocationProbe />} />
-        </Routes>
-      </MemoryRouter>
+      <AiWidgetProvider>
+        <MemoryRouter initialEntries={['/branch']}>
+          <Routes>
+            <Route path="/branch" element={<><LocationProbe /><BranchPage /></>} />
+            <Route path="/leaf/:courseNodeId" element={<LocationProbe />} />
+          </Routes>
+        </MemoryRouter>
+      </AiWidgetProvider>
     </AuthProvider>,
   );
 }

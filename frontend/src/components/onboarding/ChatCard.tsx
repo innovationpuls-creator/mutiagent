@@ -112,6 +112,8 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData }
 
   const [inputValue, setInputValue] = React.useState('');
   const [hasSubmittedReply, setHasSubmittedReply] = React.useState(false);
+  const [formValues, setFormValues] = React.useState<Record<string, string | string[]>>({});
+  const [otherInputValues, setOtherInputValues] = React.useState<Record<string, string>>({});
   const confirmed = filledFields(message.confirmed_info);
   const defaultedFields = Array.isArray(message.defaulted_fields) ? message.defaulted_fields : [];
   const options = Array.isArray(message.question_box?.options)
@@ -143,6 +145,176 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData }
     }
     onSendReply?.(option.label);
     setHasSubmittedReply(true);
+  };
+
+  const handleSingleSelect = (fieldName: string, value: string) => {
+    if (disabled || hasSubmittedReply) return;
+    setFormValues((prev) => ({
+      ...prev,
+      [fieldName]: value,
+    }));
+  };
+
+  const handleMultiSelect = (fieldName: string, value: string) => {
+    if (disabled || hasSubmittedReply) return;
+    setFormValues((prev) => {
+      const current = Array.isArray(prev[fieldName]) ? (prev[fieldName] as string[]) : [];
+      const updated = current.includes(value)
+        ? current.filter((v) => v !== value)
+        : [...current, value];
+      return {
+        ...prev,
+        [fieldName]: updated,
+      };
+    });
+  };
+
+  const handleOtherInputChange = (fieldName: string, value: string) => {
+    if (disabled || hasSubmittedReply) return;
+    setOtherInputValues((prev) => ({
+      ...prev,
+      [fieldName]: value,
+    }));
+  };
+
+  const isSubmitDisabled = disabled || hasSubmittedReply || !message.question_form || message.question_form.questions.some((q) => {
+    if (!q.required) return false;
+    const val = formValues[q.field_name];
+    if (q.input_type === 'multi_choice') {
+      const arr = Array.isArray(val) ? val : [];
+      if (arr.length === 0) return true;
+      if (arr.includes('__free_text__') && !otherInputValues[q.field_name]?.trim()) return true;
+    } else if (q.input_type === 'single_choice') {
+      if (!val) return true;
+      if (val === '__free_text__' && !otherInputValues[q.field_name]?.trim()) return true;
+    } else {
+      if (!otherInputValues[q.field_name]?.trim()) return true;
+    }
+    return false;
+  });
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitDisabled) return;
+    
+    const lines = ['画像表单提交：'];
+    message.question_form!.questions.forEach((q) => {
+      const val = formValues[q.field_name];
+      if (q.input_type === 'multi_choice') {
+        const arr = Array.isArray(val) ? [...val] : [];
+        const idx = arr.indexOf('__free_text__');
+        if (idx !== -1) {
+          arr.splice(idx, 1);
+          const other = otherInputValues[q.field_name]?.trim();
+          if (other) arr.push(other);
+        }
+        if (arr.length > 0) {
+          lines.push(`${q.field_name}：${arr.join('、')}`);
+        }
+      } else if (q.input_type === 'single_choice') {
+        let str = typeof val === 'string' ? val : '';
+        if (str === '__free_text__') {
+          str = otherInputValues[q.field_name]?.trim() ?? '';
+        }
+        if (str) {
+          lines.push(`${q.field_name}：${str}`);
+        }
+      } else {
+        const str = otherInputValues[q.field_name]?.trim() ?? '';
+        if (str) {
+          lines.push(`${q.field_name}：${str}`);
+        }
+      }
+    });
+    
+    onSendReply?.(lines.join('\n'));
+    setHasSubmittedReply(true);
+  };
+
+  const renderQuestionForm = () => {
+    const form = message.question_form;
+    if (!form || !form.questions || form.questions.length === 0) return null;
+
+    return (
+      <div className="question-form">
+        <div className="form-header">
+          <h3>{form.title}</h3>
+          {form.description && <p className="form-description">{form.description}</p>}
+        </div>
+        <div className="form-questions">
+          {form.questions.map((q) => {
+            const val = formValues[q.field_name];
+            const isSingle = q.input_type === 'single_choice';
+            const isMulti = q.input_type === 'multi_choice';
+            const isFreeText = q.input_type === 'free_text';
+            
+            const isOtherSelected = isSingle
+              ? val === '__free_text__'
+              : isMulti && Array.isArray(val) && val.includes('__free_text__');
+
+            return (
+              <div key={q.field_name} className="form-question-group">
+                <label className="form-question-label">
+                  {q.label}
+                  {q.required && <span className="required-star">*</span>}
+                </label>
+                {q.description && <span className="form-field-desc">{q.description}</span>}
+                
+                {(isSingle || isMulti) && (
+                  <div className="chip-grid">
+                    {q.options.map((opt) => {
+                      const isSelected = isSingle
+                        ? val === opt.value
+                        : isMulti && Array.isArray(val) && val.includes(opt.value);
+                      
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          className={`form-chip ${isSelected ? 'selected' : ''}`}
+                          disabled={disabled || hasSubmittedReply}
+                          onClick={() => {
+                            if (isSingle) {
+                              handleSingleSelect(q.field_name, opt.value);
+                            } else {
+                              handleMultiSelect(q.field_name, opt.value);
+                            }
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {(isFreeText || isOtherSelected) && (
+                  <input
+                    type="text"
+                    className="form-input-text"
+                    disabled={disabled || hasSubmittedReply}
+                    value={otherInputValues[q.field_name] ?? ''}
+                    onChange={(e) => handleOtherInputChange(q.field_name, e.target.value)}
+                    placeholder={isFreeText ? '请填写...' : '请补充其他内容...'}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+        
+        {showReplyControls && (
+          <button
+            type="button"
+            className="form-submit-btn"
+            disabled={isSubmitDisabled}
+            onClick={handleFormSubmit}
+          >
+            {form.submit_label || '提交'}
+          </button>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -247,69 +419,75 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData }
             </p>
           )}
 
-          <section className="question-panel">
-            <h3>接下来</h3>
-            <div className="question-list">
-              {questions.map((question, i) => (
-                <MarkdownRenderer key={i} content={question} variant="compact" />
-              ))}
-            </div>
-          </section>
-
-          {showReplyControls && (message.question_mode === 'question_box' ? (
+          {message.question_form && message.question_form.questions && message.question_form.questions.length > 0 ? (
+            renderQuestionForm()
+          ) : (
             <>
-              {options.length > 0 && (
-                <div className="options-grid">
-                  {options.map((option) => (
-                    <button
-                      key={`${option.label}:${option.value}`}
-                      aria-label={option.label}
-                      className="option-btn"
-                      disabled={disabled}
-                      onClick={() => submitOptionAnswer(option)}
-                      type="button"
-                    >
-                      <span>{option.label}</span>
-                      {option.description ? <small>{option.description}</small> : null}
-                    </button>
+              <section className="question-panel">
+                <h3>接下来</h3>
+                <div className="question-list">
+                  {questions.map((question, i) => (
+                    <MarkdownRenderer key={i} content={question} variant="compact" />
                   ))}
                 </div>
-              )}
-              <div className="input-groove">
-                <input
-                  type="text"
-                  className="input-pebble"
-                  placeholder="输入你的学习情况..."
-                  value={inputValue}
-                  disabled={disabled}
-                  onChange={(event) => setInputValue(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') submitInlineAnswer();
-                  }}
-                />
-                <button type="button" disabled={disabled || !inputValue.trim()} onClick={submitInlineAnswer}>
-                  +
-                </button>
-              </div>
+              </section>
+
+              {showReplyControls && (message.question_mode === 'question_box' ? (
+                <>
+                  {options.length > 0 && (
+                    <div className="options-grid">
+                      {options.map((option) => (
+                        <button
+                          key={`${option.label}:${option.value}`}
+                          aria-label={option.label}
+                          className="option-btn"
+                          disabled={disabled}
+                          onClick={() => submitOptionAnswer(option)}
+                          type="button"
+                        >
+                          <span>{option.label}</span>
+                          {option.description ? <small>{option.description}</small> : null}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="input-groove">
+                    <input
+                      type="text"
+                      className="input-pebble"
+                      placeholder="输入你的学习情况..."
+                      value={inputValue}
+                      disabled={disabled}
+                      onChange={(event) => setInputValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') submitInlineAnswer();
+                      }}
+                    />
+                    <button type="button" disabled={disabled || !inputValue.trim()} onClick={submitInlineAnswer}>
+                      +
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="input-groove">
+                  <input
+                    type="text"
+                    className="input-pebble"
+                    placeholder="输入你的回答..."
+                    value={inputValue}
+                    disabled={disabled}
+                    onChange={(event) => setInputValue(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') submitInlineAnswer();
+                    }}
+                  />
+                  <button type="button" disabled={disabled || !inputValue.trim()} onClick={submitInlineAnswer}>
+                    +
+                  </button>
+                </div>
+              ))}
             </>
-          ) : (
-            <div className="input-groove">
-              <input
-                type="text"
-                className="input-pebble"
-                placeholder="输入你的回答..."
-                value={inputValue}
-                disabled={disabled}
-                onChange={(event) => setInputValue(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') submitInlineAnswer();
-                }}
-              />
-              <button type="button" disabled={disabled || !inputValue.trim()} onClick={submitInlineAnswer}>
-                +
-              </button>
-            </div>
-          ))}
+          )}
         </>
       )}
     </CardWrapper>

@@ -150,4 +150,169 @@ describe('ChatCard', () => {
     expect(mockSetWidgetState).toHaveBeenCalledWith('WIDGET');
     expect(mockNavigate).toHaveBeenCalledWith('/branch', { state: { justGeneratedProfile: true } });
   });
+
+  it('renders dynamic question form, handles single/multi select choices, and submits correctly', () => {
+    const onSendReply = vi.fn();
+    const formProfile: SessionMessage = {
+      type: 'collecting',
+      stage: 'learning_preference',
+      question_mode: 'question_box',
+      confirmed_info: {
+        current_grade: '大三',
+        major: '软件工程',
+        learning_stage: '',
+        has_clear_goal: '',
+        learning_method_preference: '',
+        learning_pace_preference: '',
+        content_preference: [],
+        need_guidance: '',
+        knowledge_foundation: '',
+        strengths: '',
+        weaknesses: '',
+        experience: '',
+        short_term_goal: '',
+        long_term_goal: '',
+        weekly_available_time: '',
+        constraints: '',
+      },
+      defaulted_fields: [],
+      question_md: '',
+      question_box: { question: '', options: [] },
+      question_form: {
+        title: '完善学习偏好',
+        description: '请填写以下学习偏好信息。',
+        stage: 'learning_preference',
+        submit_label: '确认并提交',
+        questions: [
+          {
+            field_name: 'learning_stage',
+            label: '你目前的学习阶段是？',
+            description: '请选择符合你当前情况的阶段',
+            input_type: 'single_choice',
+            required: true,
+            options: [
+              { label: '刚入门', value: '刚入门', description: '', target_fields: [], fills: {} },
+              { label: '有基础', value: '有基础', description: '', target_fields: [], fills: {} },
+              { label: '其他', value: '__free_text__', description: '', target_fields: [], fills: {} },
+            ],
+          },
+          {
+            field_name: 'content_preference',
+            label: '你偏好什么内容形式？',
+            description: '可多选',
+            input_type: 'multi_choice',
+            required: true,
+            options: [
+              { label: '文档为主', value: '文档', description: '', target_fields: [], fills: {} },
+              { label: '视频为主', value: '视频', description: '', target_fields: [], fills: {} },
+            ],
+          },
+        ],
+      },
+      text: '完善学习偏好',
+    };
+
+    render(<ChatCard message={formProfile} onSendReply={onSendReply} />);
+
+    // Renders form title and questions
+    expect(screen.getByText('完善学习偏好')).toBeTruthy();
+    expect(screen.getByText('你目前的学习阶段是？')).toBeTruthy();
+    expect(screen.getByText('你偏好什么内容形式？')).toBeTruthy();
+
+    // Check button initially disabled/enabled correctly
+    const submitBtn = screen.getByRole('button', { name: '确认并提交' });
+    expect(submitBtn.hasAttribute('disabled')).toBe(true);
+
+    // Select single choice option
+    fireEvent.click(screen.getByRole('button', { name: '刚入门' }));
+
+    // Select multi choice options
+    fireEvent.click(screen.getByRole('button', { name: '文档为主' }));
+    fireEvent.click(screen.getByRole('button', { name: '视频为主' }));
+
+    // Verify submit button is now enabled
+    expect(submitBtn.hasAttribute('disabled')).toBe(false);
+
+    // Submit form
+    fireEvent.click(submitBtn);
+
+    expect(onSendReply).toHaveBeenCalledWith(
+      '画像表单提交：\n' +
+      'learning_stage：刚入门\n' +
+      'content_preference：文档、视频'
+    );
+  });
+
+  it('renders free text input when other option is selected and submits it', () => {
+    const onSendReply = vi.fn();
+    const formProfile: SessionMessage = {
+      type: 'collecting',
+      stage: 'learning_preference',
+      question_mode: 'question_box',
+      confirmed_info: {
+        current_grade: '大三',
+        major: '软件工程',
+        learning_stage: '',
+        has_clear_goal: '',
+        learning_method_preference: '',
+        learning_pace_preference: '',
+        content_preference: [],
+        need_guidance: '',
+        knowledge_foundation: '',
+        strengths: '',
+        weaknesses: '',
+        experience: '',
+        short_term_goal: '',
+        long_term_goal: '',
+        weekly_available_time: '',
+        constraints: '',
+      },
+      defaulted_fields: [],
+      question_md: '',
+      question_box: { question: '', options: [] },
+      question_form: {
+        title: '完善学习偏好',
+        description: '请填写以下学习偏好信息。',
+        stage: 'learning_preference',
+        submit_label: '确认并提交',
+        questions: [
+          {
+            field_name: 'learning_stage',
+            label: '你目前的学习阶段是？',
+            description: '请选择符合你当前情况的阶段',
+            input_type: 'single_choice',
+            required: true,
+            options: [
+              { label: '刚入门', value: '刚入门', description: '', target_fields: [], fills: {} },
+              { label: '其他', value: '__free_text__', description: '', target_fields: [], fills: {} },
+            ],
+          },
+        ],
+      },
+      text: '完善学习偏好',
+    };
+
+    render(<ChatCard message={formProfile} onSendReply={onSendReply} />);
+
+    const submitBtn = screen.getByRole('button', { name: '确认并提交' });
+    expect(submitBtn.hasAttribute('disabled')).toBe(true);
+
+    // Click on other option
+    fireEvent.click(screen.getByRole('button', { name: '其他' }));
+
+    // Input text in other input box
+    const otherInput = screen.getByPlaceholderText('请补充其他内容...');
+    fireEvent.change(otherInput, { target: { value: '我的特定阶段' } });
+
+    // Verify submit button is now enabled
+    expect(submitBtn.hasAttribute('disabled')).toBe(false);
+
+    // Submit form
+    fireEvent.click(submitBtn);
+
+    expect(onSendReply).toHaveBeenCalledWith(
+      '画像表单提交：\n' +
+      'learning_stage：我的特定阶段'
+    );
+  });
 });
