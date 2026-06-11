@@ -316,13 +316,35 @@ _COLLECTING_FIELD_ORDER = (
 _COLLECTING_STAGES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "learning_preference",
-        "你目前学到什么阶段？有明确的学习目标吗？想学什么方向？偏好哪种学习方式？",
-        ("learning_stage", "has_clear_goal", "short_term_goal", "learning_method_preference"),
+        "为了更好地为你定制学习路径，请填写你的学习偏好。",
+        (
+            "learning_stage",
+            "has_clear_goal",
+            "short_term_goal",
+            "learning_method_preference",
+            "learning_pace_preference",
+            "content_preference",
+            "need_guidance",
+            "weekly_available_time",
+        ),
     ),
     (
         "ability_basis",
-        "你目前的技术基础和相关经验是什么？有什么优势和薄弱点？",
-        ("knowledge_foundation", "strengths", "weaknesses", "experience"),
+        "为了评估你的学习起点，请完善你的能力基础。",
+        (
+            "knowledge_foundation",
+            "experience",
+            "strengths",
+            "weaknesses",
+        ),
+    ),
+    (
+        "goal_constraint",
+        "为了合理规划学习进度，请完善你的长期目标与约束。",
+        (
+            "long_term_goal",
+            "constraints",
+        ),
     ),
 )
 
@@ -348,11 +370,48 @@ def _stage_missing_fields(merged: dict[str, object], stage_fields: tuple[str, ..
     return missing
 
 
-def _build_stage_question_box(stage_name: str, question: str, missing_fields: list[str]) -> dict[str, object]:
-    first_field = missing_fields[0] if missing_fields else ""
-    field = _FIELD_QUESTIONS.get(first_field)
-    options = list(field.get("options", [])) if field else []
-    return {"question": question, "options": options}
+def _build_stage_question_form(
+    stage_name: str,
+    stage_question: str,
+    missing_fields: list[str],
+) -> dict[str, object]:
+    titles = {
+        "learning_preference": "完善学习偏好",
+        "ability_basis": "完善能力基础",
+        "goal_constraint": "完善目标与约束",
+    }
+    descriptions = {
+        "learning_preference": "请填写以下学习偏好信息，帮助我们更好地定制您的学习路径。",
+        "ability_basis": "请填写以下能力基础信息，以便评估您的起点。",
+        "goal_constraint": "请填写您的长期目标和约束，以合理规划学习进度。",
+    }
+    title = titles.get(stage_name, "完善画像信息")
+    description = descriptions.get(stage_name, stage_question)
+    
+    questions = []
+    for field_name in missing_fields:
+        field_cfg = _FIELD_QUESTIONS.get(field_name)
+        if not field_cfg:
+            continue
+        
+        input_type = "multi_choice" if field_name == "content_preference" else "single_choice"
+        
+        questions.append({
+            "field_name": field_name,
+            "label": field_cfg.get("question", ""),
+            "description": "",
+            "input_type": input_type,
+            "required": True,
+            "options": field_cfg.get("options", []),
+        })
+        
+    return {
+        "title": title,
+        "description": description,
+        "stage": stage_name,
+        "questions": questions,
+        "submit_label": "提交",
+    }
 
 
 def _next_incomplete_field(confirmed_info: dict[str, object]) -> str | None:
@@ -883,6 +942,27 @@ def _extract_explicit_profile_updates(texts: list[str]) -> dict[str, object]:
         normalized = text.strip()
         if not normalized:
             continue
+        if normalized.startswith("画像表单提交：") or normalized.startswith("画像表单提交:"):
+            lines = normalized.splitlines()
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = re.split(r"[：:]", line, maxsplit=1)
+                if len(parts) == 2:
+                    field_name = parts[0].strip()
+                    field_value = parts[1].strip()
+                    if field_name in REQUIRED_CONFIRMED_INFO_KEYS:
+                        if not field_value:
+                            continue
+                        if field_name == "content_preference":
+                            items = [item.strip() for item in re.split(r"[、，,]+", field_value) if item.strip()]
+                            updates[field_name] = items
+                        else:
+                            updates[field_name] = field_value
+            continue
+            
+        # Existing logic for explicit prefixes
         explicit_clauses = [
             clause.strip()
             for clause in EXPLICIT_FIELD_SPLIT_PATTERN.split(normalized)
@@ -1088,6 +1168,7 @@ def _collecting_profile_for_unsupported_grade(confirmed_info: dict[str, object])
                 },
             ],
         },
+        "question_form": None,
         "text": question,
     }
 
@@ -1250,6 +1331,7 @@ def _build_collecting_profile(state: OrchestrationState) -> dict:
             "defaulted_fields": [],
             "question_md": question,
             "question_box": _build_basic_info_question_box(missing_fields, question),
+            "question_form": None,
             "text": question,
         }
     elif missing_fields == ["current_grade"]:
@@ -1262,6 +1344,7 @@ def _build_collecting_profile(state: OrchestrationState) -> dict:
             "defaulted_fields": [],
             "question_md": question,
             "question_box": _build_basic_info_question_box(missing_fields, question),
+            "question_form": None,
             "text": question,
         }
     elif missing_fields == ["major"]:
@@ -1274,22 +1357,30 @@ def _build_collecting_profile(state: OrchestrationState) -> dict:
             "defaulted_fields": [],
             "question_md": question,
             "question_box": _build_basic_info_question_box(missing_fields, question),
+            "question_form": None,
             "text": question,
         }
 
     for stage_name, stage_question, stage_fields in _COLLECTING_STAGES:
         missing = _stage_missing_fields(merged, stage_fields)
         if missing:
-            question_box = _build_stage_question_box(stage_name, stage_question, missing)
+            form = _build_stage_question_form(stage_name, stage_question, missing)
+            form_title = form["title"]
+            form_desc = form["description"]
+            question_md = f"### {form_title}\n{form_desc}"
             return {
                 "type": "collecting",
                 "stage": stage_name,
                 "question_mode": "question_box",
                 "confirmed_info": merged,
                 "defaulted_fields": [],
-                "question_md": stage_question,
-                "question_box": question_box,
-                "text": stage_question,
+                "question_md": question_md,
+                "question_box": {
+                    "question": form_title,
+                    "options": [],
+                },
+                "question_form": form,
+                "text": f"{form_title}：{form_desc}",
             }
 
     question = "画像信息已全部确认，可以生成完整画像了。"
@@ -1301,6 +1392,7 @@ def _build_collecting_profile(state: OrchestrationState) -> dict:
         "defaulted_fields": [],
         "question_md": question,
         "question_box": {"question": "", "options": []},
+        "question_form": None,
         "text": question,
     }
 

@@ -1349,3 +1349,72 @@ def test_run_profile_agent_repairs_stage_type_mismatch_before_persisting(tmp_pat
     assert result["profile"]["type"] == "collecting"
     assert result["profile"]["stage"] == "learning_preference"
     assert result["profile"]["question_box"]["question"] == "你目前的学习阶段是？"
+
+
+def test_profile_form_builder_and_submission(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-form-test.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    from app.orchestration.agents.profile import (
+        _build_stage_question_form,
+        _extract_explicit_profile_updates,
+        _build_collecting_profile,
+    )
+
+    # 1. Test Form Builder outputs correct structure for "learning_preference" stage
+    form = _build_stage_question_form(
+        stage_name="learning_preference",
+        stage_question="为了更好地为你定制学习路径，请填写你的学习偏好。",
+        missing_fields=["learning_stage", "content_preference", "weekly_available_time"],
+    )
+
+    assert form["title"] == "完善学习偏好"
+    assert form["stage"] == "learning_preference"
+    assert len(form["questions"]) == 3
+    
+    content_pref_q = next(q for q in form["questions"] if q["field_name"] == "content_preference")
+    assert content_pref_q["input_type"] == "multi_choice"
+    assert content_pref_q["required"] is True
+
+    learning_stage_q = next(q for q in form["questions"] if q["field_name"] == "learning_stage")
+    assert learning_stage_q["input_type"] == "single_choice"
+    assert len(learning_stage_q["options"]) > 0
+
+    # 2. Test Parser handles form submission
+    texts = [
+        "画像表单提交：\n"
+        "learning_stage: 刚入门\n"
+        "content_preference: 代码实践、项目案例、AI 对话调试\n"
+        "weekly_available_time: 每周 10-15 小时\n"
+    ]
+    updates = _extract_explicit_profile_updates(texts)
+    assert updates["learning_stage"] == "刚入门"
+    assert updates["content_preference"] == ["代码实践", "项目案例", "AI 对话调试"]
+    assert updates["weekly_available_time"] == "每周 10-15 小时"
+
+    # 3. Test _build_collecting_profile generates question_form
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000009999",
+        "query": "继续完善画像",
+        "profile": {
+            "type": "collecting",
+            "stage": "basic_info",
+            "confirmed_info": {
+                "current_grade": "大三",
+                "major": "软件工程",
+            },
+        },
+        "messages": [
+            HumanMessage(content="大三"),
+            HumanMessage(content="软件工程"),
+        ]
+    }
+    profile_dict = _build_collecting_profile(state)
+    assert profile_dict["type"] == "collecting"
+    assert profile_dict["stage"] == "learning_preference"
+    assert profile_dict["question_form"] is not None
+    assert profile_dict["question_form"]["title"] == "完善学习偏好"
+    assert profile_dict["question_box"]["question"] == "完善学习偏好"
+    assert profile_dict["question_box"]["options"] == []
+
