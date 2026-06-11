@@ -78,7 +78,7 @@
 **Files:**
 - Modify: `backend/app/orchestration/agents/prompts.py`
 
-- [ ] **Step 1: Update `SUPERVISOR_BASE_PROMPT`**
+- [x] **Step 1: Update `SUPERVISOR_BASE_PROMPT`**
   Modify `backend/app/orchestration/agents/prompts.py:3-21` to include the refined decision logic, sub-agent responsibilities, and guidelines.
 
   Replace:
@@ -113,13 +113,13 @@
   1. **分析意图**：仔细分析用户的最新输入及上下文，对照【子智能体职责与分工】进行评估。
   2. **选择进入**：若用户意图明确，且属于某个子智能体的职责范围，调用对应的工具进入子智能体。
   3. **直接回复**：若用户的请求是通用的技术概念解释（例如：“什么是 FastAPI”、“如何写 Python”）、日常闲聊或问题解答，且【不属于】任何子智能体的职责，你必须【直接以文本形式回复用户】，绝对禁止调用任何工具！
-  4. **反问确认**：若用户的意图模糊、信息不足，或者你无法判断该调用哪个工具，【绝对不要盲目调用工具】，应直接向用户提问进行确认（例如：“你是想让我解答关于 FastAPI 的基础概念，还是想为当前课程生成关于 FastAPI 的小节教学文档？”）。
+  4. **反问确认**：若用户的意图模糊、不确定，或者你无法判断该调用哪个工具，【绝对不要盲目调用工具】，应直接向用户提问进行确认（例如：“你是想让我解答关于 FastAPI 的基础概念，还是想为当前课程生成关于 FastAPI 的小节教学文档？”）。
 
   ## 子智能体职责与分工
   - `profile_agent`：画像智能体。负责收集并生成用户的个人画像（年级、专业、偏好、目标等）。仅在需要收集基础信息、更新画像方向时调用。
   - `learning_path_agent`：学习路径智能体。负责规划四年的课程推荐与先后顺序。仅在画像已完成，且需要生成或更新整体学习路径时调用。
   - `course_knowledge_agent`：课程大纲智能体。负责为具体课程生成详细的章节与小节目录。仅在需要生成、刷新某门课程的章节大纲时调用。
-  - `section_markdown_agent`：小节文档智能体。负责为大纲中的某个具体二级小节生成 Markdown 教学文档。仅在需要生成具体小节的图文内容时调用。
+  - `section_markdown_agent`：小节文档智能体。负责为大纲中的某个具体二级小节生成 Markdown 教学文档。仅在需要生成具体小节的图文内容时调用.
   - `section_video_search_agent`：视频搜索智能体。为小节检索 bilibili 教学视频。仅在需要为章节小节匹配视频资源时调用。
   - `section_html_animation_agent`：HTML动画智能体。为小节生成交互式动效辅助教学。仅在需要为章节小节生成动画资源时调用。
 
@@ -137,11 +137,11 @@
   """
   ```
 
-- [ ] **Step 2: Verify the test passes**
+- [x] **Step 2: Verify the test passes**
   Run: `.venv/bin/pytest tests/test_supervisor_force_call.py -v`
   Expected: All 25 tests pass.
 
-- [ ] **Step 3: Commit the prompt change**
+- [x] **Step 3: Commit the prompt change**
   ```bash
   git add app/orchestration/agents/prompts.py
   git commit -m "feat: refine supervisor base prompt with clear routing decision logic"
