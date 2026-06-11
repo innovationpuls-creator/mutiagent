@@ -1428,3 +1428,58 @@ def test_profile_form_builder_and_submission(tmp_path: Path) -> None:
     assert profile_dict["question_box"]["options"] == []
 
 
+def test_profile_minimum_completion_routing(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-routing-test.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    from app.orchestration.agents.profile import (
+        _has_minimum_dynamic_profile_fields,
+        _should_use_local_profile,
+    )
+
+    # 1. Test _has_minimum_dynamic_profile_fields when NOT complete
+    state = {
+        "user_id": "user-1",
+        "query": "大三、软件工程",
+        "profile": {
+            "type": "collecting",
+            "stage": "basic_info",
+            "confirmed_info": {
+                "current_grade": "大三",
+                "major": "软件工程",
+            },
+        },
+        "messages": []
+    }
+    assert _has_minimum_dynamic_profile_fields(state) is False
+
+    # 2. Test _has_minimum_dynamic_profile_fields when minimum threshold is met:
+    # 7 specific fields: grade, major, learning stage, has clear goal, learning method, weekly time, short term goal
+    # plus at least 1 optional basis field (knowledge_foundation or experience)
+    state["profile"]["confirmed_info"].update({
+        "learning_stage": "有基础",
+        "has_clear_goal": "大致有方向",
+        "learning_method_preference": "项目驱动学习",
+        "weekly_available_time": "每周 6-10 小时",
+        "short_term_goal": "做个Agent",
+        "knowledge_foundation": "懂Python",  # this is the optional basis field
+    })
+    assert _has_minimum_dynamic_profile_fields(state) is True
+    assert _should_use_local_profile(state) is True
+
+    # Test run_profile_agent bypasses LLM and routes to local profile, generating basic_profile
+    # We pass a dummy LLM that would raise if called, to verify it is bypassed
+    class FailingLlm:
+        def with_structured_output(self, *_args, **_kwargs):
+            raise AssertionError("LLM should not be called!")
+
+    result = asyncio.run(run_profile_agent(state, FailingLlm()))
+    assert result["profile"]["type"] == "basic_profile"
+    assert result["profile"]["stage"] == "generated"
+    # Unfilled fields like long_term_goal, constraints, weaknesses should have been filled with default values
+    assert result["profile"]["confirmed_info"]["long_term_goal"] != ""
+    assert result["profile"]["confirmed_info"]["constraints"] != ""
+
+
+

@@ -1603,11 +1603,12 @@ def _build_local_confirmed_info(
     has_existing_complete_profile: bool,
 ) -> dict[str, object]:
     def resolved(key: str, default_value: str = "") -> str:
+        use_default = allow_default_fill or (not has_existing_complete_profile)
         return _resolved_profile_text(
             existing_confirmed,
             updates,
             key,
-            allow_default_fill=allow_default_fill,
+            allow_default_fill=use_default,
             default_value=default_value,
         )
 
@@ -1618,7 +1619,7 @@ def _build_local_confirmed_info(
         "has_clear_goal": resolved("has_clear_goal", "大致有方向"),
         "learning_method_preference": resolved("learning_method_preference", "项目驱动学习"),
         "learning_pace_preference": resolved("learning_pace_preference", "按项目里程碑推进"),
-        "content_preference": _resolved_content_preference(existing_confirmed, topic=topic, allow_default_fill=allow_default_fill),
+        "content_preference": _resolved_content_preference(existing_confirmed, topic=topic, allow_default_fill=allow_default_fill or (not has_existing_complete_profile)),
         "need_guidance": resolved("need_guidance", "需要轻量提醒"),
         "knowledge_foundation": resolved("knowledge_foundation"),
         "strengths": resolved("strengths", "工程实现与课程学习能力"),
@@ -1637,7 +1638,7 @@ def _build_local_confirmed_info(
         )
         if rewritten_knowledge_foundation:
             confirmed["knowledge_foundation"] = rewritten_knowledge_foundation
-    if not confirmed["knowledge_foundation"] and (allow_default_fill or has_existing_complete_profile):
+    if not confirmed["knowledge_foundation"] and (allow_default_fill or has_existing_complete_profile or not has_existing_complete_profile):
         confirmed["knowledge_foundation"] = _generated_knowledge_foundation(
             confirmed.get("major"),
             topic,
@@ -1671,7 +1672,7 @@ def _build_local_profile(state: OrchestrationState, *, allow_default_fill: bool)
         confirmed,
         updates,
         existing_confirmed,
-        allow_default_fill=allow_default_fill,
+        allow_default_fill=allow_default_fill or (not has_existing_complete_profile),
     )
     summary = _local_profile_summary(confirmed, topic)
 
@@ -1688,11 +1689,45 @@ def _build_local_profile(state: OrchestrationState, *, allow_default_fill: bool)
     }
 
 
+def _has_minimum_dynamic_profile_fields(state: OrchestrationState) -> bool:
+    existing_profile = state.get("profile")
+    existing_confirmed = (
+        existing_profile.get("confirmed_info", {})
+        if isinstance(existing_profile, dict) and isinstance(existing_profile.get("confirmed_info"), dict)
+        else {}
+    )
+    updates = _extract_profile_updates(state, include_defaults=False)
+    
+    def get_val(key: str) -> object:
+        return updates.get(key, existing_confirmed.get(key))
+    
+    def is_valid_str(val: object) -> bool:
+        return isinstance(val, str) and val.strip() != "" and val.strip() != UNKNOWN_VALUE
+        
+    current_grade = get_val("current_grade")
+    major = get_val("major")
+    learning_stage = get_val("learning_stage")
+    has_clear_goal = get_val("has_clear_goal")
+    learning_method_preference = get_val("learning_method_preference")
+    weekly_available_time = get_val("weekly_available_time")
+    short_term_goal = get_val("short_term_goal")
+    
+    if not (is_valid_str(current_grade) and is_valid_str(major) and is_valid_str(learning_stage) and is_valid_str(has_clear_goal) and is_valid_str(learning_method_preference) and is_valid_str(weekly_available_time) and is_valid_str(short_term_goal)):
+        return False
+        
+    knowledge_foundation = get_val("knowledge_foundation")
+    experience = get_val("experience")
+    
+    return is_valid_str(knowledge_foundation) or is_valid_str(experience)
+
+
 def _should_use_local_profile(state: OrchestrationState) -> bool:
     query = str(state.get("query", "")).strip()
     if _allows_default_fill(query):
         return True
     if _is_complete_profile(state.get("profile")):
+        return True
+    if _has_minimum_dynamic_profile_fields(state):
         return True
     if not query:
         return False
@@ -1773,7 +1808,7 @@ async def run_profile_agent(state: OrchestrationState, llm: BaseChatModel) -> di
         and not is_supported_current_grade(current_grade)
     ):
         profile_dict = _build_collecting_profile(state)
-    elif not allow_default_fill and _is_complete_profile(state.get("profile")):
+    elif not allow_default_fill and _should_use_local_profile(state):
         profile_dict = _build_local_profile(state, allow_default_fill=False)
     else:
         profile_dict = await _invoke_profile_output_with_retries(state, llm, conversation_summary)
