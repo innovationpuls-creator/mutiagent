@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Share2, Lock, PanelLeftClose, ListTree, Check } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lock, PanelLeftClose, ListTree, Check } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { motionTokens } from '../../styles/motion-tokens';
 import type { LeafCourseResponse, LeafSection } from '../../types/leaf';
@@ -49,6 +49,7 @@ interface LeafMarkmapProps {
 interface LeafMarkmapNodeProps {
   response: LeafCourseResponse;
   section: LeafSection;
+  depth: number;
   selectedSectionId: string | null;
   collapsedSectionIds: Set<string>;
   onCollapsedSectionIdsChange: (collapsedSectionIds: Set<string>) => void;
@@ -85,6 +86,7 @@ function toggleCollapsedSection(
 function LeafMarkmapNode({
   response,
   section,
+  depth,
   selectedSectionId,
   collapsedSectionIds,
   onCollapsedSectionIdsChange,
@@ -126,52 +128,48 @@ function LeafMarkmapNode({
   }
 
   return (
-    <div className="relative flex flex-col w-full">
-      <div className="relative flex items-center">
-        {/* Branch connection line (matches CSS pseudo-element style) */}
-        <div className="absolute -left-4 top-1/2 w-4 h-[2px] bg-[var(--color-border)] rounded-sm pointer-events-none"></div>
-
+    <div className="leaf-markmap-journey-node" data-depth={depth}>
+      <div className="leaf-markmap-journey-row">
+        <span className="leaf-markmap-journey-connector" aria-hidden="true" />
         <div
           className={`leaf-markmap-card ${status === 'running' ? 'running' : ''}`}
+          data-status={status}
           onClick={() => onSelectSection(section.section_id)}
         >
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            {/* Status Indicator */}
-            <div className="flex items-center justify-center w-5 h-5 shrink-0">
+          <div className="leaf-markmap-card-main">
+            <div className="leaf-markmap-status-dot">
               {status === 'running' && (
-                <span className="w-2.5 h-2.5 rounded-full bg-[var(--status-running)] animate-pulse" />
+                <span className="leaf-markmap-status-core leaf-markmap-status-core-running" />
               )}
               {status === 'completed' && (
-                <div className="flex items-center justify-center w-5 h-5 rounded-full bg-[var(--color-success-bg)] text-[var(--color-success)]">
-                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                <div className="leaf-markmap-status-completed">
+                  <Check className="leaf-markmap-status-check" />
                 </div>
               )}
               {status === 'waiting' && (
-                <span className="w-2.5 h-2.5 rounded-full bg-[var(--status-waiting)]" />
+                <span className="leaf-markmap-status-core leaf-markmap-status-core-waiting" />
               )}
               {status === 'neutral' && (
-                <span className="w-2.5 h-2.5 rounded-full bg-[var(--status-neutral)]" />
+                <span className="leaf-markmap-status-core leaf-markmap-status-core-neutral" />
               )}
             </div>
 
-            {/* Title */}
             <span
-              className={`text-sm truncate font-medium ${
+              className={`leaf-markmap-title ${
                 status === 'running'
-                  ? 'text-[var(--color-text-primary)] font-semibold'
-                  : 'text-[var(--color-text-secondary)]'
+                  ? 'leaf-markmap-title-running'
+                  : 'leaf-markmap-title-muted'
               }`}
             >
               {getLeafSectionHeading(section)}
             </span>
 
-            {/* Micro-badges */}
             {badges.length > 0 && (
-              <div className="flex items-center gap-1 shrink-0 ml-1.5">
+              <div className="leaf-markmap-badges">
                 {badges.map((badge, i) => (
                   <span
                     key={i}
-                    className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-[var(--color-surface-inset)] text-[var(--color-text-secondary)] rounded-md border border-[var(--color-border)] leading-none select-none"
+                    className="leaf-markmap-badge"
                   >
                     {badge}
                   </span>
@@ -183,7 +181,7 @@ function LeafMarkmapNode({
           {hasChildren && (
             <button
               type="button"
-              className="p-1 hover:bg-[var(--color-surface-inset)] rounded-full transition-colors ml-2 shrink-0"
+              className="leaf-markmap-child-toggle"
               onClick={(e) => {
                 e.stopPropagation();
                 toggleCollapsedSection(
@@ -193,25 +191,23 @@ function LeafMarkmapNode({
                 );
               }}
             >
-              {isCollapsed ? <ChevronRight className="w-3 h-3 text-[var(--color-text-secondary)]" /> : <ChevronDown className="w-3 h-3 text-[var(--color-text-secondary)]" />}
+              {isCollapsed ? <ChevronRight className="leaf-markmap-child-toggle-icon" /> : <ChevronDown className="leaf-markmap-child-toggle-icon" />}
             </button>
           )}
         </div>
       </div>
 
       {hasChildren && !isCollapsed && (
-        <div className="ml-6 flex flex-col z-0">
+        <div className="leaf-markmap-journey-children">
           {childSections.map((childSection, index) => {
             const isLast = index === childSections.length - 1;
             return (
-              <div className="pl-4 py-1.5 relative" key={childSection.section_id}>
-                <div 
-                  className="absolute left-0 top-0 w-[2px] bg-[var(--color-border)]"
-                  style={{ height: isLast ? '24px' : '100%' }}
-                ></div>
+              <div className="leaf-markmap-journey-child" data-last={isLast} key={childSection.section_id}>
+                <span className="leaf-markmap-journey-line" aria-hidden="true" />
                 <LeafMarkmapNode
                   response={response}
                   section={childSection}
+                  depth={depth + 1}
                   selectedSectionId={selectedSectionId}
                   collapsedSectionIds={collapsedSectionIds}
                   onCollapsedSectionIdsChange={onCollapsedSectionIdsChange}
@@ -244,21 +240,20 @@ export function LeafMarkmap({
       animate={reduceMotion ? undefined : { opacity: 1, x: 0 }}
       exit={reduceMotion ? undefined : { opacity: 0, x: -40 }}
       transition={motionTokens.editorial}
-      className="hidden md:flex flex-col fixed left-6 w-[320px] bg-[var(--glass-bg)] backdrop-blur-xl rounded-2xl shadow-[var(--shadow-lg)] p-6 z-40 top-[104px] bottom-6 border border-[var(--glass-border)]"
+      className="leaf-floating-markmap"
     >
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h2 className="text-xl font-medium text-[var(--color-text-primary)]">{response.course.course_or_chapter_theme}</h2>
-          <p className="text-xs font-bold text-[var(--color-text-secondary)] mt-1">章节导航</p>
+      <div className="leaf-floating-markmap-head">
+        <div className="leaf-floating-markmap-title-block">
+          <h2>{response.course.course_or_chapter_theme}</h2>
+          <p>章节导航</p>
         </div>
         <button
-          aria-hidden="true"
-          tabIndex={-1}
+          aria-label="收起章节导航"
           type="button"
-          className="p-1.5 bg-[var(--color-surface-raised)] rounded-full hover:bg-[var(--color-surface-elevated)] transition-colors border border-[var(--glass-border)] shadow-sm"
+          className="leaf-floating-markmap-close"
           onClick={onToggleMarkmapCollapsed}
         >
-          <PanelLeftClose className="w-5 h-5 text-[var(--color-text-secondary)]" />
+          <PanelLeftClose className="leaf-floating-markmap-close-icon" />
         </button>
       </div>
 
@@ -280,26 +275,24 @@ export function LeafMarkmap({
         )}
       </AnimatePresence>
 
-      <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+      <div className="leaf-floating-markmap-scroll custom-scrollbar">
         {topLevelSections.length > 0 ? (
-          <div className="flex flex-col relative">
-            <div className="bg-[var(--color-primary-soft)] text-[var(--color-primary)] px-6 py-2 rounded-full inline-flex items-center gap-2 shadow-[var(--shadow-sm)] transform transition-transform cursor-pointer w-fit z-10 relative">
-              <Share2 className="w-4 h-4" />
-              <span className="font-medium text-sm">Course Structure</span>
+          <div className="leaf-markmap-journey">
+            <div className="leaf-markmap-journey-root">
+              <ListTree className="leaf-markmap-journey-root-icon" />
+              <span>Course Structure</span>
             </div>
 
-            <div className="ml-10 mt-4 pl-0 flex flex-col relative z-0">
+            <div className="leaf-markmap-journey-list">
               {topLevelSections.map((section, index) => {
                 const isLast = index === topLevelSections.length - 1;
                 return (
-                  <div className="pl-4 py-1.5 relative" key={section.section_id}>
-                    <div 
-                      className="absolute left-0 top-0 w-[2px] bg-[var(--color-border)]"
-                      style={{ height: isLast ? '24px' : '100%' }}
-                    ></div>
+                  <div className="leaf-markmap-journey-child" data-last={isLast} key={section.section_id}>
+                    <span className="leaf-markmap-journey-line" aria-hidden="true" />
                     <LeafMarkmapNode
                       response={response}
                       section={section}
+                      depth={1}
                       selectedSectionId={selectedSectionId}
                       collapsedSectionIds={collapsedSectionIds}
                       onCollapsedSectionIdsChange={onCollapsedSectionIdsChange}
@@ -311,16 +304,16 @@ export function LeafMarkmap({
             </div>
 
             {response.locked_reason && (
-              <div className="mt-8 relative opacity-60">
-                <div className="bg-[var(--color-surface-raised)] border-2 border-dashed border-[var(--color-border)] text-[var(--color-text-secondary)] px-6 py-2 rounded-full inline-flex items-center gap-2 cursor-not-allowed w-fit">
-                  <Lock className="w-4 h-4" />
-                  <span className="font-medium text-sm">未开放</span>
+              <div className="leaf-markmap-locked">
+                <div>
+                  <Lock className="leaf-markmap-locked-icon" />
+                  <span>未开放</span>
                 </div>
               </div>
             )}
           </div>
         ) : (
-          <p className="text-[var(--color-text-muted)] text-sm">课程章节还在整理中。</p>
+          <p className="leaf-markmap-empty">课程章节还在整理中。</p>
         )}
       </div>
     </motion.aside>

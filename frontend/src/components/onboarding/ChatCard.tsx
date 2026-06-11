@@ -1,15 +1,16 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAiWidget } from '../../context/AiWidgetContext';
 import { MarkdownRenderer } from '../markdown';
 import type { ConfirmedInfo, PartialStructuredData, QuestionBoxOption, SessionMessage } from '../../types/chat';
 import { CardWrapper } from './ChatCard.styles';
+import { buildLearningPathGenerationDraft } from '../../onboarding/learningPathFlow';
 
 interface ChatCardProps {
   message: SessionMessage;
   onSendReply?: (text: string) => void;
   disabled?: boolean;
   partialData?: PartialStructuredData | null;
+  showPathGenerationCta?: boolean;
 }
 
 type FieldKey = keyof ConfirmedInfo;
@@ -101,13 +102,11 @@ function normalizeQuestionOption(option: QuestionBoxOption | string): QuestionBo
   };
 }
 
-export function ChatCard({ message, onSendReply, disabled = false, partialData }: ChatCardProps) {
-  const navigate = useNavigate();
-  const { setWidgetState } = useAiWidget();
+export function ChatCard({ message, onSendReply, disabled = false, partialData, showPathGenerationCta = true }: ChatCardProps) {
+  const { openWithDraft } = useAiWidget();
 
-  const handleOpenPath = () => {
-    setWidgetState('WIDGET');
-    navigate('/branch', { state: { justGeneratedProfile: true } });
+  const handleGeneratePathDraft = () => {
+    openWithDraft(buildLearningPathGenerationDraft());
   };
 
   const [inputValue, setInputValue] = React.useState('');
@@ -326,29 +325,31 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData }
 
       {message.type === 'basic_profile' ? (
         <>
-          <div className="profile-transition-banner">
-            <div className="completed-badge">
-              <span className="badge-dot" />
-              <span>基础画像分析完成</span>
-            </div>
-            <div className="sprout-avatar-container">
-              <div className="sprout-orb">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 22V12"></path>
-                  <path d="M12 12c0-2.8 2.2-5 5-5h2"></path>
-                  <path d="M12 15c0-2.8-2.2-5-5-5H5"></path>
-                </svg>
+          {showPathGenerationCta && (
+            <div className="profile-transition-banner">
+              <div className="completed-badge">
+                <span className="badge-dot" />
+                <span>基础画像分析完成</span>
               </div>
+              <div className="sprout-avatar-container">
+                <div className="sprout-orb">
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 22V12"></path>
+                    <path d="M12 12c0-2.8 2.2-5 5-5h2"></path>
+                    <path d="M12 15c0-2.8-2.2-5-5-5H5"></path>
+                  </svg>
+                </div>
+              </div>
+              <h3>了解自己，是成长的第一步。</h3>
+              <p className="transition-explanation">
+                我们已经根据你的年级、专业以及优势与瓶颈，为你定制编织了一条专属的课程藤蔓。在你的学习路径中，已自动弱化你熟悉的领域，并为你的薄弱点融入了专项强化章节。
+              </p>
+              <button className="cta-open-path-btn" onClick={handleGeneratePathDraft} type="button">
+                <span>生成学习路径</span>
+                <span className="arrow">➔</span>
+              </button>
             </div>
-            <h3>了解自己，是成长的第一步。</h3>
-            <p className="transition-explanation">
-              我们已经根据你的年级、专业以及优势与瓶颈，为你定制编织了一条专属的课程藤蔓。在你的学习路径中，已自动弱化你熟悉的领域，并为你的薄弱点融入了专项强化章节。
-            </p>
-            <button className="cta-open-path-btn" onClick={handleOpenPath} type="button">
-              <span>开启我的学习路径</span>
-              <span className="arrow">➔</span>
-            </button>
-          </div>
+          )}
 
           <div className="profile-hero">
             <span className="profile-eyebrow">基础画像</span>
@@ -493,4 +494,3 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData }
     </CardWrapper>
   );
 }
-

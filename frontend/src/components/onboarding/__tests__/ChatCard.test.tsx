@@ -5,6 +5,7 @@ import { ChatCard } from '../ChatCard';
 
 const mockNavigate = vi.fn();
 const mockSetWidgetState = vi.fn();
+const mockOpenWithDraft = vi.fn();
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -17,6 +18,7 @@ vi.mock('react-router-dom', async () => {
 vi.mock('../../../context/AiWidgetContext', () => ({
   useAiWidget: () => ({
     setWidgetState: mockSetWidgetState,
+    openWithDraft: mockOpenWithDraft,
   }),
 }));
 
@@ -137,18 +139,19 @@ describe('ChatCard', () => {
     expect(onSendReply).toHaveBeenCalledWith('我是转专业过来的');
   });
 
-  it('renders the completed profile transition card and handles path opening', () => {
+  it('renders the completed profile transition card and opens a learning path draft', () => {
     render(<ChatCard message={generatedProfile} />);
 
     expect(screen.getByText('基础画像分析完成')).toBeTruthy();
     expect(screen.getByText('了解自己，是成长的第一步。')).toBeTruthy();
-    expect(screen.getByText('开启我的学习路径')).toBeTruthy();
+    expect(screen.getByText('生成学习路径')).toBeTruthy();
 
-    const ctaBtn = screen.getByRole('button', { name: '开启我的学习路径 ➔' });
+    const ctaBtn = screen.getByRole('button', { name: '生成学习路径 ➔' });
     fireEvent.click(ctaBtn);
 
-    expect(mockSetWidgetState).toHaveBeenCalledWith('WIDGET');
-    expect(mockNavigate).toHaveBeenCalledWith('/branch', { state: { justGeneratedProfile: true } });
+    expect(mockOpenWithDraft).toHaveBeenCalledWith('请根据我的基础画像生成学习路径。');
+    expect(mockSetWidgetState).not.toHaveBeenCalledWith('WIDGET');
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('renders dynamic question form, handles single/multi select choices, and submits correctly', () => {

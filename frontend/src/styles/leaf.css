@@ -228,6 +228,39 @@
   justify-content: center;
 }
 
+.leaf-page-main {
+  inline-size: 100%;
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: center;
+  padding-block-start: calc(var(--space-80) + var(--space-24));
+  padding-block-end: var(--space-64);
+  padding-inline: var(--space-24);
+}
+
+.leaf-page-main-with-map {
+  margin-inline-start: 0;
+}
+
+.leaf-page-main-inner {
+  inline-size: 100%;
+  max-inline-size: var(--container-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-40);
+  padding-block-end: calc(var(--space-80) + var(--space-20));
+}
+
+@media (min-width: 768px) {
+  .leaf-page-main {
+    padding-inline: var(--space-64);
+  }
+
+  .leaf-page-main-with-map {
+    margin-inline-start: calc((var(--space-120) * 3) + var(--space-40));
+  }
+}
+
 .leaf-markmap,
 .leaf-content,
 .leaf-loading-card {
@@ -403,6 +436,405 @@
   border-color: var(--color-primary);
   background-color: var(--color-surface);
   box-shadow: var(--shadow-sm);
+}
+
+.leaf-floating-markmap {
+  position: fixed;
+  inset-block-start: calc(var(--space-80) + var(--space-24));
+  inset-block-end: var(--space-24);
+  inset-inline-start: var(--space-24);
+  z-index: 40;
+  display: none;
+  flex-direction: column;
+  inline-size: min(calc(var(--space-120) * 3), calc(100vw - var(--space-48)));
+  padding: var(--space-24);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  background: var(--glass-bg);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: var(--glass-blur);
+}
+
+.leaf-floating-markmap-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding-block-end: var(--space-24);
+}
+
+.leaf-floating-markmap-title-block {
+  min-inline-size: 0;
+}
+
+.leaf-floating-markmap-title-block h2 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--text-h5);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.leaf-floating-markmap-title-block p {
+  margin: var(--space-4) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.4;
+}
+
+.leaf-floating-markmap-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  inline-size: var(--space-32);
+  block-size: var(--space-32);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-full);
+  background: var(--glass-bg);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    transform var(--duration-lazy-hover) var(--ease-lazy),
+    opacity var(--duration-lazy-hover) var(--ease-lazy);
+}
+
+.leaf-floating-markmap-close:hover {
+  transform: translateY(calc(var(--space-4) * -1));
+}
+
+.leaf-floating-markmap-close:active {
+  transform: translateY(0);
+}
+
+.leaf-floating-markmap-close-icon {
+  inline-size: var(--space-16);
+  block-size: var(--space-16);
+}
+
+.leaf-floating-markmap-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-inline-end: var(--space-8);
+}
+
+.leaf-markmap-journey {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.leaf-markmap-journey-root {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-block-size: calc(var(--space-32) + var(--space-4));
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-full);
+  background: oklch(99% 0.01 80 / 0.38);
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  font-weight: var(--font-weight-regular);
+  line-height: 1;
+}
+
+.leaf-markmap-journey-root-icon {
+  inline-size: var(--space-16);
+  block-size: var(--space-16);
+}
+
+.leaf-markmap-journey-list,
+.leaf-markmap-journey-children {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.leaf-markmap-journey-list {
+  margin-block-start: var(--space-16);
+  margin-inline-start: var(--space-24);
+}
+
+.leaf-markmap-journey-children {
+  margin-block-start: var(--space-12);
+  margin-inline-start: var(--space-16);
+}
+
+.leaf-markmap-journey-child,
+.leaf-markmap-journey-node {
+  position: relative;
+  min-inline-size: 0;
+}
+
+.leaf-markmap-journey-child {
+  padding-inline-start: var(--space-16);
+}
+
+.leaf-markmap-journey-line {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: calc(var(--space-4) / 2);
+  block-size: 100%;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+}
+
+.leaf-markmap-journey-child[data-last='true'] > .leaf-markmap-journey-line {
+  block-size: var(--space-24);
+}
+
+.leaf-markmap-journey-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.leaf-markmap-journey-connector {
+  position: absolute;
+  inset-inline-start: calc(var(--space-16) * -1);
+  inline-size: var(--space-16);
+  block-size: calc(var(--space-4) / 2);
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+}
+
+.leaf-markmap-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-8);
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: var(--space-48);
+  padding: var(--space-12);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: oklch(99% 0.01 80 / 0.34);
+  box-shadow: none;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+  transition:
+    transform var(--duration-lazy-hover) var(--ease-lazy),
+    opacity var(--duration-lazy-hover) var(--ease-lazy);
+}
+
+.leaf-markmap-card:hover {
+  transform: translateX(var(--space-4));
+  background: var(--color-hover-wash);
+  border-color: var(--glass-border);
+}
+
+.leaf-markmap-card.running,
+.leaf-markmap-card[data-status='running'] {
+  border-color: var(--glass-border);
+  background: oklch(99% 0.01 80 / 0.62);
+  box-shadow: var(--shadow-pebble-float);
+}
+
+.leaf-markmap-card-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-inline-size: 0;
+}
+
+.leaf-markmap-status-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  inline-size: var(--space-24);
+  block-size: var(--space-24);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-groove-shallow);
+}
+
+.leaf-markmap-status-core {
+  inline-size: var(--space-8);
+  block-size: var(--space-8);
+  border-radius: var(--radius-full);
+}
+
+.leaf-markmap-status-core-running {
+  background: var(--status-running);
+  animation: leaf-status-breathe var(--duration-breathe) var(--ease-breathe) infinite alternate;
+}
+
+.leaf-markmap-status-core-waiting {
+  background: var(--status-waiting);
+}
+
+.leaf-markmap-status-core-neutral {
+  background: var(--status-neutral);
+}
+
+.leaf-markmap-status-completed {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--space-24);
+  block-size: var(--space-24);
+  border-radius: var(--radius-full);
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.leaf-markmap-status-check {
+  inline-size: var(--space-16);
+  block-size: var(--space-16);
+  stroke-width: 3;
+}
+
+.leaf-markmap-title {
+  min-inline-size: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.leaf-markmap-title-running {
+  color: var(--color-text-primary);
+}
+
+.leaf-markmap-title-muted {
+  color: var(--color-text-secondary);
+}
+
+.leaf-markmap-badges {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--space-4);
+  margin-inline-start: var(--space-4);
+}
+
+.leaf-markmap-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--space-20);
+  min-block-size: var(--space-20);
+  padding-inline: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-inset);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-overline);
+  font-weight: var(--font-weight-regular);
+  line-height: 1;
+  user-select: none;
+}
+
+.leaf-markmap-child-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  inline-size: var(--space-32);
+  block-size: var(--space-32);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    transform var(--duration-lazy-hover) var(--ease-lazy),
+    opacity var(--duration-lazy-hover) var(--ease-lazy);
+}
+
+.leaf-markmap-child-toggle:hover {
+  transform: translateY(calc(var(--space-4) * -1));
+  background: var(--color-surface-inset);
+}
+
+.leaf-markmap-child-toggle-icon {
+  inline-size: var(--space-16);
+  block-size: var(--space-16);
+}
+
+.leaf-markmap-journey-node[data-depth='1'] > .leaf-markmap-journey-row .leaf-markmap-card {
+  min-block-size: var(--space-48);
+  padding: var(--space-12) var(--space-16);
+}
+
+.leaf-markmap-journey-node[data-depth='1'] > .leaf-markmap-journey-row .leaf-markmap-title {
+  font-size: var(--text-body-sm);
+}
+
+.leaf-markmap-locked {
+  margin-block-start: var(--space-32);
+  opacity: 0.68;
+}
+
+.leaf-markmap-locked > div {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  inline-size: fit-content;
+  padding: var(--space-8) var(--space-16);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-raised);
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  font-weight: var(--font-weight-regular);
+}
+
+.leaf-markmap-locked-icon {
+  inline-size: var(--space-16);
+  block-size: var(--space-16);
+}
+
+.leaf-markmap-empty {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-body-sm);
+}
+
+@keyframes leaf-status-breathe {
+  from {
+    transform: scale(0.88);
+    opacity: 0.68;
+  }
+
+  to {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+@media (min-width: 768px) {
+  .leaf-floating-markmap {
+    display: flex;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leaf-markmap-status-core-running {
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
 }
 
 .leaf-markmap-node-label {

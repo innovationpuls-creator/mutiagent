@@ -10,6 +10,7 @@ vi.mock('../../context/AiWidgetContext', () => ({
   useAiWidget: () => ({
     setWidgetState: vi.fn(),
     openWithMessage: vi.fn(),
+    openWithDraft: vi.fn(),
   }),
   AiWidgetProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -1053,7 +1054,7 @@ describe('BranchPage', () => {
     });
 
     // Since useReducedMotion returns true, the button is immediately rendered
-    const btn = screen.getByRole('button', { name: '开始第一门课' });
+    const btn = screen.getByRole('button', { name: '开始《AI 应用开发项目课》' });
     expect(btn).toBeTruthy();
 
     // Click button to close overlay and trigger coachmark
@@ -1075,5 +1076,112 @@ describe('BranchPage', () => {
     await waitFor(() => {
       expect(screen.queryByText('✨ 点击此处，开启第一章学习')).toBeNull();
     });
+  });
+
+  it('refreshes branch overview when the learning path update event is dispatched', async () => {
+    fetchProfileDashboardMock.mockResolvedValue({
+      profile: {
+        currentGrade: '大三',
+        major: '软件工程',
+        learningStage: '项目实践',
+        hasClearGoal: '是',
+        learningMethodPreference: '项目驱动',
+        learningPacePreference: '周末集中',
+        contentPreference: ['实践'],
+        needGuidance: '需要',
+        knowledgeFoundation: '有基础',
+        strengths: '执行力强',
+        weaknesses: '部署经验不足',
+        experience: '做过课程项目',
+        shortTermGoal: '完成 AI 项目',
+        longTermGoal: '成为 AI 应用开发者',
+        weeklyAvailableTime: '每周 8 小时',
+        constraints: '周末集中',
+      },
+      profileCompleteness: 100,
+      profileSummaryText: '测试摘要',
+      todayLearning: {
+        title: '今日学习',
+        description: '测试',
+        source: '学习路径智能体',
+        currentLearningCourse: null,
+        currentCourseDetail: null,
+        currentCourseOutline: null,
+        gradeCourses: [],
+        followingCourses: [],
+      },
+      recommendations: [],
+    });
+
+    fetchBranchOverviewMock
+      .mockResolvedValueOnce({
+        years: {
+          year_1: { grade_id: 'year_1', grade_name: '大一', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+          year_2: { grade_id: 'year_2', grade_name: '大二', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+          year_3: {
+            grade_id: 'year_3',
+            grade_name: '大三',
+            has_courses: true,
+            has_outline_content: false,
+            is_clickable: true,
+            current_course_id: 'year_3_course_1',
+            courses: [
+              {
+                course_node_id: 'year_3_course_1',
+                course_or_chapter_theme: '旧课程路径',
+                course_goal: '等待更新',
+                status: 'current',
+                has_outline: false,
+              },
+            ],
+          },
+          year_4: { grade_id: 'year_4', grade_name: '大四', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+        },
+        updatedAt: '2026-06-05T00:00:00Z',
+      })
+      .mockResolvedValueOnce({
+        years: {
+          year_1: { grade_id: 'year_1', grade_name: '大一', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+          year_2: { grade_id: 'year_2', grade_name: '大二', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+          year_3: {
+            grade_id: 'year_3',
+            grade_name: '大三',
+            has_courses: true,
+            has_outline_content: true,
+            is_clickable: true,
+            current_course_id: 'year_3_course_1',
+            courses: [
+              {
+                course_node_id: 'year_3_course_1',
+                course_or_chapter_theme: 'AI Agent 开发基础能力搭建',
+                course_goal: '完成最小功能闭环',
+                status: 'current',
+                has_outline: true,
+              },
+            ],
+          },
+          year_4: { grade_id: 'year_4', grade_name: '大四', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+        },
+        updatedAt: '2026-06-05T00:01:00Z',
+      });
+
+    renderBranchPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('旧课程路径')).toBeTruthy();
+    });
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('mutiagent-learning-path-updated', {
+        detail: { sessionId: 'session-follow-up' },
+      }));
+    });
+
+    await waitFor(() => {
+      expect(fetchBranchOverviewMock).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('AI Agent 开发基础能力搭建')).toBeTruthy();
+    });
+
+    expect(screen.queryByText('旧课程路径')).toBeNull();
   });
 });

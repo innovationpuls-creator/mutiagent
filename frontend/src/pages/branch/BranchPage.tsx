@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import '../../components/home/BlankPage.css';
 import './branch.css';
@@ -11,6 +11,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { profileYearIdFromCurrentGrade } from '../../lib/profileContract';
 import type { BranchCourseNode, BranchOverview } from '../../types/branch';
 import { PathInitOverlay } from '../../components/onboarding/PathInitOverlay';
+import { LEARNING_PATH_UPDATED_EVENT } from '../../onboarding/learningPathFlow';
 
 const YEAR_ORDER = ['year_1', 'year_2', 'year_3', 'year_4'] as const;
 
@@ -23,6 +24,11 @@ const YEAR_LABELS = {
 
 type YearId = keyof typeof YEAR_LABELS;
 type StageSlot = 'left' | 'center' | 'right';
+
+interface LoadOverviewOptions {
+  background?: boolean;
+  shouldIgnore?: () => boolean;
+}
 
 interface StageCourse {
   slot: StageSlot;
@@ -159,6 +165,21 @@ function toStageCourseSet(stageCourses: StageCourse[]): StageCourseSet {
   }
 
   return { left, center, right };
+}
+
+function getCurrentCourseFromOverview(overview: BranchOverview | null): BranchCourseNode | null {
+  if (!overview) return null;
+  for (const yearId of YEAR_ORDER) {
+    const year = overview.years[yearId];
+    if (!year) continue;
+    const currentCourse = year.current_course_id
+      ? year.courses.find((course) => course.course_node_id === year.current_course_id)
+      : null;
+    if (currentCourse) return currentCourse;
+    const fallbackCurrent = year.courses.find((course) => course.status === 'current');
+    if (fallbackCurrent) return fallbackCurrent;
+  }
+  return null;
 }
 
 function yearIdFromProfileGrade(currentGrade: string): YearId | null {
@@ -643,25 +664,21 @@ export function BranchPage() {
     return location.state?.justGeneratedProfile === true;
   });
   const [showCoachmark, setShowCoachmark] = useState(false);
+  const isMountedRef = useRef(true);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadOverview() {
+  const loadOverview = useCallback(async (options?: LoadOverviewOptions) => {
       if (!isAuthReady) {
         return;
       }
 
       if (!token) {
-        if (!cancelled) {
-          setOverview(null);
-          setLoading(false);
-          setError('登录后可查看课程路径。');
-        }
+        setOverview(null);
+        setLoading(false);
+        setError('登录后可查看课程路径。');
         return;
       }
 
-      if (!cancelled) {
+      if (!options?.background) {
         setLoading(true);
         setError(null);
       }
@@ -671,38 +688,54 @@ export function BranchPage() {
           fetchBranchOverview(token),
           fetchProfileDashboard(token),
         ]);
-        if (cancelled) {
+        if (!isMountedRef.current || options?.shouldIgnore?.()) {
           return;
         }
-
         setOverview(nextOverview);
         const mappedProfileYear = yearIdFromProfileGrade(dashboard.profile.currentGrade);
         const firstClickable = YEAR_ORDER.find((yearId) => nextOverview.years[yearId]?.is_clickable);
         const preferredYear = mappedProfileYear && nextOverview.years[mappedProfileYear]?.is_clickable
           ? mappedProfileYear
           : null;
-        setActiveYear(preferredYear ?? firstClickable ?? 'year_1');
+        setActiveYear((currentYear) => (
+          options?.background && nextOverview.years[currentYear]?.is_clickable
+            ? currentYear
+            : preferredYear ?? firstClickable ?? 'year_1'
+        ));
       } catch (loadError) {
-        if (cancelled) {
+        if (!isMountedRef.current || options?.shouldIgnore?.()) {
           return;
         }
-
         const message = loadError instanceof Error ? loadError.message : '课程路径加载失败';
         setOverview(null);
         setError(message);
       } finally {
-        if (!cancelled) {
+        if (!options?.background && isMountedRef.current && !options?.shouldIgnore?.()) {
           setLoading(false);
         }
       }
-    }
+  }, [isAuthReady, token]);
 
-    void loadOverview();
-
+  useEffect(() => {
+    let cancelled = false;
+    isMountedRef.current = true;
+    void loadOverview({ shouldIgnore: () => cancelled });
     return () => {
       cancelled = true;
+      isMountedRef.current = false;
     };
-  }, [isAuthReady, token]);
+  }, [loadOverview]);
+
+  useEffect(() => {
+    const handleLearningPathUpdated = () => {
+      void loadOverview({ background: true });
+    };
+
+    window.addEventListener(LEARNING_PATH_UPDATED_EVENT, handleLearningPathUpdated);
+    return () => {
+      window.removeEventListener(LEARNING_PATH_UPDATED_EVENT, handleLearningPathUpdated);
+    };
+  }, [loadOverview]);
 
   const options = YEAR_ORDER.map((yearId) => overview?.years[yearId]?.grade_name ?? YEAR_LABELS[yearId]);
   const labelToYearId = Object.fromEntries(
@@ -713,6 +746,7 @@ export function BranchPage() {
     .map((yearId) => overview?.years[yearId]?.grade_name ?? YEAR_LABELS[yearId]);
   const activeLabel = overview?.years[activeYear]?.grade_name ?? YEAR_LABELS[activeYear];
   const activeYearData = overview?.years[activeYear] ?? null;
+  const currentCourse = getCurrentCourseFromOverview(overview);
 
   return (
     <>
@@ -778,6 +812,8 @@ export function BranchPage() {
       <AnimatePresence>
         {showPathOverlay && (
           <PathInitOverlay
+            currentCourseName={currentCourse?.course_or_chapter_theme ?? null}
+            currentCourseId={currentCourse?.course_node_id ?? null}
             onComplete={() => {
               setShowPathOverlay(false);
               setShowCoachmark(true);

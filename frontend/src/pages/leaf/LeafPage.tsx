@@ -336,10 +336,9 @@ export function LeafPage() {
       </AnimatePresence>
 
       <main
-        className={`w-full pt-[104px] pb-16 px-6 md:px-16 flex-1 flex justify-center ${markmapCollapsed ? '' : 'md:ml-[360px]'}`}
-        style={{ transition: 'margin 0.76s cubic-bezier(0.25, 1, 0.5, 1)' }}
+        className={`leaf-page-main ${markmapCollapsed ? 'leaf-page-main-collapsed' : 'leaf-page-main-with-map'}`}
       >
-        <div className="w-full max-w-4xl flex flex-col gap-10 pb-[100px]">
+        <div className="leaf-page-main-inner">
           <LeafTopBar
             course={response.course}
             selectedSection={selectedSection}
@@ -350,7 +349,6 @@ export function LeafPage() {
           />
           <div
             className={markmapCollapsed ? 'mt-8' : 'mt-0'}
-            style={{ transition: 'margin 0.76s cubic-bezier(0.25, 1, 0.5, 1)' }}
           >
             <LeafContent
               section={selectedSection}

@@ -2,16 +2,22 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { motionTokens, DURATION_INSTANT } from '../../styles/motion-tokens';
 import { useAiWidget } from '../../context/AiWidgetContext';
+import { buildCourseOutlineDraft } from '../../onboarding/learningPathFlow';
 
 interface Props {
+  currentCourseName?: string | null;
+  currentCourseId?: string | null;
   onComplete?: () => void;
 }
 
-export function PathInitOverlay({ onComplete }: Props) {
+export function PathInitOverlay({ currentCourseName, currentCourseId, onComplete }: Props) {
   const [phase, setPhase] = useState<number>(0);
   const [isStarting, setIsStarting] = useState(false);
   const reduceMotion = useReducedMotion();
-  const { openWithMessage } = useAiWidget();
+  const { openWithDraft } = useAiWidget();
+  const courseName = currentCourseName?.trim() || '第一门课';
+  const courseId = currentCourseId?.trim() || '';
+  const startLabel = currentCourseName?.trim() ? `开始《${courseName}》` : '开始第一门课';
 
   useEffect(() => {
     if (reduceMotion) {
@@ -90,7 +96,11 @@ export function PathInitOverlay({ onComplete }: Props) {
               transition={motionTokens.lazy}
               onClick={() => {
                 setIsStarting(true);
-                openWithMessage('开始第一门课');
+                openWithDraft(
+                  courseId
+                    ? buildCourseOutlineDraft(courseName, courseId)
+                    : `帮我生成《${courseName}》的课程大纲`,
+                );
                 onComplete?.();
               }}
               style={{
@@ -106,7 +116,7 @@ export function PathInitOverlay({ onComplete }: Props) {
                 boxShadow: 'var(--shadow-md)',
               }}
             >
-              {isStarting ? '正在启动课程...' : '开始第一门课'}
+              {isStarting ? '正在启动课程...' : startLabel}
             </motion.button>
           )}
         </AnimatePresence>

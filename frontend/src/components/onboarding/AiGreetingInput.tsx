@@ -27,6 +27,13 @@ import { dispatchLeafGenerationCompleted, dispatchLeafGenerationEvent } from '..
 import { HandwritingCanvas } from '../ui/HandwritingCanvas';
 import { PenTool } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import {
+  buildCurrentCourseOutlineDraft,
+  buildLearningPathGenerationDraft,
+  dispatchLearningPathUpdated,
+  findLatestLearningPath,
+  hasLearningOutputInMessages,
+} from '../../onboarding/learningPathFlow';
 
 const AGENT_LABELS: Record<string, string> = {
   main_agent: '主智能体',
@@ -255,10 +262,10 @@ function AssistantMessageFrame({ message, children }: AssistantMessageFrameProps
 }
 
 const ONBOARDING_STAGES = [
-  { id: 'basic_info', label: '基础信息' },
-  { id: 'learning_preference', label: '学习偏好' },
-  { id: 'ability_basis', label: '能力基础' },
-  { id: 'goal_constraint', label: '目标约束' },
+  { id: 'basic_info', label: '画像线索' },
+  { id: 'learning_preference', label: '目标锚定' },
+  { id: 'ability_basis', label: '路径生成' },
+  { id: 'goal_constraint', label: '持续更新' },
 ] as const;
 
 interface StepProgressBarProps {
@@ -356,12 +363,12 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
     setWidgetState,
     pendingMessage,
     clearPendingMessage,
+    openWithDraft,
   } = useAiWidget();
   const { token, user } = useAuth();
 
-  const handleOpenPath = () => {
-    setWidgetState('WIDGET');
-    navigate('/branch', { state: { justGeneratedProfile: true } });
+  const handleGeneratePathDraft = () => {
+    openWithDraft(buildLearningPathGenerationDraft());
   };
   const cardRef = useRef<HTMLDivElement>(null);
   const [store, dispatch] = useReducer(chatReducer, initialChatStore);
@@ -372,6 +379,7 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [showCanvas, setShowCanvas] = useState(false);
   const [imageAttachment, setImageAttachment] = useState<string | null>(null);
+  const [hiddenPathActionsMessageId, setHiddenPathActionsMessageId] = useState<string | null>(null);
 
   const runIdRef = useRef(0);
   const startTimeRef = useRef<Record<string, number>>({});
@@ -389,6 +397,32 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
 
   const isPending = store.state === 'connecting' || store.state === 'streaming';
   const aiMood = store.state === 'error' ? 'error' : isPending ? 'thinking' : store.messages.some((m) => m.role === 'assistant' && m.status === 'completed') ? 'happy' : 'idle';
+  const latestLearningPathMessage = (() => {
+    for (let index = store.messages.length - 1; index >= 0; index -= 1) {
+      if (store.messages[index].learningPath) {
+        return store.messages[index];
+      }
+    }
+    return null;
+  })();
+  const latestLearningPath = findLatestLearningPath(store.messages);
+  const latestLearningPathMessageId = latestLearningPathMessage?.id ?? null;
+  const shouldShowPathActions = Boolean(
+    latestLearningPath && latestLearningPathMessageId !== hiddenPathActionsMessageId,
+  );
+  const hasLearningOutput = hasLearningOutputInMessages(store.messages);
+
+  const handleOpenPath = () => {
+    setHiddenPathActionsMessageId(latestLearningPathMessageId);
+    setWidgetState('WIDGET');
+    navigate('/branch', { state: { justGeneratedProfile: true } });
+  };
+  const handleStartCurrentCourseDraft = () => {
+    const learningPath = findLatestLearningPath(store.messages);
+    if (!learningPath) return;
+    setHiddenPathActionsMessageId(latestLearningPathMessageId);
+    openWithDraft(buildCurrentCourseOutlineDraft(learningPath));
+  };
 
   const { persistSession, clearSessionFromUrl, clearPersistedSession } = useChatSession(
     store.currentSessionId,
@@ -782,6 +816,9 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
             if (shouldFetchCourseOutline && structuredData.courseKnowledge?.course_id) {
               dispatchLeafGenerationCompleted(structuredData.courseKnowledge.course_id, 'course_outline');
             }
+            if (shouldFetchLearningPath && structuredData.learningPath) {
+              dispatchLearningPathUpdated(finalSessionId);
+            }
           } catch {
             // Ignore structured follow-up errors and keep text result visible.
           }
@@ -903,6 +940,7 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
             onSendReply={isLatestInteractive ? sendMessage : undefined}
             disabled={!isLatestInteractive || isPending}
             partialData={message.partialData ?? null}
+            showPathGenerationCta={isLatestInteractive && !hasLearningOutput}
           />
         );
       } else {
@@ -957,7 +995,7 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
         }}
       >
         {widgetState === 'EXPANDED' ? (
-          <section className="session-panel" aria-label="AI 基础画像对话">
+          <section className="session-panel" aria-label="AI 学习路径对话">
             <header className="session-header">
               <div className="session-title-cluster">
                 <div className="agent-face" data-ai-state={aiMood}>
@@ -965,7 +1003,7 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
                   <AiEyes layoutId="eyes" isHappy={aiMood === 'happy'} />
                 </div>
                 <div className="session-title-copy">
-                  <span>基础画像对话</span>
+                  <span>学习路径对话</span>
                   <strong>{currentProgressLabel(agentSteps)}</strong>
                 </div>
               </div>
@@ -995,7 +1033,7 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
                 <div className="chat-flow">
                   {store.messages.length === 0 && (
                     <div className="chat-empty-state">
-                      🌱 欢迎！告诉我你的年级、专业或学习方向。定制你的自适应课程藤蔓仅需约 1-2 分钟。
+                      欢迎！告诉我你的年级、专业、学习目标或当前卡点，我会先整理基础画像，再生成可迭代的学习路径。
                     </div>
                   )}
 
@@ -1025,51 +1063,63 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
                       </button>
                     </div>
                   )}
-                  {hasCompleteProfileRef.current ? (
+                  {hasCompleteProfileRef.current && !hasLearningOutput && !isPending && !inputValue.trim() && !imageAttachment ? (
                     <div className="composer-completed-cta-panel">
-                      <button className="cta-completed-btn" onClick={handleOpenPath} type="button">
-                        <span>开启我的学习路径</span>
+                      <button className="cta-completed-btn" onClick={handleGeneratePathDraft} type="button">
+                        <span>生成学习路径</span>
                         <span className="arrow">➔</span>
                       </button>
                     </div>
                   ) : (
-                    <form
-                      className="chat-composer"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        handleSubmit();
-                      }}
-                    >
-                      <textarea
-                        rows={1}
-                        placeholder="输入你的学习情况..."
-                        value={inputValue}
-                        disabled={isPending}
-                        onChange={(event) => setInputValue(event.target.value)}
-                        onKeyDown={(event) => {
-                          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                            handleSubmit();
-                          }
+                    <>
+                      {shouldShowPathActions && (
+                        <div className="composer-path-actions">
+                          <button type="button" onClick={handleOpenPath}>
+                            查看学习路径
+                          </button>
+                          <button type="button" onClick={handleStartCurrentCourseDraft}>
+                            开始第一门课
+                          </button>
+                        </div>
+                      )}
+                      <form
+                        className="chat-composer"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          handleSubmit();
                         }}
-                      />
-                      <button
-                        type="button"
-                        className="pen-button"
-                        disabled={isPending}
-                        onClick={() => setShowCanvas(true)}
-                        aria-label="手写/绘图输入"
                       >
-                        <PenTool className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="submit"
-                        className="submit-button"
-                        disabled={isPending || (!inputValue.trim() && !imageAttachment)}
-                        aria-label="发送消息"
-                      >
-                        <span aria-hidden="true">+</span>
-                      </button>
-                    </form>
+                        <textarea
+                          rows={1}
+                          placeholder="输入你的学习情况..."
+                          value={inputValue}
+                          disabled={isPending}
+                          onChange={(event) => setInputValue(event.target.value)}
+                          onKeyDown={(event) => {
+                            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                              handleSubmit();
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="pen-button"
+                          disabled={isPending}
+                          onClick={() => setShowCanvas(true)}
+                          aria-label="手写/绘图输入"
+                        >
+                          <PenTool className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="submit"
+                          className="submit-button"
+                          disabled={isPending || (!inputValue.trim() && !imageAttachment)}
+                          aria-label="发送消息"
+                        >
+                          <span aria-hidden="true">+</span>
+                        </button>
+                      </form>
+                    </>
                   )}
                 </div>
               </main>
@@ -1838,6 +1888,35 @@ const StyledWrapper = styled.div`
     backdrop-filter: var(--glass-blur);
     box-shadow: var(--shadow-sm), inset 0 1px 1px oklch(100% 0 0 / 0.4);
     flex-shrink: 0;
+  }
+
+  .composer-path-actions {
+    display: flex;
+    justify-content: center;
+    gap: var(--space-8);
+    padding-inline: var(--space-12);
+  }
+
+  .composer-path-actions button {
+    flex: 1 1 0;
+    min-block-size: var(--space-40);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-raised);
+    color: var(--color-text-primary);
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition:
+      transform var(--duration-lazy-hover) var(--ease-lazy),
+      background-color var(--duration-lazy-hover) var(--ease-lazy);
+  }
+
+  .composer-path-actions button:hover {
+    transform: translateY(calc(var(--space-2) * -1));
+    background: var(--color-primary-soft);
   }
 
   .cta-completed-btn {
