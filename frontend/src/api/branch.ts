@@ -85,6 +85,26 @@ function normalizeCanopyCourse(value: unknown): CanopyCourseNode {
   };
 }
 
+function normalizeQualityScores(raw: unknown): Record<string, import('../types/canopy').CourseQualityScore> {
+  if (!raw || typeof raw !== 'object') return {};
+  const result: Record<string, import('../types/canopy').CourseQualityScore> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (isRecord(value)) {
+      result[key] = {
+        accuracy: typeof value.accuracy === 'number' ? value.accuracy : 0,
+        difficulty_fit: typeof value.difficulty_fit === 'number' ? value.difficulty_fit : 0,
+        completeness: typeof value.completeness === 'number' ? value.completeness : 0,
+        overall: typeof value.overall === 'number' ? value.overall : 0,
+        suggestions: Array.isArray(value.suggestions)
+          ? value.suggestions.filter((s): s is string => typeof s === 'string')
+          : [],
+        scored_at: typeof value.scored_at === 'string' ? value.scored_at : null,
+      };
+    }
+  }
+  return result;
+}
+
 function normalizeCanopyMilestone(value: unknown): CanopyMilestone {
   if (!isRecord(value)) {
     throw new Error('成森数据格式不正确');
@@ -190,6 +210,7 @@ export async function fetchCanopyOverview(token: string): Promise<CanopyOverview
     avg_score: unknown;
     focused_hours: unknown;
     milestones: unknown;
+    quality_scores: unknown;
   };
 
   if (
@@ -212,5 +233,6 @@ export async function fetchCanopyOverview(token: string): Promise<CanopyOverview
     avgScore: payload.avg_score,
     focusedHours: payload.focused_hours,
     milestones: payload.milestones.map(normalizeCanopyMilestone),
+    qualityScores: normalizeQualityScores(payload.quality_scores),
   };
 }

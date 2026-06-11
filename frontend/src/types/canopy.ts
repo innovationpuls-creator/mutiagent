@@ -17,6 +17,15 @@ export interface CanopyMilestone {
   reached: boolean;
 }
 
+export interface CourseQualityScore {
+  accuracy: number;
+  difficulty_fit: number;
+  completeness: number;
+  overall: number;
+  suggestions: string[];
+  scored_at: string | null;
+}
+
 export interface CanopyOverview {
   courses: CanopyCourseNode[];
   growthStage: number;
@@ -25,4 +34,5 @@ export interface CanopyOverview {
   avgScore: number;
   focusedHours: number;
   milestones: CanopyMilestone[];
+  qualityScores: Record<string, CourseQualityScore>;
 }
