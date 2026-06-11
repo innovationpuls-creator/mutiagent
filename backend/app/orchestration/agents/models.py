@@ -115,6 +115,25 @@ class QuestionBoxOutput(BaseModel):
     options: list[QuestionBoxOptionOutput] = Field(description="可选答案")
 
 
+class QuestionFormQuestionOutput(BaseModel):
+    """表单问题定义。"""
+    field_name: str = Field(description="ConfirmedInfo 中的字段名")
+    label: str = Field(description="字段展示标签")
+    description: str = Field(default="", description="字段说明")
+    input_type: Literal["single_choice", "multi_choice", "free_text"] = Field(description="输入类型")
+    required: bool = Field(default=True, description="是否必填")
+    options: list[QuestionBoxOptionOutput] = Field(default_factory=list, description="选项列表")
+
+
+class QuestionFormOutput(BaseModel):
+    """动态表单结构。"""
+    title: str = Field(description="表单标题")
+    description: str = Field(description="表单说明")
+    stage: ChatStage = Field(description="所属画像阶段")
+    questions: list[QuestionFormQuestionOutput] = Field(description="问题列表")
+    submit_label: str = Field(default="提交", description="提交按钮文本")
+
+
 class ProfileSessionOutput(BaseModel):
     """画像 Agent 的 SessionMessage 兼容结构化输出。"""
     type: Literal["collecting", "basic_profile"] = Field(description="消息类型")
@@ -124,6 +143,7 @@ class ProfileSessionOutput(BaseModel):
     defaulted_fields: list[str] = Field(description="由系统补全的字段")
     question_md: str = Field(description="Markdown 问题文本")
     question_box: QuestionBoxOutput = Field(description="结构化问题框")
+    question_form: QuestionFormOutput | None = Field(default=None, description="动态表单")
     text: str = Field(description="自然语言回复文本")
 
 

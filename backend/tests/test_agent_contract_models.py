@@ -9,6 +9,8 @@ from app.orchestration.agents.models import (
     LearningPathCourseSpecOutput,
     LearningPathResultOutput,
     ProfileSessionOutput,
+    QuestionFormQuestionOutput,
+    QuestionFormOutput,
     SectionAnimationBriefOutput,
     SectionHtmlAnimationOutput,
     SectionMarkdownOutput,
@@ -455,3 +457,43 @@ def test_section_html_animation_allows_missing_top_level_and_item_title_from_llm
     assert output.section_id == ""
     assert output.animations[0].title == ""
     assert "section-animation" in output.animations[0].html
+
+
+def test_profile_session_output_supports_question_form() -> None:
+    question_data = {
+        "field_name": "major",
+        "label": "所学专业",
+        "description": "输入你的专业名称",
+        "input_type": "free_text",
+        "required": True,
+        "options": [],
+    }
+    
+    form_data = {
+        "title": "专业基本信息",
+        "description": "请提供您的专业信息以帮助我们定制学习计划",
+        "stage": "basic_info",
+        "questions": [question_data],
+        "submit_label": "确认提交",
+    }
+    
+    profile = ProfileSessionOutput(
+        type="basic_profile",
+        stage="basic_info",
+        question_mode="question_box",
+        confirmed_info=ConfirmedInfoOutput(**_confirmed_info()),
+        defaulted_fields=[],
+        question_md="请填写表单",
+        question_box={"question": "表单", "options": []},
+        question_form=QuestionFormOutput(**form_data),
+        text="请填写以下表单：",
+    )
+
+    assert profile.question_form is not None
+    assert profile.question_form.title == "专业基本信息"
+    assert profile.question_form.submit_label == "确认提交"
+    assert len(profile.question_form.questions) == 1
+    assert profile.question_form.questions[0].field_name == "major"
+    assert profile.question_form.questions[0].required is True
+    assert profile.question_form.questions[0].options == []
+
