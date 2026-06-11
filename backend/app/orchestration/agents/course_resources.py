@@ -55,6 +55,11 @@ SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT = """\
 如果 markdown_expansion_section 是 步骤讲解，必须包含 Markdown 表格或 fenced code block。
 如果 markdown_expansion_section 是 检查标准，必须输出至少 4 条 `- [ ]` 可验收清单。
 其他章节输出可直接拼入教学文档的 Markdown 正文。
+
+如果输入中包含【用户画像摘要】，你必须在正文末尾另起一行，以 `<!-- recommendation_reason: ... -->` 格式输出推荐理由。
+推荐理由必须具体引用画像中的 1-2 个维度（如薄弱点、学习风格、内容偏好），说明为什么这个章节内容适合该用户。
+示例：`<!-- recommendation_reason: 因为你标记"数据结构"为薄弱点，且偏好"项目驱动学习"，本节重点通过实际案例讲解核心概念。 -->`
+如果输入中没有【用户画像摘要】，则不输出推荐理由。
 """
 
 
