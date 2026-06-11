@@ -179,8 +179,6 @@ async def _invoke_markdown_expansion_chain(
     timeout_seconds: float = _MARKDOWN_TIMEOUT_SECONDS,
     profile_context: str = "",
 ) -> str:
-    if profile_context:
-        query = f"{profile_context}\n\n{query}"
     output = await asyncio.wait_for(
         chain.ainvoke({"query": query, "profile_context": profile_context}),
         timeout=timeout_seconds,
