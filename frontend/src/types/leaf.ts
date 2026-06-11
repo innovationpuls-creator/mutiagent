@@ -31,6 +31,7 @@ export interface LeafGenerationStatus {
 export interface LeafMarkdownBlock {
   type: 'markdown';
   markdown: string;
+  recommendation_reason?: string;
 }
 
 export interface LeafVideoBlock {
