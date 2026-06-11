@@ -594,29 +594,21 @@ def test_build_system_prompt_marks_summary_only_profile_as_incomplete() -> None:
 
 
 def test_supervisor_node_direct_text_reply_for_chitchat_and_qa() -> None:
-    errors: list[AssertionError] = []
-
     class MockLlm:
         def __init__(self) -> None:
             self.tools: list = []
+            self.called_messages: list = []
             
         def bind_tools(self, tools: list) -> MockLlm:
             self.tools = tools
             return self
 
         async def ainvoke(self, messages: list) -> AIMessage:
-            try:
-                # Check if the prompt instructs LLM not to use tools for general Q&A
-                system_msg = messages[0].content
-                assert "## 核心决策逻辑" in system_msg
-                assert "直接回复" in system_msg
-                # Return a text reply instead of a tool call
-                return AIMessage(content="FastAPI 是一个用于构建 API 的现代、快速（高性能）的 Web 框架。")
-            except AssertionError as exc:
-                errors.append(exc)
-                raise exc
+            self.called_messages = messages
+            return AIMessage(content="FastAPI 是一个用于构建 API 的现代、快速（高性能）的 Web 框架。")
 
-    supervisor_node = create_supervisor_node(MockLlm())
+    mock_llm = MockLlm()
+    supervisor_node = create_supervisor_node(mock_llm)
     
     result = asyncio.run(
         supervisor_node(
@@ -636,8 +628,10 @@ def test_supervisor_node_direct_text_reply_for_chitchat_and_qa() -> None:
         )
     )
 
-    if errors:
-        raise errors[0]
-
+    assert mock_llm.called_messages, "LLM was not called"
+    system_msg = mock_llm.called_messages[0].content
+    assert "## 核心决策逻辑" in system_msg
+    assert "直接回复" in system_msg
     assert not result["messages"][0].tool_calls
     assert "FastAPI 是一个" in result["response"]
+
