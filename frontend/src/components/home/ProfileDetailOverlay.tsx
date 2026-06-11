@@ -161,6 +161,18 @@ export function ProfileDetailOverlay({ isOpen, onClose, profile }: ProfileDetail
                 </div>
               </div>
             </section>
+
+            {/* 推荐依据 */}
+            <div className="mt-6 pt-4 border-t border-[var(--color-border)]">
+              <h4 className="text-sm font-medium text-[var(--color-text-secondary)] mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[var(--color-primary)]" />
+                推荐依据
+              </h4>
+              <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                你的学习资源推荐基于以下画像维度：薄弱方向、学习方式偏好、内容形式偏好和知识基础。
+                每个章节的推荐理由会显示在资源卡片下方。
+              </p>
+            </div>
           </div>
         </div>
       </motion.div>
