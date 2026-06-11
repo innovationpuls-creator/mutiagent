@@ -591,3 +591,44 @@ def test_build_system_prompt_marks_summary_only_profile_as_incomplete() -> None:
 
     assert "❌ 用户画像未完成" in prompt
     assert "✅ 用户画像已完成" not in prompt
+
+
+def test_supervisor_node_direct_text_reply_for_chitchat_and_qa() -> None:
+    class MockLlm:
+        def __init__(self):
+            self.tools = []
+            
+        def bind_tools(self, tools):
+            self.tools = tools
+            return self
+
+        async def ainvoke(self, messages):
+            # Check if the prompt instructs LLM not to use tools for general Q&A
+            system_msg = messages[0].content
+            assert "## 核心决策逻辑" in system_msg
+            assert "直接回复" in system_msg
+            # Return a text reply instead of a tool call
+            return AIMessage(content="FastAPI 是一个用于构建 API 的现代、快速（高性能）的 Web 框架。")
+
+    supervisor_node = create_supervisor_node(MockLlm())
+    
+    result = asyncio.run(
+        supervisor_node(
+            {
+                "query": "什么是 FastAPI",
+                "profile": _complete_profile(),
+                "year_learning_paths": {
+                    "year_3": {
+                        "current_learning_course": {
+                            "grade_id": "year_3",
+                            "course_node_id": "year_3_course_1",
+                        }
+                    }
+                },
+                "messages": [],
+            }
+        )
+    )
+
+    assert not result["messages"][0].tool_calls
+    assert "FastAPI 是一个" in result["response"]
