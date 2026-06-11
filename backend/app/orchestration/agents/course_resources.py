@@ -163,6 +163,21 @@ def _extract_brief_ids_from_markdown(markdown: str, kind: str) -> list[str]:
     return ids
 
 
+_RECOMMENDATION_REASON_PATTERN = re.compile(
+    r"<!--\s*recommendation_reason:\s*(?P<reason>.*?)\s*-->"
+)
+
+
+def _extract_recommendation_reason(markdown: str) -> tuple[str, str]:
+    """Extract recommendation_reason from markdown comment, return (cleaned_markdown, reason)."""
+    match = _RECOMMENDATION_REASON_PATTERN.search(markdown)
+    if not match:
+        return markdown, ""
+    reason = match.group("reason").strip()
+    cleaned = markdown[:match.start()].rstrip() + markdown[match.end():]
+    return cleaned.strip(), reason
+
+
 async def _run_with_retries(
     action: Callable[[], Awaitable[dict]],
     *,
@@ -3406,13 +3421,16 @@ async def run_section_markdown_agent(
 
         animation_briefs = markdown_data.get("animation_briefs")
         video_briefs = markdown_data.get("video_briefs")
+        raw_markdown = _clean_text(markdown_data.get("markdown"))
+        cleaned_markdown, recommendation_reason = _extract_recommendation_reason(raw_markdown)
         return target_section_id, {
             "section_id": target_section_id,
             "parent_section_id": section.get("parent_section_id"),
             "title": _clean_text(section.get("title")) or _clean_text(markdown_data.get("title")),
-            "markdown": _clean_text(markdown_data.get("markdown")),
+            "markdown": cleaned_markdown,
             "video_briefs": video_briefs if isinstance(video_briefs, list) else [],
             "animation_briefs": animation_briefs if isinstance(animation_briefs, list) else [],
+            "recommendation_reason": recommendation_reason,
             "generated_at": _now_iso(),
         }
 
