@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import React from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BranchPage } from './BranchPage';
@@ -14,6 +15,14 @@ vi.mock('../../api/branch', () => ({
 vi.mock('../../api/profile', () => ({
   fetchProfileDashboard: (...args: unknown[]) => fetchProfileDashboardMock(...args),
 }));
+
+vi.mock('framer-motion', async () => {
+  const actual = await vi.importActual<typeof import('framer-motion')>('framer-motion');
+  return {
+    ...actual,
+    useReducedMotion: () => true,
+  };
+});
 
 afterEach(() => {
   cleanup();
@@ -930,5 +939,128 @@ describe('BranchPage', () => {
     });
 
     expect(screen.queryByText('工程化 Web 开发基础')).toBeNull();
+  });
+
+  it('renders PathInitOverlay when justGeneratedProfile state is passed, and shows coachmark after completion', async () => {
+    fetchProfileDashboardMock.mockResolvedValue({
+      profile: {
+        currentGrade: '大三',
+        major: '软件工程',
+        learningStage: '项目实践',
+        hasClearGoal: '是',
+        learningMethodPreference: '项目驱动',
+        learningPacePreference: '周末集中',
+        contentPreference: ['实践'],
+        needGuidance: '需要',
+        knowledgeFoundation: '有基础',
+        strengths: '执行力强',
+        weaknesses: '部署经验不足',
+        experience: '做过课程项目',
+        shortTermGoal: '完成 AI 项目',
+        longTermGoal: '成为 AI 应用开发者',
+        weeklyAvailableTime: '每周 8 小时',
+        constraints: '周末集中',
+      },
+      profileCompleteness: 100,
+      profileSummaryText: '测试摘要',
+      todayLearning: {
+        title: '今日学习',
+        description: '测试',
+        source: '学习路径智能体',
+        currentLearningCourse: null,
+        currentCourseDetail: null,
+        currentCourseOutline: null,
+        gradeCourses: [],
+        followingCourses: [],
+      },
+      recommendations: [],
+    });
+
+    fetchBranchOverviewMock.mockResolvedValue({
+      years: {
+        year_1: { grade_id: 'year_1', grade_name: '大一', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+        year_2: { grade_id: 'year_2', grade_name: '大二', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+        year_3: {
+          grade_id: 'year_3',
+          grade_name: '大三',
+          has_courses: true,
+          has_outline_content: true,
+          is_clickable: true,
+          current_course_id: 'year_3_course_1',
+          courses: [
+            {
+              course_node_id: 'year_3_course_1',
+              course_or_chapter_theme: 'AI 应用开发项目课',
+              course_goal: '完成项目',
+              status: 'current',
+              has_outline: true,
+            },
+          ],
+        },
+        year_4: { grade_id: 'year_4', grade_name: '大四', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+      },
+      updatedAt: '2026-06-05T00:00:00Z',
+    });
+
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn((key: string) => {
+        if (key !== 'mutiagent-auth') {
+          return null;
+        }
+        return JSON.stringify({
+          token: 'token-1',
+          user: {
+            uid: 'user-1',
+            username: '测试用户',
+            identifier: 'user@example.com',
+            provider: 'password',
+            is_active: true,
+            created_at: '2026-06-02T00:00:00Z',
+            last_login_at: null,
+          },
+        });
+      }),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    });
+
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={[{ pathname: '/branch', state: { justGeneratedProfile: true } }]}>
+          <Routes>
+            <Route path="/branch" element={<BranchPage />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    // Verify overlay is shown
+    await waitFor(() => {
+      expect(screen.getByText('你的自适应学习路径已顺利编织完成。')).toBeTruthy();
+    });
+
+    // Since useReducedMotion returns true, the button is immediately rendered
+    const btn = screen.getByRole('button', { name: '开始第一门课' });
+    expect(btn).toBeTruthy();
+
+    // Click button to close overlay and trigger coachmark
+    fireEvent.click(btn);
+
+    // Wait for overlay to disappear
+    await waitFor(() => {
+      expect(screen.queryByText('你的自适应学习路径已顺利编织完成。')).toBeNull();
+    });
+
+    // Verify coachmark balloon is rendered
+    expect(screen.getByText('✨ 点击此处，开启第一章学习')).toBeTruthy();
+
+    // Click coachmark to dismiss it
+    const coachmark = screen.getByText('✨ 点击此处，开启第一章学习');
+    fireEvent.click(coachmark);
+
+    // Verify coachmark is dismissed
+    await waitFor(() => {
+      expect(screen.queryByText('✨ 点击此处，开启第一章学习')).toBeNull();
+    });
   });
 });

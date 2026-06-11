@@ -724,3 +724,48 @@
     transition: opacity var(--duration-instant) ease;
   }
 }
+
+.leaf-coachmark-balloon {
+  position: absolute;
+  bottom: 110%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  padding: var(--space-8) var(--space-16);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  animation: coachmark-float 2s ease-in-out infinite, fade-in-hint 0.4s var(--ease-editorial);
+}
+
+.balloon-arrow {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--color-primary);
+}
+
+@keyframes coachmark-float {
+  0%, 100% { transform: translate(-50%, 0); }
+  50% { transform: translate(-50%, -6px); }
+}
+
+@keyframes fade-in-hint {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leaf-coachmark-balloon {
+    animation: none;
+    transform: translateX(-50%);
+  }
+}

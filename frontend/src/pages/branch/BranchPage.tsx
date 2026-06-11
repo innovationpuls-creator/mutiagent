@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import '../../components/home/BlankPage.css';
 import './branch.css';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { motionTokens } from '../../styles/motion-tokens';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { fetchBranchOverview } from '../../api/branch';
@@ -10,6 +10,7 @@ import { fetchProfileDashboard } from '../../api/profile';
 import { useAuth } from '../../contexts/AuthContext';
 import { profileYearIdFromCurrentGrade } from '../../lib/profileContract';
 import type { BranchCourseNode, BranchOverview } from '../../types/branch';
+import { PathInitOverlay } from '../../components/onboarding/PathInitOverlay';
 
 const YEAR_ORDER = ['year_1', 'year_2', 'year_3', 'year_4'] as const;
 
@@ -344,11 +345,15 @@ function PathSession({
   courses,
   currentCourseId,
   onOpenCourse,
+  showCoachmark,
+  onCloseCoachmark,
 }: {
   gradeName: string;
   courses: BranchCourseNode[];
   currentCourseId: string | null;
   onOpenCourse: (course: BranchCourseNode) => void;
+  showCoachmark?: boolean;
+  onCloseCoachmark?: () => void;
 }) {
   const reduceMotion = useReducedMotion();
   const [focusedCourseId, setFocusedCourseId] = useState<string | null>(
@@ -370,6 +375,23 @@ function PathSession({
     setLockedCourseHint(null);
   }, [courses, currentCourseId]);
 
+  useEffect(() => {
+    if (!showCoachmark || !onCloseCoachmark) return undefined;
+    
+    const handleWindowClick = () => {
+      onCloseCoachmark();
+    };
+    
+    const timer = setTimeout(() => {
+      window.addEventListener('click', handleWindowClick);
+    }, 10);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('click', handleWindowClick);
+    };
+  }, [showCoachmark, onCloseCoachmark]);
+
   const stageCourses = pickStageCourses(courses, currentCourseId, focusedCourseId);
   const stage = toStageCourseSet(stageCourses);
 
@@ -382,6 +404,9 @@ function PathSession({
   }
 
   function handleCourseClick(course: BranchCourseNode): void {
+    if (showCoachmark && onCloseCoachmark) {
+      onCloseCoachmark();
+    }
     setFocusedCourseId(course.course_node_id);
     if (course.status === 'completed' || course.status === 'current') {
       setLockedCourseHint(null);
@@ -509,10 +534,16 @@ function PathSession({
               ) : null}
 
               {stage.center ? (
-                <div className="branch-stage-slot branch-stage-slot-center branch-node-center">
+                <div className="branch-stage-slot branch-stage-slot-center branch-node-center" style={{ position: 'relative' }}>
                   <div className="branch-mascot" aria-hidden="true">
                     <MascotBlob />
                   </div>
+                  {showCoachmark && (
+                    <div className="leaf-coachmark-balloon" onClick={onCloseCoachmark}>
+                      <span>✨ 点击此处，开启第一章学习</span>
+                      <div className="balloon-arrow" />
+                    </div>
+                  )}
                   <motion.article
                     className="branch-blob-card-shell branch-blob-card-shell-current"
                   >
@@ -602,11 +633,16 @@ function PathSession({
 export function BranchPage() {
   const reduceMotion = useReducedMotion();
   const navigate = useNavigate();
+  const location = useLocation();
   const { token, isAuthReady } = useAuth();
   const [overview, setOverview] = useState<BranchOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeYear, setActiveYear] = useState<YearId>('year_1');
+  const [showPathOverlay, setShowPathOverlay] = useState(() => {
+    return location.state?.justGeneratedProfile === true;
+  });
+  const [showCoachmark, setShowCoachmark] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -679,12 +715,13 @@ export function BranchPage() {
   const activeYearData = overview?.years[activeYear] ?? null;
 
   return (
-    <motion.main
-      className="home-page"
-      initial={reduceMotion ? false : { opacity: 0 }}
-      animate={reduceMotion ? undefined : { opacity: 1 }}
-      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, transition: { duration: 0.4 } }}
-    >
+    <>
+      <motion.main
+        className="home-page"
+        initial={reduceMotion ? false : { opacity: 0 }}
+        animate={reduceMotion ? undefined : { opacity: 1 }}
+        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, transition: { duration: 0.4 } }}
+      >
       <div className="home-ambient-sun" aria-hidden="true" />
       <div className="home-paper-canvas" aria-hidden="true" />
 
@@ -729,11 +766,26 @@ export function BranchPage() {
                 onOpenCourse={(course) => {
                   navigate(`/leaf/${encodeURIComponent(course.course_node_id)}`);
                 }}
+                showCoachmark={showCoachmark}
+                onCloseCoachmark={() => setShowCoachmark(false)}
               />
             </motion.div>
           )}
         </div>
       </div>
-    </motion.main>
+      </motion.main>
+
+      <AnimatePresence>
+        {showPathOverlay && (
+          <PathInitOverlay
+            onComplete={(e) => {
+              e?.stopPropagation();
+              setShowPathOverlay(false);
+              setShowCoachmark(true);
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </>
   );
 }
