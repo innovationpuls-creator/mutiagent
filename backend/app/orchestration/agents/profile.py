@@ -1512,10 +1512,14 @@ def _resolved_profile_text(
 
 def _resolved_content_preference(
     existing_confirmed: dict,
+    updates: dict[str, object],
     *,
     topic: str,
     allow_default_fill: bool,
 ) -> list[object]:
+    updates_content_preference = updates.get("content_preference")
+    if isinstance(updates_content_preference, list) and updates_content_preference:
+        return updates_content_preference
     existing_content_preference = existing_confirmed.get("content_preference")
     if isinstance(existing_content_preference, list) and existing_content_preference:
         return existing_content_preference
@@ -1619,7 +1623,7 @@ def _build_local_confirmed_info(
         "has_clear_goal": resolved("has_clear_goal", "大致有方向"),
         "learning_method_preference": resolved("learning_method_preference", "项目驱动学习"),
         "learning_pace_preference": resolved("learning_pace_preference", "按项目里程碑推进"),
-        "content_preference": _resolved_content_preference(existing_confirmed, topic=topic, allow_default_fill=allow_default_fill or (not has_existing_complete_profile)),
+        "content_preference": _resolved_content_preference(existing_confirmed, updates, topic=topic, allow_default_fill=allow_default_fill or (not has_existing_complete_profile)),
         "need_guidance": resolved("need_guidance", "需要轻量提醒"),
         "knowledge_foundation": resolved("knowledge_foundation"),
         "strengths": resolved("strengths", "工程实现与课程学习能力"),

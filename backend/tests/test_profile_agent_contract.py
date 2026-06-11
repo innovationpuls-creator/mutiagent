@@ -1482,4 +1482,57 @@ def test_profile_minimum_completion_routing(tmp_path: Path) -> None:
     assert result["profile"]["confirmed_info"]["constraints"] != ""
 
 
+def test_profile_form_submission_content_preference_persistence(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-persistence-test.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    from app.orchestration.agents.profile import _extract_explicit_profile_updates
+
+    texts = [
+        "画像表单提交：\n"
+        "content_preference: 文档、代码实践\n"
+        "weekly_available_time: 每周 10-15 小时\n"
+        "knowledge_foundation: 有 Python 基础\n"
+    ]
+    
+    state = {
+        "user_id": "user-2",
+        "query": texts[0],
+        "profile": {
+            "type": "collecting",
+            "stage": "ability_basis",
+            "confirmed_info": {
+                "current_grade": "大三",
+                "major": "软件工程",
+                "learning_stage": "有基础",
+                "has_clear_goal": "大致有方向",
+                "learning_method_preference": "项目驱动学习",
+                "weekly_available_time": "每周 6-10 小时",
+                "short_term_goal": "做个Agent",
+                "knowledge_foundation": "",
+                "experience": "",
+            },
+        },
+        "messages": [HumanMessage(content=texts[0])]
+    }
+    
+    updates = _extract_explicit_profile_updates(texts)
+    assert updates["content_preference"] == ["文档", "代码实践"]
+    assert updates["weekly_available_time"] == "每周 10-15 小时"
+    assert updates["knowledge_foundation"] == "有 Python 基础"
+
+    class FailingLlm:
+        def with_structured_output(self, *_args, **_kwargs):
+            raise AssertionError("LLM should not be called!")
+
+    result = asyncio.run(run_profile_agent(state, FailingLlm()))
+    confirmed = result["profile"]["confirmed_info"]
+    assert result["profile"]["type"] == "basic_profile"
+    assert confirmed["content_preference"] == ["文档", "代码实践"]
+    assert confirmed["weekly_available_time"] == "每周 10-15 小时"
+    assert confirmed["knowledge_foundation"] == "有 Python 基础"
+
+
+
 
