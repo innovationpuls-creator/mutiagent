@@ -3798,3 +3798,134 @@ class TestChatEndpoints:
                 assert branch_year_3["courses"][0]["has_outline"] is False
 
         graph_module._graph = None
+
+
+def test_stream_chat_events_injects_weaknesses(tmp_path: Path) -> None:
+    from app.models import ChapterWeakness
+    from app.api.orchestration import _stream_chat_events
+    from sqlmodel import SQLModel
+    from uuid import uuid4
+    import pytest
+    import asyncio
+
+    database_url = f"sqlite:///{tmp_path / 'weakness-inject-test.db'}"
+    engine = build_engine(database_url)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        user_uid = f"user_{uuid4().hex}"
+        user = User(
+            uid=user_uid,
+            username="weakness-user",
+            identifier="weakness-user@example.com",
+            hashed_password="pwd",
+        )
+        session.add(user)
+        session.commit()
+
+        profile = UserProfile(
+            user_uid=user.uid,
+            profile_data={
+                "current_grade": "大三",
+                "major": "软件工程",
+                "weaknesses": "理论扎实但实操较少",
+            },
+            profile_text="软件工程学生",
+        )
+        session.add(profile)
+
+        path = UserYearLearningPath(
+            user_uid=user.uid,
+            grade_year="year_3",
+            learning_topic="AI应用",
+            path_data={
+                "learner_baseline": {"major": "软件工程"},
+                "current_learning_course": {"course_node_id": "year_3_course_1"},
+                "grade_plans": {
+                    "year_3": {
+                        "course_nodes": [
+                            {"course_node_id": "year_3_course_1"}
+                        ]
+                    }
+                },
+            },
+        )
+        session.add(path)
+
+        conv = ConversationSession(
+            session_id="session_123",
+            user_uid=user.uid,
+            messages=[],
+        )
+        session.add(conv)
+
+        w1 = ChapterWeakness(
+            weakness_id="w1",
+            user_uid=user.uid,
+            course_node_id="year_3_course_1",
+            chapter_id="1",
+            knowledge_point_id="kp1",
+            knowledge_point_name="提示工程",
+            severity=2,
+            consumed=False,
+        )
+        w2 = ChapterWeakness(
+            weakness_id="w2",
+            user_uid=user.uid,
+            course_node_id="year_3_course_1",
+            chapter_id="1",
+            knowledge_point_id="kp2",
+            knowledge_point_name="链式调用",
+            severity=1,
+            consumed=False,
+        )
+        w3 = ChapterWeakness(
+            weakness_id="w3",
+            user_uid=user.uid,
+            course_node_id="year_3_course_1",
+            chapter_id="1",
+            knowledge_point_id="kp3",
+            knowledge_point_name="向量数据库",
+            severity=1,
+            consumed=True,
+        )
+        w4 = ChapterWeakness(
+            weakness_id="w4",
+            user_uid=user.uid,
+            course_node_id="year_3_course_2",
+            chapter_id="1",
+            knowledge_point_id="kp4",
+            knowledge_point_name="微调",
+            severity=1,
+            consumed=False,
+        )
+        session.add(w1)
+        session.add(w2)
+        session.add(w3)
+        session.add(w4)
+        session.commit()
+
+        captured_state = {}
+        async def mock_stream_events(state):
+            captured_state.update(state)
+            yield {"event": "message_completed", "full_text": "done"}
+
+        with patch("app.api.orchestration.stream_orchestration_events", mock_stream_events):
+            async def run():
+                gen = _stream_chat_events(
+                    session_id="session_123",
+                    user_uid=user.uid,
+                    user_message="测试",
+                    db_session=session,
+                )
+                async for _ in gen:
+                    pass
+
+            asyncio.run(run())
+
+        injected_profile = captured_state.get("profile")
+        assert injected_profile is not None
+        weaknesses_str = injected_profile.get("weaknesses", "")
+        assert "[Adaptive Weaknesses] Recently struggled with: 提示工程, 链式调用" in weaknesses_str
+        assert "向量数据库" not in weaknesses_str
+        assert "微调" not in weaknesses_str

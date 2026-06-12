@@ -413,6 +413,25 @@ async def _stream_chat_events(
             ),
         )
 
+        if profile and current_course_id:
+            from app.models import ChapterWeakness
+            from sqlmodel import select
+            stmt = select(ChapterWeakness).where(
+                ChapterWeakness.user_uid == user_uid,
+                ChapterWeakness.course_node_id == current_course_id,
+                ChapterWeakness.consumed == False,
+            )
+            unconsumed = db_session.exec(stmt).all()
+            if unconsumed:
+                kp_names = list(dict.fromkeys(w.knowledge_point_name for w in unconsumed if w.knowledge_point_name))
+                if kp_names:
+                    orig_weaknesses = profile.get("weaknesses", "")
+                    weakness_suffix = f"[Adaptive Weaknesses] Recently struggled with: {', '.join(kp_names)}"
+                    if orig_weaknesses:
+                        profile["weaknesses"] = f"{orig_weaknesses}\n{weakness_suffix}"
+                    else:
+                        profile["weaknesses"] = weakness_suffix
+
         if payload and getattr(payload, "image_attachment", None):
             current_user_message = HumanMessage(
                 content=[
