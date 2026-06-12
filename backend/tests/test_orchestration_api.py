@@ -3929,3 +3929,77 @@ def test_stream_chat_events_injects_weaknesses(tmp_path: Path) -> None:
         assert "[Adaptive Weaknesses] Recently struggled with: 提示工程, 链式调用" in weaknesses_str
         assert "向量数据库" not in weaknesses_str
         assert "微调" not in weaknesses_str
+
+
+def test_persist_outline_consumes_weaknesses(tmp_path: Path) -> None:
+    from app.models import ChapterWeakness
+    from app.orchestration.agents.course_resources import _persist_outline
+    from sqlmodel import SQLModel, select
+    from uuid import uuid4
+
+    database_url = f"sqlite:///{tmp_path / 'weakness-consume-test.db'}"
+    engine = build_engine(database_url)
+    SQLModel.metadata.create_all(engine)
+
+    user_uid = f"user_{uuid4().hex}"
+
+    with Session(engine) as session:
+        user = User(
+            uid=user_uid,
+            username="consume-user",
+            identifier="consume-user@example.com",
+            hashed_password="pwd",
+        )
+        session.add(user)
+        session.commit()
+
+        w1 = ChapterWeakness(
+            weakness_id="w1",
+            user_uid=user_uid,
+            course_node_id="year_3_course_1",
+            chapter_id="1",
+            knowledge_point_id="kp1",
+            knowledge_point_name="提示工程",
+            severity=2,
+            consumed=False,
+        )
+        w2 = ChapterWeakness(
+            weakness_id="w2",
+            user_uid=user_uid,
+            course_node_id="year_3_course_1",
+            chapter_id="1",
+            knowledge_point_id="kp2",
+            knowledge_point_name="链式调用",
+            severity=1,
+            consumed=False,
+        )
+        w3 = ChapterWeakness(
+            weakness_id="w3",
+            user_uid=user_uid,
+            course_node_id="year_3_course_2",
+            chapter_id="1",
+            knowledge_point_id="kp3",
+            knowledge_point_name="向量数据库",
+            severity=1,
+            consumed=False,
+        )
+        session.add(w1)
+        session.add(w2)
+        session.add(w3)
+        session.commit()
+
+    with patch("app.orchestration.agents.course_resources.get_engine", return_value=engine):
+        outline_data = {
+            "course_id": "year_3_course_1",
+            "sections": [],
+        }
+        _persist_outline(user_uid, outline_data)
+
+    with Session(engine) as session:
+        db_w1 = session.get(ChapterWeakness, "w1")
+        db_w2 = session.get(ChapterWeakness, "w2")
+        db_w3 = session.get(ChapterWeakness, "w3")
+
+        assert db_w1.consumed is True
+        assert db_w2.consumed is True
+        assert db_w3.consumed is False
