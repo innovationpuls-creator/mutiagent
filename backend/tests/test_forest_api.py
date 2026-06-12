@@ -12,6 +12,7 @@ from app.models import (
     ChapterProgress,
     ChapterQuiz,
     ChapterQuizAttempt,
+    ChapterWeakness,
     User,
     UserCourseKnowledgeOutline,
     UserYearLearningPath,
@@ -372,3 +373,155 @@ def test_read_forest_quiz_session_with_string_options(tmp_path: Path) -> None:
         {"option_id": "A", "text": "选项一"},
         {"option_id": "B", "text": "选项二"},
     ]
+
+
+def test_weakness_name_resolution(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'forest-weakness.db'}"
+    TestClient(create_app(database_url=database_url))
+
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    with Session(engine) as session:
+        user = User(
+            uid="forest-user",
+            username="Forest 用户",
+            identifier="forest@example.com",
+            password_hash="hash",
+        )
+        session.add(user)
+
+        custom_outline = {
+            "course_id": "year_3_course_2",
+            "course_name": "AI Agent 开发",
+            "grade_year": "year_3",
+            "sections": [
+                {
+                    "section_id": "1",
+                    "parent_section_id": None,
+                    "depth": 1,
+                    "title": "第一章：需求拆解",
+                    "order_index": 1,
+                    "description": "确认功能边界与验收标准。",
+                    "key_knowledge_points": ["功能边界", "验收标准"],
+                }
+            ],
+            "learning_sequence": ["第一章：需求拆解"],
+        }
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid=user.uid,
+                course_id="year_3_course_2",
+                grade_year="year_3",
+                course_name="AI Agent 开发",
+                outline_data=custom_outline,
+            )
+        )
+
+        current_course = {
+            "course_node_id": "year_3_course_2",
+            "grade_id": "year_3",
+            "course_or_chapter_theme": "AI Agent 开发",
+            "time_arrangement": {
+                "semester_scope": "上学期",
+                "duration": "4 周",
+                "pace_reason": "按课程节奏推进",
+            },
+            "course_goal": "完成 AI Agent 开发",
+            "prerequisite_node_ids": [],
+            "chapter_nodes": [],
+            "core_knowledge_points": [
+                {
+                    "knowledge_point_id": "kp_lp_1",
+                    "name": "机器学习核心",
+                    "parent_knowledge_point_id": None,
+                    "level": "核心",
+                    "description": "机器学习的核心概念",
+                    "mastery_standard": "掌握",
+                }
+            ],
+            "key_points": ["AI Agent 开发 重点"],
+            "difficult_points": ["AI Agent 开发 难点"],
+            "learning_sequence": ["理解概念"],
+            "knowledge_relations": [],
+            "downstream_resource_direction_ids": [],
+            "acceptance_criteria": ["掌握 AI Agent 开发"],
+        }
+
+        custom_path = {
+            "schema_version": "learning_path.v2.course_node",
+            "grade_plans": {
+                "year_3": {
+                    "grade_id": "year_3",
+                    "grade_name": "大三",
+                    "grade_goal": "完成 AI 应用开发项目",
+                    "course_nodes": [current_course],
+                },
+            },
+            "current_learning_course": {
+                "grade_id": "year_3",
+                "course_node_id": "year_3_course_2",
+                "course_or_chapter_theme": "AI Agent 开发",
+                "course_goal": "完成 AI Agent 开发",
+                "time_arrangement": current_course["time_arrangement"],
+                "current_focus": "正在学习 AI Agent 开发",
+                "progress_state": "in_progress",
+                "next_action": "继续学习第一章",
+            },
+        }
+        session.add(
+            UserYearLearningPath(
+                user_uid=user.uid,
+                grade_year="year_3",
+                learning_topic="AI",
+                path_data=custom_path,
+            )
+        )
+        session.commit()
+
+        questions = [
+            {
+                "question_id": "q1",
+                "type": "single_choice",
+                "prompt": "问题 1",
+                "options": [],
+                "points": 50,
+                "knowledge_point_ids": ["功能边界"]
+            },
+            {
+                "question_id": "q2",
+                "type": "single_choice",
+                "prompt": "问题 2",
+                "options": [],
+                "points": 50,
+                "knowledge_point_ids": ["kp_lp_1"]
+            }
+        ]
+
+        quiz = generate_or_read_quiz(session, "forest-user", "year_3_course_2", "1", questions, regenerate=False)
+
+        answers = {"q1": "A", "q2": "B"}
+        grading_result = {
+            "score": 0,
+            "passed": False,
+            "question_results": [
+                {"question_id": "q1", "score": 0, "max_score": 50},
+                {"question_id": "q2", "score": 0, "max_score": 50}
+            ],
+            "summary": "不及格"
+        }
+
+        _, weaknesses = submit_quiz_attempt(
+            session,
+            "forest-user",
+            quiz.quiz_id,
+            answers,
+            grading_result
+        )
+
+        assert len(weaknesses) == 2
+
+        weakness_map = {w.knowledge_point_id: w for w in weaknesses}
+        assert "功能边界" in weakness_map
+        assert "kp_lp_1" in weakness_map
+
+        assert weakness_map["功能边界"].knowledge_point_name == "功能边界"
+        assert weakness_map["kp_lp_1"].knowledge_point_name == "机器学习核心"

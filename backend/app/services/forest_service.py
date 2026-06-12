@@ -389,6 +389,56 @@ def _next_chapter_id(chapter_ids: list[str], chapter_id: str) -> str | None:
     return chapter_ids[index + 1]
 
 
+def _resolve_knowledge_point_name(
+    session: Session,
+    user_uid: str,
+    course_node_id: str,
+    kp_id: str,
+) -> str:
+    """从课程大纲或学习路径中解析知识点名称，如果找不到则返回 kp_id 本身。"""
+    if not kp_id:
+        return ""
+
+    # 1. 尝试从课程大纲 sections.key_knowledge_points 查找
+    try:
+        outline = get_user_course_knowledge_outline(session, user_uid, course_node_id)
+        if isinstance(outline, dict):
+            sections = outline.get("sections")
+            if isinstance(sections, list):
+                for section in sections:
+                    if isinstance(section, dict):
+                        key_kps = section.get("key_knowledge_points")
+                        if isinstance(key_kps, list):
+                            for kp in key_kps:
+                                if isinstance(kp, str) and kp.strip() == kp_id:
+                                    return kp.strip()
+                                elif isinstance(kp, dict):
+                                    if str(kp.get("knowledge_point_id", "")).strip() == kp_id or str(kp.get("id", "")).strip() == kp_id:
+                                        return str(kp.get("name") or kp.get("title") or kp_id).strip()
+    except Exception:
+        pass
+
+    # 2. 尝试从学习路径 core_knowledge_points 查找
+    try:
+        year_paths = get_all_year_learning_paths(session, user_uid)
+        found = _find_course(year_paths, course_node_id)
+        if found is not None:
+            _, _, course = found
+            if isinstance(course, dict):
+                core_kps = course.get("core_knowledge_points")
+                if isinstance(core_kps, list):
+                    for kp in core_kps:
+                        if isinstance(kp, dict):
+                            if str(kp.get("knowledge_point_id", "")).strip() == kp_id or str(kp.get("id", "")).strip() == kp_id:
+                                return str(kp.get("name") or kp.get("title") or kp_id).strip()
+                        elif isinstance(kp, str) and kp.strip() == kp_id:
+                            return kp.strip()
+    except Exception:
+        pass
+
+    return kp_id
+
+
 def _analyze_weakness(
     session: Session,
     *,
@@ -427,13 +477,14 @@ def _analyze_weakness(
     weaknesses = []
     for kp_id, count in weak_points.items():
         severity = min(3, count)
+        kp_name = _resolve_knowledge_point_name(session, user_uid, course_node_id, kp_id)
         weakness = ChapterWeakness(
             weakness_id=make_id("weakness"),
             user_uid=user_uid,
             course_node_id=course_node_id,
             chapter_id=chapter_id,
             knowledge_point_id=kp_id,
-            knowledge_point_name="",
+            knowledge_point_name=kp_name,
             severity=severity,
         )
         session.add(weakness)
