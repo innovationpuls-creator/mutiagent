@@ -560,3 +560,282 @@
   cursor: not-allowed;
   opacity: 0.64;
 }
+
+/* ==============================
+   ForestQuizOverlay
+   ============================== */
+
+.forest-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  background: var(--color-overlay);
+  backdrop-filter: blur(6px);
+  padding: var(--space-24);
+}
+
+.forest-overlay-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+  max-inline-size: 720px;
+  inline-size: 100%;
+  max-block-size: calc(100svh - var(--space-48));
+  overflow-y: auto;
+  padding: var(--space-40);
+  border-radius: var(--radius-lg);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-lg);
+}
+
+.forest-overlay-close-btn {
+  position: absolute;
+  inset-block-start: var(--space-16);
+  inset-inline-end: var(--space-16);
+  display: grid;
+  place-items: center;
+  inline-size: var(--space-32);
+  block-size: var(--space-32);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  cursor: pointer;
+  transition:
+    transform var(--duration-lazy-hover) var(--ease-lazy),
+    background-color var(--duration-lazy-hover) var(--ease-lazy);
+}
+
+.forest-overlay-close-btn:hover {
+  transform: scale(1.1);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+
+.forest-overlay-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+  text-align: center;
+}
+
+.forest-overlay-score-title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+}
+
+.forest-overlay-score-title .score-num {
+  font-size: 3.5rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-secondary);
+  line-height: 1;
+}
+
+.forest-overlay-score-title .score-unit {
+  font-size: var(--text-h4);
+  color: var(--color-text-whisper);
+  font-weight: var(--font-weight-regular);
+}
+
+.forest-overlay-status-desc {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-body);
+}
+
+.forest-overlay-content-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--gap-lg);
+  align-items: start;
+}
+
+.forest-overlay-tree-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.forest-overlay-tree-section .tree-container {
+  display: grid;
+  place-items: center;
+}
+
+.forest-tree-svg {
+  filter: drop-shadow(0 4px 12px oklch(72% 0.09 145 / 0.18));
+}
+
+.growth-stage-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-4) var(--space-16);
+  border-radius: var(--radius-full);
+  background: var(--color-success-bg);
+  color: var(--color-intent-success);
+  font-size: var(--text-caption);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.forest-overlay-stats-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+}
+
+.forest-stats-summary-card {
+  padding: var(--space-24);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.forest-stats-summary-card h2 {
+  margin: 0 0 var(--space-16);
+  font-size: var(--text-body);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap-sm);
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.stat-label {
+  font-size: var(--text-caption);
+  color: var(--color-text-whisper);
+  text-transform: uppercase;
+  letter-spacing: var(--font-whisper-spacing);
+}
+
+.stat-value {
+  font-size: var(--text-h4);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-secondary);
+}
+
+.forest-weaknesses-card {
+  padding: var(--space-24);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-bg);
+  border: 1px solid oklch(76% 0.10 70 / 0.3);
+}
+
+.forest-weaknesses-card h3 {
+  margin: 0 0 var(--space-8);
+  font-size: var(--text-caption);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-intent-warning);
+}
+
+.forest-weaknesses-card p {
+  margin: 0 0 var(--space-12);
+  font-size: var(--text-body-sm);
+  color: var(--color-text-secondary);
+}
+
+.weakness-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.weakness-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-4) var(--space-12);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  font-size: var(--text-caption);
+  color: var(--color-text-primary);
+}
+
+.forest-overlay-footer-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--gap-sm);
+  padding-block-start: var(--space-8);
+}
+
+.forest-btn-secondary,
+.forest-btn-primary {
+  min-block-size: calc(var(--space-40) + var(--space-8));
+  padding-inline: var(--space-32);
+  border-radius: var(--radius-full);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  border: none;
+  transition:
+    transform var(--duration-lazy-hover) var(--ease-lazy),
+    opacity var(--duration-lazy-hover) var(--ease-lazy);
+}
+
+.forest-btn-secondary {
+  background: var(--color-surface-inset);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+
+.forest-btn-primary {
+  background: var(--gradient-coral);
+  color: var(--color-text-inverse);
+  box-shadow: var(--shadow-sm);
+}
+
+.forest-btn-secondary:hover,
+.forest-btn-primary:hover {
+  transform: translateY(calc(var(--space-4) * -1));
+}
+
+/* Streaming submit status text */
+.forest-submit-status {
+  text-align: center;
+  color: var(--color-text-whisper);
+  font-size: var(--text-body-sm);
+  padding: var(--space-8) 0;
+}
+
+@media (max-width: 640px) {
+  .forest-overlay-content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .forest-overlay-panel {
+    padding: var(--space-24);
+  }
+
+  .forest-overlay-score-title .score-num {
+    font-size: 2.5rem;
+  }
+
+  .forest-overlay-footer-actions {
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .forest-tree-svg {
+    filter: none;
+  }
+}
+

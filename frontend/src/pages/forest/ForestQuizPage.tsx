@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   fetchForestQuizSession,
   generateForestQuiz,
   streamForestAi,
-  submitForestQuizAttempt,
+  submitForestQuizAttemptStream,
 } from '../../api/forest';
 import { useAuth } from '../../contexts/AuthContext';
 import { motionTokens } from '../../styles/motion-tokens';
@@ -15,10 +15,12 @@ import type {
   ForestQuiz,
   ForestQuizQuestion,
   ForestQuizSession,
+  ForestSubmitStreamDonePayload,
 } from '../../types/forest';
 import { MarkdownRenderer } from '../../components/markdown/MarkdownRenderer';
 import { MessageBubble } from '../../components/onboarding/MessageBubble';
 import { HandwritingCanvas } from '../../components/ui/HandwritingCanvas';
+import { ForestQuizOverlay } from '../../components/forest/ForestQuizOverlay';
 import { PenTool } from 'lucide-react';
 import './forest-quiz.css';
 
@@ -603,18 +605,49 @@ export function ForestQuizPage() {
     }
   }, [chapterId, courseNodeId, quiz, selectedAnswer, selectedQuestion, token, attempt]);
 
+  // ----------- Overlay state -----------
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const doneDataRef = useRef<ForestSubmitStreamDonePayload | null>(null);
+
   const handleSubmit = useCallback(async () => {
     if (!token || !quiz || !canSubmit) return;
     setIsSubmitting(true);
     setErrorMessage(null);
+    setSubmitStatusMessage(null);
     try {
-      const nextAttempt = await submitForestQuizAttempt(token, quiz.quiz_id, { answers: toAnswerRecord(answers) });
-      setAttempt(nextAttempt);
-      void askForestAi(undefined, null, nextAttempt);
+      await submitForestQuizAttemptStream(
+        token,
+        quiz.quiz_id,
+        { answers: toAnswerRecord(answers) },
+        (event) => {
+          if (event.event === 'status') {
+            const phaseLabels: Record<string, string> = {
+              grading: '正在判题…',
+              analyzing: '分析薄弱方向…',
+              unlocking: '解锁下一关…',
+            };
+            setSubmitStatusMessage(
+              event.phase ? (phaseLabels[event.phase] ?? event.message ?? '处理中…') : '处理中…',
+            );
+          } else if (event.event === 'done' && event.doneData) {
+            const d = event.doneData;
+            setAttempt(d.attempt);
+            doneDataRef.current = d;
+            setIsSubmitting(false);
+            setSubmitStatusMessage(null);
+            setOverlayOpen(true);
+            void askForestAi(undefined, null, d.attempt);
+          } else if (event.event === 'error') {
+            setErrorMessage(event.message ?? '测验提交失败');
+            setIsSubmitting(false);
+            setSubmitStatusMessage(null);
+          }
+        },
+      );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '测验提交失败');
-    } finally {
       setIsSubmitting(false);
+      setSubmitStatusMessage(null);
     }
   }, [answers, askForestAi, canSubmit, quiz, token]);
 
@@ -691,6 +724,24 @@ export function ForestQuizPage() {
           onAskForestAi={handleAskForestAi}
         />
       </main>
+
+      {submitStatusMessage && (
+        <p className="forest-submit-status">{submitStatusMessage}</p>
+      )}
+
+      {doneDataRef.current && attempt && (
+        <ForestQuizOverlay
+          isOpen={overlayOpen}
+          onClose={() => setOverlayOpen(false)}
+          attempt={attempt}
+          canopyOverview={doneDataRef.current.canopy_overview}
+          nextUnlockedChapterId={doneDataRef.current.next_unlocked_chapter_id}
+          nextCourseId={doneDataRef.current.next_course_id}
+          courseNodeId={courseNodeId!}
+          weaknesses={doneDataRef.current.weaknesses}
+          reduceMotion={reduceMotion}
+        />
+      )}
     </section>
   );
 }
