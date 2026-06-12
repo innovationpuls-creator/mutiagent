@@ -525,3 +525,81 @@ def test_weakness_name_resolution(tmp_path: Path) -> None:
 
         assert weakness_map["功能边界"].knowledge_point_name == "功能边界"
         assert weakness_map["kp_lp_1"].knowledge_point_name == "机器学习核心"
+
+
+def test_submit_forest_quiz_attempt_stream_api_done_data(tmp_path: Path) -> None:
+    import json
+    database_url = f"sqlite:///{tmp_path / 'forest-attempt-stream-api-done.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    user_uid = _seed_forest_data(database_url)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+
+    with Session(engine) as session:
+        quiz = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+
+    async def fake_grade_answers(*_args, **_kwargs):
+        return {"score": 75, "passed": True, "question_results": [], "summary": "通过"}
+
+    with patch("app.api.forest.grade_quiz_answers", fake_grade_answers):
+        response = client.post(
+            f"/api/forest/quizzes/{quiz.quiz_id}/attempts/stream",
+            json={"answers": {"q1": "A"}},
+            headers=_auth_headers(user_uid),
+        )
+
+    assert response.status_code == 200
+    assert "event: done" in response.text
+    done_line = [line for line in response.text.split("\n") if line.startswith("data: ") and '"attempt"' in line][0]
+    done_data = json.loads(done_line[6:])
+    assert "canopy_overview" in done_data
+    assert "next_unlocked_chapter_id" in done_data
+    assert "next_course_id" in done_data
+    assert done_data["next_unlocked_chapter_id"] == "2"
+    assert done_data["next_course_id"] is None
+
+
+def test_submit_forest_quiz_attempt_stream_api_done_data_next_course(tmp_path: Path) -> None:
+    import json
+    database_url = f"sqlite:///{tmp_path / 'forest-attempt-stream-api-done-next-course.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    user_uid = _seed_forest_data(database_url)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+
+    with Session(engine) as session:
+        progress_1 = ChapterProgress(
+            user_uid=user_uid,
+            course_node_id="year_3_course_2",
+            chapter_id="1",
+            state="passed"
+        )
+        session.add(progress_1)
+        progress_2 = ChapterProgress(
+            user_uid=user_uid,
+            course_node_id="year_3_course_2",
+            chapter_id="2",
+            state="available"
+        )
+        session.add(progress_2)
+        session.commit()
+
+        quiz = generate_or_read_quiz(session, user_uid, "year_3_course_2", "2", questions, regenerate=False)
+
+    async def fake_grade_answers(*_args, **_kwargs):
+        return {"score": 75, "passed": True, "question_results": [], "summary": "通过"}
+
+    with patch("app.api.forest.grade_quiz_answers", fake_grade_answers):
+        response = client.post(
+            f"/api/forest/quizzes/{quiz.quiz_id}/attempts/stream",
+            json={"answers": {"q1": "A"}},
+            headers=_auth_headers(user_uid),
+        )
+
+    assert response.status_code == 200
+    assert "event: done" in response.text
+    done_line = [line for line in response.text.split("\n") if line.startswith("data: ") and '"attempt"' in line][0]
+    done_data = json.loads(done_line[6:])
+    assert "canopy_overview" in done_data
+    assert done_data["next_unlocked_chapter_id"] is None
+    assert done_data["next_course_id"] == "year_3_course_3"

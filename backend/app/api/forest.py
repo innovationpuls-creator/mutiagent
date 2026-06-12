@@ -24,10 +24,13 @@ from app.schemas import (
     ForestQuizSessionReadResponse,
 )
 from app.services.forest_service import (
+    _chapter_ids_for_course,
+    _next_chapter_id,
     generate_or_read_quiz,
     read_forest_quiz_session,
     submit_quiz_attempt,
 )
+from app.services.learning_path_service import get_canopy_overview, get_year_learning_path
 
 SessionDependency = Callable[[], Generator[Session, None, None]]
 
@@ -39,6 +42,15 @@ def _extract_knowledge_point_ids(chapter: dict) -> list[str]:
     for hierarchy in chapter.get("knowledge_hierarchy", []):
         if isinstance(hierarchy, dict):
             kp_ids.extend(hierarchy.get("knowledge_point_ids", []))
+    key_kps = chapter.get("key_knowledge_points", [])
+    if isinstance(key_kps, list):
+        for kp in key_kps:
+            if isinstance(kp, str):
+                kp_ids.append(kp)
+            elif isinstance(kp, dict):
+                kp_id = kp.get("knowledge_point_id") or kp.get("id")
+                if kp_id:
+                    kp_ids.append(str(kp_id))
     return list(dict.fromkeys(kp_ids))
 
 
@@ -172,6 +184,19 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:
 
             yield _sse("status", {"phase": "unlocking", "message": "正在解锁下一章节..."})
 
+            canopy = get_canopy_overview(session, current_user.uid)
+            grade_year, chapter_ids = _chapter_ids_for_course(session, current_user.uid, quiz.course_node_id)
+            next_chapter_id = _next_chapter_id(chapter_ids, quiz.chapter_id)
+
+            next_unlocked_chapter_id = next_chapter_id if attempt.passed else None
+            next_course_id = None
+            if attempt.passed and not next_chapter_id:
+                updated_path = get_year_learning_path(session, current_user.uid, grade_year)
+                if updated_path:
+                    current_course = updated_path.get("current_learning_course", {})
+                    if current_course and current_course.get("course_node_id") != quiz.course_node_id:
+                        next_course_id = current_course.get("course_node_id")
+
             yield _sse("done", {
                 "attempt": {
                     "attempt_id": attempt.attempt_id,
@@ -183,6 +208,9 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:
                     "created_at": attempt.created_at.isoformat(),
                 },
                 "weaknesses": weakness_data,
+                "canopy_overview": canopy,
+                "next_unlocked_chapter_id": next_unlocked_chapter_id,
+                "next_course_id": next_course_id,
             })
 
         return StreamingResponse(
