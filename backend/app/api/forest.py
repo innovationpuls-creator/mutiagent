@@ -38,10 +38,10 @@ SessionDependency = Callable[[], Generator[Session, None, None]]
 def _extract_knowledge_point_ids(chapter: dict) -> list[str]:
     """从章节大纲数据中提取所有知识点 ID。"""
     kp_ids: list[str] = []
-    kp_ids.extend(chapter.get("core_knowledge_point_ids", []))
-    for hierarchy in chapter.get("knowledge_hierarchy", []):
+    kp_ids.extend(chapter.get("core_knowledge_point_ids") or [])
+    for hierarchy in chapter.get("knowledge_hierarchy") or []:
         if isinstance(hierarchy, dict):
-            kp_ids.extend(hierarchy.get("knowledge_point_ids", []))
+            kp_ids.extend(hierarchy.get("knowledge_point_ids") or [])
     key_kps = chapter.get("key_knowledge_points", [])
     if isinstance(key_kps, list):
         for kp in key_kps:
