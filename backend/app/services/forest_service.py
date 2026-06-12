@@ -397,14 +397,18 @@ def _resolve_knowledge_point_name(
     *,
     outline: dict | None = None,
     year_paths: dict[str, dict] | None = None,
+    preloaded: bool = False,
 ) -> str:
     """从课程大纲或学习路径中解析知识点名称，如果找不到则返回 kp_id 本身。"""
     if not kp_id:
         return ""
 
+    def _safe_str(val: object) -> str:
+        return str(val) if val is not None else ""
+
     # 1. 尝试从课程大纲 sections.key_knowledge_points 查找
     try:
-        if outline is None:
+        if outline is None and not preloaded:
             outline = get_user_course_knowledge_outline(session, user_uid, course_node_id)
         if isinstance(outline, dict):
             sections = outline.get("sections")
@@ -417,14 +421,14 @@ def _resolve_knowledge_point_name(
                                 if isinstance(kp, str) and kp.strip() == kp_id:
                                     return kp.strip()
                                 elif isinstance(kp, dict):
-                                    if str(kp.get("knowledge_point_id", "")).strip() == kp_id or str(kp.get("id", "")).strip() == kp_id:
-                                        return str(kp.get("name") or kp.get("title") or kp_id).strip()
+                                    if _safe_str(kp.get("knowledge_point_id")).strip() == kp_id or _safe_str(kp.get("id")).strip() == kp_id:
+                                        return _safe_str(kp.get("name") or kp.get("title") or kp_id).strip()
     except Exception:
         pass
 
     # 2. 尝试从学习路径 core_knowledge_points 查找
     try:
-        if year_paths is None:
+        if year_paths is None and not preloaded:
             year_paths = get_all_year_learning_paths(session, user_uid)
         found = _find_course(year_paths, course_node_id)
         if found is not None:
@@ -434,8 +438,8 @@ def _resolve_knowledge_point_name(
                 if isinstance(core_kps, list):
                     for kp in core_kps:
                         if isinstance(kp, dict):
-                            if str(kp.get("knowledge_point_id", "")).strip() == kp_id or str(kp.get("id", "")).strip() == kp_id:
-                                return str(kp.get("name") or kp.get("title") or kp_id).strip()
+                            if _safe_str(kp.get("knowledge_point_id")).strip() == kp_id or _safe_str(kp.get("id")).strip() == kp_id:
+                                return _safe_str(kp.get("name") or kp.get("title") or kp_id).strip()
                         elif isinstance(kp, str) and kp.strip() == kp_id:
                             return kp.strip()
     except Exception:
@@ -493,6 +497,7 @@ def _analyze_weakness(
             kp_id,
             outline=outline,
             year_paths=year_paths,
+            preloaded=True,
         )
         weakness = ChapterWeakness(
             weakness_id=make_id("weakness"),
