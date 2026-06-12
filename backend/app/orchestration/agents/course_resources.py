@@ -3256,6 +3256,20 @@ def _normalize_animations(animations: object, animation_briefs: object) -> list[
 def _persist_outline(user_id: str, outline: dict) -> None:
     with Session(get_engine()) as db_session:
         upsert_user_course_knowledge_outline(db_session, user_id, outline)
+        from app.models import ChapterWeakness
+        from sqlmodel import select
+        course_id = outline.get("course_id", "")
+        if course_id:
+            stmt = select(ChapterWeakness).where(
+                ChapterWeakness.user_uid == user_id,
+                ChapterWeakness.course_node_id == course_id,
+                ChapterWeakness.consumed == False,
+            )
+            unconsumed = db_session.exec(stmt).all()
+            for w in unconsumed:
+                w.consumed = True
+                db_session.add(w)
+            db_session.commit()
     logger.info(
         "Course resource outline persisted for user %s, course %s",
         user_id,
