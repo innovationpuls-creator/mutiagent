@@ -394,6 +394,9 @@ def _resolve_knowledge_point_name(
     user_uid: str,
     course_node_id: str,
     kp_id: str,
+    *,
+    outline: dict | None = None,
+    year_paths: dict[str, dict] | None = None,
 ) -> str:
     """从课程大纲或学习路径中解析知识点名称，如果找不到则返回 kp_id 本身。"""
     if not kp_id:
@@ -401,7 +404,8 @@ def _resolve_knowledge_point_name(
 
     # 1. 尝试从课程大纲 sections.key_knowledge_points 查找
     try:
-        outline = get_user_course_knowledge_outline(session, user_uid, course_node_id)
+        if outline is None:
+            outline = get_user_course_knowledge_outline(session, user_uid, course_node_id)
         if isinstance(outline, dict):
             sections = outline.get("sections")
             if isinstance(sections, list):
@@ -420,7 +424,8 @@ def _resolve_knowledge_point_name(
 
     # 2. 尝试从学习路径 core_knowledge_points 查找
     try:
-        year_paths = get_all_year_learning_paths(session, user_uid)
+        if year_paths is None:
+            year_paths = get_all_year_learning_paths(session, user_uid)
         found = _find_course(year_paths, course_node_id)
         if found is not None:
             _, _, course = found
@@ -474,10 +479,21 @@ def _analyze_weakness(
                 if kp_str:
                     weak_points[kp_str] = weak_points.get(kp_str, 0) + 1
 
+    # Pre-fetch outline and year_paths once to prevent N+1 DB select query overhead
+    outline = get_user_course_knowledge_outline(session, user_uid, course_node_id)
+    year_paths = get_all_year_learning_paths(session, user_uid)
+
     weaknesses = []
     for kp_id, count in weak_points.items():
         severity = min(3, count)
-        kp_name = _resolve_knowledge_point_name(session, user_uid, course_node_id, kp_id)
+        kp_name = _resolve_knowledge_point_name(
+            session,
+            user_uid,
+            course_node_id,
+            kp_id,
+            outline=outline,
+            year_paths=year_paths,
+        )
         weakness = ChapterWeakness(
             weakness_id=make_id("weakness"),
             user_uid=user_uid,
