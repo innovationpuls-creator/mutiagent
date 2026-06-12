@@ -609,13 +609,12 @@
   cursor: pointer;
   transition:
     transform var(--duration-lazy-hover) var(--ease-lazy),
-    background-color var(--duration-lazy-hover) var(--ease-lazy);
+    opacity var(--duration-lazy-hover) var(--ease-lazy);
 }
 
 .forest-overlay-close-btn:hover {
   transform: scale(1.1);
-  background: var(--color-error-bg);
-  color: var(--color-error);
+  opacity: 0.85;
 }
 
 .forest-overlay-header {
@@ -836,6 +835,15 @@
 @media (prefers-reduced-motion: reduce) {
   .forest-tree-svg {
     filter: none;
+  }
+
+  .forest-overlay-close-btn:hover {
+    transform: none;
+  }
+
+  .forest-btn-secondary:hover,
+  .forest-btn-primary:hover {
+    transform: none;
   }
 }
 

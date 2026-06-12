@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { fetchForestQuizSession, streamForestAi, submitForestQuizAttempt } from './forest';
+import { fetchForestQuizSession, streamForestAi, submitForestQuizAttempt, submitForestQuizAttemptStream } from './forest';
+import type { ForestSubmitStreamEvent } from '../types/forest';
 
 const responsePayload = {
   course: {
@@ -115,4 +116,70 @@ describe('forest api', () => {
       { event: 'forest_ai_completed', chunk: undefined },
     ]);
   });
+
+  test('parses submitForestQuizAttemptStream SSE events', async () => {
+    const sseChunks = [
+      'event: status\ndata: {"phase":"grading","message":"正在判题…"}\n\n',
+      'event: status\ndata: {"phase":"analyzing","message":"分析薄弱方向…"}\n\n',
+      'event: done\ndata: {"attempt":{"attempt_id":"a1","quiz_id":"q1","score":85,"passed":true,"answers":{"q1":"A"},"grading_result":{"score":85},"created_at":"2026-06-09T00:00:00Z"},"weaknesses":[{"weakness_id":"w1","knowledge_point_id":"kp1","knowledge_point_name":"边界","severity":2}],"canopy_overview":{"total_courses":5,"completed_courses":1,"total_chapters":20,"completed_chapters":4,"avg_score":80,"total_focus_hours":12,"growth_tree_stage":3,"growth_advanced_steps":2,"milestones":[]},"next_unlocked_chapter_id":"ch2","next_course_id":null}\n\n',
+    ];
+    const encoder = new TextEncoder();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          sseChunks.forEach((c) => controller.enqueue(encoder.encode(c)));
+          controller.close();
+        },
+      }),
+    }));
+
+    const events: ForestSubmitStreamEvent[] = [];
+    await submitForestQuizAttemptStream(
+      'token',
+      'q1',
+      { answers: { q1: 'A' } },
+      (event) => events.push(event),
+    );
+
+    expect(events).toHaveLength(3);
+    expect(events[0]).toEqual({ event: 'status', phase: 'grading', message: '正在判题…' });
+    expect(events[1]).toEqual({ event: 'status', phase: 'analyzing', message: '分析薄弱方向…' });
+    expect(events[2].event).toBe('done');
+    expect(events[2].doneData?.attempt.score).toBe(85);
+    expect(events[2].doneData?.weaknesses).toHaveLength(1);
+    expect(events[2].doneData?.weaknesses[0].knowledge_point_name).toBe('边界');
+    expect(events[2].doneData?.canopy_overview.growth_tree_stage).toBe(3);
+    expect(events[2].doneData?.next_unlocked_chapter_id).toBe('ch2');
+  });
+
+  test('parses submitForestQuizAttemptStream error event', async () => {
+    const sseChunks = [
+      'event: status\ndata: {"phase":"grading","message":"正在判题…"}\n\n',
+      'event: error\ndata: {"message":"内部错误"}\n\n',
+    ];
+    const encoder = new TextEncoder();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          sseChunks.forEach((c) => controller.enqueue(encoder.encode(c)));
+          controller.close();
+        },
+      }),
+    }));
+
+    const events: ForestSubmitStreamEvent[] = [];
+    await submitForestQuizAttemptStream(
+      'token',
+      'q1',
+      { answers: { q1: 'A' } },
+      (event) => events.push(event),
+    );
+
+    expect(events).toHaveLength(2);
+    expect(events[0].event).toBe('status');
+    expect(events[1]).toEqual({ event: 'error', message: '内部错误' });
+  });
 });
+

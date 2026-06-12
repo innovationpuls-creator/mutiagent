@@ -7,13 +7,13 @@ import type { ForestQuizSession } from '../../types/forest';
 
 const fetchForestQuizSessionMock = vi.fn();
 const generateForestQuizMock = vi.fn();
-const submitForestQuizAttemptMock = vi.fn();
+const submitForestQuizAttemptStreamMock = vi.fn();
 const streamForestAiMock = vi.fn();
 
 vi.mock('../../api/forest', () => ({
   fetchForestQuizSession: (...args: unknown[]) => fetchForestQuizSessionMock(...args),
   generateForestQuiz: (...args: unknown[]) => generateForestQuizMock(...args),
-  submitForestQuizAttempt: (...args: unknown[]) => submitForestQuizAttemptMock(...args),
+  submitForestQuizAttemptStream: (...args: unknown[]) => submitForestQuizAttemptStreamMock(...args),
   streamForestAi: (...args: unknown[]) => streamForestAiMock(...args),
 }));
 
@@ -128,15 +128,39 @@ describe('ForestQuizPage', () => {
         },
       ],
     });
-    submitForestQuizAttemptMock.mockResolvedValue({
-      attempt_id: 'attempt_1',
-      quiz_id: 'quiz_1',
-      score: 72,
-      passed: true,
-      answers: { q1: 'A' },
-      grading_result: { score: 72, passed: true, question_results: [], summary: '已经通过。' },
-      created_at: '2026-06-09T00:00:00Z',
-    });
+    submitForestQuizAttemptStreamMock.mockImplementation(
+      async (_token: string, _quizId: string, _payload: unknown, onEvent: (e: unknown) => void) => {
+        onEvent({ event: 'status', phase: 'grading', message: '正在判题…' });
+        onEvent({
+          event: 'done',
+          doneData: {
+            attempt: {
+              attempt_id: 'attempt_1',
+              quiz_id: 'quiz_1',
+              score: 72,
+              passed: true,
+              answers: { q1: 'A' },
+              grading_result: { score: 72, passed: true, question_results: [], summary: '已经通过。' },
+              created_at: '2026-06-09T00:00:00Z',
+            },
+            weaknesses: [],
+            canopy_overview: {
+              total_courses: 5,
+              completed_courses: 1,
+              total_chapters: 20,
+              completed_chapters: 3,
+              avg_score: 72,
+              total_focus_hours: 10,
+              growth_tree_stage: 2,
+              growth_advanced_steps: 1,
+              milestones: [],
+            },
+            next_unlocked_chapter_id: '2',
+            next_course_id: null,
+          },
+        });
+      },
+    );
     streamForestAiMock.mockImplementation(async (_token, _context, _message, onEvent) => {
       onEvent({ event: 'forest_ai_text_chunk', chunk: '先看题干，' });
       onEvent({ event: 'forest_ai_text_chunk', chunk: '再看答案。' });
@@ -152,11 +176,14 @@ describe('ForestQuizPage', () => {
     await waitFor(() => expect(submitButton.disabled).toBe(false));
     fireEvent.click(submitButton);
 
-    await waitFor(() => expect(submitForestQuizAttemptMock).toHaveBeenCalledWith(
+    await waitFor(() => expect(submitForestQuizAttemptStreamMock).toHaveBeenCalledWith(
       'token-1',
       'quiz_1',
       { answers: { q1: 'A' } },
+      expect.any(Function),
     ));
+    // Overlay should appear with score
+    await waitFor(() => expect(screen.getByText('72')).toBeTruthy());
     await waitFor(() => expect(screen.getByText('先看题干，再看答案。')).toBeTruthy());
   });
 
