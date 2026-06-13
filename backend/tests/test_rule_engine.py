@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.orchestration.rule_engine import (
     AGENT_COURSE_KNOWLEDGE,
+    AGENT_LEARNING_PATH_INTAKE,
     AGENT_LEARNING_PATH,
     AGENT_PROFILE,
     evaluate,
@@ -167,7 +168,8 @@ class TestHardRules:
 
         result = evaluate(state)
 
-        assert result.force_call == AGENT_LEARNING_PATH
+        assert result.force_call == AGENT_LEARNING_PATH_INTAKE
+        assert AGENT_LEARNING_PATH in result.blocked_agents
         assert AGENT_COURSE_KNOWLEDGE in result.blocked_agents
 
     def test_basic_profile_no_path_refresh_query_forces_learning_path(self):
@@ -181,7 +183,8 @@ class TestHardRules:
 
         result = evaluate(state)
 
-        assert result.force_call == AGENT_LEARNING_PATH
+        assert result.force_call == AGENT_LEARNING_PATH_INTAKE
+        assert AGENT_LEARNING_PATH in result.blocked_agents
         assert AGENT_COURSE_KNOWLEDGE in result.blocked_agents
 
     def test_profile_result_followed_by_grade_specific_refresh_still_forces_learning_path(self):
@@ -209,8 +212,39 @@ class TestHardRules:
 
         result = evaluate(state)
 
+        assert result.force_call == AGENT_LEARNING_PATH_INTAKE
+        assert AGENT_LEARNING_PATH in result.blocked_agents
+
+    def test_confirmed_intake_allows_learning_path(self):
+        state = {
+            "query": "就按这个来",
+            "profile": _complete_profile("大三软件工程，想学习数据结构。"),
+            "learning_path_intake": {
+                "type": "learning_path_intake",
+                "status": "confirmed",
+                "grade_year": "year_3",
+                "grade_name": "大三",
+                "learning_topic": "数据结构",
+                "courses": [
+                    {"title": "数据结构入门与复杂度基础", "purpose": "建立基础"},
+                    {"title": "线性结构实践", "purpose": "练习线性结构"},
+                    {"title": "树与递归基础", "purpose": "理解递归结构"},
+                    {"title": "图与综合项目", "purpose": "完成综合应用"},
+                ],
+                "recommendation_reasons": ["目标是学习数据结构"],
+                "user_modification_summary": "",
+                "risk_warnings": [],
+                "requires_second_confirmation": False,
+            },
+            "learning_path": None,
+            "year_learning_paths": None,
+            "messages": [],
+        }
+
+        result = evaluate(state)
+
         assert result.force_call == AGENT_LEARNING_PATH
-        assert AGENT_LEARNING_PATH not in result.blocked_agents
+        assert AGENT_LEARNING_PATH_INTAKE in result.allowed_agents
 
     def test_has_profile_and_path_allows_all(self):
         """Rule 3: Profile completed + path exists → all agents allowed."""
@@ -533,7 +567,7 @@ class TestHardRules:
         assert has_pending_profile_update_followup(state) is True
         assert result.force_call == AGENT_PROFILE
 
-    def test_profile_completion_after_completed_tasks_auto_continues_learning_path(self):
+    def test_profile_completion_after_completed_tasks_auto_continues_intake(self):
         state = {
             "query": "大三，软件工程，AI，周末集中",
             "profile": {
@@ -596,9 +630,10 @@ class TestHardRules:
         result = evaluate(state)
 
         assert should_auto_continue_learning_path_after_profile(state) is True
-        assert result.force_call == AGENT_LEARNING_PATH
+        assert result.force_call == AGENT_LEARNING_PATH_INTAKE
+        assert AGENT_LEARNING_PATH in result.blocked_agents
 
-    def test_learning_path_refresh_query_with_existing_path_forces_learning_path(self):
+    def test_learning_path_refresh_query_with_existing_path_forces_intake(self):
         state = {
             "query": "继续生成学习路径",
             "profile": _complete_profile(),
@@ -623,10 +658,114 @@ class TestHardRules:
 
         result = evaluate(state)
 
+        assert result.force_call == AGENT_LEARNING_PATH_INTAKE
+        assert AGENT_LEARNING_PATH in result.blocked_agents
+
+    def test_intake_confirmation_with_existing_path_forces_intake(self):
+        state = {
+            "query": "就按这个来",
+            "profile": _complete_profile("大三软件工程，想学习数据结构。"),
+            "learning_path_intake": {
+                "type": "learning_path_intake",
+                "status": "draft",
+                "grade_year": "year_3",
+                "grade_name": "大三",
+                "learning_topic": "数据结构",
+                "courses": [
+                    {"title": "数据结构入门与复杂度基础", "purpose": "建立基础"},
+                    {"title": "线性结构实践", "purpose": "练习线性结构"},
+                    {"title": "树与递归基础", "purpose": "理解递归结构"},
+                    {"title": "图与综合项目", "purpose": "完成综合应用"},
+                ],
+                "recommendation_reasons": ["目标是学习数据结构"],
+                "user_modification_summary": "",
+                "risk_warnings": [],
+                "requires_second_confirmation": False,
+            },
+            "learning_path": {"grade_year": "year_3", "courses": []},
+            "year_learning_paths": {
+                "year_3": {
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_1",
+                    },
+                    "grade_plans": {
+                        "year_3": {
+                            "course_nodes": [
+                                {"course_node_id": "year_3_course_1"},
+                            ],
+                        },
+                    },
+                },
+            },
+            "messages": [],
+        }
+
+        result = evaluate(state)
+
+        assert result.force_call == AGENT_LEARNING_PATH_INTAKE
+        assert AGENT_LEARNING_PATH in result.blocked_agents
+
+    def test_confirmed_intake_after_intake_tool_forces_learning_path(self):
+        intake = {
+            "type": "learning_path_intake",
+            "status": "confirmed",
+            "grade_year": "year_3",
+            "grade_name": "大三",
+            "learning_topic": "数据结构",
+            "courses": [
+                {"title": "数据结构入门与复杂度基础", "purpose": "建立基础"},
+                {"title": "线性结构实践", "purpose": "练习线性结构"},
+                {"title": "树与递归基础", "purpose": "理解递归结构"},
+                {"title": "图与综合项目", "purpose": "完成综合应用"},
+            ],
+            "recommendation_reasons": ["目标是学习数据结构"],
+            "user_modification_summary": "",
+            "risk_warnings": [],
+            "requires_second_confirmation": False,
+        }
+        state = {
+            "query": "就按这个来",
+            "profile": _complete_profile("大三软件工程，想学习数据结构。"),
+            "learning_path_intake": intake,
+            "learning_path": {"grade_year": "year_3", "courses": []},
+            "year_learning_paths": {
+                "year_3": {
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_1",
+                    },
+                    "grade_plans": {
+                        "year_3": {
+                            "course_nodes": [
+                                {"course_node_id": "year_3_course_1"},
+                            ],
+                        },
+                    },
+                },
+            },
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[{
+                        "name": AGENT_LEARNING_PATH_INTAKE,
+                        "args": {},
+                        "id": "force_learning_path_intake_agent",
+                    }],
+                ),
+                ToolMessage(
+                    content=json.dumps({"learning_path_intake": intake}, ensure_ascii=False),
+                    tool_call_id="force_learning_path_intake_agent",
+                ),
+            ],
+        }
+
+        result = evaluate(state)
+
         assert result.force_call == AGENT_LEARNING_PATH
 
-    def test_navigation_query_no_path_produces_hints(self):
-        """Navigation query when profile completed but no path should produce hints."""
+    def test_navigation_query_no_path_forces_intake_and_blocks_path(self):
+        """Navigation query when profile completed but no path should go through intake first."""
         state = {
             "query": "下一步",
             "profile": _complete_profile(),
@@ -635,7 +774,8 @@ class TestHardRules:
         }
         result = evaluate(state)
 
-        assert result.blocked_agents == {AGENT_COURSE_KNOWLEDGE}
+        assert result.force_call == AGENT_LEARNING_PATH_INTAKE
+        assert result.blocked_agents == {AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
         assert len(result.system_hints) > 0
 
     def test_review_plan_query_with_existing_path_blocks_all_agents(self):

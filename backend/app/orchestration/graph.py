@@ -10,6 +10,7 @@ from langgraph.graph import END, StateGraph
 
 from app.orchestration.agents.supervisor import create_supervisor_node
 from app.orchestration.agents.profile import create_profile_agent_node, is_complete_profile_data
+from app.orchestration.agents.learning_path_intake import create_learning_path_intake_agent_node
 from app.orchestration.agents.learning_path import create_learning_path_agent_node
 from app.orchestration.agents.course_knowledge import create_course_knowledge_agent_node
 from app.orchestration.agents.course_resources import (
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 AGENT_LABELS = {
     "profile_agent": "画像智能体",
+    "learning_path_intake_agent": "课程草案智能体",
     "learning_path_agent": "学习路径智能体",
     "course_knowledge_agent": "课程大纲智能体",
     "section_markdown_agent": "小节文档智能体",
@@ -44,6 +46,7 @@ AGENT_LABELS = {
 
 WORKER_AGENTS = {
     "profile_agent",
+    "learning_path_intake_agent",
     "learning_path_agent",
     "course_knowledge_agent",
     "section_markdown_agent",
@@ -88,6 +91,21 @@ def route_after_worker(state: OrchestrationState) -> str:
     if isinstance(state.get("course_resource_result"), dict):
         return END
 
+    if (
+        last_agent == "profile_agent"
+        and is_complete_profile_data(state.get("profile"))
+        and not state.get("year_learning_paths")
+    ):
+        return SUPERVISOR_NODE
+
+    intake = state.get("learning_path_intake")
+    if (
+        last_agent == "learning_path_intake_agent"
+        and isinstance(intake, dict)
+        and intake.get("status") == "confirmed"
+    ):
+        return SUPERVISOR_NODE
+
     if should_auto_continue_learning_path_after_profile(state):
         return SUPERVISOR_NODE
     return END
@@ -107,6 +125,7 @@ def build_orchestration_graph():
 
     supervisor_node = create_supervisor_node(supervisor_llm)
     profile_node = create_profile_agent_node(supervisor_llm)
+    learning_path_intake_node = create_learning_path_intake_agent_node(supervisor_llm)
     learning_path_node = create_learning_path_agent_node(learning_path_llm)
     course_knowledge_node = create_course_knowledge_agent_node(worker_llm)
     section_markdown_node = create_section_markdown_agent_node(worker_llm)
@@ -117,6 +136,7 @@ def build_orchestration_graph():
 
     builder.add_node(SUPERVISOR_NODE, supervisor_node)
     builder.add_node("profile_agent", profile_node)
+    builder.add_node("learning_path_intake_agent", learning_path_intake_node)
     builder.add_node("learning_path_agent", learning_path_node)
     builder.add_node("course_knowledge_agent", course_knowledge_node)
     builder.add_node("section_markdown_agent", section_markdown_node)
@@ -130,6 +150,7 @@ def build_orchestration_graph():
         route_after_supervisor,
         {
             "profile_agent": "profile_agent",
+            "learning_path_intake_agent": "learning_path_intake_agent",
             "learning_path_agent": "learning_path_agent",
             "course_knowledge_agent": "course_knowledge_agent",
             "section_markdown_agent": "section_markdown_agent",

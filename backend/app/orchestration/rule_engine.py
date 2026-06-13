@@ -14,11 +14,17 @@ import re
 from dataclasses import dataclass, field
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from app.orchestration.agents.learning_path_intake import (
+    is_intake_confirmation_query,
+    is_intake_modification_query,
+    latest_intake_from_state,
+)
 from app.orchestration.agents.profile import EXPLICIT_PROFILE_FIELD_PREFIXES, is_complete_profile_data
 from app.orchestration.default_fill import allows_default_profile_fill
 
 # ── Agent keys ───────────────────────────────────────────────────────────
 AGENT_PROFILE = "profile_agent"
+AGENT_LEARNING_PATH_INTAKE = "learning_path_intake_agent"
 AGENT_LEARNING_PATH = "learning_path_agent"
 AGENT_COURSE_KNOWLEDGE = "course_knowledge_agent"
 AGENT_SECTION_MARKDOWN = "section_markdown_agent"
@@ -27,6 +33,7 @@ AGENT_SECTION_HTML_ANIMATION = "section_html_animation_agent"
 
 ALL_WORKER_AGENTS = {
     AGENT_PROFILE,
+    AGENT_LEARNING_PATH_INTAKE,
     AGENT_LEARNING_PATH,
     AGENT_COURSE_KNOWLEDGE,
     AGENT_SECTION_MARKDOWN,
@@ -441,6 +448,20 @@ def _has_course_knowledge(state: dict) -> bool:
     return isinstance(value, dict) and bool(value.get("course_id"))
 
 
+def _latest_intake(state: dict) -> dict | None:
+    return latest_intake_from_state(state)
+
+
+def _has_confirmed_intake(state: dict) -> bool:
+    intake = _latest_intake(state)
+    return isinstance(intake, dict) and intake.get("status") == "confirmed"
+
+
+def _has_unconfirmed_intake(state: dict) -> bool:
+    intake = _latest_intake(state)
+    return isinstance(intake, dict) and intake.get("status") in {"draft", "risk_pending"}
+
+
 def _rule_no_profile(state: dict, profile: dict) -> RuleResult:
     """No completed profile → block path and course_knowledge agents."""
     result = RuleResult(
@@ -488,36 +509,56 @@ def _rule_no_profile(state: dict, profile: dict) -> RuleResult:
 def _rule_has_profile_no_path(state: dict, profile: dict) -> RuleResult:
     """Has completed profile but no learning path → block course_knowledge."""
     result = RuleResult(
-        allowed_agents={AGENT_PROFILE, AGENT_LEARNING_PATH},
+        allowed_agents={AGENT_PROFILE, AGENT_LEARNING_PATH_INTAKE, AGENT_LEARNING_PATH},
         blocked_agents={AGENT_COURSE_KNOWLEDGE},
     )
     query = str(state.get("query", "")).strip()
     last_tool_agent = _extract_last_tool_agent(state)
 
     if should_auto_continue_learning_path_after_profile(state):
+        result.force_call = AGENT_LEARNING_PATH_INTAKE
+        result.blocked_agents = {AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
+        result.system_hints.append(
+            "[系统级强制指令] 用户刚完成画像更新。"
+            "你必须先调用 learning_path_intake_agent 刷新课程草案并等待确认。"
+        )
+        return result
+
+    if _has_unconfirmed_intake(state) and (
+        is_intake_confirmation_query(query) or is_intake_modification_query(query)
+    ):
+        result.force_call = AGENT_LEARNING_PATH_INTAKE
+        result.blocked_agents = {AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
+        result.system_hints.append(
+            "[系统级强制指令] 用户正在确认或修改课程草案。"
+            "你必须调用 learning_path_intake_agent 处理草案状态，不要直接生成学习路径。"
+        )
+        return result
+
+    if _has_confirmed_intake(state):
         result.force_call = AGENT_LEARNING_PATH
         result.system_hints.append(
-            "[系统级强制指令] 用户刚完成画像更新，且上一轮要求在画像更新后重新生成学习路径。"
-            "你必须立即调用 learning_path_agent，基于最新画像刷新学习路径。"
+            "[系统级强制指令] 用户已经确认课程草案。"
+            "你必须调用 learning_path_agent 生成正式学习路径，不要调用课程大纲智能体。"
         )
         return result
 
     if is_navigation_query(query) or is_learning_path_refresh_query(query):
-        result.force_call = AGENT_LEARNING_PATH
+        result.force_call = AGENT_LEARNING_PATH_INTAKE
+        result.blocked_agents = {AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
         result.system_hints.append(
-            "[系统级强制指令] 用户画像已完成但尚无学习路径，且用户正在请求下一步学习安排。"
-            "你必须调用 learning_path_agent 生成学习路径，"
-            "不要再次调用 profile_agent。"
+            "[系统级强制指令] 用户画像已完成但尚未确认课程草案。"
+            "你必须调用 learning_path_intake_agent 生成或确认课程草案，"
+            "不要直接调用 learning_path_agent。"
         )
         return result
 
     if last_tool_agent == AGENT_PROFILE:
+        result.force_call = AGENT_LEARNING_PATH_INTAKE
         result.blocked_agents = {AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
-        result.allowed_agents = {AGENT_PROFILE}
         result.system_hints.append(
-            "[系统级强制指令] profile_agent 刚在本轮生成完画像。"
-            "这一轮不要继续调用 learning_path_agent。"
-            "请直接向用户展示画像结果，并询问是否继续生成学习路径。"
+            "[系统级强制指令] profile_agent 刚生成画像。"
+            "你必须无缝进入课程草案规划，调用 learning_path_intake_agent。"
         )
         return result
 
@@ -530,17 +571,17 @@ def _rule_has_profile_no_path(state: dict, profile: dict) -> RuleResult:
         )
         return result
     if is_default_profile_query(query):
-        result.force_call = AGENT_LEARNING_PATH
+        result.force_call = AGENT_LEARNING_PATH_INTAKE
+        result.blocked_agents = {AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
         result.system_hints.append(
-            "[系统级强制指令] 用户要求基于当前画像直接生成学习路径。"
-            "你必须调用 learning_path_agent，"
-            "不要再次回到画像收集。"
+            "[系统级强制指令] 用户要求基于当前画像继续规划。"
+            "你必须先调用 learning_path_intake_agent 生成课程草案。"
         )
         return result
 
     result.system_hints.append(
-        "[系统级强制指令] 用户画像已完成但没有学习路径。"
-        "如果用户表达了想学什么，立即调用 learning_path_agent。"
+        "[系统级强制指令] 用户画像已完成但课程草案未确认。"
+        "如果用户表达了想学什么或请求下一步，先调用 learning_path_intake_agent。"
         "不要调用 profile_agent（画像已完成）。"
         "不要调用 course_knowledge_agent（路径不存在）。"
     )
@@ -557,10 +598,30 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
     pending_profile_followup = has_pending_profile_update_followup(state)
 
     if should_auto_continue_learning_path_after_profile(state):
-        result.force_call = AGENT_LEARNING_PATH
+        result.force_call = AGENT_LEARNING_PATH_INTAKE
+        result.blocked_agents = {AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
         result.system_hints.append(
             "[系统级强制指令] 用户刚完成画像更新，且当前流程要求在画像更新后重新生成学习路径。"
-            "你必须立即调用 learning_path_agent，基于最新画像刷新学习路径。"
+            "你必须先调用 learning_path_intake_agent 刷新课程草案并等待确认。"
+        )
+        return result
+
+    if _has_unconfirmed_intake(state) and (
+        is_intake_confirmation_query(query) or is_intake_modification_query(query)
+    ):
+        result.force_call = AGENT_LEARNING_PATH_INTAKE
+        result.blocked_agents = {AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
+        result.system_hints.append(
+            "[系统级强制指令] 用户正在确认或修改课程草案。"
+            "你必须调用 learning_path_intake_agent 更新草案状态，不要直接调用 learning_path_agent。"
+        )
+        return result
+
+    if _has_confirmed_intake(state) and last_tool_agent == AGENT_LEARNING_PATH_INTAKE:
+        result.force_call = AGENT_LEARNING_PATH
+        result.system_hints.append(
+            "[系统级强制指令] 课程草案刚刚确认。"
+            "你必须调用 learning_path_agent 基于确认后的草案刷新正式学习路径。"
         )
         return result
 
@@ -653,11 +714,12 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
             "不要直接开始课程，也不要直接复述旧学习路径。"
         )
     elif is_learning_path_refresh_query(query):
-        result.force_call = AGENT_LEARNING_PATH
+        result.force_call = AGENT_LEARNING_PATH_INTAKE
+        result.blocked_agents = {AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
         result.system_hints.append(
             "[系统级强制指令] 用户要基于当前画像重新生成学习路径。"
-            "你必须调用 learning_path_agent，"
-            "不要直接开始课程。"
+            "你必须先调用 learning_path_intake_agent 刷新课程草案，"
+            "不要直接调用 learning_path_agent。"
         )
     elif is_review_plan_query(query):
         result.blocked_agents = {AGENT_PROFILE, AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}

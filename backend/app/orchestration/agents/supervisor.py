@@ -12,6 +12,7 @@ from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.agents.prompts import SUPERVISOR_BASE_PROMPT
 from app.orchestration.rule_engine import (
     AGENT_COURSE_KNOWLEDGE,
+    AGENT_LEARNING_PATH_INTAKE,
     AGENT_LEARNING_PATH,
     AGENT_PROFILE,
     AGENT_SECTION_HTML_ANIMATION,
@@ -137,6 +138,13 @@ def create_tools_for_llm() -> list:
         return ""
 
     @tool
+    async def learning_path_intake_agent() -> str:
+        """在正式生成学习路径前，基于已完成画像生成或确认课程草案。
+        前提：用户画像已完成。该工具只负责课程草案，不生成正式学习路径。
+        """
+        return ""
+
+    @tool
     async def learning_path_agent(
         grade_year: str,
         learning_topic: str,
@@ -199,6 +207,7 @@ def create_tools_for_llm() -> list:
 
     return [
         profile_agent,
+        learning_path_intake_agent,
         learning_path_agent,
         course_knowledge_agent,
         section_markdown_agent,
@@ -519,6 +528,20 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
                         "name": AGENT_PROFILE,
                         "args": {"conversation_summary": conversation_summary},
                         "id": f"force_{AGENT_PROFILE}",
+                    }],
+                )
+            ],
+        }
+
+    elif agent_key == AGENT_LEARNING_PATH_INTAKE:
+        return {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[{
+                        "name": AGENT_LEARNING_PATH_INTAKE,
+                        "args": {},
+                        "id": f"force_{AGENT_LEARNING_PATH_INTAKE}",
                     }],
                 )
             ],
