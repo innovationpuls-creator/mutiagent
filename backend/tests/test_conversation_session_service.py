@@ -5,10 +5,14 @@ from pathlib import Path
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
+from app.database import build_engine, init_db, set_engine
 from app.models import User
 from app.services.conversation_session_service import (
     append_messages,
+    latest_learning_path_intake,
+    load_session,
     load_or_create_session,
+    replace_latest_learning_path_intake,
 )
 
 
@@ -91,3 +95,43 @@ def test_append_messages_raises_for_missing_session(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Conversation session sess-missing not found"):
         append_messages(session, "sess-missing", [{"type": "human", "data": {"content": "你好"}}])
+
+
+def test_replace_latest_learning_path_intake_message(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'session-intake.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    with Session(engine) as session:
+        load_or_create_session(session, "session-intake", "user-1")
+        first = {
+            "type": "learning_path_intake",
+            "status": "draft",
+            "grade_year": "year_3",
+            "grade_name": "大三",
+            "learning_topic": "数据结构",
+            "courses": [{"title": "数据结构基础", "purpose": "建立基础"}],
+            "recommendation_reasons": ["目标是学习数据结构"],
+            "user_modification_summary": "",
+            "risk_warnings": [],
+            "requires_second_confirmation": False,
+        }
+        second = {
+            **first,
+            "courses": [
+                {"title": "数据结构基础", "purpose": "建立基础"},
+                {"title": "线性结构实践", "purpose": "练习数组链表栈队列"},
+            ],
+        }
+
+        replace_latest_learning_path_intake(session, "session-intake", first)
+        replace_latest_learning_path_intake(session, "session-intake", second)
+        row = load_session(session, "session-intake")
+
+    intake_messages = [
+        message
+        for message in row.messages
+        if isinstance(message, dict) and message.get("type") == "learning_path_intake"
+    ]
+    assert intake_messages == [second]
+    assert latest_learning_path_intake(row.messages) == second

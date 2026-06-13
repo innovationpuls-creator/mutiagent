@@ -23,6 +23,7 @@ class OrchestrationState(TypedDict, total=False):
 
     # DB-loaded context
     profile: Optional[dict]
+    learning_path_intake: Optional[dict]
     year_learning_paths: Optional[dict]  # {year_1: YearLearningPathOutput, ...}
     course_knowledge: Optional[dict]      # most recent CourseKnowledgeOutput
     course_knowledges: Optional[list[dict]]
