@@ -51,16 +51,27 @@ function findResourceDirections(path: LearningPathResult, ids: string[]): Resour
   );
 }
 
+function buildPathTitle(gradePlans: NonNullable<LearningPathResult['grade_plans'][GradeId]>[]): string {
+  if (gradePlans.length === 1) {
+    return `${gradePlans[0].grade_name}课程路径`;
+  }
+  if (gradePlans.length > 1) {
+    return '多学年课程路径';
+  }
+  return '当前年级课程路径';
+}
+
 export function LearningPathCard({ path }: LearningPathCardProps) {
   const orderedGradePlans = gradeOrder
     .map((gradeId) => path.grade_plans[gradeId])
     .filter((gradePlan) => gradePlan !== undefined);
+  const pathTitle = buildPathTitle(orderedGradePlans);
 
   return (
     <Card>
       <Header>
         <span>学习路径 · {path.schema_version}</span>
-        <strong>大学四年课程路径</strong>
+        <strong>{pathTitle}</strong>
       </Header>
 
       <Section>

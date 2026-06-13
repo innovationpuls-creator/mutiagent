@@ -14,9 +14,20 @@ test('builds ordered Agent nodes from timeline steps', () => {
       title: '学习路径智能体',
       summary: '正在拆解四年学习路径',
       agent: 'learning_path_agent',
-      dependsOn: ['profile_agent'],
+      dependsOn: ['learning_path_intake_agent'],
       parallelGroup: 'path',
       startedAtMs: 1000,
+    },
+    {
+      stepId: 'learning-path-intake',
+      kind: 'agent',
+      status: 'success',
+      title: '课程草案智能体',
+      summary: '课程草案已确认',
+      agent: 'learning_path_intake_agent',
+      dependsOn: ['profile_agent'],
+      parallelGroup: 'path',
+      durationMs: 800,
     },
     {
       stepId: 'profile',
@@ -31,11 +42,12 @@ test('builds ordered Agent nodes from timeline steps', () => {
 
   const nodes = buildAgentCollaborationNodes(steps);
 
-  expect(nodes.map((node) => node.agent)).toEqual(['profile_agent', 'learning_path_agent']);
+  expect(nodes.map((node) => node.agent)).toEqual(['profile_agent', 'learning_path_intake_agent', 'learning_path_agent']);
   expect(nodes[0].status).toBe('success');
-  expect(nodes[1].status).toBe('running');
-  expect(nodes[1].inputSummary).toBe('输入来自：profile_agent');
-  expect(nodes[1].parallelGroup).toBe('path');
+  expect(nodes[1].status).toBe('success');
+  expect(nodes[2].status).toBe('running');
+  expect(nodes[2].inputSummary).toBe('输入来自：learning_path_intake_agent');
+  expect(nodes[2].parallelGroup).toBe('path');
 });
 
 test('trims Agent ids before ordering and dependency labels', () => {
@@ -60,7 +72,7 @@ test('trims Agent ids before ordering and dependency labels', () => {
   const nodes = buildAgentCollaborationNodes(steps);
 
   expect(nodes.map((node) => node.agent)).toEqual(['learning_path_agent', 'custom_agent']);
-  expect(nodes[0].inputSummary).toBe('等待画像完成');
+  expect(nodes[0].inputSummary).toBe('等待课程草案确认');
 });
 
 test('renders each Agent as a status column with input and output summaries', () => {

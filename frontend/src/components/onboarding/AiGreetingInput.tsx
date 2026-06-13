@@ -39,6 +39,7 @@ const AGENT_LABELS: Record<string, string> = {
   main_agent: '主智能体',
   intent_recognition_agent: '意图识别智能体',
   profile_agent: '基础画像智能体',
+  learning_path_intake_agent: '课程草案智能体',
   learning_path_agent: '学习路径智能体',
   course_knowledge_agent: '课程知识智能体',
   learning_resource_agent: '资源推荐智能体',

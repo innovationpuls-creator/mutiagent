@@ -3,6 +3,7 @@ import type { AgentCollaborationNode, AgentRunStep } from '../../types/chat';
 const AGENT_ORDER = [
   'supervisor',
   'profile_agent',
+  'learning_path_intake_agent',
   'learning_path_agent',
   'course_knowledge_agent',
   'section_markdown_agent',
@@ -12,7 +13,8 @@ const AGENT_ORDER = [
 
 const WAITING_DEPENDENCY_LABELS: Record<string, string> = {
   profile_agent: '等待主智能体分配画像任务',
-  learning_path_agent: '等待画像完成',
+  learning_path_intake_agent: '等待画像完成',
+  learning_path_agent: '等待课程草案确认',
   course_knowledge_agent: '等待学习路径完成',
   section_markdown_agent: '等待课程大纲完成',
   section_video_search_agent: '等待小节文档 brief 完成',

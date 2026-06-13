@@ -150,7 +150,7 @@ describe('LearningPathCard', () => {
   it('renders course-node learning path sections', () => {
     render(<LearningPathCard path={path} />);
 
-    expect(screen.getByText('大学四年课程路径')).toBeTruthy();
+    expect(screen.getByText('多学年课程路径')).toBeTruthy();
     expect(screen.getByText('计算机专业能力')).toBeTruthy();
     expect(screen.getByText('大一')).toBeTruthy();
     expect(screen.getByText('程序设计基础')).toBeTruthy();

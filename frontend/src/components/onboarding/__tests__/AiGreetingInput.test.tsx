@@ -440,7 +440,7 @@ test('renders detailed main agent flow in the left message timeline', async () =
     const timeline = screen.getByLabelText('Agent run timeline');
     expect(timeline).toBeTruthy();
     expect(timeline.getAttribute('data-surface')).toBe('warm-paper');
-    expect(screen.getByText('大学四年课程路径')).toBeTruthy();
+    expect(screen.getByText(/课程路径/)).toBeTruthy();
   }, { timeout: 10000 });
 });
 
@@ -1029,7 +1029,7 @@ test('keeps completed-profile composer mode when a cached path-only session stor
   );
 
   await waitFor(() => {
-    expect(screen.getByText('大学四年课程路径')).toBeTruthy();
+    expect(screen.getByText(/课程路径/)).toBeTruthy();
     expect(screen.getByText('AI Agent 开发基础能力搭建')).toBeTruthy();
   });
 
@@ -1487,7 +1487,7 @@ test('renders retry button for retryable learning path errors and resends retry 
         headers: expect.objectContaining({ Authorization: 'Bearer token-1' }),
       }),
     );
-    expect(screen.getByText('大学四年课程路径')).toBeTruthy();
+    expect(screen.getByText(/课程路径/)).toBeTruthy();
   });
 });
 
@@ -2577,7 +2577,7 @@ test('reuses the same session after profile completion instead of creating a new
   fireEvent.click(screen.getByLabelText('发送消息'));
 
   await waitFor(() => {
-    expect(screen.getByText('大学四年课程路径')).toBeTruthy();
+    expect(screen.getByText(/课程路径/)).toBeTruthy();
     expect(screen.queryByText('生成学习路径')).toBeNull();
     expect(screen.getByRole('button', { name: /查看学习路径/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /开始第一门课/ })).toBeTruthy();
@@ -2806,7 +2806,7 @@ test('loads saved learning path when only the final completion text says 学习�
         ([url]) => url === 'http://127.0.0.1:8000/api/chat/sessions/session-path-fallback-text',
       ),
     ).toBe(true);
-    expect(screen.getByText('大学四年课程路径')).toBeTruthy();
+    expect(screen.getByText(/课程路径/)).toBeTruthy();
     expect(screen.getByText('AI Agent 开发基础能力搭建')).toBeTruthy();
   });
 });
