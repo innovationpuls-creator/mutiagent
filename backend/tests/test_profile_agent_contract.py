@@ -14,7 +14,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from app.orchestration.agents.profile import _build_local_profile, _build_profile_input, _is_complete_profile, run_profile_agent
 from app.orchestration.agents.models import ProfileOutput
-from app.orchestration.rule_engine import AGENT_LEARNING_PATH, AGENT_PROFILE, evaluate
+from app.orchestration.rule_engine import AGENT_LEARNING_PATH, AGENT_LEARNING_PATH_INTAKE, AGENT_PROFILE, evaluate
 
 
 class ScriptedStructuredLlm:
@@ -143,7 +143,7 @@ def test_rule_engine_force_calls_profile_for_profile_refinement_query() -> None:
     assert result.force_call == AGENT_PROFILE
 
 
-def test_rule_engine_force_calls_learning_path_for_direct_generate_after_profile() -> None:
+def test_rule_engine_force_calls_intake_for_direct_generate_after_profile() -> None:
     result = evaluate({
         "query": "直接帮我生成，不确定的你随便帮我填",
         "profile": _profile(),
@@ -151,10 +151,11 @@ def test_rule_engine_force_calls_learning_path_for_direct_generate_after_profile
         "messages": [],
     })
 
-    assert result.force_call == AGENT_LEARNING_PATH
+    assert result.force_call == AGENT_LEARNING_PATH_INTAKE
+    assert AGENT_LEARNING_PATH in result.blocked_agents
 
 
-def test_rule_engine_does_not_chain_learning_path_in_same_turn_as_profile_generation() -> None:
+def test_rule_engine_chains_intake_in_same_turn_as_profile_generation() -> None:
     result = evaluate({
         "query": "你直接按照默认给我一份基础画像",
         "profile": _profile(),
@@ -175,7 +176,7 @@ def test_rule_engine_does_not_chain_learning_path_in_same_turn_as_profile_genera
         ],
     })
 
-    assert result.force_call is None
+    assert result.force_call == AGENT_LEARNING_PATH_INTAKE
     assert AGENT_LEARNING_PATH in result.blocked_agents
 
 
