@@ -13,6 +13,7 @@ from app.orchestration.agents.learning_path_intake import (
     latest_intake_from_state,
     run_learning_path_intake_agent,
 )
+from app.orchestration.agents.prompts import LEARNING_PATH_INTAKE_AGENT_SYSTEM_PROMPT
 from app.services.conversation_session_service import load_or_create_session, latest_learning_path_intake
 
 
@@ -54,6 +55,12 @@ def test_intake_modification_query_accepts_course_change() -> None:
     assert is_intake_modification_query("我想学前端")
     assert is_intake_modification_query("不想学这个")
     assert not is_intake_modification_query("就按这个来")
+
+
+def test_intake_prompt_allows_required_statuses() -> None:
+    assert "`draft`" in LEARNING_PATH_INTAKE_AGENT_SYSTEM_PROMPT
+    assert "`confirmed`" in LEARNING_PATH_INTAKE_AGENT_SYSTEM_PROMPT
+    assert "`risk_pending`" in LEARNING_PATH_INTAKE_AGENT_SYSTEM_PROMPT
 
 
 def test_run_intake_agent_creates_data_structure_draft(tmp_path: Path) -> None:

@@ -128,7 +128,7 @@ LEARNING_PATH_INTAKE_AGENT_SYSTEM_PROMPT = """\
 - 必须输出 JSON，且只能输出 JSON 对象。
 - 顶层字段必须包含：type、status、grade_year、grade_name、learning_topic、courses、recommendation_reasons、user_modification_summary、risk_warnings、requires_second_confirmation。
 - type 必须是 `learning_path_intake`。
-- status 只能是 `draft` 或 `confirmed`。
+- status 只能是 `draft`、`confirmed` 或 `risk_pending`。
 - courses 必须是 4-10 门课程，按推荐学习顺序排列。
 - 每门课程必须包含 title、purpose。
 - recommendation_reasons 必须简短说明推荐依据，结合年级、学习主题、能力基础、学习节奏或用户约束。
