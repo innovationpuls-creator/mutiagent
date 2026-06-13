@@ -1620,3 +1620,26 @@ def test_profile_preserves_data_structure_goal_from_initial_sentence(tmp_path: P
     assert "AI 应用开发" not in profile_dict["summary_text"]
     assert "学习习" not in profile_dict["summary_text"]
 
+
+def test_profile_does_not_extract_pace_word_as_learning_topic(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-ai-pace-topic-regression.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000001303",
+        "query": "我现在大三、软件工程、AI、平时学习",
+        "profile": None,
+        "messages": [
+            HumanMessage(content="我现在大三、软件工程、AI、平时学习"),
+        ],
+    }
+
+    profile_dict = _build_local_profile(state, allow_default_fill=False)
+    confirmed = profile_dict["confirmed_info"]
+
+    assert confirmed["major"] == "软件工程"
+    assert confirmed["short_term_goal"] == "学习AI 应用开发"
+    assert "AI 应用开发" in profile_dict["summary_text"]
+    assert "学习习" not in confirmed["short_term_goal"]
+    assert "学习习" not in profile_dict["summary_text"]
