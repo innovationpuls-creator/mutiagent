@@ -57,7 +57,8 @@ PROFILE_COMPLETION_REQUIRED_KEYS = frozenset({
 UNKNOWN_VALUE = "未知"
 DEFAULT_GRADE = "大三"
 DEFAULT_MAJOR = "软件工程"
-DEFAULT_TOPIC = "AI 应用开发"
+AI_TOPIC = "AI 应用开发"
+DEFAULT_TOPIC = ""
 GRADE_PATTERN = re.compile(r"(大[一二三四]|大[1234]|[一二三四]年级|研[一二三])")
 ENGLISH_GRADE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bfreshman\b", re.IGNORECASE), "大一"),
@@ -122,6 +123,8 @@ MAJOR_BLOCKED_TERMS = (
     "每周",
     "每天",
     "投入",
+    "不知道怎么学",
+    "怎么学",
 )
 LEARNING_METHOD_SEGMENTS = ("喜欢自己摸索", "自己摸索", "自主学习", "自学")
 LEARNING_PREFERENCE_BLOCKED_SEGMENTS = ("喜欢看", "一步一步", "跟着操作")
@@ -650,6 +653,12 @@ def _clean_topic_value(value: str) -> str:
     return value.strip("：:，,。！？!?；; “”-_")
 
 
+def _ai_topic_from_text(text: str) -> str:
+    if re.search(r"(?<![A-Za-z0-9])ai(?![A-Za-z0-9])", text, re.IGNORECASE):
+        return AI_TOPIC
+    return ""
+
+
 def _topic_from_segment(segment: str) -> str:
     vibecoding_match = re.search(r"vibecoding", segment, re.IGNORECASE)
     if vibecoding_match:
@@ -663,8 +672,9 @@ def _topic_from_segment(segment: str) -> str:
             return value
 
     lowered = segment.lower()
-    if lowered == "ai" or "ai应用" in lowered or "ai 应用" in lowered:
-        return DEFAULT_TOPIC
+    ai_topic = _ai_topic_from_text(lowered)
+    if ai_topic:
+        return ai_topic
     if "前端" in segment:
         return "前端开发"
     if "后端" in segment:
@@ -684,9 +694,10 @@ def _extract_topic(texts: list[str], segments: list[str]) -> str:
         if topic:
             return topic
 
-    lowered_texts = [text.lower() for text in reversed(texts)]
-    if any("ai" in text for text in lowered_texts):
-        return DEFAULT_TOPIC
+    for text in reversed(texts):
+        ai_topic = _ai_topic_from_text(text)
+        if ai_topic:
+            return ai_topic
     if any("前端" in text for text in texts):
         return "前端开发"
     if any("后端" in text for text in texts):
@@ -701,22 +712,29 @@ def _topic_from_existing_profile(existing_profile: dict | None, existing_confirm
         if isinstance(content_preference, list)
         else ""
     )
-    text_candidates = [
+    confirmed_texts = [
         str(existing_confirmed.get("short_term_goal", "")),
         str(existing_confirmed.get("long_term_goal", "")),
         content_text,
     ]
+    profile_texts: list[str] = []
     if isinstance(existing_profile, dict):
-        text_candidates.extend([
+        profile_texts.extend([
             str(existing_profile.get("summary_text", "")),
             str(existing_profile.get("text", "")),
         ])
 
-    combined = "\n".join(text_candidates).lower()
-    if "vibecoding" in combined:
+    segments = _normalize_segments(confirmed_texts)
+    topic = _extract_topic(confirmed_texts, segments)
+    if topic:
+        return topic
+
+    combined = "\n".join([*confirmed_texts, *profile_texts])
+    if "vibecoding" in combined.lower():
         return "vibecoding"
-    if "ai" in combined:
-        return DEFAULT_TOPIC
+    ai_topic = _ai_topic_from_text(combined)
+    if ai_topic:
+        return ai_topic
     if "前端" in combined:
         return "前端开发"
     if "后端" in combined:
@@ -800,9 +818,18 @@ def _clean_major_value(segment: str) -> str:
     return _clean_explicit_field_value(value)
 
 
+def _is_explicit_profile_field_segment(segment: str) -> bool:
+    parts = re.split(r"[：:]", segment.strip(), maxsplit=1)
+    return len(parts) == 2 and parts[0].strip() in REQUIRED_CONFIRMED_INFO_KEYS
+
+
 def _major_from_segment(segment: str) -> str:
     value = _clean_major_value(segment)
     if not value:
+        return ""
+    if segment.strip().startswith(("画像表单提交：", "画像表单提交:")):
+        return ""
+    if _is_explicit_profile_field_segment(segment):
         return ""
     if len(value) > 16:
         return ""
@@ -1069,8 +1096,6 @@ def _extract_profile_updates(state: OrchestrationState, *, include_defaults: boo
     if contextual_updates:
         updates.update(contextual_updates)
 
-    if include_defaults and not topic:
-        topic = DEFAULT_TOPIC
     if include_defaults:
         updates.setdefault("major", DEFAULT_MAJOR)
     if topic:
@@ -1531,16 +1556,7 @@ def _resolved_content_preference(
 
 
 def _apply_profile_update_overrides(confirmed: dict[str, object], updates: dict[str, object]) -> None:
-    for key in (
-        "current_grade",
-        "major",
-        "experience",
-        "constraints",
-        "short_term_goal",
-        "long_term_goal",
-        "weekly_available_time",
-        "learning_pace_preference",
-    ):
+    for key in REQUIRED_CONFIRMED_INFO_KEYS:
         if key in updates:
             confirmed[key] = updates[key]
 
@@ -1606,6 +1622,9 @@ def _build_local_confirmed_info(
     allow_default_fill: bool,
     has_existing_complete_profile: bool,
 ) -> dict[str, object]:
+    default_short_term_goal = f"学习{topic}" if topic else "完成一个可运行的课程级项目"
+    default_long_term_goal = f"形成{topic}方向的系统学习能力" if topic else "形成系统学习能力"
+
     def resolved(key: str, default_value: str = "") -> str:
         use_default = allow_default_fill or (not has_existing_complete_profile)
         return _resolved_profile_text(
@@ -1629,8 +1648,8 @@ def _build_local_confirmed_info(
         "strengths": resolved("strengths", "工程实现与课程学习能力"),
         "weaknesses": resolved("weaknesses", "大型项目实战经验、数据库设计能力、英文阅读速度"),
         "experience": resolved("experience", "平时学习"),
-        "short_term_goal": resolved("short_term_goal", f"围绕{topic or DEFAULT_TOPIC}完成一个可运行的课程级项目"),
-        "long_term_goal": resolved("long_term_goal", f"形成{topic or DEFAULT_TOPIC}方向的应用开发能力"),
+        "short_term_goal": resolved("short_term_goal", default_short_term_goal),
+        "long_term_goal": resolved("long_term_goal", default_long_term_goal),
         "weekly_available_time": resolved("weekly_available_time", "每周 6-10 小时"),
         "constraints": resolved("constraints", "平时学习节奏，避免过高强度"),
     }

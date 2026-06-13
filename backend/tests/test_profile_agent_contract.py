@@ -12,7 +12,7 @@ from app.database import build_engine, init_db, set_engine
 from app.models import UserProfile
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app.orchestration.agents.profile import _build_profile_input, _is_complete_profile, run_profile_agent
+from app.orchestration.agents.profile import _build_local_profile, _build_profile_input, _is_complete_profile, run_profile_agent
 from app.orchestration.agents.models import ProfileOutput
 from app.orchestration.rule_engine import AGENT_LEARNING_PATH, AGENT_PROFILE, evaluate
 
@@ -1534,5 +1534,89 @@ def test_profile_form_submission_content_preference_persistence(tmp_path: Path) 
     assert confirmed["knowledge_foundation"] == "有 Python 基础"
 
 
+def test_profile_keeps_major_after_strengths_form_submission(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-major-strengths-regression.db'}")
+    set_engine(engine)
+    init_db(engine)
 
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000001301",
+        "query": (
+            "画像表单提交：\n"
+            "knowledge_foundation：没有基础\n"
+            "experience：没有经验\n"
+            "strengths：没有\n"
+            "weaknesses：缺少系统训练"
+        ),
+        "profile": {
+            "type": "collecting",
+            "stage": "ability_basis",
+            "confirmed_info": {
+                "current_grade": "大三",
+                "major": "软件工程",
+                "learning_stage": "刚入门",
+                "has_clear_goal": "否",
+                "learning_method_preference": "项目驱动学习",
+                "learning_pace_preference": "每天少量",
+                "content_preference": ["文档"],
+                "need_guidance": "需要强引导",
+                "knowledge_foundation": "",
+                "strengths": "",
+                "weaknesses": "",
+                "experience": "",
+                "short_term_goal": "学习数据结构",
+                "long_term_goal": "",
+                "weekly_available_time": "每周 6-10 小时",
+                "constraints": "",
+            },
+        },
+        "messages": [
+            HumanMessage(content="我现在大三、软件工程、想学习数据结构、目前不知道怎么学"),
+            HumanMessage(content="软件工程"),
+            HumanMessage(content=(
+                "画像表单提交：\n"
+                "knowledge_foundation：没有基础\n"
+                "experience：没有经验\n"
+                "strengths：没有\n"
+                "weaknesses：缺少系统训练"
+            )),
+        ],
+    }
+
+    class FailingLlm:
+        def with_structured_output(self, *_args, **_kwargs):
+            raise AssertionError("local profile path should handle complete dynamic profile")
+
+    result = asyncio.run(run_profile_agent(state, FailingLlm()))
+    confirmed = result["profile"]["confirmed_info"]
+
+    assert confirmed["major"] == "软件工程"
+    assert confirmed["strengths"] == "没有"
+    assert confirmed["short_term_goal"] == "学习数据结构"
+    assert "strengths" not in confirmed["major"]
+    assert "学习习" not in result["profile"]["summary_text"]
+
+
+def test_profile_preserves_data_structure_goal_from_initial_sentence(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'profile-data-structure-goal.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    state = {
+        "user_id": "00000000-0000-0000-0000-000000001302",
+        "query": "我现在大三、软件工程、想学习数据结构、目前不知道怎么学",
+        "profile": None,
+        "messages": [
+            HumanMessage(content="我现在大三、软件工程、想学习数据结构、目前不知道怎么学"),
+        ],
+    }
+
+    profile_dict = _build_local_profile(state, allow_default_fill=False)
+    confirmed = profile_dict["confirmed_info"]
+
+    assert confirmed["current_grade"] == "大三"
+    assert confirmed["major"] == "软件工程"
+    assert confirmed["short_term_goal"] == "学习数据结构"
+    assert "AI 应用开发" not in profile_dict["summary_text"]
+    assert "学习习" not in profile_dict["summary_text"]
 
