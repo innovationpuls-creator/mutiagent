@@ -248,7 +248,7 @@ class LearningPathPlanOutput(BaseModel):
     four_year_outcome: str = Field(default="", min_length=1, description="四年阶段最终结果")
     current_focus: str = Field(default="", min_length=1, description="当前最应该先聚焦的事情")
     next_action: str = Field(default="", min_length=1, description="当前最具体的下一步动作")
-    course_specs: list[LearningPathCourseSpecOutput] = Field(min_length=3, description="按先后顺序排列的课程")
+    course_specs: list[LearningPathCourseSpecOutput] = Field(min_length=4, max_length=10, description="按先后顺序排列的课程")
 
 
 class TimeArrangementOutput(BaseModel):

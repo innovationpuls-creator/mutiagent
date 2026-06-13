@@ -14,17 +14,19 @@ from app.orchestration.grade_contract import (
     is_supported_current_grade,
     unsupported_current_grade_error,
 )
+from app.orchestration.agents.learning_path_intake import latest_intake_from_state
 from app.orchestration.agents.profile import is_complete_profile_data
-from app.orchestration.agents.models import LearningPathPlanOutput
+from app.orchestration.agents.models import LearningPathIntakeOutput, LearningPathPlanOutput
 from app.orchestration.agents.prompts import LEARNING_PATH_AGENT_SYSTEM_PROMPT
 from app.orchestration.agents.utils import extract_last_tool_call_args, extract_last_tool_call_id
-from app.orchestration.rule_engine import is_learning_path_refresh_query, is_navigation_query
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_PATH_COMMANDS = ("默认", "直接", "随便帮我填", "不确定的你随便帮我填", "帮我生成")
-DEFAULT_TOPIC = "AI 应用开发"
+DEFAULT_TOPIC = "学习路径"
+MIN_LEARNING_PATH_COURSES = 4
+MAX_LEARNING_PATH_COURSES = 10
 LEARNING_PATH_STRUCTURED_TIMEOUT_SECONDS = 120.0
 LEARNING_PATH_RETRY_ERROR = "学习路径生成失败，请重试生成学习路径。"
 
@@ -59,8 +61,38 @@ def _topic_from_profile(profile: dict) -> str:
     if "后端" in combined:
         return "后端开发"
     if "ai" in combined:
-        return DEFAULT_TOPIC
+        return "AI 应用开发"
     return DEFAULT_TOPIC
+
+
+def _confirmed_intake_from_state(state: OrchestrationState | dict) -> tuple[dict | None, str]:
+    raw_intake = latest_intake_from_state(state)
+    if not isinstance(raw_intake, dict) or raw_intake.get("status") != "confirmed":
+        return None, "请先确认课程草案，再生成正式学习路径。"
+
+    try:
+        intake = LearningPathIntakeOutput.model_validate(raw_intake)
+    except Exception as exc:
+        logger.warning("LearningPathAgent confirmed intake validation failed: %s: %s", type(exc).__name__, exc)
+        return None, "课程草案不完整，请先重新生成并确认课程草案。"
+    return intake.model_dump(), ""
+
+
+def _intake_course_lines(intake: dict) -> list[str]:
+    courses = intake.get("courses", [])
+    if not isinstance(courses, list):
+        return []
+    lines: list[str] = []
+    for index, course in enumerate(courses, start=1):
+        if not isinstance(course, dict):
+            continue
+        title = str(course.get("title", "")).strip()
+        purpose = str(course.get("purpose", "")).strip()
+        if title and purpose:
+            lines.append(f"{index}. {title}：{purpose}")
+        elif title:
+            lines.append(f"{index}. {title}")
+    return lines
 
 
 def _validate_learning_path_contract(path_data: dict) -> str:
@@ -84,8 +116,8 @@ def _validate_learning_path_contract(path_data: dict) -> str:
     if not isinstance(course_nodes, list):
         return "current_learning_course.course_node_id 无法定位。"
     normalized_course_nodes = [course for course in course_nodes if isinstance(course, dict)]
-    if len(normalized_course_nodes) < 3:
-        return "当前学年课程数量不足，至少需要 3 门课程。"
+    if not MIN_LEARNING_PATH_COURSES <= len(normalized_course_nodes) <= MAX_LEARNING_PATH_COURSES:
+        return "当前学年课程数量必须在 4 到 10 门之间。"
     if not any(
         course.get("course_node_id") == course_id
         for course in normalized_course_nodes
@@ -455,7 +487,9 @@ def _build_analysis_input(
     learning_topic: str,
     requirements: str,
     progress_snapshots: list[dict[str, object]],
+    intake: dict,
 ) -> str:
+    intake_course_lines = "\n".join(_intake_course_lines(intake))
     return (
         f"请为 {grade_year} 生成「{learning_topic}」的学习路径。\n\n"
         "输出前先完成以下分析：\n"
@@ -463,9 +497,12 @@ def _build_analysis_input(
         "2. 判断当前年级最应该先开始的课程，以及为什么先学它。\n"
         "3. 判断课程之间的依赖、阶段拆分、实践闭环与验收标准。\n"
         "4. 如果输入里已经有历史学习路径与完成度，必须在此基础上延续当前进度，不要重新从第一门课开始。\n"
-        "5. 再把分析结果映射到轻量规划骨架，输出至少 3 门课程的 course_specs；"
-        "课程数量按当前年级、目标复杂度、时间约束和前置能力决定，不要固定为 3 门。"
+        "5. 再把分析结果映射到轻量规划骨架，输出 4-10 门课程的 course_specs；"
+        "课程数量必须与已确认课程草案一致，课程顺序必须与已确认课程草案一致。"
         "不要输出完整知识图谱或章节明细。\n\n"
+        "已确认课程草案是正式学习路径的边界，不能扩展到用户没有确认的方向：\n"
+        f"{json.dumps(intake, ensure_ascii=False, indent=2)}\n"
+        f"已确认课程顺序：\n{intake_course_lines}\n\n"
         f"用户画像关键信息：{json.dumps(profile, ensure_ascii=False, indent=2)}\n"
         f"当前目标年级：{grade_year}\n"
         f"学习主题：{learning_topic}\n"
@@ -1075,6 +1112,7 @@ def _build_learning_path_from_plan(
     grade_year: str,
     learning_topic: str,
     plan_data: dict,
+    intake_courses: list[dict] | None = None,
 ) -> dict:
     if plan_data.get("schema_version") == "learning_path.v2.course_node":
         return _scope_learning_path_to_grade_year(plan_data, grade_year)
@@ -1091,19 +1129,29 @@ def _build_learning_path_from_plan(
     raw_course_specs = plan_data.get("course_specs")
     if not isinstance(raw_course_specs, list):
         raise ValueError("学习路径规划结果缺少 course_specs。")
+    if not MIN_LEARNING_PATH_COURSES <= len(raw_course_specs) <= MAX_LEARNING_PATH_COURSES:
+        raise ValueError("学习路径 course_specs 数量必须在 4 到 10 门之间。")
+
+    expected_courses = intake_courses if isinstance(intake_courses, list) else []
+    if expected_courses and len(raw_course_specs) != len(expected_courses):
+        raise ValueError("学习路径 course_specs 数量必须与已确认课程草案一致。")
 
     course_specs: list[dict] = []
     for index, spec in enumerate(raw_course_specs, start=1):
         if not isinstance(spec, dict):
             continue
+        intake_course = expected_courses[index - 1] if index <= len(expected_courses) else {}
+        intake_title = str(intake_course.get("title", "")).strip() if isinstance(intake_course, dict) else ""
+        intake_purpose = str(intake_course.get("purpose", "")).strip() if isinstance(intake_course, dict) else ""
+        spec_goal = str(spec.get("goal") or "").strip()
         course_specs.append(
             {
                 "course_node_id": f"{grade_year}_course_{index}",
-                "theme": str(spec.get("theme") or "").strip(),
+                "theme": intake_title or str(spec.get("theme") or "").strip(),
                 "semester_scope": str(spec.get("semester_scope") or "").strip(),
                 "duration": str(spec.get("duration") or "").strip(),
                 "pace_reason": str(spec.get("pace_reason") or "").strip(),
-                "goal": str(spec.get("goal") or "").strip(),
+                "goal": spec_goal or intake_purpose,
                 "stage_titles": [str(item).strip() for item in spec.get("stage_titles", []) if str(item).strip()],
                 "key_points": [str(item).strip() for item in spec.get("key_points", []) if str(item).strip()],
                 "difficult_points": [str(item).strip() for item in spec.get("difficult_points", []) if str(item).strip()],
@@ -1133,8 +1181,6 @@ def _build_learning_path_from_plan(
 async def run_learning_path_agent(state: OrchestrationState, llm: BaseChatModel) -> dict:
     """Generate a simplified learning path for a single grade year."""
     tool_args = extract_last_tool_call_args(state)
-    grade_year = tool_args.get("grade_year", "")
-    learning_topic = tool_args.get("learning_topic", "")
 
     profile = state.get("profile")
     confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
@@ -1144,14 +1190,18 @@ async def run_learning_path_agent(state: OrchestrationState, llm: BaseChatModel)
     if not is_complete_profile_data(profile):
         return {"error": "请先完成基础画像再生成学习路径。", "hard_error": True}
 
-    grade_year = grade_year or _grade_year_from_profile(profile)
+    intake, intake_error = _confirmed_intake_from_state(state)
+    if intake_error:
+        return {"error": intake_error, "hard_error": True}
+
+    grade_year = str(intake.get("grade_year", "")).strip()
     if not grade_year:
-        return {"error": "画像中缺少可识别的年级，无法生成学习路径。", "hard_error": True}
+        return {"error": "课程草案中缺少可识别的年级，无法生成学习路径。", "hard_error": True}
 
     query = str(state.get("query", "")).strip()
-    resolved_topic = learning_topic.strip() if isinstance(learning_topic, str) else ""
-    if not resolved_topic or _allows_default_path(query):
-        resolved_topic = _topic_from_profile(profile)
+    resolved_topic = str(intake.get("learning_topic", "")).strip()
+    if not resolved_topic:
+        return {"error": "课程草案中缺少学习主题，无法生成学习路径。", "hard_error": True}
 
     existing_year_learning_paths = _load_existing_year_learning_paths(state)
     from app.services.learning_path_service import get_learning_path_progress_snapshots
@@ -1159,18 +1209,13 @@ async def run_learning_path_agent(state: OrchestrationState, llm: BaseChatModel)
     progress_snapshots = get_learning_path_progress_snapshots(existing_year_learning_paths)
     target_progress_snapshot = _progress_snapshot_for_grade(progress_snapshots, grade_year)
 
-    if is_navigation_query(query):
-        path_dict = _build_local_learning_path(profile, grade_year=grade_year, learning_topic=resolved_topic)
-        path_dict = _apply_existing_progress_to_path(path_dict, grade_year, target_progress_snapshot)
-        _persist_learning_path(state["user_id"], grade_year, resolved_topic, path_dict)
-        return {"year_learning_path": path_dict, "grade_year": grade_year}
-
     input_text = _build_analysis_input(
         profile,
         grade_year,
         resolved_topic,
         str(tool_args.get("specific_requirements", "")),
         progress_snapshots,
+        intake,
     )
 
     try:
@@ -1194,6 +1239,7 @@ async def run_learning_path_agent(state: OrchestrationState, llm: BaseChatModel)
             grade_year=grade_year,
             learning_topic=resolved_topic,
             plan_data=result.model_dump(),
+            intake_courses=intake.get("courses", []),
         )
     except Exception as exc:
         logger.warning("LearningPathAgent plan expansion failed: %s: %s", type(exc).__name__, exc)

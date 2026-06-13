@@ -50,6 +50,45 @@ def _complete_profile(summary_text: str = "【基础学习画像总结】大3软
     }
 
 
+def _confirmed_intake(
+    *,
+    grade_year: str = "year_3",
+    grade_name: str = "大三",
+    learning_topic: str = "数据结构",
+    course_titles: list[str] | None = None,
+) -> dict:
+    titles = course_titles or [
+        "数据结构入门与复杂度基础",
+        "线性结构实践",
+        "树与递归基础",
+        "查找排序与哈希",
+        "图结构与综合项目",
+    ]
+    return {
+        "type": "learning_path_intake",
+        "status": "confirmed",
+        "grade_year": grade_year,
+        "grade_name": grade_name,
+        "learning_topic": learning_topic,
+        "courses": [
+            {"title": title, "purpose": f"完成 {title} 的关键训练"}
+            for title in titles
+        ],
+        "recommendation_reasons": [f"目标是学习{learning_topic}"],
+        "user_modification_summary": "",
+        "risk_warnings": [],
+        "requires_second_confirmation": False,
+    }
+
+
+AI_COURSE_TITLES = [
+    "AI Agent 最小可用闭环搭建",
+    "AI Agent 多节点编排与联调",
+    "AI Agent 工程化调试与评测",
+    "AI Agent 部署上线与稳定性复盘",
+]
+
+
 def _llm_learning_path_payload() -> dict:
     return {
         "schema_version": "learning_path.v2.course_node",
@@ -450,13 +489,14 @@ def test_validate_learning_path_contract_rejects_grade_with_less_than_three_cour
 
     result = _validate_learning_path_contract(payload)
 
-    assert result == "当前学年课程数量不足，至少需要 3 门课程。"
+    assert result == "当前学年课程数量必须在 4 到 10 门之间。"
 
 
 def test_learning_path_prompt_mentions_json_output() -> None:
     assert "json" in LEARNING_PATH_AGENT_SYSTEM_PROMPT.lower()
     assert "先分析" in LEARNING_PATH_AGENT_SYSTEM_PROMPT
     assert "course_specs" in LEARNING_PATH_AGENT_SYSTEM_PROMPT
+    assert "4-10 门课程" in LEARNING_PATH_AGENT_SYSTEM_PROMPT
     assert "必须且只能输出 3 门课程" not in LEARNING_PATH_AGENT_SYSTEM_PROMPT
 
 
@@ -474,6 +514,7 @@ def test_run_learning_path_agent_uses_structured_llm_for_default_query(tmp_path:
                     [
                         "AI Agent 最小可用闭环搭建",
                         "AI Agent 多节点编排与联调",
+                        "AI Agent 工程化调试与评测",
                         "AI Agent 部署上线与稳定性复盘",
                     ]
                 )
@@ -504,6 +545,10 @@ def test_run_learning_path_agent_uses_structured_llm_for_default_query(tmp_path:
                     "user_id": "00000000-0000-0000-0000-000000000001",
                     "query": "直接帮我生成，不确定的你随便帮我填",
                     "profile": _complete_profile(),
+                    "learning_path_intake": _confirmed_intake(
+                        learning_topic="AI 应用开发",
+                        course_titles=AI_COURSE_TITLES,
+                    ),
                     "messages": [],
                 },
                 RecordingLlm(),
@@ -531,6 +576,7 @@ def test_run_learning_path_agent_accepts_missing_desired_outcome_in_structured_p
                 [
                     "AI Agent 最小可用闭环搭建",
                     "AI Agent 编排与状态管理",
+                    "AI Agent 工程化调试与评测",
                     "AI Agent 部署上线与监控",
                 ]
             )
@@ -562,6 +608,10 @@ def test_run_learning_path_agent_accepts_missing_desired_outcome_in_structured_p
                     "user_id": "00000000-0000-0000-0000-000000000010",
                     "query": "继续生成学习路径",
                     "profile": _complete_profile(),
+                    "learning_path_intake": _confirmed_intake(
+                        learning_topic="AI 应用开发",
+                        course_titles=AI_COURSE_TITLES,
+                    ),
                     "messages": [],
                 },
                 RecordingLlm(),
@@ -669,6 +719,10 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_setup_fails(t
             "text": "【基础学习画像总结】大3软件工程，当前以AI 应用开发为主线，适合采用项目驱动学习。",
             "summary_text": "【基础学习画像总结】大3软件工程，当前以AI 应用开发为主线，适合采用项目驱动学习。",
         },
+        "learning_path_intake": _confirmed_intake(
+            learning_topic="AI 应用开发",
+            course_titles=AI_COURSE_TITLES,
+        ),
         "messages": [],
     }
 
@@ -694,6 +748,8 @@ def test_run_learning_path_agent_returns_error_when_contract_validation_fails(tm
             return _llm_learning_path_plan_payload(
                 [
                     "AI Agent 最小可用闭环搭建",
+                    "AI Agent 编排与状态管理",
+                    "AI Agent 工程化调试与评测",
                     "AI Agent 上线链路压测",
                 ]
             )
@@ -728,6 +784,9 @@ def test_run_learning_path_agent_returns_error_when_contract_validation_fails(tm
                     "user_id": "00000000-0000-0000-0000-000000000008",
                     "query": "继续生成学习路径",
                     "profile": _complete_profile(),
+                    "learning_path_intake": _confirmed_intake(
+                        learning_topic="AI 应用开发",
+                    ),
                     "messages": [],
                 },
                 RecordingLlm(),
@@ -747,9 +806,35 @@ def test_run_learning_path_agent_returns_error_when_contract_validation_fails(tm
 
 
 def test_run_learning_path_agent_navigation_path_uses_user_topic_and_keeps_unknown_time_visible(tmp_path: Path) -> None:
-    class ExplodingLlm:
-        def with_structured_output(self, *_args, **_kwargs):
-            raise AssertionError("navigation query should not call structured llm successfully")
+    class RecordingLlm:
+        def with_structured_output(self, schema, *_args, **_kwargs):
+            captured["schema"] = schema
+            return object()
+
+    class RecordingChain:
+        async def ainvoke(self, payload):
+            captured["query"] = payload["query"]
+            return LearningPathPlanOutput(
+                **_llm_learning_path_plan_payload(
+                    [
+                        "vibecoding 目标拆解",
+                        "vibecoding 工具链实践",
+                        "vibecoding 项目闭环",
+                        "vibecoding 求职作品整理",
+                    ],
+                    goal_type="就业准备",
+                    grade_goal="围绕 vibecoding 形成求职作品",
+                    desired_outcome="完成一个可展示的 vibecoding 项目",
+                    current_focus="先把求职目标拆成可交付项目",
+                    next_action="确认第一门课的练习任务",
+                )
+            )
+
+    class RecordingPrompt:
+        def __or__(self, _other):
+            return RecordingChain()
+
+    captured: dict[str, object] = {}
 
     engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-vibecoding.db'}")
     set_engine(engine)
@@ -786,18 +871,41 @@ def test_run_learning_path_agent_navigation_path_uses_user_topic_and_keeps_unkno
             "text": "【基础学习画像总结】大三软件工程，目标是找工作，想学习vibecoding。",
             "summary_text": "【基础学习画像总结】大三软件工程，目标是找工作，想学习vibecoding。",
         },
+        "learning_path_intake": _confirmed_intake(
+            learning_topic="vibecoding",
+            course_titles=[
+                "vibecoding 目标拆解",
+                "vibecoding 工具链实践",
+                "vibecoding 项目闭环",
+                "vibecoding 求职作品整理",
+            ],
+        ),
         "messages": [],
     }
 
-    result = asyncio.run(run_learning_path_agent(state, ExplodingLlm()))
+    module = __import__("app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"])
+    original_factory = module.ChatPromptTemplate
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return RecordingPrompt()
+
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(run_learning_path_agent(state, RecordingLlm()))
+    finally:
+        module.ChatPromptTemplate = original_factory
     path = result["year_learning_path"]
 
+    assert captured["schema"] is LearningPathPlanOutput
+    assert "已确认课程草案" in str(captured["query"])
     assert path["learning_goal"]["target_course_or_skill"] == "vibecoding"
     assert "vibecoding" in path["current_learning_course"]["course_or_chapter_theme"]
     assert path["learner_baseline"]["weekly_available_time"] == ""
     assert path["learner_baseline"]["weaknesses"] == []
     assert set(path["grade_plans"]) == {"year_3"}
-    assert len(path["grade_plans"]["year_3"]["course_nodes"]) >= 3
+    assert len(path["grade_plans"]["year_3"]["course_nodes"]) == 4
 
 
 def test_run_learning_path_agent_returns_error_when_structured_llm_times_out(tmp_path: Path) -> None:
@@ -838,6 +946,10 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_times_out(tmp
                     "user_id": "00000000-0000-0000-0000-000000000006",
                     "query": "继续生成学习路径",
                     "profile": _complete_profile(),
+                    "learning_path_intake": _confirmed_intake(
+                        learning_topic="AI 应用开发",
+                        course_titles=AI_COURSE_TITLES,
+                    ),
                     "messages": [],
                 },
                 SlowLlm(),
@@ -857,13 +969,13 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_times_out(tmp
     assert row is None
 
 
-def test_run_learning_path_agent_uses_local_path_for_navigation_query(tmp_path: Path) -> None:
+def test_run_learning_path_agent_requires_confirmed_intake_for_navigation_query(tmp_path: Path) -> None:
     class RecordingLlm:
         called = False
 
         def with_structured_output(self, *_args, **_kwargs):
             self.called = True
-            raise AssertionError("navigation query should use local learning path")
+            raise AssertionError("learning path should require confirmed intake before LLM")
 
     engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-navigation.db'}")
     set_engine(engine)
@@ -902,11 +1014,7 @@ def test_run_learning_path_agent_uses_local_path_for_navigation_query(tmp_path: 
     result = asyncio.run(run_learning_path_agent(state, llm))
 
     assert llm.called is False
-    assert result["grade_year"] == "year_3"
-    assert result["year_learning_path"]["learning_goal"]["target_course_or_skill"] == "vibecoding"
-    assert result["year_learning_path"]["current_learning_course"]["grade_id"] == "year_3"
-    assert set(result["year_learning_path"]["grade_plans"]) == {"year_3"}
-    assert len(result["year_learning_path"]["grade_plans"]["year_3"]["course_nodes"]) >= 3
+    assert result == {"error": "请先确认课程草案，再生成正式学习路径。", "hard_error": True}
 
 
 def test_run_learning_path_agent_refresh_query_uses_existing_progress_for_llm_and_progress_roll_forward(tmp_path: Path) -> None:
@@ -923,6 +1031,7 @@ def test_run_learning_path_agent_refresh_query_uses_existing_progress_for_llm_an
                     [
                         "AI Agent 最小可用闭环搭建",
                         "AI Agent 编排与状态管理",
+                        "AI Agent 工程化调试与评测",
                         "AI Agent 部署上线与监控",
                     ]
                 )
@@ -977,6 +1086,10 @@ def test_run_learning_path_agent_refresh_query_uses_existing_progress_for_llm_an
                     "user_id": "00000000-0000-0000-0000-000000000004",
                     "query": "更新学习路径，我想加强部署与监控",
                     "profile": _complete_profile(),
+                    "learning_path_intake": _confirmed_intake(
+                        learning_topic="AI 应用开发",
+                        course_titles=AI_COURSE_TITLES,
+                    ),
                     "messages": [],
                     "year_learning_paths": {"year_3": existing_path},
                     "latest_grade_year": "year_3",
@@ -1015,6 +1128,7 @@ def test_run_learning_path_agent_new_grade_generation_includes_previous_year_pro
                     [
                         "就业级作品集与迭代优化",
                         "AI Agent 综合项目孵化",
+                        "AI Agent 毕业项目工程化打磨",
                         "AI Agent 求职展示与面试复盘",
                     ],
                     goal_type="就业准备",
@@ -1079,6 +1193,17 @@ def test_run_learning_path_agent_new_grade_generation_includes_previous_year_pro
                     "user_id": "00000000-0000-0000-0000-000000000007",
                     "query": "更新学习路径，我想开始毕业阶段的项目沉淀",
                     "profile": profile,
+                    "learning_path_intake": _confirmed_intake(
+                        grade_year="year_4",
+                        grade_name="大四",
+                        learning_topic="AI 应用开发",
+                        course_titles=[
+                            "就业级作品集与迭代优化",
+                            "AI Agent 综合项目孵化",
+                            "AI Agent 毕业项目工程化打磨",
+                            "AI Agent 求职展示与面试复盘",
+                        ],
+                    ),
                     "messages": [],
                     "year_learning_paths": {"year_3": existing_path},
                     "latest_grade_year": "year_3",
@@ -1143,6 +1268,10 @@ def test_run_learning_path_agent_refresh_query_returns_error_when_structured_llm
                 "user_id": "00000000-0000-0000-0000-000000000005",
                 "query": "更新学习路径，我想继续强化部署与监控",
                 "profile": _complete_profile(),
+                "learning_path_intake": _confirmed_intake(
+                    learning_topic="AI 应用开发",
+                    course_titles=AI_COURSE_TITLES,
+                ),
                 "messages": [],
                 "year_learning_paths": {"year_3": existing_path},
                 "latest_grade_year": "year_3",
@@ -1204,6 +1333,6 @@ def test_learning_path_agent_node_updates_year_learning_paths_state(tmp_path: Pa
 
     result = asyncio.run(node(state))
 
-    assert result["response"].startswith("学习路径生成失败，请重试生成学习路径。")
+    assert result["response"] == "请先确认课程草案，再生成正式学习路径。"
     assert "grade_year" not in result
     assert "year_learning_paths" not in result
