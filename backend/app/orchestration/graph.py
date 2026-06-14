@@ -122,10 +122,11 @@ def build_orchestration_graph():
     thinking_worker_llm = get_thinking_worker_llm()
     search_worker_llm = get_search_worker_llm()
     learning_path_llm = worker_llm if hasattr(worker_llm, "with_structured_output") else thinking_worker_llm
+    learning_path_intake_llm = worker_llm if hasattr(worker_llm, "with_structured_output") else thinking_worker_llm
 
     supervisor_node = create_supervisor_node(supervisor_llm)
     profile_node = create_profile_agent_node(supervisor_llm)
-    learning_path_intake_node = create_learning_path_intake_agent_node(supervisor_llm)
+    learning_path_intake_node = create_learning_path_intake_agent_node(learning_path_intake_llm)
     learning_path_node = create_learning_path_agent_node(learning_path_llm)
     course_knowledge_node = create_course_knowledge_agent_node(worker_llm)
     section_markdown_node = create_section_markdown_agent_node(worker_llm)

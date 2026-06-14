@@ -57,7 +57,7 @@ export function StreamingText({ content, status }: StreamingTextProps) {
   if (status === 'pending' && !content) return null;
 
   if (status === 'error' && content) {
-    return <MarkdownRenderer content={content} variant="compact" />;
+    return <MarkdownRenderer content={content} variant="compact" enableMath={true} />;
   }
 
   if (blocks.length === 0) {
@@ -75,12 +75,13 @@ export function StreamingText({ content, status }: StreamingTextProps) {
         const showCursor = isStreaming && isLastBlock && block.complete;
 
         return (
-          <div
-            key={block.id}
-            data-block-type={block.type}
-            className={showCursor ? 'streaming-cursor' : ''}
-          >
-            <MarkdownRenderer content={block.content} variant="compact" />
+          <div key={block.id} data-block-type={block.type}>
+            <MarkdownRenderer
+              content={block.content}
+              variant="compact"
+              enableMath={true}
+              className={showCursor ? 'streaming-cursor' : ''}
+            />
           </div>
         );
       })}

@@ -93,13 +93,14 @@ describe('ForestQuizOverlay', () => {
 
   it('displays growth stage badge', () => {
     renderOverlay();
+    expect(screen.getByLabelText('成长树阶段: 3')).toBeTruthy();
     expect(screen.getByText('繁枝期 — 分叉成长')).toBeTruthy();
   });
 
   it('displays weakness tags when present', () => {
     const weaknesses: ChapterWeaknessData[] = [
-      { weakness_id: 'w1', knowledge_point_id: 'kp1', knowledge_point_name: '递归', severity: 2 },
-      { weakness_id: 'w2', knowledge_point_id: 'kp2', knowledge_point_name: '动态规划', severity: 1 },
+      { knowledge_point_id: 'kp1', knowledge_point_name: '递归', severity: 2 },
+      { knowledge_point_id: 'kp2', knowledge_point_name: '动态规划', severity: 1 },
     ];
     renderOverlay({ weaknesses });
     expect(screen.getByText('递归')).toBeTruthy();

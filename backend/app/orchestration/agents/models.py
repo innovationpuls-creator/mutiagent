@@ -191,6 +191,35 @@ class LearningPathIntakeOutput(BaseModel):
         return value
 
 
+class LearningPathIntakeDraftOutput(BaseModel):
+    type: Literal["learning_path_intake"] = Field(default="learning_path_intake")
+    status: Literal["draft", "confirmed", "risk_pending"] = Field(description="课程草案状态")
+    grade_year: str = Field(description="目标年级 ID 或用户自然年级表达")
+    grade_name: str = Field(description="目标年级名称")
+    learning_topic: str = Field(description="学习方向")
+    courses: list[LearningPathIntakeCourseOutput] = Field(min_length=4, max_length=10)
+    recommendation_reasons: list[str] = Field(min_length=1, description="简短推荐依据")
+    user_modification_summary: str = Field(default="")
+    risk_warnings: list[str] = Field(default_factory=list)
+    requires_second_confirmation: bool = Field(default=False)
+
+    @field_validator("grade_year", "grade_name", "learning_topic")
+    @classmethod
+    def require_text(cls, value: str, info) -> str:
+        text = str(value).strip()
+        if not text:
+            raise ValueError(f"{info.field_name} must not be empty")
+        return text
+
+    @field_validator("recommendation_reasons", "risk_warnings", mode="before")
+    @classmethod
+    def normalize_text_list(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+        return value
+
+
 class CourseItem(BaseModel):
     """单门课程 — 简版信息。"""
     course_id: str = Field(description="课程唯一 ID，如 year_2_course_1")

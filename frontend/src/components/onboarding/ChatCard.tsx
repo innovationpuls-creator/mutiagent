@@ -345,7 +345,7 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData, 
                 我们已经根据你的年级、专业以及优势与瓶颈，为你定制编织了一条专属的课程藤蔓。在你的学习路径中，已自动弱化你熟悉的领域，并为你的薄弱点融入了专项强化章节。
               </p>
               <button className="cta-open-path-btn" onClick={handleGeneratePathDraft} type="button">
-                <span>生成学习路径</span>
+                <span>确认并生成学习路径</span>
                 <span className="arrow">➔</span>
               </button>
             </div>
@@ -354,7 +354,7 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData, 
           <div className="profile-hero">
             <span className="profile-eyebrow">基础画像</span>
             <h3>画像已整理成可继续更新的学习底稿</h3>
-            <p>{profileSummary}</p>
+            <MarkdownRenderer content={profileSummary} variant="compact" enableMath={true} />
             <div className="profile-meter" aria-label={`已确认 ${confirmed.length} 项画像信息`}>
               <span>已确认 {confirmed.length} 项</span>
               <span>可继续补充或追问</span>
@@ -390,7 +390,7 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData, 
               {generatedSections.slice(1).map((section) => (
                 <section key={section.title}>
                   <h4>{section.title}</h4>
-                  <p>{section.body}</p>
+                  <MarkdownRenderer content={section.body} variant="compact" enableMath={true} />
                 </section>
               ))}
             </div>
@@ -428,7 +428,7 @@ export function ChatCard({ message, onSendReply, disabled = false, partialData, 
                 <h3>接下来</h3>
                 <div className="question-list">
                   {questions.map((question, i) => (
-                    <MarkdownRenderer key={i} content={question} variant="compact" />
+                    <MarkdownRenderer key={i} content={question} variant="compact" enableMath={true} />
                   ))}
                 </div>
               </section>

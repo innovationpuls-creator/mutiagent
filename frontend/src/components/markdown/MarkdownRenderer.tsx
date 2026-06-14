@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import type { Components } from 'react-markdown';
 import { usePrism } from './hooks/usePrism';
 import { useMathJax } from './hooks/useMathJax';
@@ -154,7 +155,19 @@ const markdownComponents: Components = {
   ),
   th: ({ node, ...props }) => <th {...props} />,
   td: ({ node, ...props }) => <td {...props} />,
-  code: ({ node, ...props }) => <code {...props} />,
+  code: ({ node, className, children, ...props }) => {
+    const isMath = className?.includes('math-inline') || className?.includes('math-display');
+    if (isMath) {
+      const isInline = className?.includes('math-inline');
+      const formula = getTextContent(children);
+      return (
+        <span className={className} {...props}>
+          {isInline ? `$${formula}$` : `$$${formula}$$`}
+        </span>
+      );
+    }
+    return <code className={className} {...props}>{children}</code>;
+  },
   pre: ({ node, children, ...props }) => {
     const codeChild = React.Children.toArray(children).find(isMarkdownCodeElement);
     if (!codeChild) {
@@ -257,6 +270,11 @@ function renderEnhancedCodeBlock(
     return <MermaidDiagram code={codeText} renderDiagram={options.renderDiagram} />;
   }
 
+  const isMath = language === 'math' || codeChild.props.className?.includes('math-display');
+  if (isMath) {
+    return <div className="math-block math-display">{`$$${codeText}$$`}</div>;
+  }
+
   if (options.enableSyntaxHighlight && language) {
     return <HighlightedCodeBlock code={codeText} language={language} highlight={options.highlight} />;
   }
@@ -315,7 +333,7 @@ export function MarkdownRenderer({
 
   return (
     <div ref={containerRef} className={`markdown-renderer ${variantClass} ${className}`.trim()}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={enhancedComponents}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} components={enhancedComponents}>
         {content}
       </ReactMarkdown>
     </div>

@@ -106,7 +106,8 @@
 
 .markdown-renderer strong {
   font-weight: var(--font-weight-medium);
-  color: var(--color-text-primary);
+  color: oklch(20% 0.005 80);
+  text-shadow: 0.15px 0 0.05px currentColor;
 }
 
 .markdown-renderer em {
@@ -366,30 +367,38 @@
   margin: var(--space-24) 0;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
-  overflow: hidden;
+  overflow-x: auto;
   box-shadow: var(--shadow-sm);
+  background: var(--color-surface);
 }
 
 .markdown-renderer table {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--text-body-sm);
+  text-align: left;
 }
 
 .markdown-renderer th {
   background: var(--color-surface-raised);
-  padding: var(--space-12) var(--space-16);
-  text-align: left;
+  padding: var(--space-14) var(--space-20);
   font-weight: var(--font-weight-medium);
   font-size: var(--text-body-sm);
   color: var(--color-text-primary);
   border-bottom: 2px solid var(--color-border);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 
 .markdown-renderer td {
-  padding: var(--space-12) var(--space-16);
+  padding: var(--space-12) var(--space-20);
   border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-primary);
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.markdown-renderer tr {
+  transition: background-color var(--duration-instant) var(--ease-editorial);
 }
 
 .markdown-renderer tr:last-child td {
@@ -397,7 +406,7 @@
 }
 
 .markdown-renderer tr:nth-child(even) {
-  background: var(--color-surface);
+  background: var(--color-surface-raised);
 }
 
 .markdown-renderer tr:hover {
@@ -639,11 +648,21 @@
    Streaming Cursor
    ========================================= */
 
-.markdown-renderer .streaming-cursor::after {
+.markdown-renderer.streaming-cursor p:last-child::after,
+.markdown-renderer.streaming-cursor li:last-child::after,
+.markdown-renderer.streaming-cursor pre:last-child::after,
+.markdown-renderer.streaming-cursor h1:last-child::after,
+.markdown-renderer.streaming-cursor h2:last-child::after,
+.markdown-renderer.streaming-cursor h3:last-child::after,
+.markdown-renderer.streaming-cursor h4:last-child::after,
+.markdown-renderer.streaming-cursor h5:last-child::after,
+.markdown-renderer.streaming-cursor h6:last-child::after {
   content: '▊';
   animation: blink 1s step-end infinite;
   color: var(--color-primary);
-  margin-left: 2px;
+  margin-left: 4px;
+  display: inline-block;
+  vertical-align: baseline;
 }
 
 @keyframes blink {
@@ -661,7 +680,15 @@
     transition: none;
   }
 
-  .streaming-cursor::after {
+  .markdown-renderer.streaming-cursor p:last-child::after,
+  .markdown-renderer.streaming-cursor li:last-child::after,
+  .markdown-renderer.streaming-cursor pre:last-child::after,
+  .markdown-renderer.streaming-cursor h1:last-child::after,
+  .markdown-renderer.streaming-cursor h2:last-child::after,
+  .markdown-renderer.streaming-cursor h3:last-child::after,
+  .markdown-renderer.streaming-cursor h4:last-child::after,
+  .markdown-renderer.streaming-cursor h5:last-child::after,
+  .markdown-renderer.streaming-cursor h6:last-child::after {
     animation: none;
     opacity: 0.7;
   }

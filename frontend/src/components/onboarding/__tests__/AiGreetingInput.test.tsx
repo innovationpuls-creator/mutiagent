@@ -208,7 +208,7 @@ test('shows the Codex-style progress panel beside the chat flow when expanded', 
   expect(screen.getByText('Agent 步骤')).toBeTruthy();
   expect(screen.getByText('等待本轮调用开始...')).toBeTruthy();
   expect(screen.getByLabelText('对话内容')).toBeTruthy();
-  expect(screen.getByLabelText('AI 学习路径对话')).toBeTruthy();
+  expect(screen.getByLabelText('AI 基础画像对话')).toBeTruthy();
 });
 
 test('clears the composer after a message is submitted', async () => {
@@ -976,6 +976,111 @@ test('recovers a generated basic_profile card from the server when local cache i
   expect(document.querySelector('.composer-completed-cta-panel .cta-completed-btn')).toBeTruthy();
 });
 
+test('keeps free-text composer visible after learning path intake draft is shown', async () => {
+  vi.stubGlobal('scrollTo', vi.fn());
+  vi.stubGlobal('fetch', vi.fn());
+  stubLocalStorage({
+    'mutiagent-auth': JSON.stringify({
+      token: 'token-1',
+      user: {
+        uid: 'user-1',
+        username: '测试用户',
+        identifier: 'user@example.com',
+        provider: 'password',
+        is_active: true,
+        created_at: '2026-06-02T00:00:00Z',
+        last_login_at: null,
+      },
+    }),
+    'session-session-recover-path-intake': JSON.stringify({
+      userUid: 'user-1',
+      hasCompleteProfile: true,
+      savedAt: 1000,
+      messages: [
+        {
+          id: 'user-profile',
+          role: 'assistant',
+          content: '基础画像已完成',
+          status: 'completed',
+          timestamp: 1000,
+          sessionMessage: {
+            type: 'basic_profile',
+            stage: 'generated',
+            question_mode: 'question_box',
+            confirmed_info: {
+              current_grade: '大三',
+              major: '软件工程',
+              learning_stage: '刚入门',
+              has_clear_goal: '否',
+              learning_method_preference: '系统课程学习',
+              learning_pace_preference: '每天少量',
+              content_preference: ['文档'],
+              need_guidance: '需要强引导',
+              knowledge_foundation: '没有基础',
+              strengths: '动手能力强',
+              weaknesses: '缺少系统训练',
+              experience: '无',
+              short_term_goal: '学习数据结构',
+              long_term_goal: '形成数据结构方向的系统学习能力',
+              weekly_available_time: '每周 6-10 小时',
+              constraints: '平时学习节奏，避免过高强度',
+            },
+            defaulted_fields: [],
+            question_md: '画像已生成，是否继续生成学习路径？',
+            question_box: {
+              question: '画像已生成，下一步要继续生成学习路径吗？',
+              options: [],
+            },
+            text: '【基础学习画像总结】大三软件工程，目标是学习数据结构。',
+          },
+          runTrace: [],
+          activeStepId: null,
+        },
+        {
+          id: 'user-intake',
+          role: 'user',
+          content: '请根据我的基础画像生成学习路径。',
+          status: 'completed',
+          timestamp: 1001,
+        },
+        {
+          id: 'assistant-intake',
+          role: 'assistant',
+          content: '基础画像已经完成，我先把正式学习路径生成前的课程草稿整理出来。课程草稿：1. 数据结构入门。可以回复“确认”，也可以告诉我想修改哪一门。',
+          status: 'completed',
+          timestamp: 1002,
+          runTrace: [
+            {
+              stepId: 'learning-path-intake-run',
+              kind: 'agent',
+              status: 'success',
+              title: '课程草案智能体',
+              agent: 'learning_path_intake_agent',
+            },
+          ],
+          activeStepId: null,
+        },
+      ],
+    }),
+  });
+  window.history.replaceState({}, '', '/sprout?session_id=session-recover-path-intake');
+
+  render(
+    <AuthProvider>
+      <AiWidgetProvider>
+        <ExpandedWidget />
+      </AiWidgetProvider>
+    </AuthProvider>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText(/课程草稿/)).toBeTruthy();
+  });
+
+  expect(screen.getByPlaceholderText('输入你的学习情况...')).toBeTruthy();
+  expect(document.querySelector('.composer-completed-cta-panel .cta-completed-btn')).toBeNull();
+});
+
 test('keeps completed-profile composer mode when a cached path-only session stores hasCompleteProfile', async () => {
   vi.stubGlobal('scrollTo', vi.fn());
   const fetchMock = vi.fn();
@@ -1033,6 +1138,8 @@ test('keeps completed-profile composer mode when a cached path-only session stor
     expect(screen.getByText('AI Agent 开发基础能力搭建')).toBeTruthy();
   });
 
+  expect(screen.getByLabelText('AI 学习路径对话')).toBeTruthy();
+  expect(screen.getByText('学习路径对话')).toBeTruthy();
   expect(screen.queryByText('画像已整理成可继续更新的学习底稿')).toBeNull();
   expect(screen.getByPlaceholderText('输入你的学习情况...')).toBeTruthy();
   expect(document.querySelector('.composer-completed-cta-panel .cta-completed-btn')).toBeNull();
@@ -2566,7 +2673,7 @@ test('reuses the same session after profile completion instead of creating a new
   expect(screen.queryByPlaceholderText('输入你的学习情况...')).toBeNull();
   const ctaBtn = document.querySelector('.composer-completed-cta-panel .cta-completed-btn');
   expect(ctaBtn).toBeTruthy();
-  expect(ctaBtn?.textContent).toContain('生成学习路径');
+  expect(ctaBtn?.textContent).toContain('确认并生成学习路径');
 
   fireEvent.click(ctaBtn!);
 
@@ -2578,7 +2685,7 @@ test('reuses the same session after profile completion instead of creating a new
 
   await waitFor(() => {
     expect(screen.getByText(/课程路径/)).toBeTruthy();
-    expect(screen.queryByText('生成学习路径')).toBeNull();
+    expect(screen.queryByText('确认并生成学习路径')).toBeNull();
     expect(screen.getByRole('button', { name: /查看学习路径/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /开始第一门课/ })).toBeTruthy();
     expect(learningPathUpdated).toHaveBeenCalled();
@@ -3258,7 +3365,7 @@ test('writes session_id to URL and local cache as soon as session_started arrive
   });
 
   await waitFor(() => {
-    expect(screen.getByText('学习路径已生成')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 }, 10000);
 

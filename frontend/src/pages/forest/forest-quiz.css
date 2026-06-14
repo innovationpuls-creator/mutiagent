@@ -143,10 +143,7 @@
   border: none;
   transition:
     opacity var(--duration-lazy-hover) var(--ease-lazy),
-    transform var(--duration-lazy-hover) var(--ease-lazy),
-    background-color var(--duration-lazy-hover) var(--ease-lazy),
-    color var(--duration-lazy-hover) var(--ease-lazy),
-    box-shadow var(--duration-lazy-hover) var(--ease-lazy);
+    transform var(--duration-lazy-hover) var(--ease-lazy);
 }
 
 .forest-question-tabs button {
@@ -525,7 +522,7 @@
   cursor: pointer;
   transition:
     transform var(--duration-lazy-hover) var(--ease-lazy),
-    background-color var(--duration-lazy-hover) var(--ease-lazy);
+    opacity var(--duration-lazy-hover) var(--ease-lazy);
 }
 
 .forest-composer-container .pen-button:hover {
@@ -837,13 +834,25 @@
     filter: none;
   }
 
+  .forest-question-tabs button:hover,
+  .forest-actions button:hover:not(:disabled),
+  .forest-empty-quiz button:hover:not(:disabled),
+  .forest-ai-panel button:hover:not(:disabled),
+  .forest-composer-container .delete-preview-button:hover,
+  .forest-composer-container .pen-button:hover,
+  .forest-composer-container .submit-button:hover:not(:disabled) {
+    transform: none;
+    transition: none;
+  }
+
   .forest-overlay-close-btn:hover {
     transform: none;
+    transition: none;
   }
 
   .forest-btn-secondary:hover,
   .forest-btn-primary:hover {
     transform: none;
+    transition: none;
   }
 }
-

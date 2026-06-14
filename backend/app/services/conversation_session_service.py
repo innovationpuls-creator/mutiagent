@@ -59,7 +59,8 @@ def append_messages(session: Session, session_id: str, new_messages: list[dict])
     row = session.get(ConversationSession, session_id)
     if row is None:
         raise ValueError(f"Conversation session {session_id} not found")
-    row.messages = list(row.messages) + new_messages
+    session.refresh(row)
+    row.messages = (row.messages or []) + new_messages
     row.updated_at = datetime.now(timezone.utc)
     session.add(row)
     session.commit()

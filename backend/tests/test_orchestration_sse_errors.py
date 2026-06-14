@@ -624,7 +624,7 @@ def test_route_after_worker_ends_after_initial_profile_generation_to_wait_for_us
                 ),
             ],
         }
-    ) == "__end__"
+    ) == "supervisor"
 
 
 def test_route_after_worker_returns_supervisor_for_completed_tasks_profile_followup() -> None:

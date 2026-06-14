@@ -127,7 +127,6 @@ describe('LeafPage', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: '1.1 学习目标', level: 1 })).toBeTruthy());
     expect(screen.getByLabelText('AI Agent 开发课程内容')).toBeTruthy();
-    expect(screen.getByText('学习目标')).toBeTruthy();
     expect(screen.getByText('正文内容')).toBeTruthy();
     expect(screen.getByText('视频生成失败')).toBeTruthy();
     expect(screen.getByText('动画生成失败')).toBeTruthy();

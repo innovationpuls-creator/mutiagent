@@ -5,6 +5,8 @@ import type {
   ForestQuiz,
   ForestQuizAttemptCreateRequest,
   ForestQuizSession,
+  ForestSubmitStreamDonePayload,
+  ForestSubmitStreamEvent,
 } from '../types/forest';
 import { API_BASE_URL, notifyAuthInvalidFromError, readApiError } from './http';
 
@@ -139,6 +141,63 @@ export async function streamForestAi(
       const event = requireString(eventLine.slice('event: '.length), 'Forest AI 事件格式不正确');
       const data = JSON.parse(dataLine.slice('data: '.length)) as Record<string, unknown>;
       onEvent({ event: event as ForestAiEvent['event'], chunk: typeof data.chunk === 'string' ? data.chunk : undefined });
+    }
+  }
+}
+
+export async function submitForestQuizAttemptStream(
+  token: string,
+  quizId: string,
+  payload: ForestQuizAttemptCreateRequest,
+  onEvent: (event: ForestSubmitStreamEvent) => void,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/forest/quizzes/${encodeURIComponent(quizId)}/attempts/stream`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!response.ok) throw await readForestError(response, '测验提交失败');
+  const reader = response.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop() ?? '';
+    for (const part of parts) {
+      const eventLine = part.split('\n').find((line) => line.startsWith('event: '));
+      const dataLine = part.split('\n').find((line) => line.startsWith('data: '));
+      if (!eventLine || !dataLine) continue;
+      const eventName = requireString(eventLine.slice('event: '.length), '事件格式不正确');
+      const dataText = dataLine.slice('data: '.length);
+      const data = JSON.parse(dataText) as Record<string, unknown>;
+
+      if (eventName === 'status') {
+        onEvent({
+          event: 'status',
+          phase: data.phase as ForestSubmitStreamEvent['phase'],
+          message: typeof data.message === 'string' ? data.message : undefined,
+        });
+      } else if (eventName === 'done') {
+        onEvent({
+          event: 'done',
+          doneData: data as unknown as ForestSubmitStreamDonePayload,
+        });
+      } else if (eventName === 'error') {
+        onEvent({
+          event: 'error',
+          message: typeof data.message === 'string' ? data.message : '测验提交时发生错误',
+        });
+      }
     }
   }
 }

@@ -134,11 +134,16 @@ function renderAnimation(block: LeafAnimationBlock, index: number) {
   );
 }
 
+function stripH1Heading(markdown: string): string {
+  if (!markdown) return '';
+  return markdown.trim().replace(/^#\s+.*$/m, '').trim();
+}
+
 function renderContentBlock(block: LeafContentBlock, index: number) {
   if (block.type === 'markdown') {
     return (
       <div key={`markdown-${index}`}>
-        <MarkdownRenderer content={block.markdown} />
+        <MarkdownRenderer content={stripH1Heading(block.markdown)} enableMath={true} />
         {block.recommendation_reason && (
           <p className="text-xs text-[var(--color-text-muted)] mt-2 pl-1 italic opacity-70">
             {block.recommendation_reason}
@@ -181,7 +186,7 @@ export function LeafContent({ section, composedSection, lockedReason }: LeafCont
         <div className="flex flex-col gap-12">
           {composedSection.blocks.length > 0
             ? composedSection.blocks.map(renderContentBlock)
-            : <MarkdownRenderer content={composedSection.markdown} />}
+            : <MarkdownRenderer content={stripH1Heading(composedSection.markdown)} enableMath={true} />}
         </div>
       ) : (
         <section className="flex flex-col items-center justify-center text-center py-20 px-6 bg-[var(--color-surface-raised)] rounded-2xl border-2 border-dashed border-[var(--color-border)] opacity-80 mt-4">

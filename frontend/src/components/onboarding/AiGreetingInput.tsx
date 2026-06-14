@@ -412,6 +412,12 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
     latestLearningPath && latestLearningPathMessageId !== hiddenPathActionsMessageId,
   );
   const hasLearningOutput = hasLearningOutputInMessages(store.messages);
+  const isLearningPathStage = hasLearningOutput || store.messages.some(
+    (m) =>
+      Boolean(m.learningPath) ||
+      Boolean(m.runTrace && m.runTrace.some((t) => t.agent === 'learning_path_intake_agent' || t.agent === 'learning_path_agent')) ||
+      (m.role === 'user' && m.content === buildLearningPathGenerationDraft())
+  );
 
   const handleOpenPath = () => {
     setHiddenPathActionsMessageId(latestLearningPathMessageId);
@@ -996,7 +1002,7 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
         }}
       >
         {widgetState === 'EXPANDED' ? (
-          <section className="session-panel" aria-label="AI 学习路径对话">
+          <section className="session-panel" aria-label={isLearningPathStage ? "AI 学习路径对话" : "AI 基础画像对话"}>
             <header className="session-header">
               <div className="session-title-cluster">
                 <div className="agent-face" data-ai-state={aiMood}>
@@ -1004,7 +1010,7 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
                   <AiEyes layoutId="eyes" isHappy={aiMood === 'happy'} />
                 </div>
                 <div className="session-title-copy">
-                  <span>学习路径对话</span>
+                  <span>{isLearningPathStage ? "学习路径对话" : "基础画像对话"}</span>
                   <strong>{currentProgressLabel(agentSteps)}</strong>
                 </div>
               </div>
@@ -1064,10 +1070,10 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
                       </button>
                     </div>
                   )}
-                  {hasCompleteProfileRef.current && !hasLearningOutput && !isPending && !inputValue.trim() && !imageAttachment ? (
+                  {hasCompleteProfileRef.current && !isLearningPathStage && !hasLearningOutput && !isPending && !inputValue.trim() && !imageAttachment ? (
                     <div className="composer-completed-cta-panel">
                       <button className="cta-completed-btn" onClick={handleGeneratePathDraft} type="button">
-                        <span>生成学习路径</span>
+                        <span>确认并生成学习路径</span>
                         <span className="arrow">➔</span>
                       </button>
                     </div>

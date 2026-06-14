@@ -4,7 +4,15 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, create_engine, select
 
 from app.main import create_app
-from app.models import ChapterProgress, ChapterQuiz, ChapterQuizAttempt, User, UserCourseKnowledgeOutline, UserYearLearningPath
+from app.models import (
+    ChapterProgress,
+    ChapterQuiz,
+    ChapterQuizAttempt,
+    CourseResourceQuality,
+    User,
+    UserCourseKnowledgeOutline,
+    UserYearLearningPath,
+)
 from app.services.forest_service import generate_or_read_quiz
 
 
@@ -229,6 +237,17 @@ def test_admin_batch_delete_removes_forest_rows(tmp_path: Path, monkeypatch) -> 
                 grading_result={"score": 100, "passed": True},
             )
         )
+        session.add(
+            CourseResourceQuality(
+                user_uid=created["uid"],
+                course_node_id="year_3_course_2",
+                accuracy_score=90,
+                difficulty_fit_score=88,
+                completeness_score=92,
+                overall_score=90,
+                suggestions=[],
+            )
+        )
         session.commit()
 
     delete_response = client.post(
@@ -245,6 +264,7 @@ def test_admin_batch_delete_removes_forest_rows(tmp_path: Path, monkeypatch) -> 
         assert session.exec(select(ChapterQuiz).where(ChapterQuiz.user_uid == created["uid"])).all() == []
         assert session.exec(select(ChapterQuizAttempt).where(ChapterQuizAttempt.user_uid == created["uid"])).all() == []
         assert session.exec(select(ChapterProgress).where(ChapterProgress.user_uid == created["uid"])).all() == []
+        assert session.exec(select(CourseResourceQuality).where(CourseResourceQuality.user_uid == created["uid"])).all() == []
 
 
 def test_admin_import_updates_existing_and_exports_csv(tmp_path: Path, monkeypatch) -> None:

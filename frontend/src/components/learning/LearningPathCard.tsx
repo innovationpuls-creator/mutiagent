@@ -51,7 +51,16 @@ function findResourceDirections(path: LearningPathResult, ids: string[]): Resour
   );
 }
 
-function buildPathTitle(gradePlans: NonNullable<LearningPathResult['grade_plans'][GradeId]>[]): string {
+function buildPathTitle(
+  gradePlans: NonNullable<LearningPathResult['grade_plans'][GradeId]>[],
+  currentLearningCourse?: LearningPathResult['current_learning_course'],
+): string {
+  if (currentLearningCourse?.grade_id) {
+    const activePlan = gradePlans.find((p) => p.grade_id === currentLearningCourse.grade_id);
+    if (activePlan) {
+      return `${activePlan.grade_name}课程路径`;
+    }
+  }
   if (gradePlans.length === 1) {
     return `${gradePlans[0].grade_name}课程路径`;
   }
@@ -65,7 +74,7 @@ export function LearningPathCard({ path }: LearningPathCardProps) {
   const orderedGradePlans = gradeOrder
     .map((gradeId) => path.grade_plans[gradeId])
     .filter((gradePlan) => gradePlan !== undefined);
-  const pathTitle = buildPathTitle(orderedGradePlans);
+  const pathTitle = buildPathTitle(orderedGradePlans, path.current_learning_course);
 
   return (
     <Card>

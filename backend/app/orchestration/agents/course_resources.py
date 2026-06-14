@@ -1163,13 +1163,26 @@ def _normalize_markdown_step_blocks(markdown: str) -> str:
         start = match.end()
         end = matches[index + 1].start() if index + 1 < len(matches) else len(markdown)
         body = markdown[start:end].strip()
-        if not body or _STEP_MARKER_PATTERN.search(body):
+        if not body:
             return markdown
 
-        blocks = [block.strip() for block in re.split(r"\n\s*\n", body) if block.strip()]
+        # 去除步骤前被误添加的 Markdown 标题标记（如 ### 第一步 -> 第一步）
+        cleaned_body = re.sub(
+            r"^#{1,6}\s*(?=" + _STEP_MARKER_PATTERN.pattern + ")",
+            "",
+            body,
+            flags=re.MULTILINE | re.IGNORECASE,
+        )
+
+        if _STEP_MARKER_PATTERN.search(cleaned_body):
+            # 如果已经存在步骤标记，应用清除标题标记后的内容并返回
+            return f"{markdown[:start]}{cleaned_body}\n\n{markdown[end:].lstrip()}"
+
+        blocks = [block.strip() for block in re.split(r"\n\s*\n", cleaned_body) if block.strip()]
         if not blocks:
             return markdown
 
+        # 否则，按照标准逻辑对其进行编号处理
         normalized_blocks: list[str] = []
         step_index = 1
         for block in blocks:
@@ -1180,7 +1193,9 @@ def _normalize_markdown_step_blocks(markdown: str) -> str:
             ):
                 normalized_blocks.append(block)
                 continue
-            normalized_blocks.append(f"{_chinese_step_label(step_index)}：{block}")
+            # 去除可能存在的标题前缀
+            cleaned_block = re.sub(r"^#{1,6}\s*", "", block).strip()
+            normalized_blocks.append(f"{_chinese_step_label(step_index)}：{cleaned_block}")
             step_index += 1
 
         normalized_body = "\n\n".join(normalized_blocks)
@@ -1610,7 +1625,22 @@ def _markdown_section_body(markdown: str, heading: str) -> str:
         if match.group(1).strip().startswith(heading):
             start = match.end()
             end = matches[index + 1].start() if index + 1 < len(matches) else len(markdown)
-            return markdown[start:end].strip()
+            body = markdown[start:end].strip()
+            # 剥离内容开头可能与当前小节标题同名的冗余行
+            while True:
+                lines = body.splitlines()
+                if not lines:
+                    break
+                first_line = lines[0].strip()
+                # 去除 #、*、_、空格等标记符号
+                cleaned_line = re.sub(r"^(?:#{1,6}\s+|\*+|_+)\s*", "", first_line).strip()
+                # 去除尾部可能存在的 :、：、*、_ 等
+                cleaned_line = re.sub(r"\s*(?:\*+|_+|：|:).*$", "", cleaned_line).strip()
+                if cleaned_line == heading:
+                    body = "\n".join(lines[1:]).strip()
+                else:
+                    break
+            return body
     return ""
 
 

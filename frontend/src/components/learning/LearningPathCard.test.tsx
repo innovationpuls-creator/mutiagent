@@ -158,4 +158,22 @@ describe('LearningPathCard', () => {
     expect(screen.getAllByText('后续资源生成方向')).toHaveLength(2);
     expect(screen.getByText('动态更新依据')).toBeTruthy();
   });
+
+  it('renders specific grade title if current_learning_course is present', () => {
+    const pathWithCurrent: LearningPathResult = {
+      ...path,
+      current_learning_course: {
+        grade_id: 'year_3',
+        course_node_id: 'year_3_course_1',
+        course_or_chapter_theme: '后端工程实践',
+        course_goal: '掌握后端工程化',
+        time_arrangement: { semester_scope: '上学期', duration: '3 个月', pace_reason: 'test' },
+        current_focus: 'test',
+        progress_state: 'in_progress',
+        next_action: 'test',
+      },
+    };
+    render(<LearningPathCard path={pathWithCurrent} />);
+    expect(screen.getByText('大三课程路径')).toBeTruthy();
+  });
 });

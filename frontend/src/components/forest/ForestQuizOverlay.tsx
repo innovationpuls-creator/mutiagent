@@ -360,7 +360,7 @@ export function ForestQuizOverlay({
                 <div className="weakness-tag-list">
                   {weaknesses.map((w) => (
                     <span
-                      key={w.weakness_id}
+                      key={`${w.knowledge_point_id}:${w.knowledge_point_name}:${w.severity}`}
                       className="weakness-tag"
                       style={{
                         borderColor:

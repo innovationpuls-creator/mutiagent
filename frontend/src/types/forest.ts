@@ -74,3 +74,43 @@ export interface ForestAiEvent {
   chunk?: string;
   message?: string;
 }
+
+export interface CanopyMilestone {
+  title: string;
+  desc: string;
+  achieved: boolean;
+  achieved_at: string | null;
+}
+
+export interface CanopyOverview {
+  total_courses: number;
+  completed_courses: number;
+  total_chapters: number;
+  completed_chapters: number;
+  avg_score: number;
+  total_focus_hours: number;
+  growth_tree_stage: number;
+  growth_advanced_steps: number;
+  milestones: CanopyMilestone[];
+}
+
+export interface ChapterWeaknessData {
+  knowledge_point_id: string;
+  knowledge_point_name: string;
+  severity: number;
+}
+
+export interface ForestSubmitStreamDonePayload {
+  attempt: ForestAttempt;
+  weaknesses: ChapterWeaknessData[];
+  canopy_overview: CanopyOverview;
+  next_unlocked_chapter_id: string | null;
+  next_course_id: string | null;
+}
+
+export interface ForestSubmitStreamEvent {
+  event: 'status' | 'done' | 'error';
+  phase?: 'grading' | 'analyzing' | 'unlocking';
+  message?: string;
+  doneData?: ForestSubmitStreamDonePayload;
+}

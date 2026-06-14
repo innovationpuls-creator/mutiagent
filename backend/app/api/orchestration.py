@@ -360,7 +360,12 @@ async def _stream_chat_events(
         yield _sse("session_started", {"session_id": session_id, "query": user_message})
 
         yield _sse("agent_calling", _memory_event("memory-history-load", "正在读取历史对话记录"))
-        history_messages = messages_from_dict(conv_session.messages) if conv_session.messages else []
+        raw_history_messages = conv_session.messages or []
+        chat_message_dicts = [
+            m for m in raw_history_messages
+            if not (isinstance(m, dict) and m.get("type") == "learning_path_intake")
+        ]
+        history_messages = messages_from_dict(chat_message_dicts) if chat_message_dicts else []
         yield _sse(
             "agent_result",
             _memory_event(
@@ -451,6 +456,10 @@ async def _stream_chat_events(
 
         if profile:
             state["profile"] = profile
+        from app.services.conversation_session_service import latest_learning_path_intake
+        intake = latest_learning_path_intake(raw_history_messages)
+        if intake:
+            state["learning_path_intake"] = intake
         if year_paths:
             state["year_learning_paths"] = year_paths
         if latest_grade_year:

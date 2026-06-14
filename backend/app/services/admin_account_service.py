@@ -13,6 +13,7 @@ from app.models import (
     ChapterProgress,
     ChapterQuiz,
     ChapterQuizAttempt,
+    CourseResourceQuality,
     ConversationSession,
     User,
     UserCourseKnowledgeOutline,
@@ -139,6 +140,7 @@ def batch_accounts(session: Session, payload: AdminAccountBatchRequest, current_
         for model in (
             ChapterQuiz,
             ChapterProgress,
+            CourseResourceQuality,
             ConversationSession,
             UserCourseKnowledgeOutline,
             UserYearLearningPath,
@@ -269,6 +271,7 @@ def _delete_user_owned_rows(session: Session, uid: str) -> None:
     for model in (
         ChapterQuiz,
         ChapterProgress,
+        CourseResourceQuality,
         ConversationSession,
         UserCourseKnowledgeOutline,
         UserYearLearningPath,

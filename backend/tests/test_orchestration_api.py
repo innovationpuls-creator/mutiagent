@@ -750,7 +750,7 @@ class TestChatEndpoints:
 
                     conversation_row = session.get(ConversationSession, session_id)
                     assert conversation_row is not None
-                    assert len(conversation_row.messages) == 4
+                    assert len(conversation_row.messages) == 5
 
         graph_module._graph = None
 
@@ -2880,6 +2880,7 @@ class TestChatEndpoints:
                             "就业级作品集与迭代优化",
                             "AI 综合项目孵化",
                             "AI 求职展示与面试复盘",
+                            "就业级作品集综合评估与复盘",
                         ],
                         target_course_or_skill="AI",
                     )
@@ -2972,11 +2973,22 @@ class TestChatEndpoints:
                 )
 
                 assert refresh_response.status_code == 200
-                assert "学习路径已生成" in refresh_response.text
-                assert "就业级作品集与迭代优化" in refresh_response.text
+                assert "课程草稿" in refresh_response.text
                 assert "profile_agent" in refresh_response.text
-                assert "learning_path_agent" in refresh_response.text
-                assert "session_completed" in refresh_response.text
+                assert "learning_path_intake_agent" in refresh_response.text
+
+                # Confirm the draft to trigger actual learning path generation
+                confirm_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "确认"},
+                    headers=_auth_header(token),
+                )
+
+                assert confirm_response.status_code == 200
+                assert "学习路径已生成" in confirm_response.text
+                assert "就业级作品集与迭代优化" in confirm_response.text
+                assert "learning_path_agent" in confirm_response.text
+                assert "session_completed" in confirm_response.text
 
                 with Session(engine) as session:
                     user = session.exec(select(User).where(User.identifier == identifier)).one()
@@ -2995,9 +3007,9 @@ class TestChatEndpoints:
 
                     conversation_row = session.get(ConversationSession, session_id)
                     assert conversation_row is not None
-                    assert len(conversation_row.messages) == 4
-                    assert conversation_row.messages[3]["type"] == "ai"
-                    assert "学习路径已生成" in conversation_row.messages[3]["data"]["content"]
+                    assert len(conversation_row.messages) == 7
+                    assert conversation_row.messages[6]["type"] == "ai"
+                    assert "学习路径已生成" in conversation_row.messages[6]["data"]["content"]
 
         graph_module._graph = None
 
@@ -3241,10 +3253,12 @@ class TestChatEndpoints:
                         "AI 应用开发基础能力搭建",
                         "AI 应用开发项目实战",
                         "AI 应用开发工程化服务编排与部署监控",
+                        "AI 应用开发综合复盘与成果展示",
                     ],
                     current_index=2,
                 )
-                if "计算机科学" in payload["query"]:
+                major = payload.get("profile", {}).get("confirmed_info", {}).get("major")
+                if "计算机科学" in payload.get("query", "") or major == "计算机科学":
                     path["learner_baseline"]["major"] = "计算机科学"
                 return SimpleNamespace(model_dump=lambda: path)
 
@@ -3335,10 +3349,21 @@ class TestChatEndpoints:
                 )
 
                 assert refresh_response.status_code == 200
-                assert "学习路径已生成" in refresh_response.text
-                assert "AI 应用开发工程化服务编排与部署监控" in refresh_response.text
+                assert "课程草稿" in refresh_response.text
                 assert "profile_agent" in refresh_response.text
-                assert "learning_path_agent" in refresh_response.text
+                assert "learning_path_intake_agent" in refresh_response.text
+
+                # Confirm the draft to trigger actual learning path generation
+                confirm_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "确认"},
+                    headers=_auth_header(token),
+                )
+
+                assert confirm_response.status_code == 200
+                assert "学习路径已生成" in confirm_response.text
+                assert "AI 应用开发工程化服务编排与部署监控" in confirm_response.text
+                assert "learning_path_agent" in confirm_response.text
 
                 with Session(engine) as session:
                     user = session.exec(select(User).where(User.identifier == identifier)).one()
@@ -3655,12 +3680,15 @@ class TestChatEndpoints:
                         "AI 应用开发基础能力搭建",
                         "AI 应用开发项目实战",
                         "AI 应用开发工程化服务编排与部署监控",
+                        "AI 应用开发综合复盘与成果展示",
                     ],
                     current_index=2,
                 )
-                if "计算机科学" in payload["query"]:
+                major = payload.get("profile", {}).get("confirmed_info", {}).get("major")
+                if "计算机科学" in payload.get("query", "") or major == "计算机科学":
                     path["learner_baseline"]["major"] = "计算机科学"
-                if "周末集中" in payload["query"]:
+                constraints = payload.get("profile", {}).get("confirmed_info", {}).get("constraints")
+                if "周末集中" in payload.get("query", "") or constraints == "周末集中":
                     path["learner_baseline"]["constraints"] = ["周末集中"]
                 return SimpleNamespace(model_dump=lambda: path)
 
@@ -3751,10 +3779,21 @@ class TestChatEndpoints:
                 )
 
                 assert refresh_response.status_code == 200
-                assert "学习路径已生成" in refresh_response.text
-                assert "AI 应用开发工程化服务编排与部署监控" in refresh_response.text
+                assert "课程草稿" in refresh_response.text
                 assert "profile_agent" in refresh_response.text
-                assert "learning_path_agent" in refresh_response.text
+                assert "learning_path_intake_agent" in refresh_response.text
+
+                # Confirm the draft to trigger actual learning path generation
+                confirm_response = client.post(
+                    "/api/chat/message",
+                    json={"session_id": session_id, "message": "确认"},
+                    headers=_auth_header(token),
+                )
+
+                assert confirm_response.status_code == 200
+                assert "学习路径已生成" in confirm_response.text
+                assert "AI 应用开发工程化服务编排与部署监控" in confirm_response.text
+                assert "learning_path_agent" in confirm_response.text
 
                 with Session(engine) as session:
                     user = session.exec(select(User).where(User.identifier == identifier)).one()

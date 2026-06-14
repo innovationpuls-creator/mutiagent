@@ -3,7 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '../../contexts/AuthContext';
 import { ForestQuizPage } from './ForestQuizPage';
-import type { ForestQuizSession } from '../../types/forest';
+import type { ForestQuizSession, ForestSubmitStreamEvent } from '../../types/forest';
 
 const fetchForestQuizSessionMock = vi.fn();
 const generateForestQuizMock = vi.fn();
@@ -129,7 +129,12 @@ describe('ForestQuizPage', () => {
       ],
     });
     submitForestQuizAttemptStreamMock.mockImplementation(
-      async (_token: string, _quizId: string, _payload: unknown, onEvent: (e: unknown) => void) => {
+      async (
+        _token: string,
+        _quizId: string,
+        _payload: unknown,
+        onEvent: (event: ForestSubmitStreamEvent) => void,
+      ) => {
         onEvent({ event: 'status', phase: 'grading', message: '正在判题…' });
         onEvent({
           event: 'done',
