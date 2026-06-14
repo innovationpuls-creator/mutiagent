@@ -417,7 +417,7 @@ async def stream_orchestration_events(
                     chunk.tool_call_chunks if hasattr(chunk, "tool_call_chunks") else []
                 )
 
-                if name == SUPERVISOR_NODE:
+                if name == SUPERVISOR_NODE or current_agent == SUPERVISOR_NODE:
                     if tool_call_chunks:
                         for tc in tool_call_chunks:
                             tc_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)

@@ -1,38 +1,34 @@
-import { useCallback, useState, useEffect, useRef } from 'react';
-import type * as PrismJS from 'prismjs';
+import { useCallback, useState, useEffect } from 'react';
+import PrismJS from 'prismjs';
+import 'prismjs/components/prism-clike';
+import 'prismjs/components/prism-c';
+import 'prismjs/components/prism-cpp';
+import 'prismjs/components/prism-java';
+import 'prismjs/components/prism-python';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-json';
+
+// Set manual mode statically
+PrismJS.manual = true;
 
 export function usePrism(enabled = true) {
-  const [Prism, setPrism] = useState<typeof PrismJS | null>(null);
-  const prismRef = useRef<typeof PrismJS | null>(null);
-  const loadedLanguages = useRef(new Set<string>());
+  const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    if (!enabled) return;
-    let active = true;
-    import('prismjs').then((module) => {
-      if (!active) return;
-      module.manual = true;
-      prismRef.current = module;
-      setPrism(module);
-    });
-    return () => { active = false; };
+    if (enabled) {
+      setIsLoaded(true);
+    }
   }, [enabled]);
 
   const highlight = useCallback(
     async (code: string, language: string): Promise<string> => {
-      const prism = prismRef.current;
-      if (!prism) return code;
-
       try {
-        if (!loadedLanguages.current.has(language)) {
-          await import(/* @vite-ignore */ `prismjs/components/prism-${language}`);
-          loadedLanguages.current.add(language);
-        }
-        if (prism.languages[language]) {
-          return prism.highlight(code, prism.languages[language], language);
+        const lang = language.toLowerCase();
+        if (PrismJS.languages[lang]) {
+          return PrismJS.highlight(code, PrismJS.languages[lang], lang);
         }
       } catch (error) {
-        console.warn(`Failed to load language: ${language}`, error);
+        console.warn(`Failed to highlight language: ${language}`, error);
       }
 
       return code;
@@ -40,5 +36,5 @@ export function usePrism(enabled = true) {
     []
   );
 
-  return { highlight, isLoaded: !!Prism };
+  return { highlight, isLoaded };
 }

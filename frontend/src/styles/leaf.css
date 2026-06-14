@@ -229,6 +229,8 @@
 }
 
 .leaf-page-main {
+  position: relative;
+  z-index: 1;
   inline-size: 100%;
   flex: 1 1 auto;
   display: flex;

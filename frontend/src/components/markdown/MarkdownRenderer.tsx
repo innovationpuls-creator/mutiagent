@@ -2,12 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import type { Components } from 'react-markdown';
 import { usePrism } from './hooks/usePrism';
-import { useMathJax } from './hooks/useMathJax';
 import { useMermaid } from './hooks/useMermaid';
 import { extractLanguage } from './utils/highlight';
 import { copyToClipboard } from './utils/clipboard';
+import 'katex/dist/katex.min.css';
 import './markdown-styles.css';
 
 interface MarkdownRendererProps {
@@ -156,16 +157,6 @@ const markdownComponents: Components = {
   th: ({ node, ...props }) => <th {...props} />,
   td: ({ node, ...props }) => <td {...props} />,
   code: ({ node, className, children, ...props }) => {
-    const isMath = className?.includes('math-inline') || className?.includes('math-display');
-    if (isMath) {
-      const isInline = className?.includes('math-inline');
-      const formula = getTextContent(children);
-      return (
-        <span className={className} {...props}>
-          {isInline ? `$${formula}$` : `$$${formula}$$`}
-        </span>
-      );
-    }
     return <code className={className} {...props}>{children}</code>;
   },
   pre: ({ node, children, ...props }) => {
@@ -270,11 +261,6 @@ function renderEnhancedCodeBlock(
     return <MermaidDiagram code={codeText} renderDiagram={options.renderDiagram} />;
   }
 
-  const isMath = language === 'math' || codeChild.props.className?.includes('math-display');
-  if (isMath) {
-    return <div className="math-block math-display">{`$$${codeText}$$`}</div>;
-  }
-
   if (options.enableSyntaxHighlight && language) {
     return <HighlightedCodeBlock code={codeText} language={language} highlight={options.highlight} />;
   }
@@ -297,21 +283,11 @@ export function MarkdownRenderer({
   enableMermaid = false,
 }: MarkdownRendererProps) {
   const { highlight } = usePrism(enableSyntaxHighlight);
-  const { isLoaded: isMathJaxLoaded } = useMathJax(enableMath);
   const { renderDiagram } = useMermaid(enableMermaid);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (enableMath && isMathJaxLoaded && containerRef.current) {
-      const MathJax = (window as any).MathJax;
-      if (MathJax && MathJax.typesetPromise) {
-        MathJax.typesetPromise([containerRef.current]).catch((err: any) => {
-          console.warn('MathJax typeset failed', err);
-        });
-      }
-    }
-  }, [content, enableMath, isMathJaxLoaded]);
+  const rehypePlugins = enableMath
+    ? [[rehypeKatex, { throwOnError: false, output: 'html' }] as const]
+    : [];
 
   const enhancedComponents: Components = {
     ...markdownComponents,
@@ -332,8 +308,12 @@ export function MarkdownRenderer({
   const variantClass = variant !== 'default' ? variant : '';
 
   return (
-    <div ref={containerRef} className={`markdown-renderer ${variantClass} ${className}`.trim()}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} components={enhancedComponents}>
+    <div className={`markdown-renderer ${variantClass} ${className}`.trim()}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={rehypePlugins as any}
+        components={enhancedComponents}
+      >
         {content}
       </ReactMarkdown>
     </div>

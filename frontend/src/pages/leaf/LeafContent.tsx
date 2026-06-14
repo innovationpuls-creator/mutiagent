@@ -134,16 +134,62 @@ function renderAnimation(block: LeafAnimationBlock, index: number) {
   );
 }
 
-function stripH1Heading(markdown: string): string {
+function sanitizeMarkdown(markdown: string): string {
   if (!markdown) return '';
-  return markdown.trim().replace(/^#\s+.*$/m, '').trim();
+  
+  // 1. Strip top-level H1 headings (e.g. # Title)
+  let cleaned = markdown.trim().replace(/^#\s+.*$/m, '').trim();
+
+  // 2. Remove consecutive duplicate subsection headings
+  const lines = cleaned.split('\n');
+  const resultLines: string[] = [];
+  let lastHeading = '';
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const headingMatch = line.match(/^#{2,6}\s+(.+)$/);
+    if (headingMatch) {
+      const headingText = headingMatch[1].trim().replace(/[:：*_\s]+$/, '');
+      if (headingText === lastHeading) {
+        continue;
+      }
+      lastHeading = headingText;
+    } else if (line !== '') {
+      const cleanLine = line.replace(/^[*_\s#]+|[*_\s：:#]+$/g, '').trim();
+      if (cleanLine === lastHeading) {
+        continue;
+      }
+    }
+    resultLines.push(lines[i]);
+  }
+  cleaned = resultLines.join('\n');
+
+  // 3. Normalize step headings (e.g., remove Markdown heading symbols from steps)
+  const stepPattern = /^(?:#{1,6}\s*)?(步骤讲解)?(第[一二三四五六七八九十\d]+步)\s*[：:]\s*(?:#{1,6}\s*)?(.*)$/;
+  const finalLines = cleaned.split('\n').map(line => {
+    const trimmed = line.trim();
+    const match = trimmed.match(stepPattern);
+    if (match) {
+      const stepLabel = match[2];
+      const stepContent = match[3];
+      return `${stepLabel}：${stepContent}`;
+    }
+    return line;
+  });
+
+  return finalLines.join('\n').trim();
 }
 
 function renderContentBlock(block: LeafContentBlock, index: number) {
   if (block.type === 'markdown') {
     return (
       <div key={`markdown-${index}`}>
-        <MarkdownRenderer content={stripH1Heading(block.markdown)} enableMath={true} />
+        <MarkdownRenderer
+          content={sanitizeMarkdown(block.markdown)}
+          enableMath={true}
+          enableSyntaxHighlight={true}
+          enableMermaid={true}
+        />
         {block.recommendation_reason && (
           <p className="text-xs text-[var(--color-text-muted)] mt-2 pl-1 italic opacity-70">
             {block.recommendation_reason}
@@ -165,7 +211,7 @@ export function LeafContent({ section, composedSection, lockedReason }: LeafCont
         </div>
         <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium mb-2">// empty</span>
         <h2 className="text-xl font-medium text-[var(--color-text-primary)] mb-2">课程章节还没有准备好</h2>
-        <p className="text-sm text-[var(--color-text-secondary)]">{lockedReason ?? '等待课程 Agent 生成章节结构。'}</p>
+        <p className="text-sm text-[var(--color-text-secondary)]">{lockedReason ?? '等待课程 Agent 生成章节 structure。'}</p>
       </article>
     );
   }
@@ -186,7 +232,14 @@ export function LeafContent({ section, composedSection, lockedReason }: LeafCont
         <div className="flex flex-col gap-12">
           {composedSection.blocks.length > 0
             ? composedSection.blocks.map(renderContentBlock)
-            : <MarkdownRenderer content={stripH1Heading(composedSection.markdown)} enableMath={true} />}
+            : (
+              <MarkdownRenderer
+                content={sanitizeMarkdown(composedSection.markdown)}
+                enableMath={true}
+                enableSyntaxHighlight={true}
+                enableMermaid={true}
+              />
+            )}
         </div>
       ) : (
         <section className="flex flex-col items-center justify-center text-center py-20 px-6 bg-[var(--color-surface-raised)] rounded-2xl border-2 border-dashed border-[var(--color-border)] opacity-80 mt-4">

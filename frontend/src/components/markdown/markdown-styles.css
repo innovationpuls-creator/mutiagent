@@ -107,7 +107,7 @@
 .markdown-renderer strong {
   font-weight: var(--font-weight-medium);
   color: oklch(20% 0.005 80);
-  text-shadow: 0.15px 0 0.05px currentColor;
+  text-shadow: 0.35px 0 0.08px currentColor, -0.1px 0 0.08px currentColor;
 }
 
 .markdown-renderer em {
@@ -592,6 +592,56 @@
 .markdown-renderer .token.variable {
   color: var(--color-warning);
 }
+
+/* High-contrast Syntax Highlighting for Dark Background pre Chunks */
+.markdown-renderer pre .token.comment,
+.markdown-renderer pre .token.prolog,
+.markdown-renderer pre .token.doctype,
+.markdown-renderer pre .token.cdata {
+  color: oklch(75% 0.01 235 / 0.8);
+  font-style: italic;
+}
+
+.markdown-renderer pre .token.punctuation {
+  color: oklch(90% 0.01 235);
+}
+
+.markdown-renderer pre .token.property,
+.markdown-renderer pre .token.tag,
+.markdown-renderer pre .token.boolean,
+.markdown-renderer pre .token.number,
+.markdown-renderer pre .token.constant,
+.markdown-renderer pre .token.symbol,
+.markdown-renderer pre .token.deleted {
+  color: oklch(85% 0.12 75);
+}
+
+.markdown-renderer pre .token.selector,
+.markdown-renderer pre .token.attr-name,
+.markdown-renderer pre .token.string,
+.markdown-renderer pre .token.char,
+.markdown-renderer pre .token.builtin,
+.markdown-renderer pre .token.inserted {
+  color: oklch(85% 0.12 140);
+}
+
+.markdown-renderer pre .token.operator,
+.markdown-renderer pre .token.entity,
+.markdown-renderer pre .token.url {
+  color: oklch(90% 0.01 235);
+}
+
+.markdown-renderer pre .token.atrule,
+.markdown-renderer pre .token.attr-value,
+.markdown-renderer pre .token.keyword {
+  color: oklch(85% 0.12 300);
+}
+
+.markdown-renderer pre .token.function,
+.markdown-renderer pre .token.class-name {
+  color: oklch(82% 0.10 210);
+}
+
 
 /* =========================================
    Math Formulas (MathJax)

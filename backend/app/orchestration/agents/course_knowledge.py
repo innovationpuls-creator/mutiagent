@@ -412,10 +412,10 @@ def _normalize_generated_sections(raw_sections: object) -> list[dict]:
         if not _is_positive_integer_text(str(top_level_id)):
             raise ValueError("一级章节 section_id 必须使用 1、2 这种数字编号。")
         children = top_level_children.get(top_level_id, [])
-        if len(children) < 2:
-            raise ValueError("每个一级章节至少需要两个二级小节。")
+        if len(children) < 3:
+            raise ValueError("每个一级章节至少需要三个二级小节。")
         if not all(_is_direct_child_section_id(_clean_text(child.get("section_id")), str(top_level_id)) for child in children):
-            raise ValueError("二级小节 section_id 必须使用 1.1、1.2 这种编号并归属对应一级章节。")
+            raise ValueError("二级小节 section_id 必须使用 1.1、1.2、1.3 这种编号并归属对应一级章节。")
 
     return normalized_sections
 
@@ -609,7 +609,7 @@ def _build_repair_input(original_input: str, error_message: str) -> str:
         "修复要求：\n"
         "1. 保持当前课程名称与当前课程输入里的 course_name 完全一致。\n"
         "2. 一级章节 section_id 必须使用 1、2 这种数字编号，对应第一章、第二章。\n"
-        "3. 每个一级章节必须至少包含两个直属二级小节，编号必须使用 1.1、1.2、2.1、2.2 这种形式。\n"
+        "3. 每个一级章节必须至少包含三个直属二级小节，编号必须使用 1.1、1.2、1.3、2.1、2.2、2.3 这种形式。\n"
         "4. 每个 section 的 key_knowledge_points 必须非空，且必须是该章或小节的具体知识点、小能力或验收点。\n"
         "5. 不要使用学习路径里的 learning_sequence、stage_titles 或课程顺序条目作为章节。"
     )
@@ -657,7 +657,7 @@ _SINGLE_COURSE_JSON_CONTRACT = """\
       "section_id": "1",
       "parent_section_id": null,
       "depth": 1,
-      "title": "第一章章名",
+      "title": "第一章：概念引入与直觉建立",
       "order_index": 1,
       "description": "这一章解决什么问题",
       "key_knowledge_points": ["具体知识点或能力点"]
@@ -666,8 +666,62 @@ _SINGLE_COURSE_JSON_CONTRACT = """\
       "section_id": "1.1",
       "parent_section_id": "1",
       "depth": 2,
-      "title": "1.1 小节名",
+      "title": "1.1 生活中的类比分析",
       "order_index": 2,
+      "description": "这一小节解决什么问题",
+      "key_knowledge_points": ["具体知识点或能力点"]
+    },
+    {
+      "section_id": "1.2",
+      "parent_section_id": "1",
+      "depth": 2,
+      "title": "1.2 核心定义与公式",
+      "order_index": 3,
+      "description": "这一小节解决什么问题",
+      "key_knowledge_points": ["具体知识点或能力点"]
+    },
+    {
+      "section_id": "1.3",
+      "parent_section_id": "1",
+      "depth": 2,
+      "title": "1.3 边界情况与分析",
+      "order_index": 4,
+      "description": "这一小节解决什么问题",
+      "key_knowledge_points": ["具体知识点或能力点"]
+    },
+    {
+      "section_id": "2",
+      "parent_section_id": null,
+      "depth": 1,
+      "title": "第二章：黄金法则应用",
+      "order_index": 5,
+      "description": "这一章解决什么问题",
+      "key_knowledge_points": ["具体知识点或能力点"]
+    },
+    {
+      "section_id": "2.1",
+      "parent_section_id": "2",
+      "depth": 2,
+      "title": "2.1 法则基本步骤",
+      "order_index": 6,
+      "description": "这一小节解决什么问题",
+      "key_knowledge_points": ["具体知识点或能力点"]
+    },
+    {
+      "section_id": "2.2",
+      "parent_section_id": "2",
+      "depth": 2,
+      "title": "2.2 实际场景应用",
+      "order_index": 7,
+      "description": "这一小节解决什么问题",
+      "key_knowledge_points": ["具体知识点或能力点"]
+    },
+    {
+      "section_id": "2.3",
+      "parent_section_id": "2",
+      "depth": 2,
+      "title": "2.3 综合实战演练",
+      "order_index": 8,
       "description": "这一小节解决什么问题",
       "key_knowledge_points": ["具体知识点或能力点"]
     }
@@ -703,6 +757,60 @@ _YEAR_COURSES_JSON_CONTRACT = """\
           "depth": 2,
           "title": "1.1 小节名",
           "order_index": 2,
+          "description": "这一小节解决什么问题",
+          "key_knowledge_points": ["具体知识点或能力点"]
+        },
+        {
+          "section_id": "1.2",
+          "parent_section_id": "1",
+          "depth": 2,
+          "title": "1.2 小节名",
+          "order_index": 3,
+          "description": "这一小节解决什么问题",
+          "key_knowledge_points": ["具体知识点或能力点"]
+        },
+        {
+          "section_id": "1.3",
+          "parent_section_id": "1",
+          "depth": 2,
+          "title": "1.3 小节名",
+          "order_index": 4,
+          "description": "这一小节解决什么问题",
+          "key_knowledge_points": ["具体知识点或能力点"]
+        },
+        {
+          "section_id": "2",
+          "parent_section_id": null,
+          "depth": 1,
+          "title": "第二章章名",
+          "order_index": 5,
+          "description": "这一章解决什么问题",
+          "key_knowledge_points": ["具体知识点或能力点"]
+        },
+        {
+          "section_id": "2.1",
+          "parent_section_id": "2",
+          "depth": 2,
+          "title": "2.1 小节名",
+          "order_index": 6,
+          "description": "这一小节解决什么问题",
+          "key_knowledge_points": ["具体知识点或能力点"]
+        },
+        {
+          "section_id": "2.2",
+          "parent_section_id": "2",
+          "depth": 2,
+          "title": "2.2 小节名",
+          "order_index": 7,
+          "description": "这一小节解决什么问题",
+          "key_knowledge_points": ["具体知识点或能力点"]
+        },
+        {
+          "section_id": "2.3",
+          "parent_section_id": "2",
+          "depth": 2,
+          "title": "2.3 小节名",
+          "order_index": 8,
           "description": "这一小节解决什么问题",
           "key_knowledge_points": ["具体知识点或能力点"]
         }

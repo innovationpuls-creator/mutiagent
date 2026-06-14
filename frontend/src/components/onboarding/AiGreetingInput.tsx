@@ -1070,7 +1070,7 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
                       </button>
                     </div>
                   )}
-                  {hasCompleteProfileRef.current && !isLearningPathStage && !hasLearningOutput && !isPending && !inputValue.trim() && !imageAttachment ? (
+                  {hasCompleteProfileRef.current && !isLearningPathStage && !hasLearningOutput && !isPending && !inputValue.trim() && !imageAttachment && !(pendingMessage && pendingMessage.mode === 'draft') ? (
                     <div className="composer-completed-cta-panel">
                       <button className="cta-completed-btn" onClick={handleGeneratePathDraft} type="button">
                         <span>确认并生成学习路径</span>
