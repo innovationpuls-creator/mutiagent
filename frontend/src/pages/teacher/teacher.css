@@ -33,10 +33,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-8);
-  transition:
-    transform var(--duration-lazy-hover) var(--ease-lazy),
-    background-color var(--duration-lazy-hover) var(--ease-lazy),
-    box-shadow var(--duration-lazy-hover) var(--ease-lazy);
+  transition: transform var(--duration-lazy-hover) var(--ease-lazy);
 }
 
 .btn-primary {
@@ -83,10 +80,7 @@
   box-shadow: var(--shadow-sm);
   text-align: center;
   cursor: pointer;
-  transition:
-    transform var(--duration-lazy-hover) var(--ease-lazy),
-    border-color var(--duration-lazy-hover) var(--ease-lazy),
-    box-shadow var(--duration-lazy-hover) var(--ease-lazy);
+  transition: transform var(--duration-lazy-hover) var(--ease-lazy);
 }
 
 .upload-zone:hover,
@@ -137,8 +131,8 @@
 
 .pulse-halo-container {
   position: relative;
-  inline-size: 80px;
-  block-size: 80px;
+  inline-size: var(--space-80);
+  block-size: var(--space-80);
   margin-block-end: var(--space-32);
 }
 
@@ -290,7 +284,6 @@
   border: none;
   cursor: pointer;
   text-align: left;
-  transition: background-color var(--duration-lazy-hover) var(--ease-lazy);
 }
 
 .grade-header:hover {
@@ -323,9 +316,7 @@
   border-block-end: 1px solid var(--color-border);
   cursor: pointer;
   background: var(--color-surface-raised);
-  transition:
-    background-color var(--duration-lazy-hover) var(--ease-lazy),
-    transform var(--duration-lazy-hover) var(--ease-lazy);
+  transition: transform var(--duration-lazy-hover) var(--ease-lazy);
 }
 
 .course-row:last-child {
@@ -378,9 +369,6 @@
   border: 1px solid var(--color-primary);
   padding: var(--space-4) var(--space-12);
   border-radius: var(--radius-full);
-  transition:
-    background-color var(--duration-lazy-hover) var(--ease-lazy),
-    color var(--duration-lazy-hover) var(--ease-lazy);
 }
 
 .course-row:hover .course-edit-badge {
@@ -430,7 +418,6 @@
   font-size: var(--text-h3);
   cursor: pointer;
   color: var(--color-text-secondary);
-  transition: color var(--duration-lazy-hover) var(--ease-lazy);
 }
 
 .drawer-close-btn:hover {
@@ -497,9 +484,6 @@
   border-radius: var(--radius-sm);
   padding: var(--space-12);
   box-shadow: var(--shadow-inset);
-  transition:
-    border-color var(--duration-lazy-hover) var(--ease-lazy),
-    box-shadow var(--duration-lazy-hover) var(--ease-lazy);
   box-sizing: border-box;
 }
 

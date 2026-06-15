@@ -799,6 +799,7 @@ describe('BranchPage', () => {
     const completedView = renderBranchWithLeafRoute();
     await waitFor(() => expect(screen.getByText('当前课程')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: /大三第 1 门课程：已完成课程，已完成/ }));
+    fireEvent.click(screen.getByRole('button', { name: /大三第 1 门课程：已完成课程，已完成/ }));
     await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/leaf/year_3_course_1'));
     completedView.unmount();
 

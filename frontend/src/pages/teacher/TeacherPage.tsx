@@ -344,7 +344,7 @@ export function TreeTable({ courses, activeCourseId, onSelectCourse }: TreeTable
 
 interface FieldProps {
   course: BranchCourseNode;
-  onChange: (key: any, value: any) => void;
+  onChange: (key: string, value: unknown) => void;
 }
 
 export function GeneralFields({ course, onChange }: FieldProps) {
@@ -476,22 +476,22 @@ interface DrawerFormProps {
 }
 
 export function DrawerForm({ course, onUpdateCourse }: DrawerFormProps) {
-  const handleChange = (key: keyof BranchCourseNode | string, value: any) => {
-    if (['semester_scope', 'duration', 'pace_reason'].includes(key as string)) {
+  const handleChange = (key: string, value: unknown) => {
+    if (['semester_scope', 'duration', 'pace_reason'].includes(key)) {
       onUpdateCourse({
         ...course,
         time_arrangement: {
           semester_scope: course.time_arrangement?.semester_scope ?? '1',
           duration: course.time_arrangement?.duration ?? '',
           pace_reason: course.time_arrangement?.pace_reason,
-          [key]: value,
+          [key]: value as string,
         },
       });
     } else {
       onUpdateCourse({
         ...course,
         [key]: value,
-      });
+      } as unknown as BranchCourseNode);
     }
   };
 

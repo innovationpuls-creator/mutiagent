@@ -466,7 +466,15 @@ function PathSession({
     if (showCoachmark && onCloseCoachmark) {
       onCloseCoachmark();
     }
-    setFocusedCourseId(course.course_node_id);
+    if (focusedCourseId !== course.course_node_id) {
+      setFocusedCourseId(course.course_node_id);
+      if (course.status === 'completed' || course.status === 'current') {
+        setLockedCourseHint(null);
+      } else {
+        setLockedCourseHint(`「${course.course_or_chapter_theme}」还未开放，先完成前面的课程。`);
+      }
+      return;
+    }
     if (course.status === 'completed' || course.status === 'current') {
       setLockedCourseHint(null);
       onOpenCourse(course);

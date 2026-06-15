@@ -774,16 +774,12 @@
 .branch-blob-card.branch-blob-card-custom {
   border: 3px dashed oklch(76% 0.12 55 / 0.7); /* Coral dashed border */
   background: oklch(99% 0.01 55 / 0.85); /* soft warm coral background tint */
-  box-shadow:
-    0 6px 16px oklch(76% 0.12 55 / 0.12),
-    0 16px 32px oklch(76% 0.12 55 / 0.06);
+  box-shadow: var(--shadow-sm);
 }
 
 .branch-blob-card.branch-blob-card-custom:hover {
   border-color: oklch(72% 0.13 28);
-  box-shadow:
-    0 10px 24px oklch(76% 0.12 55 / 0.2),
-    0 20px 40px oklch(76% 0.12 55 / 0.1);
+  box-shadow: var(--shadow-md);
 }
 
 /* Ensure the icon container is relative for custom glow dot positioning */
@@ -808,5 +804,4 @@
   stroke-width: 4px;
   stroke-linecap: round;
   filter: drop-shadow(0 0 6px oklch(76% 0.12 55 / 0.5));
-  transition: stroke 0.3s ease, stroke-width 0.3s ease;
 }
