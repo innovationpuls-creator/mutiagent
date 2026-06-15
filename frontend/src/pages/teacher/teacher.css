@@ -553,3 +553,274 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* 导航栏样式 */
+.teacher-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 72px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 var(--space-32);
+  z-index: 90;
+}
+
+.teacher-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  text-decoration: none;
+  color: var(--color-text-primary);
+}
+
+.teacher-logo-img {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+}
+
+.teacher-brand-name {
+  font-size: var(--text-h5);
+  font-weight: 500;
+}
+
+.teacher-nav-tabs {
+  display: flex;
+  gap: var(--space-24);
+  height: 100%;
+  align-items: center;
+}
+
+.teacher-tab {
+  position: relative;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: var(--text-body-sm);
+  color: var(--color-text-secondary);
+  padding: var(--space-8) var(--space-12);
+  cursor: pointer;
+  transition: color var(--duration-lazy-hover) var(--ease-lazy);
+}
+
+.teacher-tab:hover {
+  color: var(--color-text-primary);
+}
+
+.teacher-tab.tab-active {
+  color: var(--color-primary);
+}
+
+.teacher-tab.tab-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.teacher-tab-indicator {
+  position: absolute;
+  bottom: -16px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--color-primary);
+  border-radius: var(--radius-full);
+}
+
+.teacher-user-area {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.teacher-avatar-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+}
+
+.teacher-user-dropdown {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  width: 200px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+}
+
+.teacher-dropdown-header {
+  padding: var(--space-8) var(--space-12);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+}
+
+.teacher-dropdown-name {
+  display: block;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.teacher-dropdown-item {
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: var(--text-body-sm);
+  color: var(--color-text-primary);
+  padding: var(--space-10) var(--space-12);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  width: 100%;
+  margin-top: var(--space-xs);
+}
+
+.teacher-dropdown-item:hover {
+  background: var(--color-hover-wash);
+}
+
+.teacher-dropdown-item-logout {
+  color: var(--color-error);
+  border-top: 1px solid var(--color-border);
+  border-radius: 0;
+  margin-top: var(--space-sm);
+}
+
+/* 可视化布局 */
+.teacher-page-with-header {
+  padding-top: calc(72px + var(--space-32)) !important;
+}
+
+.graph-view-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-32);
+}
+
+.canvas-panel {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-32);
+  height: 520px;
+  position: relative;
+}
+
+.canvas-header {
+  margin-bottom: var(--space-20);
+}
+
+.canvas-header h3 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-h4);
+  color: var(--color-text-primary);
+}
+
+.canvas-header p {
+  margin: 0;
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+}
+
+.canvas-wrapper {
+  width: 100%;
+  height: calc(100% - 60px);
+  background: var(--color-surface-inset);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow: auto;
+  position: relative;
+}
+
+/* 统计图表分布面板 */
+.stats-distribution-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-32);
+}
+
+@media (max-width: 768px) {
+  .stats-distribution-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+.distribution-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-24);
+}
+
+.distribution-card h4 {
+  margin: 0 0 var(--space-16);
+  font-size: var(--text-h5);
+  color: var(--color-text-primary);
+}
+
+.chart-svg-container {
+  width: 100%;
+  height: 180px;
+}
+
+.chart-bar {
+  fill: var(--color-primary-soft);
+  stroke: var(--color-primary);
+  stroke-width: 1;
+  rx: 4;
+  transition: fill var(--duration-lazy-hover) var(--ease-lazy), transform var(--duration-lazy-hover) var(--ease-lazy);
+}
+
+.chart-bar:hover {
+  fill: var(--color-primary);
+  transform: scaleY(1.02);
+  transform-origin: bottom;
+}
+
+.chart-bar-completed {
+  fill: var(--color-success-bg);
+  stroke: var(--color-success);
+}
+
+.chart-bar-completed:hover {
+  fill: var(--color-success);
+}
+
+.chart-axis-line {
+  stroke: var(--color-border);
+  stroke-width: 1.5;
+}
+
+.chart-text {
+  font-family: inherit;
+  font-size: 10px;
+  fill: var(--color-text-secondary);
+}
+
+.chart-tooltip {
+  pointer-events: none;
+  fill: var(--color-secondary);
+  filter: drop-shadow(0 2px 4px oklch(50% 0.05 55 / 0.1));
+}
