@@ -6,6 +6,19 @@ export interface BranchCourseNode {
   course_goal: string;
   status: BranchCourseStatus;
   has_outline: boolean;
+  
+  // 新增可选元数据
+  is_custom?: boolean;
+  parent_preset_id?: string;
+  prerequisite_ids?: string[];
+  time_arrangement?: {
+    semester_scope: string;
+    duration: string;
+    pace_reason?: string;
+  };
+  key_points?: string[];
+  difficult_points?: string[];
+  acceptance_criteria?: string[];
 }
 
 export interface BranchYear {

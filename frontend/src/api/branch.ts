@@ -25,7 +25,7 @@ function normalizeCanopyStatus(value: unknown): CanopyCourseStatus {
   throw new Error('成森数据格式不正确');
 }
 
-function normalizeCourse(value: unknown): BranchCourseNode {
+export function normalizeCourse(value: unknown): BranchCourseNode {
   if (!isRecord(value)) {
     throw new Error('繁枝数据格式不正确');
   }
@@ -43,12 +43,50 @@ function normalizeCourse(value: unknown): BranchCourseNode {
   ) {
     throw new Error('繁枝数据格式不正确');
   }
+  
+  const isCustom = typeof value.is_custom === 'boolean' ? value.is_custom : undefined;
+  const parentPresetId = typeof value.parent_preset_id === 'string' ? value.parent_preset_id : undefined;
+  const prerequisiteIds = Array.isArray(value.prerequisite_ids) && value.prerequisite_ids.every((id) => typeof id === 'string')
+    ? (value.prerequisite_ids as string[])
+    : undefined;
+    
+  let timeArrangement: BranchCourseNode['time_arrangement'] = undefined;
+  if (isRecord(value.time_arrangement)) {
+    const sem = value.time_arrangement.semester_scope;
+    const dur = value.time_arrangement.duration;
+    const pace = value.time_arrangement.pace_reason;
+    if (typeof sem === 'string' && typeof dur === 'string') {
+      timeArrangement = {
+        semester_scope: sem,
+        duration: dur,
+        pace_reason: typeof pace === 'string' ? pace : undefined,
+      };
+    }
+  }
+  
+  const keyPoints = Array.isArray(value.key_points) && value.key_points.every((kp) => typeof kp === 'string')
+    ? (value.key_points as string[])
+    : undefined;
+  const difficultPoints = Array.isArray(value.difficult_points) && value.difficult_points.every((dp) => typeof dp === 'string')
+    ? (value.difficult_points as string[])
+    : undefined;
+  const acceptanceCriteria = Array.isArray(value.acceptance_criteria) && value.acceptance_criteria.every((ac) => typeof ac === 'string')
+    ? (value.acceptance_criteria as string[])
+    : undefined;
+
   return {
     course_node_id: courseId,
     course_or_chapter_theme: theme,
     course_goal: goal,
     status,
     has_outline: hasOutline,
+    is_custom: isCustom,
+    parent_preset_id: parentPresetId,
+    prerequisite_ids: prerequisiteIds,
+    time_arrangement: timeArrangement,
+    key_points: keyPoints,
+    difficult_points: difficultPoints,
+    acceptance_criteria: acceptanceCriteria,
   };
 }
 
