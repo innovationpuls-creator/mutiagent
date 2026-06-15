@@ -795,7 +795,9 @@
   height: var(--space-8);
   background-color: oklch(76% 0.12 55); /* Coral highlight color */
   border-radius: 50%;
-  box-shadow: 0 0 8px oklch(76% 0.12 55 / 0.8);
+  box-shadow:
+    0 1px 2px oklch(76% 0.12 55 / 0.4),
+    0 2px 8px oklch(76% 0.12 55 / 0.2);
   border: 1.5px solid var(--color-canvas-surface);
 }
 

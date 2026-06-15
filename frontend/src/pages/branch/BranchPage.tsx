@@ -653,11 +653,13 @@ function PathSession({
                     </div>
                   )}
                   <motion.article
-                    className="branch-blob-card-shell branch-blob-card-shell-current"
+                    className="branch-blob-card-shell"
                   >
-                    <div className="branch-current-glow" aria-hidden="true" />
+                    {iconLabel(stage.center.status) === 'current' && (
+                      <div className="branch-current-glow" aria-hidden="true" />
+                    )}
                     <motion.button
-                      className={`branch-blob-card branch-blob-card-current ${stage.center.is_custom ? 'branch-blob-card-custom' : ''}`}
+                      className={`branch-blob-card branch-blob-card-${iconLabel(stage.center.status)} ${stage.center.is_custom ? 'branch-blob-card-custom' : ''}`}
                       type="button"
                       aria-label={courseButtonLabel(stage.center)}
                       aria-pressed={stage.center.course_node_id === focusedCourseId}
@@ -667,7 +669,7 @@ function PathSession({
                       onClick={() => handleCourseClick(stage.center as BranchCourseNode)}
                     >
                       <div className="branch-blob-copy-current">
-                        <div className="branch-blob-icon branch-blob-icon-current" aria-hidden="true">
+                        <div className={`branch-blob-icon branch-blob-icon-${iconLabel(stage.center.status)}`} aria-hidden="true">
                           <StageIcon kind={iconLabel(stage.center.status)} />
                           {stage.center.is_custom && <span className="branch-custom-glow-dot" aria-hidden="true" />}
                         </div>
@@ -678,22 +680,24 @@ function PathSession({
                           </h2>
                         </div>
                       </div>
-                      <motion.span
-                        className="branch-focus-button"
-                        whileHover={reduceMotion ? undefined : { y: -2 }}
-                        whileTap={reduceMotion ? undefined : { y: 0, scale: 0.992 }}
-                        transition={motionTokens.lazy}
-                      >
-                        <span>专注模式</span>
+                      {(stage.center.status === 'current' || stage.center.status === 'completed') && (
                         <motion.span
-                          className="branch-focus-button-arrow"
-                          aria-hidden="true"
-                          whileHover={reduceMotion ? undefined : { x: 4 }}
+                          className="branch-focus-button"
+                          whileHover={reduceMotion ? undefined : { y: -2 }}
+                          whileTap={reduceMotion ? undefined : { y: 0, scale: 0.992 }}
                           transition={motionTokens.lazy}
                         >
-                          →
+                          <span>专注模式</span>
+                          <motion.span
+                            className="branch-focus-button-arrow"
+                            aria-hidden="true"
+                            whileHover={reduceMotion ? undefined : { x: 4 }}
+                            transition={motionTokens.lazy}
+                          >
+                            →
+                          </motion.span>
                         </motion.span>
-                      </motion.span>
+                      )}
                     </motion.button>
                   </motion.article>
                 </div>

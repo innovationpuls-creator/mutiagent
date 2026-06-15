@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BranchCourseNode } from '../../types/branch';
 import { TeacherPage } from './TeacherPage';
 
 vi.mock('../../contexts/AuthContext', () => ({
@@ -27,8 +28,8 @@ vi.mock('framer-motion', async () => {
 
   const createMockComponent = (tag: string) => {
     const Component = React.forwardRef<
-      any,
-      React.HTMLAttributes<any> & {
+      HTMLElement,
+      React.HTMLAttributes<HTMLElement> & {
         initial?: unknown;
         animate?: unknown;
         exit?: unknown;
@@ -270,7 +271,7 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
     const savedStr = store['teacher_cultivation_program'];
     expect(savedStr).not.toBeNull();
     const savedCourses = JSON.parse(savedStr!);
-    const updatedMath = savedCourses.find((c: any) => c.course_node_id === 'math_1');
+    const updatedMath = savedCourses.find((c: BranchCourseNode) => c.course_node_id === 'math_1');
     expect(updatedMath.course_or_chapter_theme).toBe('高等数学 I (修改版)');
     expect(updatedMath.course_goal).toBe('新的课程目标内容');
   });
