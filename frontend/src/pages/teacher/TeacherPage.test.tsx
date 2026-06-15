@@ -421,4 +421,31 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
     expect(logoutMock).toHaveBeenCalled();
     expect(navigateMock).toHaveBeenCalledWith('/login');
   });
+
+  it('renders SVG bar charts (credits and hours) when switching to the graph tab', async () => {
+    const mockSavedCourses = [
+      {
+        course_node_id: 'math_1',
+        course_or_chapter_theme: '高等数学 I',
+        status: 'locked',
+        has_outline: false,
+        is_custom: false,
+        time_arrangement: { semester_scope: '1', duration: '64学时/4学分' },
+      },
+    ];
+    store['teacher_cultivation_program'] = JSON.stringify(mockSavedCourses);
+
+    render(<TeacherPage />);
+
+    // Click on the graph tab
+    const graphTab = screen.getByRole('button', { name: '方案关系图谱' });
+    await act(async () => {
+      fireEvent.click(graphTab);
+    });
+
+    // Verify graph title and stats distribution panel exist
+    expect(screen.getByRole('heading', { name: '方案关系图谱' })).toBeTruthy();
+    expect(screen.getByText('学期学分分布 (Credits per Semester)')).toBeTruthy();
+    expect(screen.getByText('学期课时分布 (Hours per Semester)')).toBeTruthy();
+  });
 });

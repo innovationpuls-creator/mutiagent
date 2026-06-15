@@ -541,6 +541,62 @@ export function DetailDrawer({ course, onClose, onUpdateCourse }: DetailDrawerPr
   );
 }
 
+interface SemesterStatItem {
+  semester: string;
+  credits: number;
+  hours: number;
+  completedCourses: number;
+  totalCourses: number;
+}
+
+interface SemesterBarChartProps {
+  data: SemesterStatItem[];
+  type: 'credits' | 'hours';
+}
+
+function SemesterBarChart({ data, type }: SemesterBarChartProps) {
+  const maxValue = Math.max(...data.map(d => type === 'credits' ? d.credits : d.hours), 1);
+  
+  return (
+    <svg viewBox="0 0 400 150" className="chart-svg-container">
+      {/* 坐标轴 */}
+      <line x1="30" y1="120" x2="380" y2="120" className="chart-axis-line" />
+      
+      {data.map((d, index) => {
+        const val = type === 'credits' ? d.credits : d.hours;
+        // 高度映射
+        const barHeight = (val / maxValue) * 90;
+        const x = 40 + index * 42;
+        const y = 120 - barHeight;
+        const barWidth = 24;
+        
+        const isCompleted = d.totalCourses > 0 && d.completedCourses === d.totalCourses;
+
+        return (
+          <g key={d.semester} className="chart-bar-group">
+            {barHeight > 0 && (
+              <rect
+                x={x}
+                y={y}
+                width={barWidth}
+                height={barHeight}
+                rx={4}
+                className={`chart-bar ${isCompleted ? 'chart-bar-completed' : ''}`}
+              />
+            )}
+            <text x={x + 12} y={135} textAnchor="middle" className="chart-text">
+              T{d.semester}
+            </text>
+            <text x={x + 12} y={y - 6} textAnchor="middle" className="chart-text" style={{ fontSize: '9px' }}>
+              {val}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 export function TeacherPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -608,6 +664,38 @@ export function TeacherPage() {
       }
     }
   };
+
+  const semesterStats = useMemo(() => {
+    const stats: SemesterStatItem[] = Array.from({ length: 8 }, (_, i) => ({
+      semester: String(i + 1),
+      credits: 0,
+      hours: 0,
+      completedCourses: 0,
+      totalCourses: 0,
+    }));
+
+    courses.forEach((c) => {
+      const sem = parseInt(c.time_arrangement?.semester_scope ?? '1', 10);
+      if (sem >= 1 && sem <= 8) {
+        const durationStr = c.time_arrangement?.duration || '';
+        // 解析类似于 "64学时/4学分" 的课时与学分
+        const hourMatch = durationStr.match(/(\d+)学时/);
+        const creditMatch = durationStr.match(/(\d+)学分/);
+        
+        const hours = hourMatch ? parseInt(hourMatch[1], 10) : 0;
+        const credits = creditMatch ? parseInt(creditMatch[1], 10) : 0;
+
+        stats[sem - 1].hours += hours;
+        stats[sem - 1].credits += credits;
+        stats[sem - 1].totalCourses += 1;
+        if (c.is_custom || (c.key_points && c.key_points.length > 0)) {
+          stats[sem - 1].completedCourses += 1;
+        }
+      }
+    });
+
+    return stats;
+  }, [courses]);
 
   useEffect(() => {
     if (!isDropdownOpen) return;
@@ -710,16 +798,12 @@ export function TeacherPage() {
               </div>
               <div className="stats-distribution-panel">
                 <div className="distribution-card">
-                  <h4>学时与学分分布</h4>
-                  <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-caption)' }}>
-                    等待学术直方图数据加载...
-                  </div>
+                  <h4>学期学分分布 (Credits per Semester)</h4>
+                  <SemesterBarChart data={semesterStats} type="credits" />
                 </div>
                 <div className="distribution-card">
-                  <h4>要点与难点分布</h4>
-                  <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-caption)' }}>
-                    等待要点难点分布数据加载...
-                  </div>
+                  <h4>学期课时分布 (Hours per Semester)</h4>
+                  <SemesterBarChart data={semesterStats} type="hours" />
                 </div>
               </div>
             </div>
