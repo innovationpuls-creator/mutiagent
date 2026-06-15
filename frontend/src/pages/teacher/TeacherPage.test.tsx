@@ -58,13 +58,33 @@ vi.mock('framer-motion', async () => {
   return {
     ...actual,
     AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    motion: {
-      div: createMockComponent('div'),
-      main: createMockComponent('main'),
-    },
+    motion: new Proxy(
+      {
+        div: createMockComponent('div'),
+        main: createMockComponent('main'),
+      },
+      {
+        get: (target, prop) => {
+          if (prop in target) {
+            return target[prop as keyof typeof target];
+          }
+          if (typeof prop === 'string') {
+            return createMockComponent(prop);
+          }
+          return undefined;
+        },
+      }
+    ),
     useReducedMotion: () => true,
   };
 });
+
+class ResizeObserverMock {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+}
+vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 
 describe('TeacherPage State Machine & localStorage Saves', () => {
   let store: Record<string, string> = {};

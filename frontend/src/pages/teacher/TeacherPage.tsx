@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { LogOut } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { BranchCourseNode } from '../../types/branch';
+import { OrganicCanvas, GraphNode, GraphEdge } from '../../components/graph/OrganicCanvas';
 import './teacher.css';
 
 export type TeacherPageState = 'empty' | 'loading' | 'editor' | 'error';
@@ -554,6 +555,60 @@ export function TeacherPage() {
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const graphData = useMemo(() => {
+    const nodeStatusMap: Record<string, string> = {};
+    const nodes: GraphNode[] = courses.map((c) => {
+      const status = c.course_node_id === activeCourseId
+        ? 'in-progress'
+        : (c.is_custom || (c.key_points && c.key_points.length > 0)
+          ? 'completed'
+          : 'locked');
+      nodeStatusMap[c.course_node_id] = status;
+
+      return {
+        id: c.course_node_id,
+        title: c.course_or_chapter_theme,
+        status,
+        agentMessage: `第 ${c.time_arrangement?.semester_scope ?? '?'} 学期`,
+        completedConcepts: c.key_points?.length || 0,
+        totalConcepts: (c.key_points?.length || 0) + (c.difficult_points?.length || 0) || 5,
+      };
+    });
+
+    const edges: GraphEdge[] = [];
+    courses.forEach((c) => {
+      if (c.prerequisite_ids && c.prerequisite_ids.length > 0) {
+        c.prerequisite_ids.forEach((pId) => {
+          const sourceStatus = nodeStatusMap[pId];
+          const targetStatus = nodeStatusMap[c.course_node_id];
+          const edgeStatus = (sourceStatus === 'completed' && targetStatus === 'completed')
+            ? 'completed'
+            : 'future';
+
+          edges.push({
+            id: `${pId}-${c.course_node_id}`,
+            source: pId,
+            target: c.course_node_id,
+            status: edgeStatus,
+          });
+        });
+      }
+    });
+
+    return { nodes, edges };
+  }, [courses, activeCourseId]);
+
+  const handleCanvasClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    const nodeWrapper = target.closest('.node-wrapper');
+    if (nodeWrapper) {
+      const nodeId = nodeWrapper.getAttribute('data-node-id');
+      if (nodeId) {
+        setActiveCourseId(nodeId);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!isDropdownOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
@@ -649,8 +704,22 @@ export function TeacherPage() {
                   <h3>方案关系图谱</h3>
                   <p>培养方案中课程前置依赖与关系拓扑图</p>
                 </div>
-                <div className="canvas-wrapper">
-                  {/* Task 3 will build this */}
+                <div className="canvas-wrapper" onClick={handleCanvasClick}>
+                  <OrganicCanvas nodes={graphData.nodes} edges={graphData.edges} />
+                </div>
+              </div>
+              <div className="stats-distribution-panel">
+                <div className="distribution-card">
+                  <h4>学时与学分分布</h4>
+                  <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-caption)' }}>
+                    等待学术直方图数据加载...
+                  </div>
+                </div>
+                <div className="distribution-card">
+                  <h4>要点与难点分布</h4>
+                  <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-caption)' }}>
+                    等待要点难点分布数据加载...
+                  </div>
                 </div>
               </div>
             </div>
