@@ -500,7 +500,7 @@ function PathSession({
       const fromPt = getCourseCoordinate(from, resolvedCourses, focusedCourseId, currentCourseId);
       const toPt = getCourseCoordinate(to, resolvedCourses, focusedCourseId, currentCourseId);
       const d = generateBezierConnectionPath(fromPt, toPt);
-      return { d, key: `${from}-${to}` };
+      return { d, key: `highlight-path-${from}-${to}` };
     });
   }, [focusedCourseId, resolvedCourses, currentCourseId]);
 
