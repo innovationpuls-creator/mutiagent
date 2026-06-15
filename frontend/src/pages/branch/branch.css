@@ -765,6 +765,30 @@
   }
 }
 
+.branch-course-source-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  inline-size: fit-content;
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-full);
+  font-size: var(--text-caption);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.branch-course-source-badge-self {
+  background: var(--color-secondary-soft);
+  color: var(--color-secondary);
+}
+
+.branch-course-source-badge-custom {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-hover);
+}
+
 /* Custom Course Card and Glow Dot Styles (Task 4 & 5) */
 .branch-blob-card.branch-blob-card-custom {
   border: 3px dashed oklch(76% 0.12 55 / 0.7); /* Coral dashed border */

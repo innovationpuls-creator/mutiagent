@@ -74,6 +74,22 @@ function iconLabel(status: BranchCourseNode['status']): string {
   }
 }
 
+function courseSourceLabel(course: BranchCourseNode): string {
+  return course.is_custom ? '人培课程' : '自选课程';
+}
+
+function CourseSourceBadge({ course }: { course: BranchCourseNode }) {
+  const sourceClassName = course.is_custom
+    ? 'branch-course-source-badge-custom'
+    : 'branch-course-source-badge-self';
+
+  return (
+    <span className={`branch-course-source-badge ${sourceClassName}`}>
+      {courseSourceLabel(course)}
+    </span>
+  );
+}
+
 function defaultFocusCourseId(courses: BranchCourseNode[], currentCourseId: string | null): string | null {
   if (courses.length === 0) {
     return null;
@@ -634,6 +650,7 @@ function PathSession({
                       {stage.left.is_custom && <span className="branch-custom-glow-dot" aria-hidden="true" />}
                     </div>
                     <div className="branch-blob-text">
+                      <CourseSourceBadge course={stage.left} />
                       <h2 className="branch-blob-title">{stage.left.course_or_chapter_theme}</h2>
                       <p className={`branch-blob-status branch-blob-status-${iconLabel(stage.left.status)}`}>{statusLabel(stage.left.status)}</p>
                     </div>
@@ -675,6 +692,7 @@ function PathSession({
                         </div>
                         <div className="branch-blob-text">
                           <span className="branch-blob-eyebrow">{focusLabel(stage.center.status)}</span>
+                          <CourseSourceBadge course={stage.center} />
                           <h2 className="branch-blob-title branch-blob-title-current">
                             {stage.center.course_or_chapter_theme}
                           </h2>
@@ -720,6 +738,7 @@ function PathSession({
                       {stage.right.is_custom && <span className="branch-custom-glow-dot" aria-hidden="true" />}
                     </div>
                     <div className="branch-blob-text">
+                      <CourseSourceBadge course={stage.right} />
                       <h2 className="branch-blob-title">{stage.right.course_or_chapter_theme}</h2>
                       <p className={`branch-blob-status branch-blob-status-${iconLabel(stage.right.status)}`}>{statusLabel(stage.right.status)}</p>
                     </div>
