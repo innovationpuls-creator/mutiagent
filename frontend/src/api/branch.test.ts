@@ -43,6 +43,21 @@ describe('normalizeCourse', () => {
     expect(result.key_points).toContain('Loops');
   });
 
+  it('should fallback to undefined for malformed optional metadata', () => {
+    const raw = {
+      course_node_id: 'math_102',
+      course_or_chapter_theme: 'Advanced Math',
+      course_goal: 'Calculus II',
+      status: 'locked',
+      has_outline: false,
+      prerequisite_ids: [123, 'math_101'], // contains number
+      time_arrangement: { semester_scope: 1 } // missing duration, invalid scope type
+    };
+    const result = normalizeCourse(raw);
+    expect(result.prerequisite_ids).toBeUndefined();
+    expect(result.time_arrangement).toBeUndefined();
+  });
+
   it('should throw error on invalid format', () => {
     const raw = {
       course_node_id: 123, // 应该是 string

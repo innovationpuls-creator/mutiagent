@@ -15,6 +15,10 @@ function isStatus(value: unknown): value is BranchCourseStatus {
   return value === 'completed' || value === 'current' || value === 'locked';
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
 function normalizeCanopyStatus(value: unknown): CanopyCourseStatus {
   if (value === 'completed' || value === 'locked') {
     return value;
@@ -46,8 +50,8 @@ export function normalizeCourse(value: unknown): BranchCourseNode {
   
   const isCustom = typeof value.is_custom === 'boolean' ? value.is_custom : undefined;
   const parentPresetId = typeof value.parent_preset_id === 'string' ? value.parent_preset_id : undefined;
-  const prerequisiteIds = Array.isArray(value.prerequisite_ids) && value.prerequisite_ids.every((id) => typeof id === 'string')
-    ? (value.prerequisite_ids as string[])
+  const prerequisiteIds = isStringArray(value.prerequisite_ids)
+    ? value.prerequisite_ids
     : undefined;
     
   let timeArrangement: BranchCourseNode['time_arrangement'] = undefined;
@@ -64,15 +68,9 @@ export function normalizeCourse(value: unknown): BranchCourseNode {
     }
   }
   
-  const keyPoints = Array.isArray(value.key_points) && value.key_points.every((kp) => typeof kp === 'string')
-    ? (value.key_points as string[])
-    : undefined;
-  const difficultPoints = Array.isArray(value.difficult_points) && value.difficult_points.every((dp) => typeof dp === 'string')
-    ? (value.difficult_points as string[])
-    : undefined;
-  const acceptanceCriteria = Array.isArray(value.acceptance_criteria) && value.acceptance_criteria.every((ac) => typeof ac === 'string')
-    ? (value.acceptance_criteria as string[])
-    : undefined;
+  const keyPoints = isStringArray(value.key_points) ? value.key_points : undefined;
+  const difficultPoints = isStringArray(value.difficult_points) ? value.difficult_points : undefined;
+  const acceptanceCriteria = isStringArray(value.acceptance_criteria) ? value.acceptance_criteria : undefined;
 
   return {
     course_node_id: courseId,
@@ -107,8 +105,7 @@ function normalizeCanopyCourse(value: unknown): CanopyCourseNode {
     || typeof grade !== 'string'
     || !(score === null || score === undefined || typeof score === 'number')
     || typeof description !== 'string'
-    || !Array.isArray(prerequisiteIds)
-    || prerequisiteIds.some((item) => typeof item !== 'string')
+    || !isStringArray(prerequisiteIds)
   ) {
     throw new Error('成森数据格式不正确');
   }
