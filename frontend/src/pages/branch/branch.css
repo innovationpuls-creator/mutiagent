@@ -219,9 +219,7 @@
   font: inherit;
   transition:
     transform var(--duration-lazy-hover) var(--ease-lazy),
-    box-shadow var(--duration-lazy-hover) var(--ease-lazy),
-    opacity var(--duration-lazy-hover) var(--ease-lazy),
-    filter var(--duration-lazy-hover) var(--ease-lazy);
+    opacity var(--duration-lazy-hover) var(--ease-lazy);
   will-change: transform, opacity;
 }
 
@@ -414,10 +412,7 @@
   font-weight: var(--font-weight-medium);
   line-height: 1;
   box-shadow: 0 10px 18px oklch(76% 0.12 55 / 0.24);
-  transition:
-    transform var(--duration-lazy-hover) var(--ease-lazy),
-    filter var(--duration-lazy-hover) var(--ease-lazy),
-    box-shadow var(--duration-lazy-hover) var(--ease-lazy);
+  transition: transform var(--duration-lazy-hover) var(--ease-lazy);
   cursor: pointer;
 }
 
