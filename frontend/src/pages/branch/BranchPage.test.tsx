@@ -1413,8 +1413,8 @@ describe('BranchPage', () => {
       expect(screen.getByText('C++ 高级编程')).toBeTruthy();
     });
 
-    expect(screen.getByRole('button', { name: /大一第 1 门课程（自选课程）：编程导论，进行中/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /大一第 2 门课程（人培课程）：C\+\+ 高级编程，未开放/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^大一第 1 门课程（自选课程）：编程导论，进行中$/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^大一第 2 门课程（人培课程）：C\+\+ 高级编程，未开放$/ })).toBeTruthy();
     expect(screen.getByText('自选课程')).toBeTruthy();
     expect(screen.getByText('人培课程')).toBeTruthy();
   });

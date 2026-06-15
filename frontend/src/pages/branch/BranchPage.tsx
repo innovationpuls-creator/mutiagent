@@ -75,11 +75,11 @@ function iconLabel(status: BranchCourseNode['status']): string {
 }
 
 function courseSourceLabel(course: BranchCourseNode): string {
-  return course.is_custom ? '人培课程' : '自选课程';
+  return course.is_custom === true ? '人培课程' : '自选课程';
 }
 
 function CourseSourceBadge({ course }: { course: BranchCourseNode }) {
-  const sourceClassName = course.is_custom
+  const sourceClassName = course.is_custom === true
     ? 'branch-course-source-badge-custom'
     : 'branch-course-source-badge-self';
 
