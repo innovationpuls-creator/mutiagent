@@ -59,10 +59,11 @@ export interface BranchCourseNode {
 
 ## 4. API 归一化层设计 (API Normalization Layer)
 
-为确保前端接口层能够保留并传递新增的元数据属性，需要重构 `frontend/src/api/branch.ts` 中的 `normalizeCourse` 归一化函数：
+为确保前端接口层能够保留并传递新增的元数据属性，需要重构并**导出** `frontend/src/api/branch.ts` 中的 `normalizeCourse` 归一化函数，便于在测试文件中进行直接的单体断言测试：
 
 ```typescript
-function normalizeCourse(value: unknown): BranchCourseNode {
+// 导出 normalizeCourse 用于单体与集成测试
+export function normalizeCourse(value: unknown): BranchCourseNode {
   if (!isRecord(value)) {
     throw new Error('繁枝数据格式不正确');
   }
@@ -154,7 +155,7 @@ type TeacherPageState = 'empty' | 'loading' | 'editor' | 'error';
 - **状态 3: `editor`（左表右单编辑态）**
   - **模拟数据载入**：自动渲染一套包含 8 门必修课（大一到大四，每学期 1-2 门）的树状大纲。
   - **交互逻辑**：
-    - 点击左侧课程 ➔ 打开右侧抽屉 `DetailDrawer`。抽屉自右向左平滑推出，过渡时长 `420ms`，采用弹性物理曲线。
+    - 点击左侧课程 ➔ 打开右侧抽屉 `DetailDrawer`。抽屉自右向左平滑推出，过渡采用 `motionTokens.lazy` 或 `transition: transform 420ms var(--ease-lazy)`，避免高硬度 spring 导致的晃动过冲。
     - 在抽屉中编辑课程元数据 ➔ 更新本地 React `courses` 数组状态。
     - 点击顶部“重新导入” ➔ 确认弹窗 ➔ 清空数据并退回 `empty`。
   - **保存行为**：
@@ -170,16 +171,21 @@ type TeacherPageState = 'empty' | 'loading' | 'editor' | 'error';
 
 改造 `/branch` 中的藤蔓生成与卡片渲染逻辑，打通教师发布的数据与学生自主路径：
 
-### 6.1 数据桥接与融合
-学生端 `BranchPage.tsx` 加载时，将优先尝试读取 `localStorage.getItem('teacher_cultivation_program')` 中的教师人培数据：
-- 如果存在，则将其与 API 返回的 `BranchOverview` 数据合并。
-- 归一化映射关系：
-  - 教师人培课程（`is_custom: false`）渲染在贝塞尔主藤蔓（Main Vine Stem）上的关键节点槽位。
-  - 学生在此基础上自主生成的定制课程（`is_custom: true`），则渲染在自对应主节点向外延伸的侧蔓（Tendrils）上。
+### 6.1 数据桥接与合并算法
+学生端 `BranchPage.tsx` 加载时，将尝试读取 `localStorage` 中的教师人培数据并与 API 原始数据合并，算法精确规则如下：
+1. **数据读取**：从 `localStorage.getItem('teacher_cultivation_program')` 获取课程列表 `presetCourses: BranchCourseNode[]`。
+2. **数据迭代与去重**：对于每一门预设课程，根据其 `grade_id`（由 `time_arrangement.semester_scope` 映射至 `year_1` 到 `year_4`）匹配对应的 `BranchYear`。
+3. **ID 冲突处理**：
+   - 若该预设课程的 `course_node_id` 在 API 返回的该年级 `courses` 数组中**已存在**，以 **API 返回数据优先**，但会将本地 `localStorage` 中专有的课程大纲字段（如 `key_points`, `difficult_points`, `acceptance_criteria`）合并补全到 API 课程对象中。
+   - 若**不存在**，则将该预设课程追加到该年级的 `courses` 数组末尾。
+4. **状态标定**：确保合并完成后，该年级的 `has_courses` 和 `is_clickable` 状态被修正为 `true`。
 
-### 6.2 贝塞尔高光连线 (Bezier Highlighting)
-- 点击任何卡片时，使用 SVG 曲线连接当前节点与其 `prerequisite_ids`（前置课程）及 `parent_preset_id`（父代课程），高亮前因后果。
-- 侧枝节点的解锁状态（`status: 'locked' | 'current' | 'completed'`）随其关联的父代必修课程自动计算（父节点 `status === 'completed'` 时，子节点解锁为 `current` 或 `completed`）。
+### 6.2 连线与解锁逻辑
+- **贝塞尔高光连线 (Bezier Highlighting)**:
+  - 点击任何卡片时，使用 SVG 曲线连接当前节点与其 `prerequisite_ids`（前置课程）及 `parent_preset_id`（父代课程），高亮前因后果。
+- **解锁联动状态机规则**：
+  - 子节点无法自动标记为完成。仅当父节点 `status === 'completed'`，且该子节点的原始数据状态（无论是 API 还是 localStorage 中）为 `locked` 时，在渲染态将该子节点视为 `current`（即解锁进入可用/当前焦点态）。
+  - 只有当该子节点本身的数据源状态在保存时就是 `completed` 时，才会渲染为 `completed` 状态。
 
 ---
 
@@ -198,7 +204,7 @@ type TeacherPageState = 'empty' | 'loading' | 'editor' | 'error';
     - Hover 悬浮卡片/侧滑抽屉：`var(--shadow-md)`
     - 模态框/全局浮层：`var(--shadow-lg)`
 - **动效 (Motion)**:
-  - 抽屉推出采用：`transition: transform 420ms var(--ease-lazy)`（`var(--ease-lazy)` 对应贝塞尔 `[0.25, 1, 0.5, 1]` 弹性阻尼曲线）。
+  - 移出/推出统一映射为：`var(--ease-lazy)`，即 `cubic-bezier(0.33, 1, 0.68, 1)`（对应 `motionTokens.lazy` 的 `ease` 数组 `[0.33, 1, 0.68, 1]`）。
   - 必须包含 `@media (prefers-reduced-motion)` 适配降级，降级时转场时长统一降为 `120ms`，仅使用 opacity 渐变。
 
 ---
@@ -207,8 +213,8 @@ type TeacherPageState = 'empty' | 'loading' | 'editor' | 'error';
 
 为了保障代码质量与修改的鲁棒性，我们需要补充并执行以下三个维度的测试：
 
-### 8.1 API 归一化层单体测试 (`branch.test.ts`)
-- 编写测试用例验证 `normalizeCourse`：
+### 8.1 API 归一化层单体测试 (`branch.test.ts` / `BranchPage.test.tsx`)
+- 编写测试用例直接导入并测试已导出的 `normalizeCourse` 函数：
   - 输入仅包含基础属性的扁平对象，验证能输出正确的默认值。
   - 输入包含 `is_custom`、`prerequisite_ids`、`time_arrangement` 完整元数据的对象，验证所有可选字段完整保留。
   - 输入错误格式的对象（例如 `status` 字段非 `'completed' | 'current' | 'locked'`），验证能够准确抛出 `"繁枝数据格式不正确"` 异常。
