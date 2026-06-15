@@ -718,7 +718,7 @@ describe('BranchPage', () => {
     let centerNode = container.querySelector('.branch-node-center');
     expect(centerNode?.textContent).toContain('AI 应用开发项目实战');
 
-    fireEvent.click(screen.getByRole('button', { name: /大三第 1 门课程（人培课程）：AI 应用开发基础能力搭建，已完成/ }));
+    fireEvent.click(screen.getByRole('button', { name: /大三第 1 门课程（自选课程）：AI 应用开发基础能力搭建，已完成/ }));
 
     await waitFor(() => {
       const nextCenterNode = container.querySelector('.branch-node-center');
@@ -798,20 +798,20 @@ describe('BranchPage', () => {
 
     const completedView = renderBranchWithLeafRoute();
     await waitFor(() => expect(screen.getByText('当前课程')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: /大三第 1 门课程（人培课程）：已完成课程，已完成/ }));
-    fireEvent.click(screen.getByRole('button', { name: /大三第 1 门课程（人培课程）：已完成课程，已完成/ }));
+    fireEvent.click(screen.getByRole('button', { name: /大三第 1 门课程（自选课程）：已完成课程，已完成/ }));
+    fireEvent.click(screen.getByRole('button', { name: /大三第 1 门课程（自选课程）：已完成课程，已完成/ }));
     await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/leaf/year_3_course_1'));
     completedView.unmount();
 
     const currentView = renderBranchWithLeafRoute();
     await waitFor(() => expect(screen.getByText('当前课程')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: /大三第 2 门课程（人培课程）：当前课程，进行中/ }));
+    fireEvent.click(screen.getByRole('button', { name: /大三第 2 门课程（自选课程）：当前课程，进行中/ }));
     await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/leaf/year_3_course_2'));
     currentView.unmount();
 
     renderBranchWithLeafRoute();
     await waitFor(() => expect(screen.getByText('当前课程')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: /大三第 3 门课程（人培课程）：锁定课程，未开放/ }));
+    fireEvent.click(screen.getByRole('button', { name: /大三第 3 门课程（自选课程）：锁定课程，未开放/ }));
     expect(screen.getByTestId('location').textContent).toBe('/branch');
     expect(screen.getByRole('status').textContent).toBe('「锁定课程」还未开放，先完成前面的课程。');
   });
@@ -1413,6 +1413,8 @@ describe('BranchPage', () => {
       expect(screen.getByText('C++ 高级编程')).toBeTruthy();
     });
 
+    expect(screen.getByRole('button', { name: /大一第 1 门课程（自选课程）：编程导论，进行中/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /大一第 2 门课程（人培课程）：C\+\+ 高级编程，未开放/ })).toBeTruthy();
     expect(screen.getByText('自选课程')).toBeTruthy();
     expect(screen.getByText('人培课程')).toBeTruthy();
   });
