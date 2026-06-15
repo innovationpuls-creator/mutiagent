@@ -162,7 +162,8 @@ function stageLabel(courseCount: number): string {
 }
 
 function railAriaLabel(gradeName: string, index: number, course: BranchCourseNode): string {
-  return `${gradeName}第 ${index + 1} 门课程：${course.course_or_chapter_theme}，${statusLabel(course.status)}`;
+  const source = course.is_custom ? '人培课程' : '自选课程';
+  return `${gradeName}第 ${index + 1} 门课程（${source}）：${course.course_or_chapter_theme}，${statusLabel(course.status)}`;
 }
 
 function toStageCourseSet(stageCourses: StageCourse[]): StageCourseSet {

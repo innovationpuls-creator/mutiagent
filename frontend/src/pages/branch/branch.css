@@ -770,6 +770,7 @@
   align-items: center;
   justify-content: center;
   align-self: center;
+  justify-self: center;
   inline-size: fit-content;
   padding: var(--space-4) var(--space-8);
   border-radius: var(--radius-full);
@@ -786,7 +787,7 @@
 
 .branch-course-source-badge-custom {
   background: var(--color-primary-soft);
-  color: var(--color-primary-hover);
+  color: oklch(45% 0.12 55);
 }
 
 /* Custom Course Card and Glow Dot Styles (Task 4 & 5) */
