@@ -174,7 +174,7 @@ type TeacherPageState = 'empty' | 'loading' | 'editor' | 'error';
 ### 6.1 数据桥接与合并算法
 学生端 `BranchPage.tsx` 加载时，将尝试读取 `localStorage` 中的教师人培数据并与 API 原始数据合并，算法精确规则如下：
 1. **数据读取**：从 `localStorage.getItem('teacher_cultivation_program')` 获取课程列表 `presetCourses: BranchCourseNode[]`。
-2. **数据迭代与去重**：对于每一门预设课程，根据其 `grade_id`（由 `time_arrangement.semester_scope` 映射至 `year_1` 到 `year_4`）匹配对应的 `BranchYear`。
+2. **数据迭代与去重**：对于每一门预设课程，根据其 `time_arrangement.semester_scope`（如 "1" 或 "2" 映射至 `year_1`，"3" 或 "4" 映射至 `year_2`，"5" 或 "6" 映射至 `year_3`，"7" 或 "8" 映射至 `year_4`）匹配对应的 `BranchYear`；`BranchCourseNode` 中不新增 `grade_id` 字段。
 3. **ID 冲突处理**：
    - 若该预设课程的 `course_node_id` 在 API 返回的该年级 `courses` 数组中**已存在**，以 **API 返回数据优先**，但会将本地 `localStorage` 中专有的课程大纲字段（如 `key_points`, `difficult_points`, `acceptance_criteria`）合并补全到 API 课程对象中。
    - 若**不存在**，则将该预设课程追加到该年级的 `courses` 数组末尾。
