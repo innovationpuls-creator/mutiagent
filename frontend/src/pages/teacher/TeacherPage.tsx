@@ -746,7 +746,7 @@ export function TeacherPage() {
                 className="teacher-dropdown-item teacher-dropdown-item-logout"
                 onClick={handleLogout}
               >
-                <LogOut size={16} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
+                <LogOut size={16} style={{ marginRight: 'var(--space-8)', display: 'inline-block', verticalAlign: 'middle' }} />
                 <span style={{ verticalAlign: 'middle' }}>退出登录</span>
               </button>
             </div>

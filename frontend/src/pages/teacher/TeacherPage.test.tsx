@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BranchCourseNode } from '../../types/branch';
 import { TeacherPage } from './TeacherPage';
 
+const logoutMock = vi.fn();
 vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({
     token: 'test-token',
@@ -19,9 +20,18 @@ vi.mock('../../contexts/AuthContext', () => ({
       last_login_at: null,
     },
     login: vi.fn(),
-    logout: vi.fn(),
+    logout: logoutMock,
   }),
 }));
+
+const navigateMock = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => navigateMock,
+  };
+});
 
 vi.mock('framer-motion', async () => {
   const actual = await vi.importActual<typeof import('framer-motion')>('framer-motion');
@@ -306,5 +316,89 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
     expect(confirmSpy).toHaveBeenCalled();
     expect(screen.getByText('拖拽或点击上传培养方案文档')).toBeTruthy();
     expect(localStorage.getItem('teacher_cultivation_program')).toBeNull();
+  });
+
+  it('allows tab switching between Editor and Graph when courses exist', async () => {
+    const mockSavedCourses = [
+      {
+        course_node_id: 'math_1',
+        course_or_chapter_theme: '高等数学 I',
+        status: 'locked',
+        has_outline: false,
+        is_custom: false,
+      },
+    ];
+    store['teacher_cultivation_program'] = JSON.stringify(mockSavedCourses);
+
+    render(<TeacherPage />);
+
+    // Check that we are initially on the editor tab
+    expect(screen.getByText('培养方案大纲对齐')).toBeTruthy();
+
+    // Click on the graph tab
+    const graphTab = screen.getByRole('button', { name: '方案关系图谱' });
+    await act(async () => {
+      fireEvent.click(graphTab);
+    });
+
+    // Verify editor content is replaced by graph view
+    expect(screen.queryByText('培养方案大纲对齐')).toBeNull();
+    expect(screen.getByRole('heading', { name: '方案关系图谱' })).toBeTruthy();
+
+    // Click back to editor tab
+    const editorTab = screen.getByRole('button', { name: '大纲对齐编辑' });
+    await act(async () => {
+      fireEvent.click(editorTab);
+    });
+
+    expect(screen.getByText('培养方案大纲对齐')).toBeTruthy();
+  });
+
+  it('toggles user dropdown, logs out user, and closes dropdown on click outside', async () => {
+    const mockSavedCourses = [
+      {
+        course_node_id: 'math_1',
+        course_or_chapter_theme: '高等数学 I',
+        status: 'locked',
+        has_outline: false,
+        is_custom: false,
+      },
+    ];
+    store['teacher_cultivation_program'] = JSON.stringify(mockSavedCourses);
+
+    render(<TeacherPage />);
+
+    // Select the avatar button (displays first character of username '测试教师' which is '测')
+    const avatarBtn = screen.getByRole('button', { name: '测' });
+    expect(screen.queryByText('退出登录')).toBeNull();
+
+    // Open dropdown
+    await act(async () => {
+      fireEvent.click(avatarBtn);
+    });
+
+    expect(screen.getByText('测试教师')).toBeTruthy();
+    expect(screen.getByText('teacher@example.com')).toBeTruthy();
+    expect(screen.getByText('退出登录')).toBeTruthy();
+
+    // Close dropdown by clicking outside
+    await act(async () => {
+      fireEvent.mouseDown(document.body);
+    });
+    expect(screen.queryByText('退出登录')).toBeNull();
+
+    // Open dropdown again
+    await act(async () => {
+      fireEvent.click(avatarBtn);
+    });
+
+    // Click logout button
+    const logoutBtn = screen.getByRole('button', { name: /退出登录/ });
+    await act(async () => {
+      fireEvent.click(logoutBtn);
+    });
+
+    expect(logoutMock).toHaveBeenCalled();
+    expect(navigateMock).toHaveBeenCalledWith('/login');
   });
 });
