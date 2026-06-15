@@ -191,8 +191,8 @@
 - Modify: `frontend/src/pages/teacher/TeacherPage.tsx`
 - Modify: `frontend/src/pages/teacher/teacher.css`
 
-- [ ] **Step 1: 定义 Mock 课程数据生成器**
-  在 `TeacherPage.tsx` 中编写辅助生成人培课程的静态数据，以便上传文件后展示树表：
+- [ ] **Step 1: 定义完整 8 门必修课程大纲 Mock 数据生成器**
+  在 `TeacherPage.tsx` 中编写辅助生成大一至大四（学期 1 到 8）完整人培课程的静态数据：
   ```typescript
   const MOCK_TEACHER_COURSES: BranchCourseNode[] = [
     {
@@ -217,7 +217,19 @@
       time_arrangement: { semester_scope: '1', duration: '48学时/3学分' },
       key_points: ['数据类型', '条件与循环', '函数与模块'],
       difficult_points: ['递归函数调用', '文件异常处理'],
-      acceptance_criteria: ['独立编写期末贪吃蛇大作业', '实验报告合格'],
+      acceptance_criteria: ['独立编写期末大作业', '实验报告合格'],
+    },
+    {
+      course_node_id: 'algebra_1',
+      course_or_chapter_theme: '线性代数',
+      course_goal: '掌握矩阵论、行列式与线性空间变换',
+      status: 'locked',
+      has_outline: false,
+      is_custom: false,
+      time_arrangement: { semester_scope: '2', duration: '48学时/3学分' },
+      key_points: ['行列式计算', '矩阵特征值', '线性方程组通解'],
+      difficult_points: ['二次型正定性证明', '正交变换矩阵'],
+      acceptance_criteria: ['通过期末统一闭卷笔试'],
     },
     {
       course_node_id: 'ds_1',
@@ -231,6 +243,55 @@
       key_points: ['链表与栈', '二叉树与哈夫曼编码', '图的深度优先遍历'],
       difficult_points: ['AVL树旋转', 'Dijkstra 最短路径算法'],
       acceptance_criteria: ['通过在线 OJ 测试', '编写课程大作业'],
+    },
+    {
+      course_node_id: 'comp_org_1',
+      course_or_chapter_theme: '计算机组成原理',
+      course_goal: '了解微型计算机内部硬件架构与运算器、控制器基本工作流程',
+      status: 'locked',
+      has_outline: false,
+      is_custom: false,
+      time_arrangement: { semester_scope: '4', duration: '64学时/4学分' },
+      key_points: ['补码加减运算', 'Cache 命中机制', 'CPU 指令周期寻址'],
+      difficult_points: ['微程序控制器微指令设计', '流水线冒险规避'],
+      acceptance_criteria: ['期末设计 CPU 微控制器实验通过'],
+    },
+    {
+      course_node_id: 'se_1',
+      course_or_chapter_theme: '软件工程',
+      course_goal: '掌握传统与敏捷项目管理研发流程与 UML 统一建模语言',
+      status: 'locked',
+      has_outline: false,
+      is_custom: false,
+      time_arrangement: { semester_scope: '5', duration: '48学时/3学分' },
+      key_points: ['需求工程规约', '软件测试策略', '敏捷 Sprint 迭代规划'],
+      difficult_points: ['用例图与时序图设计', '设计模式实战应用'],
+      acceptance_criteria: ['按小组编写并答辩完整软件工程项目文档'],
+    },
+    {
+      course_node_id: 'os_1',
+      course_or_chapter_theme: '操作系统',
+      course_goal: '理解进程调度、死锁避免、虚拟内存页替换以及文件系统实现',
+      status: 'locked',
+      has_outline: false,
+      is_custom: false,
+      prerequisite_ids: ['ds_1'],
+      time_arrangement: { semester_scope: '6', duration: '64学时/4学分' },
+      key_points: ['多线程同步信号量', '银行家算法', '虚拟内存页表置换'],
+      difficult_points: ['生产者消费者PV操作实现', '磁盘调度与索引节点'],
+      acceptance_criteria: ['完成进程调度模拟器代码验收'],
+    },
+    {
+      course_node_id: 'grad_intern_1',
+      course_or_chapter_theme: '毕业实习',
+      course_goal: '进入企业进行软件研发工程实习，完成实习周记与总结报告',
+      status: 'locked',
+      has_outline: false,
+      is_custom: false,
+      time_arrangement: { semester_scope: '8', duration: '128学时/8学分' },
+      key_points: ['行业研发体系认知', '团队协同开发', '生产环境部署规范'],
+      difficult_points: ['真实生产环境 Bug 线上排查与处理'],
+      acceptance_criteria: ['提交企业盖章实习证明及 10 篇实习周记'],
     },
   ];
   ```
@@ -246,17 +307,17 @@
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   ```
 
-- [ ] **Step 3: 编写 UploadZone 与 Loading 动画组件**
+- [ ] **Step 3: 编写 UploadZone 与 Loading 动画**
   - **UploadZone 逻辑**：仅接收 `.pdf`, `.docx`, `.doc`, `.txt`, `.png`, `.jpg`, `.jpeg` 且大小 `<= 20MB`。
   - **BreathingLoader 动效**：使用 Framer Motion 的 `animate` 实现低频缩放，使用 CSS 动画实现光晕渐变循环，匹配 `var(--ease-breathe)` 与 `var(--duration-breathe)`。
   - 模拟识别定时器（3000ms）完成后，调用 `setCourses(MOCK_TEACHER_COURSES)` 切换至 `editor`。
 
 - [ ] **Step 4: 编写 TreeTable (左表) 与 DetailDrawer (右滑抽屉) 组件**
   - **TreeTable**：按大一到大四（学期 1 到 8）折叠渲染行。
-  - **DetailDrawer**：使用 `AnimatePresence` 挂载，滑动使用 `transition={motionTokens.lazy}`，即 `{ duration: 0.42, ease: [0.33, 1, 0.68, 1] }`，避免 spring 晃动。抽屉中各字段（课程名、学时、课程目标等）绑定 `onChange` 联动更新本地 `courses` 状态。
+  - **DetailDrawer**：使用 `AnimatePresence` 挂载，滑动使用 `transition={motionTokens.lazy}`，即 `{ duration: 0.42, ease: [0.33, 1, 0.68, 1] }`，避免 spring 导致晃动过冲。抽屉中各字段（课程名、学时、课程目标等）绑定 `onChange` 逻辑更新本地 `courses` 状态。
   - **保存**：点击“保存并发布”时执行：
     ```typescript
-    localStorage.setItem('teacher_curriculum_program', JSON.stringify(courses));
+    localStorage.setItem('teacher_cultivation_program', JSON.stringify(courses));
     setToastMessage('人培方案已成功发布并对齐！');
     ```
 
@@ -277,7 +338,7 @@
 - Create: `frontend/src/pages/teacher/TeacherPage.test.tsx`
 
 - [ ] **Step 1: 编写 TeacherPage 测试套件**
-  在 `frontend/src/pages/teacher/TeacherPage.test.tsx` 中创建测试验证文件校验、页面转场和本地数据持久化：
+  在 `frontend/src/pages/teacher/TeacherPage.test.tsx` 中创建测试验证文件校验、页面转场和本地数据持久化（保存密钥为 `teacher_cultivation_program`）：
   ```typescript
   import { describe, it, expect, vi, beforeEach } from 'vitest';
   import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -336,15 +397,14 @@
       const courseRow = await screen.findByText('高等数学 I');
       fireEvent.click(courseRow);
 
-      // 验证抽屉出现并可修改字段
       const goalInput = screen.getByLabelText('课程目标');
       fireEvent.change(goalInput, { target: { value: '全新的微积分课程目标' } });
 
       const saveButton = screen.getByText('保存并发布');
       fireEvent.click(saveButton);
 
-      // 验证 localStorage 已写入更新数据
-      const savedData = JSON.parse(localStorage.getItem('teacher_curriculum_program') || '[]');
+      // 验证已使用正确的键：teacher_cultivation_program
+      const savedData = JSON.parse(localStorage.getItem('teacher_cultivation_program') || '[]');
       expect(savedData[0].course_goal).toBe('全新的微积分课程目标');
     });
   });
@@ -369,10 +429,9 @@
 - Modify: `frontend/src/pages/branch/branch.css`
 
 - [ ] **Step 1: 实现 localStorage 数据融合规则**
-  在 `BranchPage.tsx` 的 `loadOverview` / `fetchBranchOverview` 调用后，加入本地人培大纲的合并逻辑：
+  在 `BranchPage.tsx` 的 `loadOverview` / `fetchBranchOverview` 调用后，加入本地人培大纲的合并逻辑，合并密钥统一为 `teacher_cultivation_program`：
   ```typescript
-  // 假定 fetchBranchOverview 已取得原始 overview 数据
-  const storedProgram = localStorage.getItem('teacher_curriculum_program');
+  const storedProgram = localStorage.getItem('teacher_cultivation_program');
   if (storedProgram) {
     const presetCourses: BranchCourseNode[] = JSON.parse(storedProgram);
     presetCourses.forEach((preset) => {
@@ -388,7 +447,6 @@
         // 2. ID 去重与元数据合并规则
         const existIdx = year.courses.findIndex((c) => c.course_node_id === preset.course_node_id);
         if (existIdx >= 0) {
-          // 已经存在，仅补充大纲专属元数据以防 API 覆盖
           year.courses[existIdx] = {
             ...preset,
             ...year.courses[existIdx], // API 返回数据字段优先
@@ -397,10 +455,8 @@
             acceptance_criteria: preset.acceptance_criteria,
           };
         } else {
-          // 不存在，追加至末尾
           year.courses.push(preset);
         }
-        // 3. 补正可用状态
         year.has_courses = true;
         year.is_clickable = true;
       }
@@ -411,16 +467,13 @@
 - [ ] **Step 2: 改造状态联动与解锁机制**
   在 `BranchPage.tsx` 渲染每个节点卡片时，更新解锁判断条件：
   ```typescript
-  // 在 pickStageCourses / 渲染节点时计算 status
   function resolveUnlockedStatus(course: BranchCourseNode, allCourses: BranchCourseNode[]): BranchCourseStatus {
-    // 自身数据源已完成，直接完成
     if (course.status === 'completed') return 'completed';
     
-    // 如果是自定义分支课程且有父节点
     if (course.is_custom && course.parent_preset_id) {
       const parent = allCourses.find((c) => c.course_node_id === course.parent_preset_id);
       if (parent && parent.status === 'completed' && course.status === 'locked') {
-        // 父节点已完成，且原始状态为 locked，在渲染态提升为 current
+        // 父节点已完成，且原始状态为 locked，在渲染态提升为 current，子节点不能自动升级为 completed
         return 'current';
       }
     }
@@ -428,10 +481,25 @@
   }
   ```
 
-- [ ] **Step 3: 自定义分叉课程卡片视觉微调 (CSS)**
-  在 `branch.css` 中增加对自定义课程节点的视觉差异化表现：
-  - 自定义卡片样式：背景配置为浅珊瑚色 `oklch(91% 0.05 55)`，外框使用 `2px dashed oklch(76% 0.12 55)`，阴影采用 `var(--shadow-sm)`。
-  - 右上角加装发光粒子点：`width: 8px; height: 8px; border-radius: 50%; background: var(--color-primary); box-shadow: var(--shadow-glow);`（配合呼吸动画慢速收缩）。
+- [ ] **Step 3: 自定义分叉课程卡片与发光粒子视觉微调 (CSS)**
+  在 `branch.css` 中增加对自定义课程节点的视觉差异化表现，使用 `--space-*` 替换任意硬编码尺寸：
+  ```css
+  /* 移除硬编码 size，改为使用 --space-8 */
+  .branch-blob-card-custom {
+    background: var(--color-primary-soft);
+    border: 2px dashed var(--color-primary);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+  }
+  
+  .branch-custom-glow-dot {
+    inline-size: var(--space-8);
+    block-size: var(--space-8);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    box-shadow: var(--shadow-glow);
+  }
+  ```
 
 - [ ] **Step 4: 提交更改**
   ```bash
@@ -449,22 +517,18 @@
 - [ ] **Step 1: 点击课程渲染 SVG 拓扑依赖高光连线**
   修改 `PathSession` 中的 SVG 渲染段。当存在选中课程节点 `focusedCourseId` 时，寻找对应课程的前置或定制关系：
   ```typescript
-  // 计算需要渲染连线的起始与终点位置坐标
   const selectedCourse = courses.find((c) => c.course_node_id === focusedCourseId);
   const connectionPaths: string[] = [];
   if (selectedCourse) {
-    // 渲染前置课程 (prerequisite_ids) 到当前课程的高光连线
     if (selectedCourse.prerequisite_ids) {
       selectedCourse.prerequisite_ids.forEach((preId) => {
         const preNode = courses.find((c) => c.course_node_id === preId);
         if (preNode) {
-          // 根据 left/center/right 节点坐标构建 Bezier 路径数据并压入数组
           const pathD = generateBezierConnectionPath(preNode, selectedCourse);
           connectionPaths.push(pathD);
         }
       });
     }
-    // 渲染主干父节点 (parent_preset_id) 到自主分支节点的高光连线
     if (selectedCourse.is_custom && selectedCourse.parent_preset_id) {
       const parentNode = courses.find((c) => c.course_node_id === selectedCourse.parent_preset_id);
       if (parentNode) {
@@ -486,57 +550,75 @@
 
 ---
 
-### Task 6: 学生端 Branch 融合与高光测试
+### Task 6: 学生端 Branch 融合与高光集成测试
 
 **Files:**
 - Modify: `frontend/src/pages/branch/BranchPage.test.tsx`
 
-- [ ] **Step 1: 添加 localStorage 合并与自主节点渲染测试**
-  在 `frontend/src/pages/branch/BranchPage.test.tsx` 中编写测试用例，挂载模拟 `localStorage` 人培数据：
+- [ ] **Step 1: 用集成测试验证 localStorage 合并与自主节点渲染**
+  修改现有 `frontend/src/pages/branch/BranchPage.test.tsx` 文件，通过测试主组件 `BranchPage` 的加载来验证本地课程与 API 的归一化整合。测试数据必须包含 `course_goal` 和 `has_outline` 等必填字段，以防止编译和运行时类型错误：
   ```typescript
-  it('merges preset program from localStorage and overrides has_courses', async () => {
-    const mockPreset = [
-      {
-        course_node_id: 'custom_math_99',
-        course_or_chapter_theme: '高等数学 IX',
-        course_goal: 'Test custom goal',
-        status: 'locked',
-        has_outline: false,
-        time_arrangement: { semester_scope: '1', duration: '32学时' },
-      }
-    ];
-    localStorage.setItem('teacher_curriculum_program', JSON.stringify(mockPreset));
-    
-    render(<BranchPage />);
-    
-    // 验证合并后的课程能够被成功渲染
-    await waitFor(() => {
-      expect(screen.getByText('高等数学 IX')).toBeInTheDocument();
+  describe('BranchPage Integration with Local Cultivation Program', () => {
+    beforeEach(() => {
+      localStorage.clear();
     });
-  });
 
-  it('renders custom nodes with specific dotted classnames', async () => {
-    // 载入包含 is_custom 的模拟数据
-    const mockCourses = [
-      {
-        course_node_id: 'c1',
-        course_or_chapter_theme: '普通课程',
-        status: 'completed',
-        is_custom: false,
-      },
-      {
-        course_node_id: 'c2',
-        course_or_chapter_theme: '自主生成课程',
-        status: 'locked',
-        is_custom: true,
-        parent_preset_id: 'c1',
-      }
-    ];
-    // 通过测试挂载点验证 custom 卡片渲染
-    render(<PathSession gradeName="大一" courses={mockCourses} currentCourseId="c1" onOpenCourse={() => {}} />);
-    
-    const customCard = screen.getByText('自主生成课程').closest('button');
-    expect(customCard).toHaveClass('branch-blob-card-custom'); // 自定义节点特有 class
+    it('merges preset program from localStorage and overrides has_courses', async () => {
+      const mockPreset: BranchCourseNode[] = [
+        {
+          course_node_id: 'custom_math_99',
+          course_or_chapter_theme: '高等数学 IX',
+          course_goal: '高等数学 IX 课程目标，掌握数学分析基础',
+          status: 'locked',
+          has_outline: false,
+          time_arrangement: { semester_scope: '1', duration: '32学时' },
+        }
+      ];
+      // 使用一致的密钥保存
+      localStorage.setItem('teacher_cultivation_program', JSON.stringify(mockPreset));
+      
+      render(<BranchPage />);
+      
+      // 验证大纲合并后，大一课程能够渲染在列表中
+      await waitFor(() => {
+        expect(screen.getByText('高等数学 IX')).toBeInTheDocument();
+      });
+    });
+
+    it('integrates custom nodes with proper unlock status and classes', async () => {
+      const mockCustomPreset: BranchCourseNode[] = [
+        {
+          course_node_id: 'preset_ds_1',
+          course_or_chapter_theme: '普通课程',
+          course_goal: '学习结构与算法',
+          status: 'completed',
+          has_outline: true,
+          is_custom: false,
+          time_arrangement: { semester_scope: '3', duration: '64学时' },
+        },
+        {
+          course_node_id: 'custom_graph_1',
+          course_or_chapter_theme: '自主生成图论课程',
+          course_goal: '深入掌握网络与图的遍历',
+          status: 'locked',
+          has_outline: false,
+          is_custom: true,
+          parent_preset_id: 'preset_ds_1',
+          time_arrangement: { semester_scope: '3', duration: '32学时' },
+        }
+      ];
+      localStorage.setItem('teacher_cultivation_program', JSON.stringify(mockCustomPreset));
+      
+      render(<BranchPage />);
+      
+      // 验证合并了自定义课程并触发解锁渲染（由于父级 preset_ds_1 为 completed，渲染后子级状态标记为 current 进行中）
+      await waitFor(() => {
+        const customCard = screen.getByText('自主生成图论课程').closest('button');
+        expect(customCard).toBeInTheDocument();
+        // 验证渲染后的文本标签包含“进行中”状态（即锁定的 custom 节点被解锁为 current 进行中状态）
+        expect(screen.getByText('进行中')).toBeInTheDocument();
+      });
+    });
   });
   ```
 
