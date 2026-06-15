@@ -174,7 +174,7 @@
   ```
 
 - [ ] **Step 4: 运行 Vitest 测试验证 API 解析层**
-  Run: `npx vitest run src/api/branch.test.ts`
+  Run: `cd frontend && npx vitest run src/api/branch.test.ts`
   Expected: All 3 tests passed.
 
 - [ ] **Step 5: 提交更改**
@@ -411,7 +411,7 @@
   ```
 
 - [ ] **Step 2: 运行 TeacherPage 交互测试**
-  Run: `npx vitest run src/pages/teacher/TeacherPage.test.tsx`
+  Run: `cd frontend && npx vitest run src/pages/teacher/TeacherPage.test.tsx`
   Expected: PASS
 
 - [ ] **Step 3: 提交更改**
@@ -482,9 +482,8 @@
   ```
 
 - [ ] **Step 3: 自定义分叉课程卡片与发光粒子视觉微调 (CSS)**
-  在 `branch.css` 中增加对自定义课程节点的视觉差异化表现，使用 `--space-*` 替换任意硬编码尺寸：
+  在 `branch.css` 中增加对自定义课程节点的视觉差异化表现，使用 `--space-8` 替换任意硬编码尺寸：
   ```css
-  /* 移除硬编码 size，改为使用 --space-8 */
   .branch-blob-card-custom {
     background: var(--color-primary-soft);
     border: 2px dashed var(--color-primary);
@@ -555,14 +554,53 @@
 **Files:**
 - Modify: `frontend/src/pages/branch/BranchPage.test.tsx`
 
-- [ ] **Step 1: 用集成测试验证 localStorage 合并与自主节点渲染**
-  修改现有 `frontend/src/pages/branch/BranchPage.test.tsx` 文件，通过测试主组件 `BranchPage` 的加载来验证本地课程与 API 的归一化整合。测试数据必须包含 `course_goal` 和 `has_outline` 等必填字段，以防止编译和运行时类型错误：
+- [ ] **Step 1: 编写带人培 LocalStorage 劫持的集成测试**
+  由于原测试 `renderBranchPage` 会对全局 `localStorage` 进行 Stub 挂载且默认过滤屏蔽非身份认证 key，我们必须在测试文件中新增一个专门用于注入人培大纲的测试辅助渲染器 `renderBranchPageWithCultivation(mockProgram)`。
+  测试数据必须包含 `course_goal` 和 `has_outline` 等必填字段，以防止 TypeScript 类型检查和运行时失败。
+  在 `frontend/src/pages/branch/BranchPage.test.tsx` 顶部或辅助函数区新增：
   ```typescript
-  describe('BranchPage Integration with Local Cultivation Program', () => {
-    beforeEach(() => {
-      localStorage.clear();
+  function renderBranchPageWithCultivation(mockPreset: BranchCourseNode[]) {
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn((key: string) => {
+        if (key === 'teacher_cultivation_program') {
+          return JSON.stringify(mockPreset);
+        }
+        if (key !== 'mutiagent-auth') {
+          return null;
+        }
+        return JSON.stringify({
+          token: 'token-1',
+          user: {
+            uid: 'user-1',
+            username: '测试用户',
+            identifier: 'user@example.com',
+            provider: 'password',
+            is_active: true,
+            created_at: '2026-06-02T00:00:00Z',
+            last_login_at: null,
+          },
+        });
+      }),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
     });
 
+    return render(
+      <AuthProvider>
+        <AiWidgetProvider>
+          <MemoryRouter>
+            <BranchPage />
+          </MemoryRouter>
+        </AiWidgetProvider>
+      </AuthProvider>,
+    );
+  }
+  ```
+
+- [ ] **Step 2: 编写集成测试用例**
+  在 `frontend/src/pages/branch/BranchPage.test.tsx` 的 `describe('BranchPage', ...)` 块内增加两个具体用例，验证人培数据的合并算法及自主生成卡片的解锁样式：
+  ```typescript
+  describe('BranchPage Integration with Local Cultivation Program', () => {
     it('merges preset program from localStorage and overrides has_courses', async () => {
       const mockPreset: BranchCourseNode[] = [
         {
@@ -574,12 +612,10 @@
           time_arrangement: { semester_scope: '1', duration: '32学时' },
         }
       ];
-      // 使用一致的密钥保存
-      localStorage.setItem('teacher_cultivation_program', JSON.stringify(mockPreset));
       
-      render(<BranchPage />);
+      // 使用带注入的测试辅助函数挂载
+      renderBranchPageWithCultivation(mockPreset);
       
-      // 验证大纲合并后，大一课程能够渲染在列表中
       await waitFor(() => {
         expect(screen.getByText('高等数学 IX')).toBeInTheDocument();
       });
@@ -607,26 +643,24 @@
           time_arrangement: { semester_scope: '3', duration: '32学时' },
         }
       ];
-      localStorage.setItem('teacher_cultivation_program', JSON.stringify(mockCustomPreset));
       
-      render(<BranchPage />);
+      renderBranchPageWithCultivation(mockCustomPreset);
       
-      // 验证合并了自定义课程并触发解锁渲染（由于父级 preset_ds_1 为 completed，渲染后子级状态标记为 current 进行中）
       await waitFor(() => {
         const customCard = screen.getByText('自主生成图论课程').closest('button');
         expect(customCard).toBeInTheDocument();
-        // 验证渲染后的文本标签包含“进行中”状态（即锁定的 custom 节点被解锁为 current 进行中状态）
+        // 验证由于 parent 完成，locked 状态的侧枝在渲染态被提升为 current 进行中
         expect(screen.getByText('进行中')).toBeInTheDocument();
       });
     });
   });
   ```
 
-- [ ] **Step 2: 运行全部繁枝测试验证实现**
-  Run: `npm run test`
+- [ ] **Step 3: 运行全部繁枝测试验证实现**
+  Run: `cd frontend && npm run test`
   Expected: PASS
 
-- [ ] **Step 3: 提交更改**
+- [ ] **Step 4: 提交更改**
   ```bash
   git add frontend/src/pages/branch/BranchPage.test.tsx
   git commit -m "test: verify BranchPage data merging, custom card rendering, and connections"
