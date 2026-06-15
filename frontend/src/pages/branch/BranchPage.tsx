@@ -75,7 +75,7 @@ function iconLabel(status: BranchCourseNode['status']): string {
 }
 
 function courseSourceLabel(course: BranchCourseNode): string {
-  return course.is_custom ? '人培课程' : '自选课程';
+  return course.is_custom ? '自选课程' : '人培课程';
 }
 
 function CourseSourceBadge({ course }: { course: BranchCourseNode }) {
@@ -162,7 +162,7 @@ function stageLabel(courseCount: number): string {
 }
 
 function railAriaLabel(gradeName: string, index: number, course: BranchCourseNode): string {
-  const source = course.is_custom ? '人培课程' : '自选课程';
+  const source = courseSourceLabel(course);
   return `${gradeName}第 ${index + 1} 门课程（${source}）：${course.course_or_chapter_theme}，${statusLabel(course.status)}`;
 }
 
