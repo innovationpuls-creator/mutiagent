@@ -338,7 +338,7 @@
 - Create: `frontend/src/pages/teacher/TeacherPage.test.tsx`
 
 - [ ] **Step 1: 编写 TeacherPage 测试套件**
-  在 `frontend/src/pages/teacher/TeacherPage.test.tsx` 中创建测试验证文件校验、页面转场和本地数据持久化（保存密钥为 `teacher_cultivation_program`）：
+  在 `frontend/src/pages/teacher/TeacherPage.test.tsx` 中创建测试验证文件校验、页面转场 and 本地数据持久化（保存密钥为 `teacher_cultivation_program`）：
   ```typescript
   import { describe, it, expect, vi, beforeEach } from 'vitest';
   import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -515,18 +515,19 @@
 **Files:**
 - Modify: `frontend/src/pages/branch/BranchPage.tsx`
 
-- [ ] **Step 1: 点击课程渲染 SVG 拓扑依赖高光连线**
-  修改 `PathSession` 中的 SVG 渲染段。当存在选中课程节点 `focusedCourseId` 时，寻找对应课程的前置或定制关系：
+- [ ] **Step 1: 点击课程渲染 SVG 拓扑依赖高光连线并挂载选择器**
+  修改 `PathSession` 中的 SVG 渲染段。当存在选中课程节点 `focusedCourseId` 时，寻找其对应的依赖连线。
+  为了在集成测试中准确对其进行断言，高光连线 `path` 上必须渲染一个特定的测试选择器属性 `data-testid="branch-highlight-path"`：
   ```typescript
   const selectedCourse = courses.find((c) => c.course_node_id === focusedCourseId);
-  const connectionPaths: string[] = [];
+  const connectionPaths: { pathD: string; isHighlight: boolean }[] = [];
   if (selectedCourse) {
     if (selectedCourse.prerequisite_ids) {
       selectedCourse.prerequisite_ids.forEach((preId) => {
         const preNode = courses.find((c) => c.course_node_id === preId);
         if (preNode) {
           const pathD = generateBezierConnectionPath(preNode, selectedCourse);
-          connectionPaths.push(pathD);
+          connectionPaths.push({ pathD, isHighlight: true });
         }
       });
     }
@@ -534,19 +535,32 @@
       const parentNode = courses.find((c) => c.course_node_id === selectedCourse.parent_preset_id);
       if (parentNode) {
         const pathD = generateBezierConnectionPath(parentNode, selectedCourse);
-        connectionPaths.push(pathD);
+        connectionPaths.push({ pathD, isHighlight: true });
       }
     }
   }
   ```
 
 - [ ] **Step 2: 渲染高光路径 SVG 元素**
-  在 SVG 幕布中通过 `connectionPaths.map` 输出高光路径。描边使用主高亮色 `oklch(76% 0.12 55 / 0.85)`，宽度为 `3px`，过渡平滑。
+  在 SVG 幕布中输出曲线，并为其绑定 `data-testid`：
+  ```tsx
+  {connectionPaths.map(({ pathD, isHighlight }) => (
+    <path
+      key={pathD}
+      d={pathD}
+      fill="none"
+      stroke="oklch(76% 0.12 55 / 0.85)"
+      strokeWidth={3}
+      strokeLinecap="round"
+      data-testid={isHighlight ? "branch-highlight-path" : undefined}
+    />
+  ))}
+  ```
 
 - [ ] **Step 3: 提交更改**
   ```bash
   git add frontend/src/pages/branch/BranchPage.tsx
-  git commit -m "feat: implement SVG Bezier highlighting for prerequisites and custom branch connections"
+  git commit -m "feat: implement SVG Bezier highlighting with data-testid selectors"
   ```
 
 ---
@@ -599,7 +613,7 @@
   ```
 
 - [ ] **Step 2: 编写集成测试用例并集成 API Mock 断言**
-  在 `frontend/src/pages/branch/BranchPage.test.tsx` 内添加测试。新测试中必须使用 `fetchProfileDashboardMock.mockResolvedValue` 和 `fetchBranchOverviewMock.mockResolvedValue` 模拟必要的 API 响应，确保 BranchPage 能够成功解析年级切换并渲染：
+  在 `frontend/src/pages/branch/BranchPage.test.tsx` 内添加测试。新测试中必须使用 `fetchProfileDashboardMock.mockResolvedValue` 和 `fetchBranchOverviewMock.mockResolvedValue` 模拟必要的 API 响应，并且 **`currentGrade` 的 mock 必须完全符合现有契约的中文值**（如 `'大一'`、`'大二'` 等，不可写成英文格式 `grade_1`，以防映射 fallback）：
   ```typescript
   describe('BranchPage Integration with Local Cultivation Program', () => {
     it('merges preset program from localStorage and overrides has_courses', async () => {
@@ -614,10 +628,10 @@
         }
       ];
 
-      // 设置接口的 Mock 返回以确保页面能够正确装载大一
+      // 设置接口的 Mock 返回，currentGrade 严格为中文 '大一'
       fetchProfileDashboardMock.mockResolvedValue({
         profile: {
-          currentGrade: 'grade_1',
+          currentGrade: '大一',
         },
       });
       fetchBranchOverviewMock.mockResolvedValue({
@@ -692,9 +706,10 @@
         }
       ];
 
+      // 设置接口的 Mock 返回，currentGrade 严格为中文 '大二'
       fetchProfileDashboardMock.mockResolvedValue({
         profile: {
-          currentGrade: 'grade_2', // 切换到大二
+          currentGrade: '大二',
         },
       });
       fetchBranchOverviewMock.mockResolvedValue({
@@ -745,6 +760,86 @@
         const customCard = screen.getByText('自主生成图论课程').closest('button');
         expect(customCard).toBeInTheDocument();
         expect(screen.getByText('进行中')).toBeInTheDocument();
+      });
+    });
+
+    it('renders highlight path with data-testid="branch-highlight-path" when node with prerequisites is clicked', async () => {
+      const mockPreset: BranchCourseNode[] = [
+        {
+          course_node_id: 'preset_math_1',
+          course_or_chapter_theme: '必修数学',
+          course_goal: '数学目标',
+          status: 'completed',
+          has_outline: true,
+          time_arrangement: { semester_scope: '1', duration: '32学时' },
+        },
+        {
+          course_node_id: 'preset_python_1',
+          course_or_chapter_theme: '编程入门',
+          course_goal: '编程目标',
+          status: 'locked',
+          has_outline: false,
+          prerequisite_ids: ['preset_math_1'],
+          time_arrangement: { semester_scope: '1', duration: '32学时' },
+        }
+      ];
+
+      fetchProfileDashboardMock.mockResolvedValue({
+        profile: {
+          currentGrade: '大一',
+        },
+      });
+      fetchBranchOverviewMock.mockResolvedValue({
+        years: {
+          year_1: {
+            grade_id: 'year_1',
+            grade_name: '大一',
+            has_courses: false,
+            has_outline_content: false,
+            is_clickable: false,
+            current_course_id: null,
+            courses: [],
+          },
+          year_2: {
+            grade_id: 'year_2',
+            grade_name: '大二',
+            has_courses: false,
+            has_outline_content: false,
+            is_clickable: false,
+            current_course_id: null,
+            courses: [],
+          },
+          year_3: {
+            grade_id: 'year_3',
+            grade_name: '大三',
+            has_courses: false,
+            has_outline_content: false,
+            is_clickable: false,
+            current_course_id: null,
+            courses: [],
+          },
+          year_4: {
+            grade_id: 'year_4',
+            grade_name: '大四',
+            has_courses: false,
+            has_outline_content: false,
+            is_clickable: false,
+            current_course_id: null,
+            courses: [],
+          },
+        },
+        updatedAt: null,
+      });
+
+      renderBranchPageWithCultivation(mockPreset);
+
+      // 找到目标节点（编程入门），点击以触发高亮
+      const pythonNode = await screen.findByText('编程入门');
+      fireEvent.click(pythonNode);
+
+      // 断言包含高亮选择器的 SVG 路径成功渲染
+      await waitFor(() => {
+        expect(screen.getByTestId('branch-highlight-path')).toBeInTheDocument();
       });
     });
   });
