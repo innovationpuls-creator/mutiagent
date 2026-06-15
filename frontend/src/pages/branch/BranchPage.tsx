@@ -9,6 +9,7 @@ import { fetchBranchOverview } from '../../api/branch';
 import { fetchProfileDashboard } from '../../api/profile';
 import { useAuth } from '../../contexts/AuthContext';
 import { profileYearIdFromCurrentGrade } from '../../lib/profileContract';
+import { getBoundTeacherProgramForStudent, TEACHER_PROGRAM_IMPORTED_EVENT } from '../../lib/teacherProgramShare';
 import type { BranchCourseNode, BranchOverview } from '../../types/branch';
 import { PathInitOverlay } from '../../components/onboarding/PathInitOverlay';
 import { LEARNING_PATH_UPDATED_EVENT } from '../../onboarding/learningPathFlow';
@@ -88,6 +89,64 @@ function CourseSourceBadge({ course }: { course: BranchCourseNode }) {
       {courseSourceLabel(course)}
     </span>
   );
+}
+
+function normalizeTeacherProgramCourses(rawCourses: unknown): BranchCourseNode[] {
+  if (!Array.isArray(rawCourses)) return [];
+  return rawCourses
+    .filter((course): course is BranchCourseNode => {
+      if (!course || typeof course !== 'object' || Array.isArray(course)) return false;
+      const node = course as Partial<BranchCourseNode>;
+      return typeof node.course_node_id === 'string'
+        && typeof node.course_or_chapter_theme === 'string'
+        && typeof node.course_goal === 'string'
+        && typeof node.status === 'string'
+        && typeof node.has_outline === 'boolean';
+    })
+    .map((course) => ({
+      ...course,
+      is_custom: true,
+    }));
+}
+
+function readLegacyTeacherProgramCourses(): BranchCourseNode[] {
+  const storedProgram = localStorage.getItem('teacher_cultivation_program');
+  if (!storedProgram) return [];
+
+  try {
+    return normalizeTeacherProgramCourses(JSON.parse(storedProgram));
+  } catch {
+    return [];
+  }
+}
+
+function mergeTeacherProgramCourses(overview: BranchOverview, presetCourses: BranchCourseNode[]) {
+  presetCourses.forEach((preset) => {
+    const sem = parseInt(preset.time_arrangement?.semester_scope || '1', 10);
+    let yearId: 'year_1' | 'year_2' | 'year_3' | 'year_4' = 'year_1';
+    if (sem >= 7) yearId = 'year_4';
+    else if (sem >= 5) yearId = 'year_3';
+    else if (sem >= 3) yearId = 'year_2';
+
+    const year = overview.years[yearId];
+    if (year) {
+      const existIdx = year.courses.findIndex((course) => course.course_node_id === preset.course_node_id);
+      if (existIdx >= 0) {
+        year.courses[existIdx] = {
+          ...preset,
+          ...year.courses[existIdx],
+          key_points: preset.key_points,
+          difficult_points: preset.difficult_points,
+          acceptance_criteria: preset.acceptance_criteria,
+          is_custom: true,
+        };
+      } else {
+        year.courses.push(preset);
+      }
+      year.has_courses = true;
+      year.is_clickable = true;
+    }
+  });
 }
 
 function defaultFocusCourseId(courses: BranchCourseNode[], currentCourseId: string | null): string | null {
@@ -768,7 +827,7 @@ export function BranchPage() {
   const reduceMotion = useReducedMotion();
   const navigate = useNavigate();
   const location = useLocation();
-  const { token, isAuthReady } = useAuth();
+  const { token, isAuthReady, user } = useAuth();
   const [overview, setOverview] = useState<BranchOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -802,45 +861,11 @@ export function BranchPage() {
           fetchProfileDashboard(token),
         ]);
 
-        const storedProgram = localStorage.getItem('teacher_cultivation_program');
-        if (storedProgram) {
-          try {
-            const parsedProgram: unknown = JSON.parse(storedProgram);
-            const presetCourses: BranchCourseNode[] = Array.isArray(parsedProgram)
-              ? parsedProgram.map((preset) => ({
-                ...(preset as BranchCourseNode),
-                is_custom: true,
-              }))
-              : [];
-            presetCourses.forEach((preset) => {
-              const sem = parseInt(preset.time_arrangement?.semester_scope || '1', 10);
-              let yearId: 'year_1' | 'year_2' | 'year_3' | 'year_4' = 'year_1';
-              if (sem >= 7) yearId = 'year_4';
-              else if (sem >= 5) yearId = 'year_3';
-              else if (sem >= 3) yearId = 'year_2';
-
-              const year = nextOverview.years[yearId];
-              if (year) {
-                const existIdx = year.courses.findIndex((c) => c.course_node_id === preset.course_node_id);
-                if (existIdx >= 0) {
-                  year.courses[existIdx] = {
-                    ...preset,
-                    ...year.courses[existIdx], // API fields override preset ones
-                    key_points: preset.key_points,
-                    difficult_points: preset.difficult_points,
-                    acceptance_criteria: preset.acceptance_criteria,
-                  };
-                } else {
-                  year.courses.push(preset);
-                }
-                year.has_courses = true;
-                year.is_clickable = true;
-              }
-            });
-          } catch (e) {
-            // ignore parsing errors
-          }
-        }
+        const boundTeacherProgram = user ? getBoundTeacherProgramForStudent(user.uid) : null;
+        const teacherProgramCourses = boundTeacherProgram
+          ? normalizeTeacherProgramCourses(boundTeacherProgram.record.courses)
+          : readLegacyTeacherProgramCourses();
+        mergeTeacherProgramCourses(nextOverview, teacherProgramCourses);
 
         if (!isMountedRef.current || options?.shouldIgnore?.()) {
           return;
@@ -868,7 +893,7 @@ export function BranchPage() {
           setLoading(false);
         }
       }
-  }, [isAuthReady, token]);
+  }, [isAuthReady, token, user]);
 
   useEffect(() => {
     let cancelled = false;
@@ -886,8 +911,10 @@ export function BranchPage() {
     };
 
     window.addEventListener(LEARNING_PATH_UPDATED_EVENT, handleLearningPathUpdated);
+    window.addEventListener(TEACHER_PROGRAM_IMPORTED_EVENT, handleLearningPathUpdated);
     return () => {
       window.removeEventListener(LEARNING_PATH_UPDATED_EVENT, handleLearningPathUpdated);
+      window.removeEventListener(TEACHER_PROGRAM_IMPORTED_EVENT, handleLearningPathUpdated);
     };
   }, [loadOverview]);
 

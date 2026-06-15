@@ -305,6 +305,14 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
     expect(updatedMath.course_or_chapter_theme).toBe('高等数学 I (修改版)');
     expect(updatedMath.course_goal).toBe('新的课程目标内容');
     expect(updatedMath.is_custom).toBe(true);
+
+    const shareRegistry = JSON.parse(store['teacher_cultivation_program_share_registry']);
+    const inviteCodes = Object.keys(shareRegistry);
+    expect(inviteCodes).toHaveLength(1);
+    expect(shareRegistry[inviteCodes[0]].teacherUid).toBe('teacher-1');
+    expect(shareRegistry[inviteCodes[0]].courses[0].is_custom).toBe(true);
+    expect(screen.getByText('教师口令')).toBeTruthy();
+    expect(screen.getByText(inviteCodes[0])).toBeTruthy();
   });
 
   it('allows reimporting to clear courses and return to empty state', async () => {

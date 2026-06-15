@@ -5,6 +5,7 @@ import { LogOut } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { BranchCourseNode } from '../../types/branch';
 import { OrganicCanvas, GraphNode, GraphEdge } from '../../components/graph/OrganicCanvas';
+import { buildTeacherProgramInviteCode, publishTeacherProgramShare } from '../../lib/teacherProgramShare';
 import './teacher.css';
 
 export type TeacherPageState = 'empty' | 'loading' | 'editor' | 'error';
@@ -610,6 +611,7 @@ export function TeacherPage() {
   const [activeTab, setActiveTab] = useState<'editor' | 'graph'>('editor');
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const inviteCode = user ? buildTeacherProgramInviteCode(user) : null;
 
   const graphData = useMemo(() => {
     const nodeStatusMap: Record<string, string> = {};
@@ -751,6 +753,9 @@ export function TeacherPage() {
     }));
     setCourses(publishedCourses);
     localStorage.setItem('teacher_cultivation_program', JSON.stringify(publishedCourses));
+    if (user) {
+      publishTeacherProgramShare(user, publishedCourses);
+    }
     setToastMessage('人培方案已成功发布并对齐！');
     setTimeout(() => {
       setToastMessage(null);
@@ -764,6 +769,15 @@ export function TeacherPage() {
       setActiveCourseId(null);
       setPageState('empty');
     }
+  };
+
+  const handleCopyInviteCode = () => {
+    if (!inviteCode) return;
+    void navigator.clipboard?.writeText(inviteCode);
+    setToastMessage('教师口令已复制');
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 1500);
   };
 
   const renderContent = () => {
@@ -821,6 +835,20 @@ export function TeacherPage() {
                 <h2>培养方案大纲对齐</h2>
                 <p>教师：{user?.username ?? '教师'} | 正在编辑已对齐的人培课程方案</p>
               </div>
+              {inviteCode ? (
+                <div className="teacher-invite-card" aria-label="教师口令">
+                  <span className="teacher-invite-label">教师口令</span>
+                  <span className="teacher-invite-code">{inviteCode}</span>
+                  <button
+                    type="button"
+                    className="teacher-invite-copy"
+                    onClick={handleCopyInviteCode}
+                    aria-label={`复制教师口令 ${inviteCode}`}
+                  >
+                    复制
+                  </button>
+                </div>
+              ) : null}
               <div className="header-actions">
                 <button type="button" className="btn btn-secondary" onClick={handleReimport}>
                   重新导入
