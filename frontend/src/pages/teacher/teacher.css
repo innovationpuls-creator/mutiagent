@@ -1,3 +1,7 @@
+:root {
+  --teacher-header-height: 72px;
+}
+
 /* 教师工作台专属样式 */
 
 .teacher-page {
@@ -544,15 +548,6 @@
   }
 }
 
-/* 减少动画 */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation: none !important;
-    transition: opacity var(--duration-instant) ease !important;
-    transform: none !important;
-    scroll-behavior: auto !important;
-  }
-}
 
 /* 导航栏样式 */
 .teacher-header {
@@ -560,7 +555,7 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 72px;
+  height: var(--teacher-header-height);
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid var(--color-border);
@@ -624,7 +619,7 @@
 
 .teacher-tab-indicator {
   position: absolute;
-  bottom: -16px;
+  bottom: calc(var(--space-16) * -1);
   left: 0;
   right: 0;
   height: 3px;
@@ -687,7 +682,7 @@
   font-family: inherit;
   font-size: var(--text-body-sm);
   color: var(--color-text-primary);
-  padding: var(--space-10) var(--space-12);
+  padding: var(--space-8) var(--space-12);
   text-align: left;
   cursor: pointer;
   border-radius: var(--radius-sm);
@@ -708,7 +703,7 @@
 
 /* 可视化布局 */
 .teacher-page-with-header {
-  padding-top: calc(72px + var(--space-32)) !important;
+  padding-top: calc(var(--teacher-header-height) + var(--space-32)) !important;
 }
 
 .graph-view-container {
@@ -789,7 +784,6 @@
   fill: var(--color-primary-soft);
   stroke: var(--color-primary);
   stroke-width: 1;
-  rx: 4;
   transition: fill var(--duration-lazy-hover) var(--ease-lazy), transform var(--duration-lazy-hover) var(--ease-lazy);
 }
 
@@ -823,4 +817,14 @@
   pointer-events: none;
   fill: var(--color-secondary);
   filter: drop-shadow(0 2px 4px oklch(50% 0.05 55 / 0.1));
+}
+
+/* 减少动画 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: opacity var(--duration-instant) ease !important;
+    transform: none !important;
+    scroll-behavior: auto !important;
+  }
 }
