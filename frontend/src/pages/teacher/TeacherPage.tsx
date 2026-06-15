@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { LogOut } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { BranchCourseNode } from '../../types/branch';
 import './teacher.css';
@@ -539,13 +541,36 @@ export function DetailDrawer({ course, onClose, onUpdateCourse }: DetailDrawerPr
 }
 
 export function TeacherPage() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
   const [pageState, setPageState] = useState<TeacherPageState>('empty');
   const [courses, setCourses] = useState<BranchCourseNode[]>([]);
   const [activeCourseId, setActiveCourseId] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const [activeTab, setActiveTab] = useState<'editor' | 'graph'>('editor');
+  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isDropdownOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isDropdownOpen]);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem('teacher_cultivation_program');
@@ -616,6 +641,21 @@ export function TeacherPage() {
           </div>
         );
       case 'editor':
+        if (activeTab === 'graph') {
+          return (
+            <div className="graph-view-container">
+              <div className="canvas-panel">
+                <div className="canvas-header">
+                  <h3>方案关系图谱</h3>
+                  <p>培养方案中课程前置依赖与关系拓扑图</p>
+                </div>
+                <div className="canvas-wrapper">
+                  {/* Task 3 will build this */}
+                </div>
+              </div>
+            </div>
+          );
+        }
         return (
           <div className="editor-layout">
             <div className="editor-header">
@@ -649,11 +689,71 @@ export function TeacherPage() {
 
   return (
     <motion.main
-      className="teacher-page"
+      className="teacher-page teacher-page-with-header"
       initial={reduceMotion ? false : { opacity: 0, y: 16 }}
       animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
       transition={reduceMotion ? undefined : { duration: 0.76, ease: [0.25, 1, 0.5, 1] }}
     >
+      <header className="teacher-header">
+        <div className="teacher-brand">
+          <img src="/logo.png" alt="one-tree logo" className="teacher-logo-img" />
+          <span className="teacher-brand-name">one-tree 教师工作台</span>
+        </div>
+        <div className="teacher-nav-tabs">
+          <button
+            type="button"
+            className={`teacher-tab ${activeTab === 'editor' ? 'tab-active' : ''} ${courses.length === 0 ? 'tab-disabled' : ''}`}
+            disabled={courses.length === 0}
+            onClick={() => {
+              if (courses.length > 0) {
+                setActiveTab('editor');
+              }
+            }}
+          >
+            大纲对齐编辑
+            {activeTab === 'editor' && <div className="teacher-tab-indicator" />}
+          </button>
+          <button
+            type="button"
+            className={`teacher-tab ${activeTab === 'graph' ? 'tab-active' : ''} ${courses.length === 0 ? 'tab-disabled' : ''}`}
+            disabled={courses.length === 0}
+            onClick={() => {
+              if (courses.length > 0) {
+                setActiveTab('graph');
+              }
+            }}
+          >
+            方案关系图谱
+            {activeTab === 'graph' && <div className="teacher-tab-indicator" />}
+          </button>
+        </div>
+        <div className="teacher-user-area" ref={dropdownRef}>
+          <button
+            type="button"
+            className="teacher-avatar-btn"
+            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+          >
+            {user?.username ? user.username.substring(0, 1).toUpperCase() : '教'}
+          </button>
+          {isDropdownOpen && (
+            <div className="teacher-user-dropdown">
+              <div className="teacher-dropdown-header">
+                <span className="teacher-dropdown-name">{user?.username ?? '教师'}</span>
+                <span>{user?.identifier ?? 'teacher@example.com'}</span>
+              </div>
+              <button
+                type="button"
+                className="teacher-dropdown-item teacher-dropdown-item-logout"
+                onClick={handleLogout}
+              >
+                <LogOut size={16} style={{ marginRight: '8px', display: 'inline-block', verticalAlign: 'middle' }} />
+                <span style={{ verticalAlign: 'middle' }}>退出登录</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+
       <div className="teacher-container">
         {renderContent()}
       </div>
