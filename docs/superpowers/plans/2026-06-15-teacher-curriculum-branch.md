@@ -429,7 +429,8 @@
 - Modify: `frontend/src/pages/branch/branch.css`
 
 - [ ] **Step 1: 实现 localStorage 数据融合规则**
-  在 `BranchPage.tsx` 的 `loadOverview` / `fetchBranchOverview` 调用后，加入本地人培大纲的合并逻辑，合并密钥统一为 `teacher_cultivation_program`：
+  在 `BranchPage.tsx` 的 `loadOverview` / `fetchBranchOverview` 调用后，加入本地人培大纲的合并逻辑。
+  此处需要注意：在 `loadOverview` 函数内部，从 API 加载并刚返回的包含所有年级课程的数据对象变量名为 `nextOverview`，故此处应直接操作并合并写入 `nextOverview`，避免在初次加载渲染前引发 state 同步错误。合并密钥统一为 `teacher_cultivation_program`：
   ```typescript
   const storedProgram = localStorage.getItem('teacher_cultivation_program');
   if (storedProgram) {
@@ -442,7 +443,8 @@
       else if (sem >= 5) yearId = 'year_3';
       else if (sem >= 3) yearId = 'year_2';
 
-      const year = overview.years[yearId];
+      // 获取局部变量 nextOverview 对应的年级数据
+      const year = nextOverview.years[yearId];
       if (year) {
         // 2. ID 去重与元数据合并规则
         const existIdx = year.courses.findIndex((c) => c.course_node_id === preset.course_node_id);
@@ -554,10 +556,9 @@
 **Files:**
 - Modify: `frontend/src/pages/branch/BranchPage.test.tsx`
 
-- [ ] **Step 1: 编写带人培 LocalStorage 劫持的集成测试**
-  由于原测试 `renderBranchPage` 会对全局 `localStorage` 进行 Stub 挂载且默认过滤屏蔽非身份认证 key，我们必须在测试文件中新增一个专门用于注入人培大纲的测试辅助渲染器 `renderBranchPageWithCultivation(mockProgram)`。
+- [ ] **Step 1: 编写带人培 LocalStorage 劫持的集成测试渲染辅助器**
+  在 `frontend/src/pages/branch/BranchPage.test.tsx` 的全局作用域下，定义辅助器 `renderBranchPageWithCultivation(mockProgram)` 以绕过原有的 Mock localStorage 拦截。
   测试数据必须包含 `course_goal` 和 `has_outline` 等必填字段，以防止 TypeScript 类型检查和运行时失败。
-  在 `frontend/src/pages/branch/BranchPage.test.tsx` 顶部或辅助函数区新增：
   ```typescript
   function renderBranchPageWithCultivation(mockPreset: BranchCourseNode[]) {
     vi.stubGlobal('localStorage', {
@@ -597,8 +598,8 @@
   }
   ```
 
-- [ ] **Step 2: 编写集成测试用例**
-  在 `frontend/src/pages/branch/BranchPage.test.tsx` 的 `describe('BranchPage', ...)` 块内增加两个具体用例，验证人培数据的合并算法及自主生成卡片的解锁样式：
+- [ ] **Step 2: 编写集成测试用例并集成 API Mock 断言**
+  在 `frontend/src/pages/branch/BranchPage.test.tsx` 内添加测试。新测试中必须使用 `fetchProfileDashboardMock.mockResolvedValue` 和 `fetchBranchOverviewMock.mockResolvedValue` 模拟必要的 API 响应，确保 BranchPage 能够成功解析年级切换并渲染：
   ```typescript
   describe('BranchPage Integration with Local Cultivation Program', () => {
     it('merges preset program from localStorage and overrides has_courses', async () => {
@@ -612,8 +613,55 @@
           time_arrangement: { semester_scope: '1', duration: '32学时' },
         }
       ];
+
+      // 设置接口的 Mock 返回以确保页面能够正确装载大一
+      fetchProfileDashboardMock.mockResolvedValue({
+        profile: {
+          currentGrade: 'grade_1',
+        },
+      });
+      fetchBranchOverviewMock.mockResolvedValue({
+        years: {
+          year_1: {
+            grade_id: 'year_1',
+            grade_name: '大一',
+            has_courses: false,
+            has_outline_content: false,
+            is_clickable: false,
+            current_course_id: null,
+            courses: [],
+          },
+          year_2: {
+            grade_id: 'year_2',
+            grade_name: '大二',
+            has_courses: false,
+            has_outline_content: false,
+            is_clickable: false,
+            current_course_id: null,
+            courses: [],
+          },
+          year_3: {
+            grade_id: 'year_3',
+            grade_name: '大三',
+            has_courses: false,
+            has_outline_content: false,
+            is_clickable: false,
+            current_course_id: null,
+            courses: [],
+          },
+          year_4: {
+            grade_id: 'year_4',
+            grade_name: '大四',
+            has_courses: false,
+            has_outline_content: false,
+            is_clickable: false,
+            current_course_id: null,
+            courses: [],
+          },
+        },
+        updatedAt: null,
+      });
       
-      // 使用带注入的测试辅助函数挂载
       renderBranchPageWithCultivation(mockPreset);
       
       await waitFor(() => {
@@ -643,13 +691,59 @@
           time_arrangement: { semester_scope: '3', duration: '32学时' },
         }
       ];
+
+      fetchProfileDashboardMock.mockResolvedValue({
+        profile: {
+          currentGrade: 'grade_2', // 切换到大二
+        },
+      });
+      fetchBranchOverviewMock.mockResolvedValue({
+        years: {
+          year_1: {
+            grade_id: 'year_1',
+            grade_name: '大一',
+            has_courses: false,
+            has_outline_content: false,
+            is_clickable: false,
+            current_course_id: null,
+            courses: [],
+          },
+          year_2: {
+            grade_id: 'year_2',
+            grade_name: '大二',
+            has_courses: false,
+            has_outline_content: false,
+            is_clickable: false,
+            current_course_id: null,
+            courses: [],
+          },
+          year_3: {
+            grade_id: 'year_3',
+            grade_name: '大三',
+            has_courses: false,
+            has_outline_content: false,
+            is_clickable: false,
+            current_course_id: null,
+            courses: [],
+          },
+          year_4: {
+            grade_id: 'year_4',
+            grade_name: '大四',
+            has_courses: false,
+            has_outline_content: false,
+            is_clickable: false,
+            current_course_id: null,
+            courses: [],
+          },
+        },
+        updatedAt: null,
+      });
       
       renderBranchPageWithCultivation(mockCustomPreset);
       
       await waitFor(() => {
         const customCard = screen.getByText('自主生成图论课程').closest('button');
         expect(customCard).toBeInTheDocument();
-        // 验证由于 parent 完成，locked 状态的侧枝在渲染态被提升为 current 进行中
         expect(screen.getByText('进行中')).toBeInTheDocument();
       });
     });
