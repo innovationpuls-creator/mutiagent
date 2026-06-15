@@ -1379,7 +1379,7 @@ describe('BranchPage', () => {
           course_goal: '补充学校培养方案课程',
           status: 'locked',
           has_outline: true,
-          is_custom: true,
+          is_custom: false,
           time_arrangement: {
             semester_scope: '1',
             duration: '4 周',

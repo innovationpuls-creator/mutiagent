@@ -805,7 +805,13 @@ export function BranchPage() {
         const storedProgram = localStorage.getItem('teacher_cultivation_program');
         if (storedProgram) {
           try {
-            const presetCourses: BranchCourseNode[] = JSON.parse(storedProgram);
+            const parsedProgram: unknown = JSON.parse(storedProgram);
+            const presetCourses: BranchCourseNode[] = Array.isArray(parsedProgram)
+              ? parsedProgram.map((preset) => ({
+                ...(preset as BranchCourseNode),
+                is_custom: true,
+              }))
+              : [];
             presetCourses.forEach((preset) => {
               const sem = parseInt(preset.time_arrangement?.semester_scope || '1', 10);
               let yearId: 'year_1' | 'year_2' | 'year_3' | 'year_4' = 'year_1';

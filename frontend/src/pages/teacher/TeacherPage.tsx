@@ -745,7 +745,12 @@ export function TeacherPage() {
   };
 
   const handleSave = () => {
-    localStorage.setItem('teacher_cultivation_program', JSON.stringify(courses));
+    const publishedCourses = courses.map((course) => ({
+      ...course,
+      is_custom: true,
+    }));
+    setCourses(publishedCourses);
+    localStorage.setItem('teacher_cultivation_program', JSON.stringify(publishedCourses));
     setToastMessage('人培方案已成功发布并对齐！');
     setTimeout(() => {
       setToastMessage(null);

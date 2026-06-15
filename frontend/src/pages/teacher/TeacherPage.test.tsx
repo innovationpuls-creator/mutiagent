@@ -304,6 +304,7 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
     const updatedMath = savedCourses.find((c: BranchCourseNode) => c.course_node_id === 'math_1');
     expect(updatedMath.course_or_chapter_theme).toBe('高等数学 I (修改版)');
     expect(updatedMath.course_goal).toBe('新的课程目标内容');
+    expect(updatedMath.is_custom).toBe(true);
   });
 
   it('allows reimporting to clear courses and return to empty state', async () => {
