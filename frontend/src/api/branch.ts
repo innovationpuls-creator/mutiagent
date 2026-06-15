@@ -29,6 +29,23 @@ function normalizeCanopyStatus(value: unknown): CanopyCourseStatus {
   throw new Error('成森数据格式不正确');
 }
 
+function normalizeTimeArrangement(value: unknown): BranchCourseNode['time_arrangement'] {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const sem = value.semester_scope;
+  const dur = value.duration;
+  const pace = value.pace_reason;
+  if (typeof sem === 'string' && typeof dur === 'string') {
+    return {
+      semester_scope: sem,
+      duration: dur,
+      pace_reason: typeof pace === 'string' ? pace : undefined,
+    };
+  }
+  return undefined;
+}
+
 export function normalizeCourse(value: unknown): BranchCourseNode {
   if (!isRecord(value)) {
     throw new Error('繁枝数据格式不正确');
@@ -54,19 +71,7 @@ export function normalizeCourse(value: unknown): BranchCourseNode {
     ? value.prerequisite_ids
     : undefined;
     
-  let timeArrangement: BranchCourseNode['time_arrangement'] = undefined;
-  if (isRecord(value.time_arrangement)) {
-    const sem = value.time_arrangement.semester_scope;
-    const dur = value.time_arrangement.duration;
-    const pace = value.time_arrangement.pace_reason;
-    if (typeof sem === 'string' && typeof dur === 'string') {
-      timeArrangement = {
-        semester_scope: sem,
-        duration: dur,
-        pace_reason: typeof pace === 'string' ? pace : undefined,
-      };
-    }
-  }
+  const timeArrangement = normalizeTimeArrangement(value.time_arrangement);
   
   const keyPoints = isStringArray(value.key_points) ? value.key_points : undefined;
   const difficultPoints = isStringArray(value.difficult_points) ? value.difficult_points : undefined;
