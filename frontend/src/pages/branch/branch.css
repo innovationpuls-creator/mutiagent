@@ -769,3 +769,44 @@
     transform: translateX(-50%);
   }
 }
+
+/* Custom Course Card and Glow Dot Styles (Task 4 & 5) */
+.branch-blob-card.branch-blob-card-custom {
+  border: 3px dashed oklch(76% 0.12 55 / 0.7); /* Coral dashed border */
+  background: oklch(99% 0.01 55 / 0.85); /* soft warm coral background tint */
+  box-shadow:
+    0 6px 16px oklch(76% 0.12 55 / 0.12),
+    0 16px 32px oklch(76% 0.12 55 / 0.06);
+}
+
+.branch-blob-card.branch-blob-card-custom:hover {
+  border-color: oklch(72% 0.13 28);
+  box-shadow:
+    0 10px 24px oklch(76% 0.12 55 / 0.2),
+    0 20px 40px oklch(76% 0.12 55 / 0.1);
+}
+
+/* Ensure the icon container is relative for custom glow dot positioning */
+.branch-blob-icon {
+  position: relative;
+}
+
+.branch-custom-glow-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: var(--space-8);
+  height: var(--space-8);
+  background-color: oklch(76% 0.12 55); /* Coral highlight color */
+  border-radius: 50%;
+  box-shadow: 0 0 8px oklch(76% 0.12 55 / 0.8);
+  border: 1.5px solid var(--color-canvas-surface);
+}
+
+.branch-highlight-path {
+  stroke: oklch(76% 0.12 55); /* Highlight color */
+  stroke-width: 4px;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 6px oklch(76% 0.12 55 / 0.5));
+  transition: stroke 0.3s ease, stroke-width 0.3s ease;
+}

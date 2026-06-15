@@ -1184,4 +1184,124 @@ describe('BranchPage', () => {
 
     expect(screen.queryByText('旧课程路径')).toBeNull();
   });
+
+  it('merges preset courses from localStorage, unlocks custom nodes when parent is completed, and renders highlight paths when clicked', async () => {
+    fetchProfileDashboardMock.mockResolvedValue({
+      profile: {
+        currentGrade: '大一',
+        major: '计算机科学',
+        learningStage: '基础学年',
+        hasClearGoal: '是',
+        learningMethodPreference: '系统学习',
+        learningPacePreference: '标准节奏',
+        contentPreference: ['理论'],
+        needGuidance: '是',
+        knowledgeFoundation: '零基础',
+        strengths: '逻辑思维',
+        weaknesses: '无实践经验',
+        experience: '无',
+        shortTermGoal: '掌握基础',
+        longTermGoal: '做一名后端工程师',
+        weeklyAvailableTime: '每周 10 小时',
+        constraints: '无',
+      },
+      profileCompleteness: 100,
+      profileSummaryText: '测试摘要',
+      todayLearning: {
+        title: '今日学习',
+        description: '测试',
+        source: '学习路径智能体',
+        currentLearningCourse: null,
+        currentCourseDetail: null,
+        currentCourseOutline: null,
+        gradeCourses: [],
+        followingCourses: [],
+      },
+      recommendations: [],
+    });
+
+    fetchBranchOverviewMock.mockResolvedValue({
+      years: {
+        year_1: {
+          grade_id: 'year_1',
+          grade_name: '大一',
+          has_courses: true,
+          has_outline_content: true,
+          is_clickable: true,
+          current_course_id: 'preset_parent_1',
+          courses: [
+            {
+              course_node_id: 'preset_parent_1',
+              course_or_chapter_theme: '编程导论',
+              course_goal: '基础编程',
+              status: 'completed',
+              has_outline: true,
+            },
+          ],
+        },
+        year_2: { grade_id: 'year_2', grade_name: '大二', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+        year_3: { grade_id: 'year_3', grade_name: '大三', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+        year_4: { grade_id: 'year_4', grade_name: '大四', has_courses: false, has_outline_content: false, is_clickable: false, current_course_id: null, courses: [] },
+      },
+      updatedAt: '2026-06-05T00:00:00Z',
+    });
+
+    const customPresetCourse = {
+      course_node_id: 'custom_child_1',
+      course_or_chapter_theme: 'C++ 高级编程',
+      course_goal: '面向对象与泛型',
+      status: 'locked',
+      has_outline: true,
+      is_custom: true,
+      parent_preset_id: 'preset_parent_1',
+      prerequisite_ids: ['preset_parent_1'],
+      time_arrangement: {
+        semester_scope: '1',
+        duration: '4 weeks',
+      },
+    };
+
+    const store: Record<string, string> = {
+      'mutiagent-auth': JSON.stringify({
+        token: 'token-1',
+        user: { uid: 'user-1', username: '测试用户' },
+      }),
+      'teacher_cultivation_program': JSON.stringify([customPresetCourse]),
+    };
+
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn((key: string) => store[key] || null),
+      setItem: vi.fn((key: string, value: string) => {
+        store[key] = value;
+      }),
+      removeItem: vi.fn((key: string) => {
+        delete store[key];
+      }),
+    });
+
+    render(
+      <AuthProvider>
+        <AiWidgetProvider>
+          <MemoryRouter>
+            <BranchPage />
+          </MemoryRouter>
+        </AiWidgetProvider>
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('编程导论')).toBeTruthy();
+      expect(screen.getByText('C++ 高级编程')).toBeTruthy();
+    });
+
+    const customCardButton = screen.getByRole('button', { name: /C\+\+/ });
+    expect(customCardButton).toBeTruthy();
+
+    fireEvent.click(customCardButton);
+
+    await waitFor(() => {
+      const paths = screen.getAllByTestId('branch-highlight-path');
+      expect(paths.length).toBeGreaterThan(0);
+    });
+  });
 });

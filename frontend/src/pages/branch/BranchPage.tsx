@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import '../../components/home/BlankPage.css';
 import './branch.css';
@@ -165,6 +165,29 @@ function toStageCourseSet(stageCourses: StageCourse[]): StageCourseSet {
   }
 
   return { left, center, right };
+}
+
+function getCourseCoordinate(
+  courseId: string,
+  coursesList: BranchCourseNode[],
+  focusedId: string | null,
+  currentId: string | null,
+): { x: number; y: number } {
+  const stageCourses = pickStageCourses(coursesList, currentId, focusedId);
+  const stage = toStageCourseSet(stageCourses);
+  if (stage.left?.course_node_id === courseId) return { x: 100, y: 200 };
+  if (stage.center?.course_node_id === courseId) return { x: 500, y: 250 };
+  if (stage.right?.course_node_id === courseId) return { x: 900, y: 300 };
+  const idx = coursesList.findIndex(c => c.course_node_id === courseId);
+  const focusIdx = resolveFocusIndex(coursesList, currentId, focusedId);
+  if (idx < focusIdx) return { x: -100, y: 200 };
+  return { x: 1100, y: 300 };
+}
+
+function generateBezierConnectionPath(fromPt: { x: number; y: number }, toPt: { x: number; y: number }): string {
+  const cp1 = { x: fromPt.x + (toPt.x - fromPt.x) * 0.5, y: fromPt.y };
+  const cp2 = { x: fromPt.x + (toPt.x - fromPt.x) * 0.5, y: toPt.y };
+  return `M ${fromPt.x} ${fromPt.y} C ${cp1.x} ${cp1.y}, ${cp2.x} ${cp2.y}, ${toPt.x} ${toPt.y}`;
 }
 
 function getCurrentCourseFromOverview(overview: BranchOverview | null): BranchCourseNode | null {
@@ -368,6 +391,7 @@ function PathSession({
   onOpenCourse,
   showCoachmark,
   onCloseCoachmark,
+  allCourses = [],
 }: {
   gradeName: string;
   courses: BranchCourseNode[];
@@ -375,26 +399,40 @@ function PathSession({
   onOpenCourse: (course: BranchCourseNode) => void;
   showCoachmark?: boolean;
   onCloseCoachmark?: () => void;
+  allCourses?: BranchCourseNode[];
 }) {
   const reduceMotion = useReducedMotion();
-  const [focusedCourseId, setFocusedCourseId] = useState<string | null>(
-    defaultFocusCourseId(courses, currentCourseId),
+
+  const resolvedCourses = useMemo(() => {
+    return courses.map((c) => {
+      if (c.is_custom && c.parent_preset_id) {
+        const parent = allCourses.find((pc) => pc.course_node_id === c.parent_preset_id);
+        if (parent && parent.status === 'completed' && c.status === 'locked') {
+          return { ...c, status: 'current' as const };
+        }
+      }
+      return c;
+    });
+  }, [courses, allCourses]);
+
+  const [focusedCourseId, setFocusedCourseId] = useState<string | null>(() =>
+    defaultFocusCourseId(resolvedCourses, currentCourseId),
   );
   const [lockedCourseHint, setLockedCourseHint] = useState<string | null>(null);
 
   useEffect(() => {
-    const nextDefaultFocusCourseId = defaultFocusCourseId(courses, currentCourseId);
+    const nextDefaultFocusCourseId = defaultFocusCourseId(resolvedCourses, currentCourseId);
     setFocusedCourseId((currentFocusedCourseId) => {
       if (
         currentFocusedCourseId
-        && courses.some((course) => course.course_node_id === currentFocusedCourseId)
+        && resolvedCourses.some((course) => course.course_node_id === currentFocusedCourseId)
       ) {
         return currentFocusedCourseId;
       }
       return nextDefaultFocusCourseId;
     });
     setLockedCourseHint(null);
-  }, [courses, currentCourseId]);
+  }, [resolvedCourses, currentCourseId]);
 
   useEffect(() => {
     if (!showCoachmark || !onCloseCoachmark) return undefined;
@@ -413,11 +451,11 @@ function PathSession({
     };
   }, [showCoachmark, onCloseCoachmark]);
 
-  const stageCourses = pickStageCourses(courses, currentCourseId, focusedCourseId);
+  const stageCourses = pickStageCourses(resolvedCourses, currentCourseId, focusedCourseId);
   const stage = toStageCourseSet(stageCourses);
 
   function courseIndex(course: BranchCourseNode): number {
-    return courses.findIndex((item) => item.course_node_id === course.course_node_id);
+    return resolvedCourses.findIndex((item) => item.course_node_id === course.course_node_id);
   }
 
   function courseButtonLabel(course: BranchCourseNode): string {
@@ -437,13 +475,42 @@ function PathSession({
     setLockedCourseHint(`「${course.course_or_chapter_theme}」还未开放，先完成前面的课程。`);
   }
 
+  const highlightPaths = useMemo(() => {
+    if (!focusedCourseId) return [];
+    const focusedCourse = resolvedCourses.find(c => c.course_node_id === focusedCourseId);
+    if (!focusedCourse) return [];
+
+    const connections: { from: string; to: string }[] = [];
+    const seenFrom = new Set<string>();
+
+    if (focusedCourse.parent_preset_id) {
+      connections.push({ from: focusedCourse.parent_preset_id, to: focusedCourseId });
+      seenFrom.add(focusedCourse.parent_preset_id);
+    }
+    if (focusedCourse.prerequisite_ids) {
+      focusedCourse.prerequisite_ids.forEach((prereqId) => {
+        if (!seenFrom.has(prereqId)) {
+          connections.push({ from: prereqId, to: focusedCourseId });
+          seenFrom.add(prereqId);
+        }
+      });
+    }
+
+    return connections.map(({ from, to }) => {
+      const fromPt = getCourseCoordinate(from, resolvedCourses, focusedCourseId, currentCourseId);
+      const toPt = getCourseCoordinate(to, resolvedCourses, focusedCourseId, currentCourseId);
+      const d = generateBezierConnectionPath(fromPt, toPt);
+      return { d, key: `${from}-${to}` };
+    });
+  }, [focusedCourseId, resolvedCourses, currentCourseId]);
+
   return (
     <section className="branch-session" aria-label={`${gradeName}课程路径`}>
       <div className="branch-session-header">
         <h1 className="branch-session-title">你的路径</h1>
         <p className="branch-session-subtitle">慢一点，你正在稳稳向前。</p>
-        {courses.length > 0 ? (
-          <p className="branch-session-caption">{stageLabel(courses.length)}</p>
+        {resolvedCourses.length > 0 ? (
+          <p className="branch-session-caption">{stageLabel(resolvedCourses.length)}</p>
         ) : null}
       </div>
 
@@ -529,12 +596,23 @@ function PathSession({
                   </circle>
                 </>
               )}
+
+              {/* Highlight connection paths */}
+              {highlightPaths.map(({ d, key }) => (
+                <path
+                  key={key}
+                  d={d}
+                  fill="none"
+                  data-testid="branch-highlight-path"
+                  className="branch-highlight-path"
+                />
+              ))}
             </svg>
             <div className="branch-stage-layout">
               {stage.left ? (
                 <div className="branch-stage-slot branch-stage-slot-left">
                   <motion.button
-                    className={`branch-blob-card branch-blob-card-${iconLabel(stage.left.status)}`}
+                    className={`branch-blob-card branch-blob-card-${iconLabel(stage.left.status)} ${stage.left.is_custom ? 'branch-blob-card-custom' : ''}`}
                     type="button"
                     aria-label={courseButtonLabel(stage.left)}
                     aria-pressed={stage.left.course_node_id === focusedCourseId}
@@ -545,6 +623,7 @@ function PathSession({
                   >
                     <div className={`branch-blob-icon branch-blob-icon-${iconLabel(stage.left.status)}`} aria-hidden="true">
                       <StageIcon kind={iconLabel(stage.left.status)} />
+                      {stage.left.is_custom && <span className="branch-custom-glow-dot" aria-hidden="true" />}
                     </div>
                     <div className="branch-blob-text">
                       <h2 className="branch-blob-title">{stage.left.course_or_chapter_theme}</h2>
@@ -570,7 +649,7 @@ function PathSession({
                   >
                     <div className="branch-current-glow" aria-hidden="true" />
                     <motion.button
-                      className="branch-blob-card branch-blob-card-current"
+                      className={`branch-blob-card branch-blob-card-current ${stage.center.is_custom ? 'branch-blob-card-custom' : ''}`}
                       type="button"
                       aria-label={courseButtonLabel(stage.center)}
                       aria-pressed={stage.center.course_node_id === focusedCourseId}
@@ -582,6 +661,7 @@ function PathSession({
                       <div className="branch-blob-copy-current">
                         <div className="branch-blob-icon branch-blob-icon-current" aria-hidden="true">
                           <StageIcon kind={iconLabel(stage.center.status)} />
+                          {stage.center.is_custom && <span className="branch-custom-glow-dot" aria-hidden="true" />}
                         </div>
                         <div className="branch-blob-text">
                           <span className="branch-blob-eyebrow">{focusLabel(stage.center.status)}</span>
@@ -614,7 +694,7 @@ function PathSession({
               {stage.right ? (
                 <div className="branch-stage-slot branch-stage-slot-right">
                   <motion.button
-                    className={`branch-blob-card branch-blob-card-${iconLabel(stage.right.status)}`}
+                    className={`branch-blob-card branch-blob-card-${iconLabel(stage.right.status)} ${stage.right.is_custom ? 'branch-blob-card-custom' : ''}`}
                     type="button"
                     aria-label={courseButtonLabel(stage.right)}
                     aria-pressed={stage.right.course_node_id === focusedCourseId}
@@ -625,6 +705,7 @@ function PathSession({
                   >
                     <div className={`branch-blob-icon branch-blob-icon-${iconLabel(stage.right.status)}`} aria-hidden="true">
                       <StageIcon kind={iconLabel(stage.right.status)} />
+                      {stage.right.is_custom && <span className="branch-custom-glow-dot" aria-hidden="true" />}
                     </div>
                     <div className="branch-blob-text">
                       <h2 className="branch-blob-title">{stage.right.course_or_chapter_theme}</h2>
@@ -688,6 +769,41 @@ export function BranchPage() {
           fetchBranchOverview(token),
           fetchProfileDashboard(token),
         ]);
+
+        const storedProgram = localStorage.getItem('teacher_cultivation_program');
+        if (storedProgram) {
+          try {
+            const presetCourses: BranchCourseNode[] = JSON.parse(storedProgram);
+            presetCourses.forEach((preset) => {
+              const sem = parseInt(preset.time_arrangement?.semester_scope || '1', 10);
+              let yearId: 'year_1' | 'year_2' | 'year_3' | 'year_4' = 'year_1';
+              if (sem >= 7) yearId = 'year_4';
+              else if (sem >= 5) yearId = 'year_3';
+              else if (sem >= 3) yearId = 'year_2';
+
+              const year = nextOverview.years[yearId];
+              if (year) {
+                const existIdx = year.courses.findIndex((c) => c.course_node_id === preset.course_node_id);
+                if (existIdx >= 0) {
+                  year.courses[existIdx] = {
+                    ...preset,
+                    ...year.courses[existIdx], // API fields override preset ones
+                    key_points: preset.key_points,
+                    difficult_points: preset.difficult_points,
+                    acceptance_criteria: preset.acceptance_criteria,
+                  };
+                } else {
+                  year.courses.push(preset);
+                }
+                year.has_courses = true;
+                year.is_clickable = true;
+              }
+            });
+          } catch (e) {
+            // ignore parsing errors
+          }
+        }
+
         if (!isMountedRef.current || options?.shouldIgnore?.()) {
           return;
         }
@@ -802,6 +918,7 @@ export function BranchPage() {
                 }}
                 showCoachmark={showCoachmark}
                 onCloseCoachmark={() => setShowCoachmark(false)}
+                allCourses={overview ? YEAR_ORDER.flatMap((yId) => overview.years[yId]?.courses ?? []) : []}
               />
             </motion.div>
           )}
