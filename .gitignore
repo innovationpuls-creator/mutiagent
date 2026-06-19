@@ -45,6 +45,5 @@ mutiagent-auth-desktop.png
 node_modules/
 .vite/
 .stitch/
-.opencode/**
-!.opencode/**/*.md
+.opencode/
 
