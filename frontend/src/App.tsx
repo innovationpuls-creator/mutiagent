@@ -9,6 +9,7 @@ import { BranchPage } from './pages/branch/BranchPage';
 import { LeafPage } from './pages/leaf/LeafPage';
 import { ForestQuizPage } from './pages/forest/ForestQuizPage';
 import { AdminAccountsPage } from './pages/admin/AdminAccountsPage';
+import { AdminDataPage } from './pages/admin/AdminDataPage';
 import { TeacherPage } from './pages/teacher/TeacherPage';
 import { CanopyPage } from './pages/canopy/CanopyPage';
 import { ScratchpadCanvas } from './pages/canvas/ScratchpadCanvas';
@@ -16,8 +17,8 @@ import { useAuth } from './contexts/AuthContext';
 import type { AuthRole } from './types/auth';
 
 function homeForRole(role: AuthRole): string {
-  if (role === 'admin') return '/admin/accounts';
-  if (role === 'teacher') return '/teacher';
+  if (role === 'admin') return '/admin/programs';
+  if (role === 'teacher') return '/admin/programs';
   return '/sprout';
 }
 
@@ -76,12 +77,14 @@ function AnimatedRoutes() {
           <Route path="/onboarding" element={<IcebreakerFlow />} />
 
           <Route element={<ProtectedRoute />}>
-            <Route element={<RoleRoute allowedRoles={['teacher']} />}>
-              <Route path="/teacher" element={<TeacherPage />} />
+            <Route element={<RoleRoute allowedRoles={['teacher', 'admin']} />}>
+              <Route path="/admin/programs" element={<TeacherPage />} />
+              <Route path="/teacher" element={<Navigate replace to="/admin/programs" />} />
             </Route>
 
             <Route element={<RoleRoute allowedRoles={['admin']} />}>
               <Route path="/admin/accounts" element={<AdminAccountsPage />} />
+              <Route path="/admin/data" element={<AdminDataPage />} />
             </Route>
 
             <Route element={<RoleRoute allowedRoles={['student']} />}>

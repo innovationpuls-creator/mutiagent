@@ -17,6 +17,9 @@ def to_user_read(user: User) -> UserRead:
         username=user.username,
         identifier=user.identifier,
         role=user.role,
+        school=user.school,
+        major=user.major,
+        class_name=user.class_name,
         provider=user.provider,
         is_active=user.is_active,
         created_at=user.created_at,
@@ -50,6 +53,9 @@ def register_user(session: Session, payload: RegisterRequest) -> AuthResponse:
         username=payload.username,
         identifier=payload.identifier,
         role=payload.role,
+        school=payload.school,
+        major=payload.major,
+        class_name=payload.class_name,
         provider="password",
         password_hash=hash_password(payload.password),
     )
@@ -89,6 +95,9 @@ def login_with_oauth(session: Session, payload: OAuthRequest) -> AuthResponse:
         username="学习伙伴" if payload.provider == "xuexitong" else "QQ 同学",
         identifier=identifier,
         role="student",
+        school="",
+        major="",
+        class_name="",
         provider=payload.provider,
     )
     session.add(user)

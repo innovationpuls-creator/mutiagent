@@ -44,6 +44,9 @@ def _register_user(client: TestClient, identifier: str, password: str) -> str:
         "identifier": identifier,
         "password": password,
         "confirm_password": password,
+        "school": "测试大学",
+        "major": "软件工程",
+        "class_name": "三班",
     })
     assert resp.status_code == 201, resp.text
     return resp.json()["access_token"]

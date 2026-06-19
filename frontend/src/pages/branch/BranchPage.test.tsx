@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BranchPage } from './BranchPage';
 import { AuthProvider } from '../../contexts/AuthContext';
 import { AiWidgetProvider } from '../../context/AiWidgetContext';
@@ -17,6 +17,7 @@ vi.mock('../../context/AiWidgetContext', () => ({
 
 const fetchBranchOverviewMock = vi.fn();
 const fetchProfileDashboardMock = vi.fn();
+const getMatchedProgramMock = vi.fn();
 
 vi.mock('../../api/branch', () => ({
   fetchBranchOverview: (...args: unknown[]) => fetchBranchOverviewMock(...args),
@@ -24,6 +25,12 @@ vi.mock('../../api/branch', () => ({
 
 vi.mock('../../api/profile', () => ({
   fetchProfileDashboard: (...args: unknown[]) => fetchProfileDashboardMock(...args),
+}));
+
+vi.mock('../../api/teacherProgram', () => ({
+  teacherProgramApi: {
+    getMatchedProgram: (...args: unknown[]) => getMatchedProgramMock(...args),
+  },
 }));
 
 vi.mock('framer-motion', async () => {
@@ -40,6 +47,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+beforeEach(() => {
+  getMatchedProgramMock.mockResolvedValue(null);
+});
+
 function renderBranchPage() {
   vi.stubGlobal('localStorage', {
     getItem: vi.fn((key: string) => {
@@ -52,6 +63,10 @@ function renderBranchPage() {
           uid: 'user-1',
           username: '测试用户',
           identifier: 'user@example.com',
+          role: 'student',
+          school: '南山大学',
+          major: '软件工程',
+          class_name: '一班',
           provider: 'password',
           is_active: true,
           created_at: '2026-06-02T00:00:00Z',
@@ -789,7 +804,7 @@ describe('BranchPage', () => {
       getItem: vi.fn((key: string) => key === 'mutiagent-auth'
         ? JSON.stringify({
           token: 'token-1',
-          user: { uid: 'user-1', username: '测试用户', identifier: 'user@example.com', provider: 'password', is_active: true, created_at: '2026-06-02T00:00:00Z', last_login_at: null },
+          user: { uid: 'user-1', username: '测试用户', identifier: 'user@example.com', role: 'student', school: '南山大学', major: '软件工程', class_name: '一班', provider: 'password', is_active: true, created_at: '2026-06-02T00:00:00Z', last_login_at: null },
         })
         : null),
       setItem: vi.fn(),
@@ -1028,6 +1043,10 @@ describe('BranchPage', () => {
             uid: 'user-1',
             username: '测试用户',
             identifier: 'user@example.com',
+            role: 'student',
+            school: '南山大学',
+            major: '软件工程',
+            class_name: '一班',
             provider: 'password',
             is_active: true,
             created_at: '2026-06-02T00:00:00Z',
@@ -1261,13 +1280,36 @@ describe('BranchPage', () => {
         duration: '4 weeks',
       },
     };
+    getMatchedProgramMock.mockResolvedValue({
+      program_id: 'program-1',
+      teacher_uid: 'teacher-1',
+      teacher_name: '测试教师',
+      teacher_identifier: 'teacher@example.com',
+      school: '南山大学',
+      major: '软件工程',
+      class_name: '一班',
+      courses: [customPresetCourse],
+      published_at: '2026-06-15T10:00:00.000Z',
+      updated_at: '2026-06-15T10:00:00.000Z',
+    });
 
     const store: Record<string, string> = {
       'mutiagent-auth': JSON.stringify({
         token: 'token-1',
-        user: { uid: 'user-1', username: '测试用户' },
+        user: {
+          uid: 'user-1',
+          username: '测试用户',
+          identifier: 'student@example.com',
+          role: 'student',
+          school: '南山大学',
+          major: '软件工程',
+          class_name: '一班',
+          provider: 'password',
+          is_active: true,
+          created_at: '2026-06-02T00:00:00Z',
+          last_login_at: null,
+        },
       }),
-      'teacher_cultivation_program': JSON.stringify([customPresetCourse]),
     };
 
     vi.stubGlobal('localStorage', {
@@ -1366,13 +1408,15 @@ describe('BranchPage', () => {
       },
       updatedAt: '2026-06-05T00:00:00Z',
     });
-
-    const store: Record<string, string> = {
-      'mutiagent-auth': JSON.stringify({
-        token: 'token-1',
-        user: { uid: 'user-1', username: '测试用户' },
-      }),
-      'teacher_cultivation_program': JSON.stringify([
+    getMatchedProgramMock.mockResolvedValue({
+      program_id: 'program-1',
+      teacher_uid: 'teacher-1',
+      teacher_name: '测试教师',
+      teacher_identifier: 'teacher@example.com',
+      school: '南山大学',
+      major: '软件工程',
+      class_name: '一班',
+      courses: [
         {
           course_node_id: 'teacher_course_1',
           course_or_chapter_theme: 'C++ 高级编程',
@@ -1385,7 +1429,28 @@ describe('BranchPage', () => {
             duration: '4 周',
           },
         },
-      ]),
+      ],
+      published_at: '2026-06-15T10:00:00.000Z',
+      updated_at: '2026-06-15T10:00:00.000Z',
+    });
+
+    const store: Record<string, string> = {
+      'mutiagent-auth': JSON.stringify({
+        token: 'token-1',
+        user: {
+          uid: 'user-1',
+          username: '测试用户',
+          identifier: 'student@example.com',
+          role: 'student',
+          school: '南山大学',
+          major: '软件工程',
+          class_name: '一班',
+          provider: 'password',
+          is_active: true,
+          created_at: '2026-06-02T00:00:00Z',
+          last_login_at: null,
+        },
+      }),
     };
 
     vi.stubGlobal('localStorage', {
@@ -1479,6 +1544,31 @@ describe('BranchPage', () => {
       },
       updatedAt: '2026-06-05T00:00:00Z',
     });
+    getMatchedProgramMock.mockResolvedValue({
+      program_id: 'program-1',
+      teacher_uid: 'teacher-1',
+      teacher_name: '测试教师',
+      teacher_identifier: 'teacher@example.com',
+      school: '南山大学',
+      major: '软件工程',
+      class_name: '一班',
+      courses: [
+        {
+          course_node_id: 'teacher_course_1',
+          course_or_chapter_theme: 'C++ 高级编程',
+          course_goal: '补充学校培养方案课程',
+          status: 'locked',
+          has_outline: true,
+          is_custom: false,
+          time_arrangement: {
+            semester_scope: '1',
+            duration: '4 周',
+          },
+        },
+      ],
+      published_at: '2026-06-15T10:00:00.000Z',
+      updated_at: '2026-06-15T10:00:00.000Z',
+    });
 
     const store: Record<string, string> = {
       'mutiagent-auth': JSON.stringify({
@@ -1488,42 +1578,13 @@ describe('BranchPage', () => {
           username: '测试学生',
           identifier: 'student@example.com',
           role: 'student',
+          school: '南山大学',
+          major: '软件工程',
+          class_name: '一班',
           provider: 'password',
           is_active: true,
           created_at: '2026-06-02T00:00:00Z',
           last_login_at: null,
-        },
-      }),
-      'student_teacher_program_bindings': JSON.stringify({
-        'student-1': {
-          studentUid: 'student-1',
-          inviteCode: 'OT-TEACH',
-          teacherUid: 'teacher-1',
-          teacherName: '测试教师',
-          importedAt: '2026-06-15T11:00:00.000Z',
-        },
-      }),
-      'teacher_cultivation_program_share_registry': JSON.stringify({
-        'OT-TEACH': {
-          inviteCode: 'OT-TEACH',
-          teacherUid: 'teacher-1',
-          teacherName: '测试教师',
-          teacherIdentifier: 'teacher@example.com',
-          courses: [
-            {
-              course_node_id: 'teacher_course_1',
-              course_or_chapter_theme: 'C++ 高级编程',
-              course_goal: '补充学校培养方案课程',
-              status: 'locked',
-              has_outline: true,
-              is_custom: false,
-              time_arrangement: {
-                semester_scope: '1',
-                duration: '4 周',
-              },
-            },
-          ],
-          publishedAt: '2026-06-15T10:00:00.000Z',
         },
       }),
     };

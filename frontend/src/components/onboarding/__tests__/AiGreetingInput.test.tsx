@@ -2686,18 +2686,15 @@ test('reuses the same session after profile completion instead of creating a new
   await waitFor(() => {
     expect(screen.getByText(/课程路径/)).toBeTruthy();
     expect(screen.queryByText('确认并生成学习路径')).toBeNull();
-    expect(screen.getByRole('button', { name: /查看学习路径/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /开始第一门课/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /开始学习/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /开始第一门课/ })).toBeNull();
     expect(learningPathUpdated).toHaveBeenCalled();
   });
 
-  fireEvent.click(screen.getByRole('button', { name: /开始第一门课/ }));
+  fireEvent.click(screen.getByRole('button', { name: /开始学习/ }));
 
-  const courseDraftInput = screen.getByPlaceholderText('输入你的学习情况...') as HTMLTextAreaElement;
-  expect(courseDraftInput.value).toContain('帮我生成《AI Agent 开发基础能力搭建》的课程大纲');
-  expect(courseDraftInput.value).toContain('course_node_id: year_3_course_1');
-  expect(screen.queryByRole('button', { name: /查看学习路径/ })).toBeNull();
-  expect(screen.queryByRole('button', { name: /开始第一门课/ })).toBeNull();
+  expect(mockNavigate).toHaveBeenCalledWith('/branch', { state: { justGeneratedProfile: true } });
+  expect(screen.queryByRole('button', { name: /开始学习/ })).toBeNull();
 
   const startCalls = fetchMock.mock.calls.filter(
     ([url]) => url === 'http://127.0.0.1:8000/api/chat/start',

@@ -28,7 +28,6 @@ import { HandwritingCanvas } from '../ui/HandwritingCanvas';
 import { PenTool } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
-  buildCurrentCourseOutlineDraft,
   buildLearningPathGenerationDraft,
   dispatchLearningPathUpdated,
   findLatestLearningPath,
@@ -423,12 +422,6 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
     setHiddenPathActionsMessageId(latestLearningPathMessageId);
     setWidgetState('WIDGET');
     navigate('/branch', { state: { justGeneratedProfile: true } });
-  };
-  const handleStartCurrentCourseDraft = () => {
-    const learningPath = findLatestLearningPath(store.messages);
-    if (!learningPath) return;
-    setHiddenPathActionsMessageId(latestLearningPathMessageId);
-    openWithDraft(buildCurrentCourseOutlineDraft(learningPath));
   };
 
   const { persistSession, clearSessionFromUrl, clearPersistedSession } = useChatSession(
@@ -1082,10 +1075,7 @@ export function AiGreetingInput({ expandedLayout = 'centered' }: AiGreetingInput
                       {shouldShowPathActions && (
                         <div className="composer-path-actions">
                           <button type="button" onClick={handleOpenPath}>
-                            查看学习路径
-                          </button>
-                          <button type="button" onClick={handleStartCurrentCourseDraft}>
-                            开始第一门课
+                            开始学习
                           </button>
                         </div>
                       )}

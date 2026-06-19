@@ -196,6 +196,33 @@ def test_run_intake_agent_normalizes_chinese_grade_year_from_llm(tmp_path: Path)
     assert "error" not in result
 
 
+def test_run_intake_agent_normalizes_numeric_grade_year_from_structured_llm(tmp_path: Path) -> None:
+    engine = build_engine(f"sqlite:///{tmp_path / 'intake-numeric-grade-year.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    profile = _profile()
+    profile["confirmed_info"]["current_grade"] = "大二"
+    profile["summary_text"] = "【基础学习画像总结】大二软件工程，目标是学习数据结构。"
+    llm_result = _llm_intake_result()
+    llm_result["grade_year"] = 2
+    llm_result["grade_name"] = "大二"
+    fake_llm = _FakeIntakeLLM(llm_result)
+
+    result = asyncio.run(run_learning_path_intake_agent({
+        "user_id": "user-1",
+        "session_id": "session-intake-numeric-grade-year",
+        "query": "我现在应该干嘛？",
+        "profile": profile,
+        "messages": [],
+    }, fake_llm))
+
+    intake = result["learning_path_intake"]
+    assert intake["grade_year"] == "year_2"
+    assert intake["grade_name"] == "大二"
+    assert "error" not in result
+
+
 def test_run_intake_agent_marks_existing_draft_confirmed(tmp_path: Path) -> None:
     engine = build_engine(f"sqlite:///{tmp_path / 'intake-confirm.db'}")
     set_engine(engine)

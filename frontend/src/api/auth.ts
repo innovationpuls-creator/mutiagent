@@ -17,6 +17,9 @@ interface ApiAuthResponse {
     username: string;
     identifier: string;
     role: AuthUser['role'];
+    school: string;
+    major: string;
+    class_name: string;
     provider: string;
     is_active: boolean;
     created_at: string;
@@ -34,6 +37,9 @@ function toAuthUser(raw: ApiAuthResponse['user']): AuthUser {
     username: raw.username,
     identifier: raw.identifier,
     role: raw.role,
+    school: raw.school,
+    major: raw.major,
+    class_name: raw.class_name,
     provider: raw.provider,
     is_active: raw.is_active,
     created_at: raw.created_at,
@@ -88,6 +94,9 @@ export const authApi: AuthApi = {
       password: payload.password,
       confirm_password: payload.confirmPassword,
       role: payload.role,
+      school: payload.school,
+      major: payload.major,
+      class_name: payload.className,
     });
   },
   oauth(payload: OAuthPayload) {

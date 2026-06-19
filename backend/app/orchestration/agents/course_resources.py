@@ -1707,12 +1707,15 @@ def _section_body_from_expansion_text(text: str, heading: str) -> str:
         try:
             payload = json.loads(json_text)
         except json.JSONDecodeError:
-            payload = {}
+            return ""
         if isinstance(payload, dict):
             markdown = _clean_text(payload.get("markdown"))
             section_body = _markdown_section_body(markdown, heading)
             if section_body:
                 return section_body
+            return ""
+    elif clean_text.startswith("{") and clean_text.endswith("}"):
+        return ""
 
     section_body = _markdown_section_body(clean_text, heading)
     if section_body:
@@ -1798,6 +1801,71 @@ def _markdown_section_body_issue(heading: str, body: str) -> str | None:
         if len(check_items) < 4:
             return "检查标准少于 4 条。"
     return None
+
+
+def _scaffolded_markdown_section_body(section: dict, heading: str, body: str) -> str:
+    text = _clean_text(body)
+    if heading not in {"步骤讲解", "练习任务", "检查标准"}:
+        return text
+
+    section_id = _clean_text(section.get("section_id"))
+    title = _clean_text(section.get("title")) or section_id
+    description = _clean_text(section.get("description")) or title
+    knowledge_points = _text_items(section.get("key_knowledge_points"))
+    knowledge_text = "、".join(knowledge_points) if knowledge_points else title
+
+    if heading == "步骤讲解":
+        has_table = "|" in text and re.search(r"^\s*\|.*\|\s*$", text, re.MULTILINE)
+        has_code_block = "```" in text
+        if has_table or has_code_block:
+            return text
+        rows = [
+            ("定位目标", f"{title}、{description}", f"圈出本节要解决的知识点：{knowledge_text}", "目标说明", "能用一句话说清本节要学会什么"),
+            ("建立结构", f"{title} 的示例材料", "把概念拆成关键对象、状态变化、边界条件和操作结果", "结构拆解表", "每个字段都有明确含义"),
+            ("执行操作", f"{knowledge_text} 的练习输入", "按步骤记录关键对象、当前状态和结果变化", "操作过程记录", "每一步都能还原学习过程"),
+            ("完成验收", "操作过程记录", "核对输出、边界情况和口头解释是否一致", "自查清单", "能指出错误发生在哪一步"),
+        ]
+        table_lines = [
+            "| 步骤 | 输入材料 | 具体动作 | 产出物 | 验收方式 |",
+            "| --- | --- | --- | --- | --- |",
+            *[f"| {step} | {source} | {action} | {output} | {check} |" for step, source, action, output, check in rows],
+        ]
+        return f"{text}\n\n" + "\n".join(table_lines) if text else "\n".join(table_lines)
+
+    if heading == "练习任务":
+        if text:
+            return text
+        return "\n".join(
+            [
+                f"任务卡：围绕「{title}」完成一次可复查的小练习。",
+                f"预计耗时：20 到 30 分钟。",
+                f"输入：本小节说明「{description}」以及关键知识点「{knowledge_text}」。",
+                "操作步骤：先写出你最容易混淆的点，再按步骤讲解表复盘一次完整过程，随后补充一个边界情况，最后用检查标准逐条自查。",
+                "输出：一份 Markdown 练习记录，包含输入材料、过程表、边界情况说明和最终结论。",
+                "提交物：练习记录、关键步骤截图或手写过程表、以及一段能复述本节难点的说明。",
+                f"完成标准：别人只看你的提交物，就能判断你是否真正理解「{knowledge_text}」并能完成「{title}」对应的操作。",
+            ]
+        )
+
+    checklist_body = _normalize_checklist_body(text)
+    check_items = re.findall(r"^\s*-\s+\[\s*[ xX]?\s*\]", checklist_body, re.MULTILINE)
+    if len(check_items) >= 4:
+        return checklist_body
+
+    supplements = [
+        f"能提交一份围绕「{title}」的笔记，笔记中明确写出本节目标、输入材料、操作结果和验收证据。",
+        f"能解释「{knowledge_text}」与「{description}」之间的关系，并给出一个本节专属例子。",
+        "能用表格或伪代码复盘一次完整操作，标出每一步的输入、动作、产出物和判断依据。",
+        "能完成练习任务并留下可检查产出，例如运行结果、截图、手写过程表或同伴复述记录。",
+    ]
+    existing_text = checklist_body
+    lines = [line for line in checklist_body.splitlines() if line.strip()]
+    for item in supplements:
+        if len(re.findall(r"^\s*-\s+\[\s*[ xX]?\s*\]", "\n".join(lines), re.MULTILINE)) >= 4:
+            break
+        if item not in existing_text:
+            lines.append(f"- [ ] {item}")
+    return "\n".join(lines)
 
 
 def _markdown_teaching_depth_issue(markdown: str, section: dict) -> str | None:
@@ -3437,12 +3505,16 @@ async def run_section_markdown_agent(
                     issue,
                 )
                 section_issue = issue
-            return expansion_section, body
+            scaffolded_body = _scaffolded_markdown_section_body(section, expansion_section, body)
+            return expansion_section, scaffolded_body
 
         body_results = await asyncio.gather(
             *(generate_section_body(heading) for heading in _REQUIRED_MARKDOWN_HEADING_TITLES)
         )
-        section_bodies = dict(body_results)
+        section_bodies = {
+            heading: _scaffolded_markdown_section_body(section, heading, body)
+            for heading, body in body_results
+        }
         body_issues = [
             issue
             for heading in _REQUIRED_MARKDOWN_HEADING_TITLES

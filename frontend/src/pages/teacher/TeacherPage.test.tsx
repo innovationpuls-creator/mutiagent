@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BranchCourseNode } from '../../types/branch';
 import { TeacherPage } from './TeacherPage';
 
+const teacherProgramApiMocks = vi.hoisted(() => ({
+  getTeacherProgram: vi.fn(),
+  publishTeacherProgram: vi.fn(),
+}));
+
 const logoutMock = vi.fn();
 vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({
@@ -14,6 +19,9 @@ vi.mock('../../contexts/AuthContext', () => ({
       username: '测试教师',
       identifier: 'teacher@example.com',
       role: 'teacher',
+      school: '南山大学',
+      major: '软件工程',
+      class_name: '一班',
       provider: 'password',
       is_active: true,
       created_at: '2026-06-02T00:00:00Z',
@@ -22,6 +30,17 @@ vi.mock('../../contexts/AuthContext', () => ({
     login: vi.fn(),
     logout: logoutMock,
   }),
+}));
+
+vi.mock('../../api/teacherProgram', () => ({
+  teacherProgramApi: {
+    getTeacherProgram: teacherProgramApiMocks.getTeacherProgram,
+    publishTeacherProgram: teacherProgramApiMocks.publishTeacherProgram,
+  },
+}));
+
+vi.mock('../../components/graph/OrganicCanvas', () => ({
+  OrganicCanvas: () => <div data-testid="organic-canvas" />,
 }));
 
 const navigateMock = vi.fn();
@@ -86,6 +105,12 @@ class ResizeObserverMock {
 }
 vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 
+async function flushProgramLoad() {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
 describe('TeacherPage State Machine & localStorage Saves', () => {
   let store: Record<string, string> = {};
 
@@ -104,6 +129,21 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
       }),
     });
     vi.useFakeTimers();
+    teacherProgramApiMocks.getTeacherProgram.mockReset();
+    teacherProgramApiMocks.publishTeacherProgram.mockReset();
+    teacherProgramApiMocks.getTeacherProgram.mockResolvedValue(null);
+    teacherProgramApiMocks.publishTeacherProgram.mockResolvedValue({
+      program_id: 'program-1',
+      teacher_uid: 'teacher-1',
+      teacher_name: '测试教师',
+      teacher_identifier: 'teacher@example.com',
+      school: '南山大学',
+      major: '软件工程',
+      class_name: '一班',
+      courses: [],
+      published_at: '2026-06-15T10:00:00Z',
+      updated_at: '2026-06-15T10:00:00Z',
+    });
   });
 
   afterEach(() => {
@@ -197,11 +237,11 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
 
     // Check editor state
     expect(screen.getByText('培养方案大纲对齐')).toBeTruthy();
-    expect(screen.getByText('教师：测试教师 | 正在编辑已对齐的人培课程方案')).toBeTruthy();
+    expect(screen.getByText('管理员：测试教师 | 正在编辑已对齐的人培课程方案')).toBeTruthy();
     expect(screen.getByText('高等数学 I')).toBeTruthy();
   });
 
-  it('loads existing courses from localStorage on mount and starts in editor state', () => {
+  it('loads existing courses from the management API on mount and starts in editor state', async () => {
     const mockSavedCourses = [
       {
         course_node_id: 'math_1',
@@ -216,15 +256,34 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
         acceptance_criteria: ['期末考试'],
       },
     ];
-    store['teacher_cultivation_program'] = JSON.stringify(mockSavedCourses);
+    teacherProgramApiMocks.getTeacherProgram.mockResolvedValue({
+      program_id: 'program-1',
+      teacher_uid: 'teacher-1',
+      teacher_name: '测试教师',
+      teacher_identifier: 'teacher@example.com',
+      school: '南山大学',
+      major: '软件工程',
+      class_name: '一班',
+      courses: mockSavedCourses,
+      published_at: '2026-06-15T10:00:00Z',
+      updated_at: '2026-06-15T10:00:00Z',
+    });
 
     render(<TeacherPage />);
+    await flushProgramLoad();
 
     expect(screen.getByText('培养方案大纲对齐')).toBeTruthy();
     expect(screen.getByText('高等数学 I (已保存)')).toBeTruthy();
   });
 
-  it('opens DetailDrawer, edits values, and saves updates to localStorage with key "teacher_cultivation_program"', async () => {
+  it('stays empty when the management API has no saved program', () => {
+    render(<TeacherPage />);
+
+    expect(screen.getByText('拖拽或点击上传培养方案文档')).toBeTruthy();
+    expect(screen.queryByText('高等数学 I')).toBeNull();
+  });
+
+  it('opens DetailDrawer, edits values, and publishes updates through the management API', async () => {
     // Start by uploading file and going to editor
     render(<TeacherPage />);
     const dropzone = screen.getByTestId('dropzone');
@@ -297,22 +356,18 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
     });
     expect(screen.queryByText('人培方案已成功发布并对齐！')).toBeNull();
 
-    // Verify localStorage contains the saved course details
-    const savedStr = store['teacher_cultivation_program'];
-    expect(savedStr).not.toBeNull();
-    const savedCourses = JSON.parse(savedStr!);
-    const updatedMath = savedCourses.find((c: BranchCourseNode) => c.course_node_id === 'math_1');
+    expect(teacherProgramApiMocks.publishTeacherProgram).toHaveBeenCalledWith('test-token', expect.any(Array), {
+      school: '南山大学',
+      major: '软件工程',
+      className: '一班',
+    });
+    const savedCourses = teacherProgramApiMocks.publishTeacherProgram.mock.calls[0][1] as BranchCourseNode[];
+    const updatedMath = savedCourses.find((c) => c.course_node_id === 'math_1');
+    expect(updatedMath).toBeTruthy();
+    if (!updatedMath) return;
     expect(updatedMath.course_or_chapter_theme).toBe('高等数学 I (修改版)');
     expect(updatedMath.course_goal).toBe('新的课程目标内容');
     expect(updatedMath.is_custom).toBe(true);
-
-    const shareRegistry = JSON.parse(store['teacher_cultivation_program_share_registry']);
-    const inviteCodes = Object.keys(shareRegistry);
-    expect(inviteCodes).toHaveLength(1);
-    expect(shareRegistry[inviteCodes[0]].teacherUid).toBe('teacher-1');
-    expect(shareRegistry[inviteCodes[0]].courses[0].is_custom).toBe(true);
-    expect(screen.getByText('教师口令')).toBeTruthy();
-    expect(screen.getByText(inviteCodes[0])).toBeTruthy();
   });
 
   it('allows reimporting to clear courses and return to empty state', async () => {
@@ -326,7 +381,18 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
         is_custom: false,
       },
     ];
-    store['teacher_cultivation_program'] = JSON.stringify(mockSavedCourses);
+    teacherProgramApiMocks.getTeacherProgram.mockResolvedValue({
+      program_id: 'program-1',
+      teacher_uid: 'teacher-1',
+      teacher_name: '测试教师',
+      teacher_identifier: 'teacher@example.com',
+      school: '南山大学',
+      major: '软件工程',
+      class_name: '一班',
+      courses: mockSavedCourses,
+      published_at: '2026-06-15T10:00:00Z',
+      updated_at: '2026-06-15T10:00:00Z',
+    });
 
     const confirmSpy = vi.fn(() => true);
     vi.stubGlobal('confirm', confirmSpy);
@@ -335,6 +401,7 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
     }
 
     render(<TeacherPage />);
+    await flushProgramLoad();
 
     // Click reimport button
     const reimportBtn = screen.getByRole('button', { name: '重新导入' });
@@ -344,7 +411,6 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
 
     expect(confirmSpy).toHaveBeenCalled();
     expect(screen.getByText('拖拽或点击上传培养方案文档')).toBeTruthy();
-    expect(localStorage.getItem('teacher_cultivation_program')).toBeNull();
   });
 
   it('allows tab switching between Editor and Graph when courses exist', async () => {
@@ -357,22 +423,34 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
         is_custom: false,
       },
     ];
-    store['teacher_cultivation_program'] = JSON.stringify(mockSavedCourses);
+    teacherProgramApiMocks.getTeacherProgram.mockResolvedValue({
+      program_id: 'program-1',
+      teacher_uid: 'teacher-1',
+      teacher_name: '测试教师',
+      teacher_identifier: 'teacher@example.com',
+      school: '南山大学',
+      major: '软件工程',
+      class_name: '一班',
+      courses: mockSavedCourses,
+      published_at: '2026-06-15T10:00:00Z',
+      updated_at: '2026-06-15T10:00:00Z',
+    });
 
     render(<TeacherPage />);
+    await flushProgramLoad();
 
     // Check that we are initially on the editor tab
     expect(screen.getByText('培养方案大纲对齐')).toBeTruthy();
 
     // Click on the graph tab
-    const graphTab = screen.getByRole('button', { name: '方案关系图谱' });
+    const graphTab = screen.getByRole('button', { name: '方案依赖图谱' });
     await act(async () => {
       fireEvent.click(graphTab);
     });
 
     // Verify editor content is replaced by graph view
     expect(screen.queryByText('培养方案大纲对齐')).toBeNull();
-    expect(screen.getByRole('heading', { name: '方案关系图谱' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '方案依赖图谱' })).toBeTruthy();
 
     // Click back to editor tab
     const editorTab = screen.getByRole('button', { name: '大纲对齐编辑' });
@@ -393,9 +471,21 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
         is_custom: false,
       },
     ];
-    store['teacher_cultivation_program'] = JSON.stringify(mockSavedCourses);
+    teacherProgramApiMocks.getTeacherProgram.mockResolvedValue({
+      program_id: 'program-1',
+      teacher_uid: 'teacher-1',
+      teacher_name: '测试教师',
+      teacher_identifier: 'teacher@example.com',
+      school: '南山大学',
+      major: '软件工程',
+      class_name: '一班',
+      courses: mockSavedCourses,
+      published_at: '2026-06-15T10:00:00Z',
+      updated_at: '2026-06-15T10:00:00Z',
+    });
 
     render(<TeacherPage />);
+    await flushProgramLoad();
 
     // Select the avatar button (displays first character of username '测试教师' which is '测')
     const avatarBtn = screen.getByRole('button', { name: '测' });
@@ -442,18 +532,30 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
         time_arrangement: { semester_scope: '1', duration: '64学时/4学分' },
       },
     ];
-    store['teacher_cultivation_program'] = JSON.stringify(mockSavedCourses);
+    teacherProgramApiMocks.getTeacherProgram.mockResolvedValue({
+      program_id: 'program-1',
+      teacher_uid: 'teacher-1',
+      teacher_name: '测试教师',
+      teacher_identifier: 'teacher@example.com',
+      school: '南山大学',
+      major: '软件工程',
+      class_name: '一班',
+      courses: mockSavedCourses,
+      published_at: '2026-06-15T10:00:00Z',
+      updated_at: '2026-06-15T10:00:00Z',
+    });
 
     render(<TeacherPage />);
+    await flushProgramLoad();
 
     // Click on the graph tab
-    const graphTab = screen.getByRole('button', { name: '方案关系图谱' });
+    const graphTab = screen.getByRole('button', { name: '方案依赖图谱' });
     await act(async () => {
       fireEvent.click(graphTab);
     });
 
     // Verify graph title and stats distribution panel exist
-    expect(screen.getByRole('heading', { name: '方案关系图谱' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '方案依赖图谱' })).toBeTruthy();
     expect(screen.getByText('学期学分分布 (Credits per Semester)')).toBeTruthy();
     expect(screen.getByText('学期课时分布 (Hours per Semester)')).toBeTruthy();
   });

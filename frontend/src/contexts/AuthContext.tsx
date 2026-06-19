@@ -15,8 +15,15 @@ const AuthContext = createContext<AuthState | null>(null);
 const STORAGE_KEY = 'mutiagent-auth';
 
 function normalizeUser(user: AuthUser): AuthUser {
-  if (user.role === 'teacher' || user.role === 'admin') return user;
-  return { ...user, role: 'student' };
+  const normalized = {
+    ...user,
+    school: typeof user.school === 'string' ? user.school : '',
+    major: typeof user.major === 'string' ? user.major : '',
+    class_name: typeof user.class_name === 'string' ? user.class_name : '',
+  };
+  if (normalized.role === 'teacher') return { ...normalized, role: 'admin' };
+  if (normalized.role === 'admin') return normalized;
+  return { ...normalized, role: 'student' };
 }
 
 function loadAuth(): { user: AuthUser; token: string } | null {

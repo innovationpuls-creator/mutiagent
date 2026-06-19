@@ -29,12 +29,34 @@ class User(SQLModel, table=True):
     username: str = Field(index=True, min_length=1, max_length=64)
     identifier: str = Field(index=True, unique=True, min_length=3, max_length=128)
     role: str = Field(default="student", index=True, max_length=16)
+    school: str = Field(default="", index=True, max_length=128)
+    major: str = Field(default="", index=True, max_length=128)
+    class_name: str = Field(default="", index=True, max_length=128)
     provider: str = Field(default="password", index=True, max_length=32)
     password_hash: str | None = Field(default=None, max_length=128)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login_at: datetime | None = Field(default=None)
+
+
+class CultivationProgram(SQLModel, table=True):
+    """Published human cultivation program for one school/major/class scope."""
+    __table_args__ = (
+        UniqueConstraint("school", "major", "class_name", name="uq_cultivation_program_cohort"),
+        Index("idx_cultivation_program_teacher", "teacher_uid"),
+        Index("idx_cultivation_program_cohort", "school", "major", "class_name"),
+    )
+
+    program_id: str = Field(primary_key=True, max_length=64)
+    teacher_uid: str = Field(foreign_key="user.uid", index=True)
+    school: str = Field(index=True, max_length=128)
+    major: str = Field(index=True, max_length=128)
+    class_name: str = Field(index=True, max_length=128)
+    courses: list = Field(default_factory=list, sa_column=Column(_jsonb))
+    published_at: datetime | None = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class UserProfile(SQLModel, table=True):

@@ -26,6 +26,9 @@ def _register(client: TestClient, identifier: str) -> tuple[str, str]:
             "identifier": identifier,
             "password": "test-password-123",
             "confirm_password": "test-password-123",
+            "school": "测试大学",
+            "major": "软件工程",
+            "class_name": "三班",
         },
     )
     body = response.json()

@@ -35,6 +35,9 @@ const initialFields = {
   username: '',
   identifier: '',
   confirmPassword: '',
+  school: '',
+  major: '',
+  className: '',
 };
 
 const tabs: { value: AuthMode; label: string }[] = [
@@ -44,7 +47,7 @@ const tabs: { value: AuthMode; label: string }[] = [
 
 const entries: { value: AuthEntry; label: string }[] = [
   { value: 'student', label: '学生' },
-  { value: 'teacher', label: '教师' },
+  { value: 'admin', label: '管理员' },
 ];
 
 export function AuthPanel(props: AuthPanelProps) {
@@ -165,6 +168,9 @@ function AuthForm({ busy, entry, error, mode, onLogin, onRegister }: Omit<AuthPa
       password: fields.password,
       confirmPassword: fields.confirmPassword,
       role: entry,
+      school: fields.school,
+      major: fields.major,
+      className: fields.className,
     });
   };
 
@@ -223,18 +229,52 @@ function AuthForm({ busy, entry, error, mode, onLogin, onRegister }: Omit<AuthPa
         </motion.div>
 
         {mode === 'register' ? (
-          <motion.div key="confirmPassword" layout {...fieldReveal}>
-            <TextField
-              label="确认密码"
-              name="confirmPassword"
-              type="password"
-              autoComplete="new-password"
-              value={fields.confirmPassword}
-              onChange={(event) => setField('confirmPassword', event.target.value)}
-              minLength={6}
-              required
-            />
-          </motion.div>
+          <>
+            <motion.div key="school" layout {...fieldReveal}>
+              <TextField
+                label="学校"
+                name="school"
+                autoComplete="organization"
+                value={fields.school}
+                onChange={(event) => setField('school', event.target.value)}
+                minLength={1}
+                required
+              />
+            </motion.div>
+            <motion.div key="major" layout {...fieldReveal}>
+              <TextField
+                label="专业"
+                name="major"
+                autoComplete="organization-title"
+                value={fields.major}
+                onChange={(event) => setField('major', event.target.value)}
+                minLength={1}
+                required
+              />
+            </motion.div>
+            <motion.div key="className" layout {...fieldReveal}>
+              <TextField
+                label="班级"
+                name="className"
+                value={fields.className}
+                onChange={(event) => setField('className', event.target.value)}
+                minLength={1}
+                required
+              />
+            </motion.div>
+            <motion.div key="confirmPassword" layout {...fieldReveal}>
+              <TextField
+                label="确认密码"
+                name="confirmPassword"
+                type="password"
+                autoComplete="new-password"
+                value={fields.confirmPassword}
+                onChange={(event) => setField('confirmPassword', event.target.value)}
+                minLength={6}
+                required
+              />
+            </motion.div>
+          </>
         ) : null}
       </AnimatePresence>
 

@@ -152,66 +152,69 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="测验不存在")
 
         async def event_generator() -> AsyncGenerator[str, None]:
-            yield _sse("status", {"phase": "grading", "message": "正在批改你的答案..."})
+            try:
+                yield _sse("status", {"phase": "grading", "message": "正在批改你的答案..."})
 
-            grading_result = await grade_quiz_answers(
-                get_worker_llm(),
-                questions=quiz.questions,
-                answers=payload.answers,
-            )
+                grading_result = await grade_quiz_answers(
+                    get_worker_llm(),
+                    questions=quiz.questions,
+                    answers=payload.answers,
+                )
 
-            yield _sse("status", {"phase": "analyzing", "message": "正在分析薄弱知识点..."})
+                yield _sse("status", {"phase": "analyzing", "message": "正在分析薄弱知识点..."})
 
-            attempt, weaknesses = submit_quiz_attempt(
-                session, current_user.uid, quiz.quiz_id, payload.answers, grading_result,
-            )
+                attempt, weaknesses = submit_quiz_attempt(
+                    session, current_user.uid, quiz.quiz_id, payload.answers, grading_result,
+                )
 
-            weakness_data = [
-                {
-                    "knowledge_point_id": w.knowledge_point_id,
-                    "knowledge_point_name": w.knowledge_point_name,
-                    "severity": w.severity,
-                }
-                for w in weaknesses
-            ]
+                weakness_data = [
+                    {
+                        "knowledge_point_id": w.knowledge_point_id,
+                        "knowledge_point_name": w.knowledge_point_name,
+                        "severity": w.severity,
+                    }
+                    for w in weaknesses
+                ]
 
-            if weakness_data:
-                yield _sse("status", {
-                    "phase": "weakness_found",
-                    "message": f"发现 {len(weakness_data)} 个薄弱知识点",
-                    "weak_points": weakness_data,
+                if weakness_data:
+                    yield _sse("status", {
+                        "phase": "weakness_found",
+                        "message": f"发现 {len(weakness_data)} 个薄弱知识点",
+                        "weak_points": weakness_data,
+                    })
+
+                yield _sse("status", {"phase": "unlocking", "message": "正在解锁下一章节..."})
+
+                canopy = get_canopy_overview(session, current_user.uid)
+                grade_year, chapter_ids = _chapter_ids_for_course(session, current_user.uid, quiz.course_node_id)
+                next_chapter_id = _next_chapter_id(chapter_ids, quiz.chapter_id)
+
+                next_unlocked_chapter_id = next_chapter_id if attempt.passed else None
+                next_course_id = None
+                if attempt.passed and not next_chapter_id:
+                    updated_path = get_year_learning_path(session, current_user.uid, grade_year)
+                    if updated_path:
+                        current_course = updated_path.get("current_learning_course", {})
+                        if current_course and current_course.get("course_node_id") != quiz.course_node_id:
+                            next_course_id = current_course.get("course_node_id")
+
+                yield _sse("done", {
+                    "attempt": {
+                        "attempt_id": attempt.attempt_id,
+                        "quiz_id": attempt.quiz_id,
+                        "score": attempt.score,
+                        "passed": attempt.passed,
+                        "answers": attempt.answers,
+                        "grading_result": attempt.grading_result,
+                        "created_at": attempt.created_at.isoformat(),
+                    },
+                    "weaknesses": weakness_data,
+                    "canopy_overview": canopy,
+                    "next_unlocked_chapter_id": next_unlocked_chapter_id,
+                    "next_course_id": next_course_id,
                 })
-
-            yield _sse("status", {"phase": "unlocking", "message": "正在解锁下一章节..."})
-
-            canopy = get_canopy_overview(session, current_user.uid)
-            grade_year, chapter_ids = _chapter_ids_for_course(session, current_user.uid, quiz.course_node_id)
-            next_chapter_id = _next_chapter_id(chapter_ids, quiz.chapter_id)
-
-            next_unlocked_chapter_id = next_chapter_id if attempt.passed else None
-            next_course_id = None
-            if attempt.passed and not next_chapter_id:
-                updated_path = get_year_learning_path(session, current_user.uid, grade_year)
-                if updated_path:
-                    current_course = updated_path.get("current_learning_course", {})
-                    if current_course and current_course.get("course_node_id") != quiz.course_node_id:
-                        next_course_id = current_course.get("course_node_id")
-
-            yield _sse("done", {
-                "attempt": {
-                    "attempt_id": attempt.attempt_id,
-                    "quiz_id": attempt.quiz_id,
-                    "score": attempt.score,
-                    "passed": attempt.passed,
-                    "answers": attempt.answers,
-                    "grading_result": attempt.grading_result,
-                    "created_at": attempt.created_at.isoformat(),
-                },
-                "weaknesses": weakness_data,
-                "canopy_overview": canopy,
-                "next_unlocked_chapter_id": next_unlocked_chapter_id,
-                "next_course_id": next_course_id,
-            })
+            except Exception as exc:
+                yield _sse("error", {"message": str(exc) or "测验提交失败"})
 
         return StreamingResponse(
             event_generator(),

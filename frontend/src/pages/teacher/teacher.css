@@ -23,6 +23,79 @@
   inline-size: 100%;
   max-inline-size: var(--container-default);
   margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+}
+
+.program-scope-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
+  gap: var(--space-24);
+  align-items: end;
+  padding: var(--space-24) var(--space-32);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.program-scope-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.program-scope-kicker {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+}
+
+.program-scope-copy h2 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--text-h3);
+  font-weight: 500;
+}
+
+.program-scope-copy p:last-child {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  line-height: 1.6;
+}
+
+.program-scope-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-16);
+}
+
+.program-scope-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+}
+
+.program-scope-field input {
+  inline-size: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  padding: var(--space-12) var(--space-16);
+  box-shadow: var(--shadow-inset);
+  font: inherit;
+}
+
+.program-scope-field input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
 }
 
 /* 按钮基础定义 */
@@ -574,6 +647,14 @@
   color: var(--color-text-primary);
 }
 
+.teacher-brand-button {
+  border: none;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
 .teacher-logo-img {
   width: 28px;
   height: 28px;
@@ -587,9 +668,15 @@
 
 .teacher-nav-tabs {
   display: flex;
-  gap: var(--space-24);
-  height: 100%;
+  justify-content: center;
+  gap: var(--space-12);
   align-items: center;
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  align-self: center;
 }
 
 .teacher-tab {
@@ -599,9 +686,12 @@
   font-family: inherit;
   font-size: var(--text-body-sm);
   color: var(--color-text-secondary);
-  padding: var(--space-8) var(--space-12);
+  padding: var(--space-10) var(--space-20);
+  border-radius: var(--radius-full);
   cursor: pointer;
-  transition: color var(--duration-lazy-hover) var(--ease-lazy);
+  transition:
+    color var(--duration-lazy-hover) var(--ease-lazy),
+    transform var(--duration-lazy-hover) var(--ease-lazy);
 }
 
 .teacher-tab:hover {
@@ -609,6 +699,7 @@
 }
 
 .teacher-tab.tab-active {
+  background: var(--color-primary-soft);
   color: var(--color-primary);
 }
 
@@ -625,6 +716,42 @@
   height: 3px;
   background: var(--color-primary);
   border-radius: var(--radius-full);
+}
+
+.teacher-admin-menu {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.teacher-admin-link {
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-family: inherit;
+  font-size: var(--text-body-sm);
+  padding: var(--space-8) var(--space-16);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition:
+    color var(--duration-lazy-hover) var(--ease-lazy),
+    transform var(--duration-lazy-hover) var(--ease-lazy);
+}
+
+.teacher-admin-link:hover {
+  color: var(--color-text-primary);
+  transform: translateY(calc(var(--space-4) * -1));
+}
+
+.teacher-admin-link.active {
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .teacher-user-area {
@@ -804,6 +931,16 @@
 @media (max-width: 768px) {
   .stats-distribution-panel {
     grid-template-columns: 1fr;
+  }
+
+  .program-scope-panel,
+  .program-scope-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .teacher-admin-menu {
+    overflow-x: auto;
+    max-inline-size: 58vw;
   }
 }
 

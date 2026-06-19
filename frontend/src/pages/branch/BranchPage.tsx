@@ -7,9 +7,9 @@ import { motionTokens } from '../../styles/motion-tokens';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { fetchBranchOverview } from '../../api/branch';
 import { fetchProfileDashboard } from '../../api/profile';
+import { teacherProgramApi } from '../../api/teacherProgram';
 import { useAuth } from '../../contexts/AuthContext';
 import { profileYearIdFromCurrentGrade } from '../../lib/profileContract';
-import { getBoundTeacherProgramForStudent, TEACHER_PROGRAM_IMPORTED_EVENT } from '../../lib/teacherProgramShare';
 import type { BranchCourseNode, BranchOverview } from '../../types/branch';
 import { PathInitOverlay } from '../../components/onboarding/PathInitOverlay';
 import { LEARNING_PATH_UPDATED_EVENT } from '../../onboarding/learningPathFlow';
@@ -107,17 +107,6 @@ function normalizeTeacherProgramCourses(rawCourses: unknown): BranchCourseNode[]
       ...course,
       is_custom: true,
     }));
-}
-
-function readLegacyTeacherProgramCourses(): BranchCourseNode[] {
-  const storedProgram = localStorage.getItem('teacher_cultivation_program');
-  if (!storedProgram) return [];
-
-  try {
-    return normalizeTeacherProgramCourses(JSON.parse(storedProgram));
-  } catch {
-    return [];
-  }
 }
 
 function mergeTeacherProgramCourses(overview: BranchOverview, presetCourses: BranchCourseNode[]) {
@@ -827,7 +816,7 @@ export function BranchPage() {
   const reduceMotion = useReducedMotion();
   const navigate = useNavigate();
   const location = useLocation();
-  const { token, isAuthReady, user } = useAuth();
+  const { token, isAuthReady } = useAuth();
   const [overview, setOverview] = useState<BranchOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -856,15 +845,15 @@ export function BranchPage() {
       }
 
       try {
-        const [nextOverview, dashboard] = await Promise.all([
+        const [nextOverview, dashboard, matchedProgram] = await Promise.all([
           fetchBranchOverview(token),
           fetchProfileDashboard(token),
+          teacherProgramApi.getMatchedProgram(token),
         ]);
 
-        const boundTeacherProgram = user ? getBoundTeacherProgramForStudent(user.uid) : null;
-        const teacherProgramCourses = boundTeacherProgram
-          ? normalizeTeacherProgramCourses(boundTeacherProgram.record.courses)
-          : readLegacyTeacherProgramCourses();
+        const teacherProgramCourses = matchedProgram
+          ? normalizeTeacherProgramCourses(matchedProgram.courses)
+          : [];
         mergeTeacherProgramCourses(nextOverview, teacherProgramCourses);
 
         if (!isMountedRef.current || options?.shouldIgnore?.()) {
@@ -893,7 +882,7 @@ export function BranchPage() {
           setLoading(false);
         }
       }
-  }, [isAuthReady, token, user]);
+  }, [isAuthReady, token]);
 
   useEffect(() => {
     let cancelled = false;
@@ -911,10 +900,8 @@ export function BranchPage() {
     };
 
     window.addEventListener(LEARNING_PATH_UPDATED_EVENT, handleLearningPathUpdated);
-    window.addEventListener(TEACHER_PROGRAM_IMPORTED_EVENT, handleLearningPathUpdated);
     return () => {
       window.removeEventListener(LEARNING_PATH_UPDATED_EVENT, handleLearningPathUpdated);
-      window.removeEventListener(TEACHER_PROGRAM_IMPORTED_EVENT, handleLearningPathUpdated);
     };
   }, [loadOverview]);
 

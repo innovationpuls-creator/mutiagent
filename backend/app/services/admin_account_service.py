@@ -13,8 +13,10 @@ from app.models import (
     ChapterProgress,
     ChapterQuiz,
     ChapterQuizAttempt,
+    ChapterWeakness,
     CourseResourceQuality,
     ConversationSession,
+    CultivationProgram,
     User,
     UserCourseKnowledgeOutline,
     UserProfile,
@@ -30,7 +32,7 @@ from app.schemas import (
 )
 from app.services.auth_service import find_user, to_user_read
 
-CSV_FIELDS = ["username", "identifier", "password", "role", "is_active"]
+CSV_FIELDS = ["username", "identifier", "password", "role", "is_active", "school", "major", "class_name"]
 VALID_ROLES = {"student", "teacher", "admin"}
 
 
@@ -52,6 +54,9 @@ def create_account(session: Session, payload: AdminAccountCreateRequest) -> User
         username=payload.username,
         identifier=payload.identifier,
         role=payload.role,
+        school=payload.school,
+        major=payload.major,
+        class_name=payload.class_name,
         provider="password",
         password_hash=hash_password(payload.password),
         is_active=payload.is_active,
@@ -84,6 +89,9 @@ def update_account(session: Session, uid: str, payload: AdminAccountUpdateReques
     user.username = payload.username
     user.identifier = payload.identifier
     user.role = payload.role
+    user.school = payload.school
+    user.major = payload.major
+    user.class_name = payload.class_name
     user.is_active = payload.is_active
     user.updated_at = datetime.now(timezone.utc)
     if payload.password:
@@ -129,26 +137,8 @@ def batch_accounts(session: Session, payload: AdminAccountBatchRequest, current_
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="不能删除当前登录管理员",
                 )
-        uids = [u.uid for u in users]
-        # Delete dependent rows first, flush to enforce FK order
-        for model in (ChapterQuizAttempt,):
-            rows = session.exec(select(model).where(model.user_uid.in_(uids))).all()
-            for row in rows:
-                session.delete(row)
-        session.flush()
-        # Now delete rows that depended on the above
-        for model in (
-            ChapterQuiz,
-            ChapterProgress,
-            CourseResourceQuality,
-            ConversationSession,
-            UserCourseKnowledgeOutline,
-            UserYearLearningPath,
-            UserProfile,
-        ):
-            rows = session.exec(select(model).where(model.user_uid.in_(uids))).all()
-            for row in rows:
-                session.delete(row)
+        for user in users:
+            delete_user_learning_data(session, user.uid)
         session.flush()
         for user in users:
             session.delete(user)
@@ -182,7 +172,7 @@ def import_accounts(session: Session, csv_text: str, current_user: User) -> Admi
             failures=[
                 AdminAccountImportFailure(
                     row=1,
-                    reason="CSV 表头必须为 username,identifier,password,role,is_active",
+                    reason="CSV 表头必须为 username,identifier,password,role,is_active,school,major,class_name",
                 )
             ],
         )
@@ -197,6 +187,9 @@ def import_accounts(session: Session, csv_text: str, current_user: User) -> Admi
             password = (row.get("password") or "").strip()
             role = _parse_role(row.get("role"))
             is_active = _parse_bool(row.get("is_active"))
+            school = _required(row, "school")
+            major = _required(row, "major")
+            class_name = _required(row, "class_name")
             if not identifier:
                 raise ValueError("identifier 不能为空")
 
@@ -206,6 +199,9 @@ def import_accounts(session: Session, csv_text: str, current_user: User) -> Admi
                 existing.username = username
                 existing.role = role
                 existing.is_active = is_active
+                existing.school = school
+                existing.major = major
+                existing.class_name = class_name
                 existing.updated_at = datetime.now(timezone.utc)
                 if password:
                     existing.password_hash = hash_password(password)
@@ -220,6 +216,9 @@ def import_accounts(session: Session, csv_text: str, current_user: User) -> Admi
                 username=username,
                 identifier=identifier,
                 role=role,
+                school=school,
+                major=major,
+                class_name=class_name,
                 provider="password",
                 password_hash=hash_password(password),
                 is_active=is_active,
@@ -257,12 +256,19 @@ def export_accounts(session: Session) -> str:
                 "password": "",
                 "role": user.role,
                 "is_active": "true" if user.is_active else "false",
+                "school": user.school,
+                "major": user.major,
+                "class_name": user.class_name,
             }
         )
     return output.getvalue()
 
 
 def _delete_user_owned_rows(session: Session, uid: str) -> None:
+    delete_user_learning_data(session, uid)
+
+
+def delete_user_learning_data(session: Session, uid: str) -> None:
     # Delete ChapterQuizAttempt first (depends on ChapterQuiz via FK), then flush
     rows = session.exec(select(ChapterQuizAttempt).where(ChapterQuizAttempt.user_uid == uid)).all()
     for row in rows:
@@ -271,6 +277,7 @@ def _delete_user_owned_rows(session: Session, uid: str) -> None:
     for model in (
         ChapterQuiz,
         ChapterProgress,
+        ChapterWeakness,
         CourseResourceQuality,
         ConversationSession,
         UserCourseKnowledgeOutline,
@@ -280,6 +287,10 @@ def _delete_user_owned_rows(session: Session, uid: str) -> None:
         rows = session.exec(select(model).where(model.user_uid == uid)).all()
         for row in rows:
             session.delete(row)
+
+    programs = session.exec(select(CultivationProgram).where(CultivationProgram.teacher_uid == uid)).all()
+    for program in programs:
+        session.delete(program)
 
 
 def _ensure_not_self_lockout(user: User, current_user: User | None, role: str, is_active: bool) -> None:

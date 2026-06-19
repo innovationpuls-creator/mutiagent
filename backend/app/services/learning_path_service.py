@@ -11,6 +11,8 @@ from app.models import (
     ChapterProgress,
     ChapterQuiz,
     ChapterQuizAttempt,
+    ChapterWeakness,
+    CourseResourceQuality,
     UserCourseKnowledgeOutline,
     UserProfile,
     UserYearLearningPath,
@@ -145,6 +147,91 @@ def _course_index(courses: list[dict], course_id: str) -> int:
         ),
         -1,
     )
+
+
+def _course_identity(course: dict) -> tuple[str, str, str]:
+    return (
+        str(course.get("course_node_id") or ""),
+        str(course.get("course_or_chapter_theme") or ""),
+        str(course.get("course_goal") or ""),
+    )
+
+
+def _grade_course_id_set(path_data: dict, grade_year: str) -> set[str]:
+    return {
+        course_id
+        for course_id, _theme, _goal in (
+            _course_identity(course) for course in get_grade_courses(path_data, grade_year)
+        )
+        if course_id
+    }
+
+
+def _grade_courses_changed(previous_path_data: dict, next_path_data: dict, grade_year: str) -> bool:
+    previous_courses = [_course_identity(course) for course in get_grade_courses(previous_path_data, grade_year)]
+    next_courses = [_course_identity(course) for course in get_grade_courses(next_path_data, grade_year)]
+    return previous_courses != next_courses
+
+
+def _delete_course_runtime_state(session: Session, user_uid: str, course_ids: set[str]) -> None:
+    if not course_ids:
+        return
+
+    quizzes = list(
+        session.exec(
+            select(ChapterQuiz).where(
+                ChapterQuiz.user_uid == user_uid,
+                ChapterQuiz.course_node_id.in_(course_ids),
+            )
+        ).all()
+    )
+    quiz_ids = [quiz.quiz_id for quiz in quizzes]
+    if quiz_ids:
+        attempts = list(
+            session.exec(
+                select(ChapterQuizAttempt).where(
+                    ChapterQuizAttempt.user_uid == user_uid,
+                    ChapterQuizAttempt.quiz_id.in_(quiz_ids),
+                )
+            ).all()
+        )
+        for attempt in attempts:
+            session.delete(attempt)
+    for quiz in quizzes:
+        session.delete(quiz)
+
+    progress_rows = list(
+        session.exec(
+            select(ChapterProgress).where(
+                ChapterProgress.user_uid == user_uid,
+                ChapterProgress.course_node_id.in_(course_ids),
+            )
+        ).all()
+    )
+    for progress in progress_rows:
+        session.delete(progress)
+
+    weakness_rows = list(
+        session.exec(
+            select(ChapterWeakness).where(
+                ChapterWeakness.user_uid == user_uid,
+                ChapterWeakness.course_node_id.in_(course_ids),
+            )
+        ).all()
+    )
+    for weakness in weakness_rows:
+        session.delete(weakness)
+
+    quality_rows = list(
+        session.exec(
+            select(CourseResourceQuality).where(
+                CourseResourceQuality.user_uid == user_uid,
+                CourseResourceQuality.course_node_id.in_(course_ids),
+            )
+        ).all()
+    )
+    for quality in quality_rows:
+        session.delete(quality)
 
 
 def get_year_progress_snapshot(path_data: dict, grade_year: str) -> dict[str, object]:
@@ -513,6 +600,13 @@ def upsert_year_learning_path(
             updated_at=now,
         )
     else:
+        previous_path_data = row.path_data if isinstance(row.path_data, dict) else {}
+        if _grade_courses_changed(previous_path_data, path_data, grade_year):
+            affected_course_ids = (
+                _grade_course_id_set(previous_path_data, grade_year)
+                | _grade_course_id_set(path_data, grade_year)
+            )
+            _delete_course_runtime_state(session, user_uid, affected_course_ids)
         row.learning_topic = learning_topic
         row.path_data = path_data
         row.updated_at = now

@@ -47,6 +47,9 @@ def test_admin_can_manage_accounts(tmp_path: Path, monkeypatch) -> None:
             "password": "teacher-password-123",
             "role": "teacher",
             "is_active": True,
+            "school": "南山大学",
+            "major": "软件工程",
+            "class_name": "一班",
         },
     )
 
@@ -69,6 +72,9 @@ def test_admin_can_manage_accounts(tmp_path: Path, monkeypatch) -> None:
             "password": "teacher-password-456",
             "role": "student",
             "is_active": False,
+            "school": "南山大学",
+            "major": "软件工程",
+            "class_name": "二班",
         },
     )
 
@@ -96,6 +102,9 @@ def test_student_cannot_manage_accounts(tmp_path: Path, monkeypatch) -> None:
             "identifier": "student-admin-api@example.com",
             "password": "student-password-123",
             "confirm_password": "student-password-123",
+            "school": "南山大学",
+            "major": "软件工程",
+            "class_name": "一班",
         },
     )
     token = response.json()["access_token"]
@@ -122,6 +131,9 @@ def test_admin_batch_updates_accounts(tmp_path: Path, monkeypatch) -> None:
             "password": "batch-password-123",
             "role": "student",
             "is_active": True,
+            "school": "南山大学",
+            "major": "软件工程",
+            "class_name": "一班",
         },
     ).json()
     second = client.post(
@@ -133,6 +145,9 @@ def test_admin_batch_updates_accounts(tmp_path: Path, monkeypatch) -> None:
             "password": "batch-password-123",
             "role": "student",
             "is_active": True,
+            "school": "南山大学",
+            "major": "软件工程",
+            "class_name": "一班",
         },
     ).json()
 
@@ -174,6 +189,9 @@ def test_admin_batch_delete_removes_forest_rows(tmp_path: Path, monkeypatch) -> 
             "password": "forest-password-123",
             "role": "student",
             "is_active": True,
+            "school": "南山大学",
+            "major": "软件工程",
+            "class_name": "一班",
         },
     ).json()
     database_url = f"sqlite:///{tmp_path / 'admin-test.db'}"
@@ -280,13 +298,16 @@ def test_admin_import_updates_existing_and_exports_csv(tmp_path: Path, monkeypat
             "password": "old-password-123",
             "role": "student",
             "is_active": True,
+            "school": "南山大学",
+            "major": "软件工程",
+            "class_name": "一班",
         },
     )
     csv_text = (
-        "username,identifier,password,role,is_active\n"
-        "新账号,import-new@example.com,new-password-123,teacher,true\n"
-        "新姓名,import-existing@example.com,,admin,false\n"
-        "坏账号,bad@example.com,,student,true\n"
+        "username,identifier,password,role,is_active,school,major,class_name\n"
+        "新账号,import-new@example.com,new-password-123,teacher,true,南山大学,软件工程,一班\n"
+        "新姓名,import-existing@example.com,,admin,false,南山大学,软件工程,二班\n"
+        "坏账号,bad@example.com,,student,true,南山大学,软件工程,三班\n"
     )
 
     import_response = client.post(
@@ -306,13 +327,17 @@ def test_admin_import_updates_existing_and_exports_csv(tmp_path: Path, monkeypat
     new_account = next(account for account in accounts if account["identifier"] == "import-new@example.com")
     updated_account = next(account for account in accounts if account["identifier"] == "import-existing@example.com")
     assert new_account["role"] == "teacher"
+    assert new_account["school"] == "南山大学"
+    assert new_account["major"] == "软件工程"
+    assert new_account["class_name"] == "一班"
     assert updated_account["username"] == "新姓名"
     assert updated_account["role"] == "admin"
     assert updated_account["is_active"] is False
+    assert updated_account["class_name"] == "二班"
 
     export_response = client.get("/api/admin/accounts/export", headers=headers)
     assert export_response.status_code == 200
-    assert export_response.text.splitlines()[0] == "username,identifier,password,role,is_active"
+    assert export_response.text.splitlines()[0] == "username,identifier,password,role,is_active,school,major,class_name"
     assert "import-new@example.com" in export_response.text
 
 
@@ -338,6 +363,9 @@ def test_admin_cannot_lock_out_self(tmp_path: Path, monkeypatch) -> None:
             "identifier": "13297540721",
             "role": "student",
             "is_active": True,
+            "school": "南山大学",
+            "major": "软件工程",
+            "class_name": "一班",
         },
     )
     assert role_response.status_code == 400

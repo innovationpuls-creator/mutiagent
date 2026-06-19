@@ -559,6 +559,31 @@ def test_submit_forest_quiz_attempt_stream_api_done_data(tmp_path: Path) -> None
     assert done_data["next_course_id"] is None
 
 
+def test_submit_forest_quiz_attempt_stream_api_returns_error_event(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'forest-attempt-stream-api-error.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    user_uid = _seed_forest_data(database_url)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+
+    with Session(engine) as session:
+        quiz = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+
+    async def fail_grade_answers(*_args, **_kwargs):
+        raise RuntimeError("判题模型输入过长")
+
+    with patch("app.api.forest.grade_quiz_answers", fail_grade_answers):
+        response = client.post(
+            f"/api/forest/quizzes/{quiz.quiz_id}/attempts/stream",
+            json={"answers": {"q1": "A"}},
+            headers=_auth_headers(user_uid),
+        )
+
+    assert response.status_code == 200
+    assert "event: error" in response.text
+    assert "判题模型输入过长" in response.text
+
+
 def test_submit_forest_quiz_attempt_stream_api_done_data_next_course(tmp_path: Path) -> None:
     import json
     database_url = f"sqlite:///{tmp_path / 'forest-attempt-stream-api-done-next-course.db'}"

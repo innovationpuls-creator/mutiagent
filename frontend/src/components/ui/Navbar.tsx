@@ -1,11 +1,10 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { LogOut } from 'lucide-react';
 import { motionTokens, DURATION_INSTANT } from '../../styles/motion-tokens';
 import { useAuth } from '../../contexts/AuthContext';
-import { importTeacherProgramByCode, TEACHER_PROGRAM_IMPORTED_EVENT } from '../../lib/teacherProgramShare';
 import styles from './Navbar.module.css';
 
 const NAVBAR_BLUR_SCROLL_Y = 100;
@@ -84,12 +83,8 @@ export function Navbar() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [hasEntered, setHasEntered] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [teacherInviteCode, setTeacherInviteCode] = useState('');
-  const [importMessage, setImportMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
 
   const isLoggedIn = Boolean(auth.user);
-  const canImportTeacherProgram = auth.user?.role === 'student';
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setHasEntered(true));
@@ -138,37 +133,6 @@ export function Navbar() {
       auth.logout();
       navigate('/login');
     }, 1500);
-  };
-
-  const openImportDialog = () => {
-    closeDropdown();
-    setImportMessage(null);
-    setIsImportDialogOpen(true);
-  };
-
-  const closeImportDialog = () => {
-    setIsImportDialogOpen(false);
-    setTeacherInviteCode('');
-    setImportMessage(null);
-  };
-
-  const handleImportTeacherProgram = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!auth.user) {
-      setImportMessage({ tone: 'error', text: '登录后才能导入人培方案。' });
-      return;
-    }
-
-    const result = importTeacherProgramByCode(auth.user, teacherInviteCode);
-    if (!result.ok) {
-      setImportMessage({ tone: 'error', text: result.message });
-      return;
-    }
-
-    setImportMessage({ tone: 'success', text: `已导入${result.record.teacherName}的人培方案。` });
-    setTeacherInviteCode('');
-    window.dispatchEvent(new Event(TEACHER_PROGRAM_IMPORTED_EVENT));
-    navigate('/branch');
   };
 
   const avatarLabel = isLoggedIn ? auth.user!.username.charAt(0) : '访';
@@ -290,20 +254,6 @@ export function Navbar() {
                     <span className={styles.dropdownSymbol} aria-hidden="true">·</span>
                     <span className={styles.dropdownText}>偏好设置</span>
                   </motion.button>
-                  {canImportTeacherProgram ? (
-                    <motion.button
-                      className={styles.dropdownItem}
-                      type="button"
-                      role="menuitem"
-                      onClick={openImportDialog}
-                      variants={reduceMotion ? undefined : dropdownItemVariants}
-                      initial={reduceMotion ? { opacity: 0 } : 'hidden'}
-                      animate={reduceMotion ? { opacity: 1 } : 'visible'}
-                    >
-                      <span className={styles.dropdownSymbol} aria-hidden="true">+</span>
-                      <span className={styles.dropdownText}>导入人培方案</span>
-                    </motion.button>
-                  ) : null}
                   <motion.button
                     className={styles.dropdownItem}
                     type="button"
@@ -324,90 +274,7 @@ export function Navbar() {
       </header>
 
       {isLoggingOut && createPortal(<LogoutOverlay />, document.body)}
-      {isImportDialogOpen && createPortal(
-        <TeacherProgramImportDialog
-          value={teacherInviteCode}
-          message={importMessage}
-          onChange={setTeacherInviteCode}
-          onClose={closeImportDialog}
-          onSubmit={handleImportTeacherProgram}
-        />,
-        document.body,
-      )}
     </>
-  );
-}
-
-function TeacherProgramImportDialog({
-  value,
-  message,
-  onChange,
-  onClose,
-  onSubmit,
-}: {
-  value: string;
-  message: { tone: 'success' | 'error'; text: string } | null;
-  onChange(value: string): void;
-  onClose(): void;
-  onSubmit(event: FormEvent<HTMLFormElement>): void;
-}) {
-  const reduceMotion = useReducedMotion();
-
-  return (
-    <motion.div
-      className={styles.importOverlay}
-      initial={reduceMotion ? false : { opacity: 0 }}
-      animate={reduceMotion ? undefined : { opacity: 1 }}
-      exit={reduceMotion ? undefined : { opacity: 0 }}
-      transition={reduceMotion ? undefined : motionTokens.lazy}
-    >
-      <motion.form
-        className={styles.importDialog}
-        role="dialog"
-        aria-label="导入人培方案"
-        aria-modal="true"
-        onSubmit={onSubmit}
-        initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-        animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-        transition={reduceMotion ? undefined : motionTokens.lazy}
-      >
-        <div className={styles.importDialogHeader}>
-          <h2>导入人培方案</h2>
-          <button
-            type="button"
-            className={styles.importCloseButton}
-            aria-label="关闭导入人培方案"
-            onClick={onClose}
-          >
-            ×
-          </button>
-        </div>
-        <label className={styles.importField}>
-          <span>教师口令</span>
-          <input
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            placeholder="输入教师口令"
-            autoFocus
-          />
-        </label>
-        {message ? (
-          <p className={`${styles.importMessage} ${message.tone === 'success' ? styles.importMessageSuccess : styles.importMessageError}`}>
-            {message.text}
-          </p>
-        ) : (
-          <p className={styles.importHint}>导入后，繁枝页面会加载该教师发布的人培课程。</p>
-        )}
-        <div className={styles.importActions}>
-          <button type="button" className={styles.importSecondaryButton} onClick={onClose}>
-            取消
-          </button>
-          <button type="submit" className={styles.importPrimaryButton}>
-            导入方案
-          </button>
-        </div>
-      </motion.form>
-    </motion.div>
   );
 }
 

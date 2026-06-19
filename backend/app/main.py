@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.admin import create_admin_router
+from app.api.admin_data import create_admin_data_router
 from app.api.auth import create_auth_router
 from app.api.branch import create_branch_router
 from app.api.forest import create_forest_router
@@ -13,6 +14,8 @@ from app.api.learning_path import create_learning_path_router
 from app.api.leaf import create_leaf_router
 from app.api.orchestration import create_orchestration_router
 from app.api.profile import create_profile_router
+from app.api.student import create_student_router
+from app.api.teacher import create_teacher_router
 from app.database import DATABASE_URL, build_engine, create_session_dependency, init_db, set_engine
 from app.schemas import HealthResponse
 
@@ -39,6 +42,9 @@ def create_app(database_url: str = DATABASE_URL) -> FastAPI:
     )
     app.include_router(create_auth_router(create_session_dependency(engine)))
     app.include_router(create_admin_router(create_session_dependency(engine)))
+    app.include_router(create_admin_data_router(create_session_dependency(engine)))
+    app.include_router(create_teacher_router(create_session_dependency(engine)))
+    app.include_router(create_student_router(create_session_dependency(engine)))
     app.include_router(create_orchestration_router(create_session_dependency(engine)))
     app.include_router(create_profile_router(create_session_dependency(engine)))
     app.include_router(create_learning_path_router(create_session_dependency(engine)))

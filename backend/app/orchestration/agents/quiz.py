@@ -148,6 +148,20 @@ def normalize_grading_result(value: object) -> dict[str, Any]:
     }
 
 
+def _prepare_answers_for_grading_prompt(value: object) -> object:
+    if isinstance(value, dict):
+        prepared: dict[str, Any] = {}
+        for key, item in value.items():
+            if key == "data_url" and isinstance(item, str):
+                prepared[key] = f"[已上传图片，data_url 已省略，字符数: {len(item)}]"
+            else:
+                prepared[key] = _prepare_answers_for_grading_prompt(item)
+        return prepared
+    if isinstance(value, list):
+        return [_prepare_answers_for_grading_prompt(item) for item in value]
+    return value
+
+
 async def generate_quiz_questions(
     llm: Any,
     *,
@@ -188,12 +202,13 @@ async def generate_quiz_questions(
 
 
 async def grade_quiz_answers(llm: Any, *, questions: list[dict[str, Any]], answers: dict[str, Any]) -> dict[str, Any]:
+    grading_answers = _prepare_answers_for_grading_prompt(answers)
     prompt = (
         "请根据题目和用户答案给出 0-100 分整数分数。"
         "只输出 JSON 对象，字段为 score、question_results、summary。"
         "summary 必须使用中文，简要说明判题依据。\n"
         f"questions:\n{json.dumps(questions, ensure_ascii=False)}\n"
-        f"answers:\n{json.dumps(answers, ensure_ascii=False)}"
+        f"answers:\n{json.dumps(grading_answers, ensure_ascii=False)}"
     )
     if not hasattr(llm, "ainvoke"):
         return normalize_grading_result({"score": 0, "question_results": [], "summary": "判题模型不可用。"})

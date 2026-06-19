@@ -24,6 +24,13 @@ def _validate_identifier(value: str) -> str:
     raise ValueError(_IDENTIFIER_EXPLAIN)
 
 
+def _validate_required_text(value: str) -> str:
+    trimmed = value.strip()
+    if not trimmed:
+        raise ValueError("不能为空")
+    return trimmed
+
+
 # ── Auth ──
 
 class LoginRequest(BaseModel):
@@ -42,11 +49,19 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=6, max_length=128)
     confirm_password: str = Field(min_length=6, max_length=128)
     role: UserRole = "student"
+    school: str = Field(min_length=1, max_length=128)
+    major: str = Field(min_length=1, max_length=128)
+    class_name: str = Field(min_length=1, max_length=128)
 
     @field_validator("identifier")
     @classmethod
     def validate_identifier(cls, v: str) -> str:
         return _validate_identifier(v)
+
+    @field_validator("username", "school", "major", "class_name")
+    @classmethod
+    def validate_required_text(cls, v: str) -> str:
+        return _validate_required_text(v)
 
     @field_validator("confirm_password")
     @classmethod
@@ -67,6 +82,9 @@ class UserRead(BaseModel):
     username: str
     identifier: str
     role: UserRole
+    school: str
+    major: str
+    class_name: str
     provider: str
     is_active: bool
     created_at: datetime
@@ -86,11 +104,19 @@ class AdminAccountCreateRequest(BaseModel):
     password: str = Field(min_length=6, max_length=128)
     role: UserRole
     is_active: bool = True
+    school: str = Field(min_length=1, max_length=128)
+    major: str = Field(min_length=1, max_length=128)
+    class_name: str = Field(min_length=1, max_length=128)
 
     @field_validator("identifier")
     @classmethod
     def validate_identifier(cls, v: str) -> str:
         return _validate_identifier(v)
+
+    @field_validator("username", "school", "major", "class_name")
+    @classmethod
+    def validate_required_text(cls, v: str) -> str:
+        return _validate_required_text(v)
 
 
 class AdminAccountUpdateRequest(BaseModel):
@@ -99,11 +125,19 @@ class AdminAccountUpdateRequest(BaseModel):
     role: UserRole
     is_active: bool
     password: str | None = Field(default=None, min_length=6, max_length=128)
+    school: str = Field(min_length=1, max_length=128)
+    major: str = Field(min_length=1, max_length=128)
+    class_name: str = Field(min_length=1, max_length=128)
 
     @field_validator("identifier")
     @classmethod
     def validate_identifier(cls, v: str) -> str:
         return _validate_identifier(v)
+
+    @field_validator("username", "school", "major", "class_name")
+    @classmethod
+    def validate_required_text(cls, v: str) -> str:
+        return _validate_required_text(v)
 
 
 class AdminAccountBatchRequest(BaseModel):
@@ -133,6 +167,57 @@ class AdminAccountImportResponse(BaseModel):
     updated: int
     failed: int
     failures: list[AdminAccountImportFailure] = Field(default_factory=list)
+
+
+class CultivationProgramRead(BaseModel):
+    program_id: str
+    teacher_uid: str
+    teacher_name: str
+    teacher_identifier: str
+    school: str
+    major: str
+    class_name: str
+    courses: list[dict] = Field(default_factory=list)
+    published_at: datetime | None
+    updated_at: datetime
+
+
+class CultivationProgramSaveRequest(BaseModel):
+    courses: list[dict] = Field(default_factory=list)
+    school: str | None = Field(default=None, max_length=128)
+    major: str | None = Field(default=None, max_length=128)
+    class_name: str | None = Field(default=None, max_length=128)
+
+
+class DataOverviewResponse(BaseModel):
+    accounts: dict[str, int]
+    cohorts: int
+    programs: int
+    learning_data: dict[str, int]
+
+
+class DataCohortRead(BaseModel):
+    school: str
+    major: str
+    class_name: str
+    student_count: int
+    teacher_count: int
+    admin_count: int
+    has_program: bool
+    program_teacher_name: str | None = None
+    program_updated_at: datetime | None = None
+
+
+class UserLearningDataRead(BaseModel):
+    user: UserRead
+    profile: dict | None = None
+    year_learning_paths: list[dict] = Field(default_factory=list)
+    course_outlines: list[dict] = Field(default_factory=list)
+    chapter_quizzes: list[dict] = Field(default_factory=list)
+    chapter_progress: list[dict] = Field(default_factory=list)
+    chapter_weaknesses: list[dict] = Field(default_factory=list)
+    resource_quality: list[dict] = Field(default_factory=list)
+    conversation_sessions: list[dict] = Field(default_factory=list)
 
 
 class HealthResponse(BaseModel):

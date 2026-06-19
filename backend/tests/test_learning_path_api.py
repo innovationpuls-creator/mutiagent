@@ -6,7 +6,8 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, create_engine, select
 
 from app.main import create_app
-from app.models import User, UserYearLearningPath
+from app.models import ChapterProgress, User, UserYearLearningPath
+from app.services.learning_path_service import upsert_year_learning_path
 
 
 def _register(client: TestClient, identifier: str) -> tuple[str, str]:
@@ -15,6 +16,9 @@ def _register(client: TestClient, identifier: str) -> tuple[str, str]:
         json={
             "username": "学习路径用户",
             "identifier": identifier,
+            "school": "测试大学",
+            "major": "软件工程",
+            "class_name": "三班",
             "password": "test-password-123",
             "confirm_password": "test-password-123",
         },
@@ -301,3 +305,30 @@ def test_learning_path_me_expands_multi_grade_plan_from_single_saved_row(tmp_pat
     assert set(body["year_learning_paths"]) == {"year_1", "year_2", "year_3", "year_4"}
     assert body["year_learning_paths"]["year_1"]["grade_plans"]["year_1"]["course_nodes"][0]["course_node_id"] == "year_1_course_1"
     assert body["year_learning_paths"]["year_4"]["grade_plans"]["year_4"]["course_nodes"][0]["course_node_id"] == "year_4_course_1"
+
+
+def test_upsert_year_learning_path_clears_chapter_progress_when_course_identity_changes(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'learning-path-progress-reset.db'}"
+    client = TestClient(create_app(database_url=database_url))
+    _token, _ = _register(client, "learning-path-progress-reset@example.com")
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.identifier == "learning-path-progress-reset@example.com")).one()
+        upsert_year_learning_path(session, user.uid, "year_3", "AI 项目", _year_path("旧课程"))
+        session.add(
+            ChapterProgress(
+                user_uid=user.uid,
+                course_node_id="year_3_course_1",
+                chapter_id="1",
+                state="passed",
+                best_score=90,
+            )
+        )
+        session.commit()
+
+        upsert_year_learning_path(session, user.uid, "year_3", "AI 项目", _year_path("新课程"))
+
+        progress = session.get(ChapterProgress, (user.uid, "year_3_course_1", "1"))
+
+    assert progress is None

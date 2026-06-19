@@ -2355,6 +2355,99 @@ def test_section_body_from_expansion_text_extracts_requested_heading_from_json_m
     assert "步骤正文不能被误用" not in body
 
 
+def test_run_section_markdown_agent_scaffolds_structural_markdown_gaps(tmp_path) -> None:
+    class RecordingLlm:
+        pass
+
+    section_bodies = {
+        "学习目标": (
+            "本节围绕学习目标展开，要求学习者把功能边界转成可检查的学习产出。"
+            "完成后需要能说明输入材料、步骤记录、资源占位和检查标准分别服务哪一个学习动作，"
+            "并把学习结果保存成可以复查的 Markdown 文档。"
+        ),
+        "核心概念": (
+            "### 功能边界\n"
+            "功能边界要求先说明本节只处理学习目标与验收产出的对应关系，不扩展到后续接口接入。"
+            "学习者需要把目标、输入、动作、输出和检查证据写成稳定结构，避免只写一句抽象结论。"
+        ),
+        "步骤讲解": "",
+        "练习任务": "",
+        "检查标准": (
+            "- [ ] 能说明学习目标和功能边界之间的关系。\n"
+            "- [ ] 能提交一份包含步骤记录的 Markdown 文档。\n"
+            "- [ ] 能解释视频和动画资源分别解决哪一个理解难点。"
+        ),
+    }
+
+    class MarkdownChain:
+        async def ainvoke(self, payload):
+            captured["expansion_calls"] += 1
+            query = payload["query"]
+            expansion_section = _payload_from_query(query)["markdown_expansion_section"]
+            return section_bodies[expansion_section]
+
+    class MarkdownPrompt:
+        def __or__(self, _other):
+            return MarkdownChain()
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return MarkdownPrompt()
+
+    captured = {"expansion_calls": 0}
+    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-scaffold.db'}")
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(User(uid="user-1", username="课程用户", identifier="course@example.com"))
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid="user-1",
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name="AI 应用开发",
+                outline_data=_outline(),
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+    original_factory = module.ChatPromptTemplate
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(
+            run_section_markdown_agent(
+                {
+                    "user_id": "user-1",
+                    "course_knowledge": _outline(),
+                    "profile": _profile(),
+                    "year_learning_paths": _year_learning_paths(),
+                    "messages": [],
+                },
+                RecordingLlm(),
+                {"course_id": "year_3_course_1", "section_id": "1.1", "scope": "single_section"},
+            )
+        )
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert "error" not in result
+    markdown_data = result["course_knowledge"]["section_markdowns"]["1.1"]
+    markdown = markdown_data["markdown"]
+    steps_body = markdown.split("## 步骤讲解", 1)[1].split("<!-- video:id=video_1 -->", 1)[0]
+    checks_body = markdown.split("## 检查标准", 1)[1]
+    assert "| 步骤 | 输入材料 | 具体动作 | 产出物 | 验收方式 |" in steps_body
+    assert "任务卡：围绕「学习目标」完成一次可复查的小练习。" in markdown
+    assert len([line for line in checks_body.splitlines() if line.startswith("- [ ]")]) >= 4
+    assert _markdown_quality_issue(
+        markdown,
+        _section_by_id(_outline(), "1.1"),
+        markdown_data["video_briefs"],
+        markdown_data["animation_briefs"],
+    ) is None
+
+
 def test_run_section_markdown_agent_returns_error_when_quality_repeatedly_fails(tmp_path) -> None:
     class RecordingLlm:
         pass

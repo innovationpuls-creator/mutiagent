@@ -15,6 +15,9 @@ def _register(client: TestClient, identifier: str) -> tuple[str, str]:
         json={
             "username": "叶茂用户",
             "identifier": identifier,
+            "school": "测试大学",
+            "major": "软件工程",
+            "class_name": "三班",
             "password": "test-password-123",
             "confirm_password": "test-password-123",
         },

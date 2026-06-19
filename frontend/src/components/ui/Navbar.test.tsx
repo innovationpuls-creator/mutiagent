@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -52,7 +52,7 @@ vi.mock('framer-motion', async () => {
   };
 });
 
-describe('Navbar teacher program import', () => {
+describe('Navbar teacher program import removal', () => {
   let store: Record<string, string>;
 
   afterEach(() => {
@@ -61,7 +61,7 @@ describe('Navbar teacher program import', () => {
     vi.unstubAllGlobals();
   });
 
-  it('imports a teacher program from the avatar menu and binds it to the student', async () => {
+  it('does not show manual teacher program import in the avatar menu', async () => {
     store = {
       'mutiagent-auth': JSON.stringify({
         token: 'token-1',
@@ -70,30 +70,13 @@ describe('Navbar teacher program import', () => {
           username: '测试学生',
           identifier: 'student@example.com',
           role: 'student',
+          school: '南山大学',
+          major: '软件工程',
+          class_name: '一班',
           provider: 'password',
           is_active: true,
           created_at: '2026-06-02T00:00:00Z',
           last_login_at: null,
-        },
-      }),
-      'teacher_cultivation_program_share_registry': JSON.stringify({
-        'OT-TEACH': {
-          inviteCode: 'OT-TEACH',
-          teacherUid: 'teacher-1',
-          teacherName: '测试教师',
-          teacherIdentifier: 'teacher@example.com',
-          courses: [
-            {
-              course_node_id: 'teacher_course_1',
-              course_or_chapter_theme: '高等数学 I',
-              course_goal: '教师发布的人培课程',
-              status: 'locked',
-              has_outline: false,
-              is_custom: true,
-              time_arrangement: { semester_scope: '1', duration: '64学时/4学分' },
-            },
-          ],
-          publishedAt: '2026-06-15T10:00:00.000Z',
         },
       }),
     };
@@ -120,19 +103,7 @@ describe('Navbar teacher program import', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: '切换个人菜单' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /导入人培方案/ }));
-
-    expect(screen.getByRole('dialog', { name: '导入人培方案' })).toBeTruthy();
-
-    fireEvent.change(screen.getByLabelText('教师口令'), { target: { value: 'ot-teach' } });
-    fireEvent.click(screen.getByRole('button', { name: '导入方案' }));
-
-    await waitFor(() => {
-      expect(screen.getByText('已导入测试教师的人培方案。')).toBeTruthy();
-    });
-
-    const bindings = JSON.parse(store['student_teacher_program_bindings']);
-    expect(bindings['student-1'].inviteCode).toBe('OT-TEACH');
-    expect(bindings['student-1'].teacherUid).toBe('teacher-1');
+    expect(screen.queryByRole('menuitem', { name: /导入人培方案/ })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: '导入人培方案' })).toBeNull();
   });
 });

@@ -20,6 +20,9 @@ def test_register_persists_user_and_returns_jwt(tmp_path: Path) -> None:
             "identifier": "lin@example.com",
             "password": "learn-agent-123",
             "confirm_password": "learn-agent-123",
+            "school": "南山大学",
+            "major": "软件工程",
+            "class_name": "一班",
         },
     )
 
@@ -30,6 +33,9 @@ def test_register_persists_user_and_returns_jwt(tmp_path: Path) -> None:
     assert body["user"]["username"] == "林小鹿"
     assert body["user"]["identifier"] == "lin@example.com"
     assert body["user"]["role"] == "student"
+    assert body["user"]["school"] == "南山大学"
+    assert body["user"]["major"] == "软件工程"
+    assert body["user"]["class_name"] == "一班"
     assert "uid" in body["user"]
     assert "-" in body["user"]["uid"]
 
@@ -54,6 +60,9 @@ def test_register_can_create_teacher_role(tmp_path: Path) -> None:
             "password": "learn-agent-123",
             "confirm_password": "learn-agent-123",
             "role": "teacher",
+            "school": "南山大学",
+            "major": "软件工程",
+            "class_name": "一班",
         },
     )
 
@@ -116,6 +125,9 @@ def test_me_returns_current_user_with_valid_token(tmp_path: Path) -> None:
             "identifier": "me-test@example.com",
             "password": "test-password-123",
             "confirm_password": "test-password-123",
+            "school": "南山大学",
+            "major": "软件工程",
+            "class_name": "二班",
         },
     )
     token = register_response.json()["access_token"]
@@ -130,6 +142,9 @@ def test_me_returns_current_user_with_valid_token(tmp_path: Path) -> None:
     assert body["username"] == "测试用户"
     assert body["identifier"] == "me-test@example.com"
     assert body["role"] == "student"
+    assert body["school"] == "南山大学"
+    assert body["major"] == "软件工程"
+    assert body["class_name"] == "二班"
 
 
 def test_me_rejects_invalid_token(tmp_path: Path) -> None:
@@ -161,6 +176,9 @@ def test_login_updates_last_login_at(tmp_path: Path) -> None:
             "identifier": "time-test@example.com",
             "password": "test-password-123",
             "confirm_password": "test-password-123",
+            "school": "南山大学",
+            "major": "软件工程",
+            "class_name": "三班",
         },
     )
 

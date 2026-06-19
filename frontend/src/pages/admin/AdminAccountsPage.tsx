@@ -33,6 +33,9 @@ interface AccountDraft {
   password: string;
   role: AuthRole;
   is_active: boolean;
+  school: string;
+  major: string;
+  class_name: string;
 }
 
 type RoleFilter = AuthRole | 'all';
@@ -48,11 +51,14 @@ const emptyDraft: AccountDraft = {
   password: '',
   role: 'student',
   is_active: true,
+  school: '',
+  major: '',
+  class_name: '',
 };
 
 const roleLabels: Record<AuthRole, string> = {
   student: '学生',
-  teacher: '教师',
+  teacher: '管理员',
   admin: '管理员',
 };
 
@@ -64,6 +70,8 @@ const providerLabels: Record<string, string> = {
 
 const adminRoutes = [
   { label: '账号管理', path: '/admin/accounts', hint: '用户账号管理' },
+  { label: '人培方案', path: '/admin/programs', hint: '上传与发布人培方案' },
+  { label: '数据管理', path: '/admin/data', hint: '学习数据与人培方案管理' },
 ];
 
 const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
@@ -86,8 +94,11 @@ function toDraft(account: AuthUser): AccountDraft {
     username: account.username,
     identifier: account.identifier,
     password: '',
-    role: account.role,
+    role: account.role === 'teacher' ? 'admin' : account.role,
     is_active: account.is_active,
+    school: account.school,
+    major: account.major,
+    class_name: account.class_name,
   };
 }
 
@@ -139,10 +150,11 @@ export function AdminAccountsPage({ adminApi = defaultAdminApi }: AdminAccountsP
   const visibleAccounts = useMemo(() => {
     const text = query.trim().toLowerCase();
     return accounts.filter((account) => {
+      const effectiveRole = account.role === 'teacher' ? 'admin' : account.role;
       const matchesText = !text ||
         account.username.toLowerCase().includes(text) ||
         account.identifier.toLowerCase().includes(text);
-      const matchesRole = roleFilter === 'all' || account.role === roleFilter;
+      const matchesRole = roleFilter === 'all' || effectiveRole === roleFilter;
       const matchesStatus =
         statusFilter === 'all' ||
         (statusFilter === 'active' ? account.is_active : !account.is_active);
@@ -197,6 +209,13 @@ export function AdminAccountsPage({ adminApi = defaultAdminApi }: AdminAccountsP
       setError('用户名和登录标识不能为空');
       return;
     }
+    const school = draft.school.trim();
+    const major = draft.major.trim();
+    const class_name = draft.class_name.trim();
+    if (!school || !major || !class_name) {
+      setError('学校、专业、班级不能为空');
+      return;
+    }
     if (editorMode === 'create' && !password) {
       setError('新增账号必须填写密码');
       return;
@@ -215,6 +234,9 @@ export function AdminAccountsPage({ adminApi = defaultAdminApi }: AdminAccountsP
           identifier,
           role: draft.role,
           is_active: draft.is_active,
+          school,
+          major,
+          class_name,
           ...(password ? { password } : {}),
         });
         setAccounts((current) => current.map((account) => (account.uid === updated.uid ? updated : account)));
@@ -225,6 +247,9 @@ export function AdminAccountsPage({ adminApi = defaultAdminApi }: AdminAccountsP
           password,
           role: draft.role,
           is_active: draft.is_active,
+          school,
+          major,
+          class_name,
         });
         setAccounts((current) => [created, ...current]);
       }
@@ -258,9 +283,10 @@ export function AdminAccountsPage({ adminApi = defaultAdminApi }: AdminAccountsP
           return next;
         });
       } else {
+        const deletedUids = deleteTarget.accounts.map((account) => account.uid);
         const nextAccounts = await adminApi.batchAccounts(token, {
           action: 'delete',
-          uids: deleteTarget.accounts.map((account) => account.uid),
+          uids: deletedUids,
         });
         replaceAccounts(nextAccounts);
       }
@@ -289,6 +315,9 @@ export function AdminAccountsPage({ adminApi = defaultAdminApi }: AdminAccountsP
         identifier: account.identifier,
         role: account.role,
         is_active: !account.is_active,
+        school: account.school,
+        major: account.major,
+        class_name: account.class_name,
       });
       setAccounts((current) => current.map((item) => (item.uid === account.uid ? updated : item)));
     } catch (accountError) {
@@ -372,6 +401,9 @@ export function AdminAccountsPage({ adminApi = defaultAdminApi }: AdminAccountsP
         identifier: resetTarget.identifier,
         role: resetTarget.role,
         is_active: resetTarget.is_active,
+        school: resetTarget.school,
+        major: resetTarget.major,
+        class_name: resetTarget.class_name,
         password,
       });
       setAccounts((current) => current.map((account) => (account.uid === updated.uid ? updated : account)));
@@ -502,7 +534,6 @@ export function AdminAccountsPage({ adminApi = defaultAdminApi }: AdminAccountsP
             <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as RoleFilter)}>
               <option value="all">全部角色</option>
               <option value="student">学生</option>
-              <option value="teacher">教师</option>
               <option value="admin">管理员</option>
             </select>
           </label>
@@ -529,7 +560,6 @@ export function AdminAccountsPage({ adminApi = defaultAdminApi }: AdminAccountsP
               <span>改为</span>
               <select value={batchRole} onChange={(event) => setBatchRole(event.target.value as AuthRole)}>
                 <option value="student">学生</option>
-                <option value="teacher">教师</option>
                 <option value="admin">管理员</option>
               </select>
             </label>
@@ -581,6 +611,9 @@ export function AdminAccountsPage({ adminApi = defaultAdminApi }: AdminAccountsP
             <span>用户名</span>
             <span>登录标识</span>
             <span>角色</span>
+            <span>学校</span>
+            <span>专业</span>
+            <span>班级</span>
             <span>状态</span>
             <span>登录方式</span>
             <span>创建时间</span>
@@ -605,6 +638,9 @@ export function AdminAccountsPage({ adminApi = defaultAdminApi }: AdminAccountsP
                 </span>
                 <span>{account.identifier}</span>
                 <span>{roleLabels[account.role]}</span>
+                <span>{account.school || '未填写'}</span>
+                <span>{account.major || '未填写'}</span>
+                <span>{account.class_name || '未填写'}</span>
                 <button
                   className={`admin-status ${account.is_active ? 'is-active' : 'is-disabled'}`}
                   type="button"
@@ -703,9 +739,32 @@ export function AdminAccountsPage({ adminApi = defaultAdminApi }: AdminAccountsP
                   disabled={editingSelf}
                 >
                   <option value="student">学生</option>
-                  <option value="teacher">教师</option>
                   <option value="admin">管理员</option>
                 </select>
+              </label>
+              <label>
+                <span>学校</span>
+                <input
+                  value={draft.school}
+                  onChange={(event) => setDraft((current) => ({ ...current, school: event.target.value }))}
+                  placeholder="学校"
+                />
+              </label>
+              <label>
+                <span>专业</span>
+                <input
+                  value={draft.major}
+                  onChange={(event) => setDraft((current) => ({ ...current, major: event.target.value }))}
+                  placeholder="专业"
+                />
+              </label>
+              <label>
+                <span>班级</span>
+                <input
+                  value={draft.class_name}
+                  onChange={(event) => setDraft((current) => ({ ...current, class_name: event.target.value }))}
+                  placeholder="班级"
+                />
               </label>
               <label className="admin-drawer-switch">
                 <input

@@ -203,6 +203,13 @@ class LearningPathIntakeDraftOutput(BaseModel):
     risk_warnings: list[str] = Field(default_factory=list)
     requires_second_confirmation: bool = Field(default=False)
 
+    @field_validator("grade_year", mode="before")
+    @classmethod
+    def normalize_grade_year_input(cls, value: object) -> object:
+        if isinstance(value, int):
+            return str(value)
+        return value
+
     @field_validator("grade_year", "grade_name", "learning_topic")
     @classmethod
     def require_text(cls, value: str, info) -> str:

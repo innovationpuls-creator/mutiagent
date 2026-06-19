@@ -6,6 +6,9 @@ export interface AdminAccountPayload {
   identifier: string;
   role: AuthRole;
   is_active: boolean;
+  school: string;
+  major: string;
+  class_name: string;
   password?: string;
 }
 

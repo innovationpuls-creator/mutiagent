@@ -11,6 +11,9 @@ const adminAccount: AuthUser = {
   username: 'admin',
   identifier: '13297540721',
   role: 'admin',
+  school: '南山大学',
+  major: '软件工程',
+  class_name: '一班',
   provider: 'password',
   is_active: true,
   created_at: '2026-06-02T00:00:00Z',
@@ -21,7 +24,10 @@ const teacherAccount: AuthUser = {
   uid: 'teacher-1',
   username: '王教师',
   identifier: 'teacher@example.com',
-  role: 'teacher',
+  role: 'admin',
+  school: '南山大学',
+  major: '软件工程',
+  class_name: '一班',
   provider: 'password',
   is_active: true,
   created_at: '2026-06-02T00:00:00Z',
@@ -70,6 +76,9 @@ describe('AdminAccountsPage', () => {
           identifier: 'teacher-2@example.com',
           role: 'student',
           is_active: true,
+          school: '南山大学',
+          major: '软件工程',
+          class_name: '一班',
         })
         .mockResolvedValueOnce({
           ...teacherAccount,
@@ -77,6 +86,9 @@ describe('AdminAccountsPage', () => {
           identifier: 'teacher-2@example.com',
           role: 'student',
           is_active: false,
+          school: '南山大学',
+          major: '软件工程',
+          class_name: '一班',
         }),
       deleteAccount: vi.fn().mockResolvedValue(undefined),
       batchAccounts: vi.fn().mockResolvedValue([adminAccount]),
@@ -105,9 +117,18 @@ describe('AdminAccountsPage', () => {
     fireEvent.change(screen.getByLabelText('密码'), {
       target: { value: 'teacher-password-123' },
     });
+    fireEvent.change(screen.getByLabelText('学校'), {
+      target: { value: '南山大学' },
+    });
+    fireEvent.change(screen.getByLabelText('专业'), {
+      target: { value: '软件工程' },
+    });
+    fireEvent.change(screen.getByLabelText('班级'), {
+      target: { value: '一班' },
+    });
     const roleSelects = screen.getAllByLabelText('角色');
     fireEvent.change(roleSelects[roleSelects.length - 1], {
-      target: { value: 'teacher' },
+      target: { value: 'admin' },
     });
     fireEvent.click(screen.getByRole('button', { name: '创建账号' }));
 
@@ -116,8 +137,11 @@ describe('AdminAccountsPage', () => {
         username: '王教师',
         identifier: 'teacher@example.com',
         password: 'teacher-password-123',
-        role: 'teacher',
+        role: 'admin',
         is_active: true,
+        school: '南山大学',
+        major: '软件工程',
+        class_name: '一班',
       });
       expect(screen.getByText('王教师')).toBeTruthy();
     });
@@ -153,6 +177,9 @@ describe('AdminAccountsPage', () => {
         identifier: 'teacher-2@example.com',
         role: 'student',
         is_active: true,
+        school: '南山大学',
+        major: '软件工程',
+        class_name: '一班',
       });
       expect(screen.getByText('王教师二号')).toBeTruthy();
     });
@@ -167,6 +194,9 @@ describe('AdminAccountsPage', () => {
         identifier: 'teacher-2@example.com',
         role: 'student',
         is_active: false,
+        school: '南山大学',
+        major: '软件工程',
+        class_name: '一班',
       });
     });
 

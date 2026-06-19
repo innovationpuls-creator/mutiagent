@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { LogOut } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { teacherProgramApi } from '../../api/teacherProgram';
 import { BranchCourseNode } from '../../types/branch';
-import { OrganicCanvas, GraphNode, GraphEdge } from '../../components/graph/OrganicCanvas';
-import { buildTeacherProgramInviteCode, publishTeacherProgramShare } from '../../lib/teacherProgramShare';
+import { OrganicCanvas } from '../../components/graph/OrganicCanvas';
+import type { GraphNode, GraphEdge } from '../../components/graph/OrganicCanvas';
 import './teacher.css';
 
 export type TeacherPageState = 'empty' | 'loading' | 'editor' | 'error';
@@ -115,12 +116,74 @@ export const motionTokens = {
   lazy: { duration: 0.42, ease: [0.33, 1, 0.68, 1] },
 } as const;
 
+const adminRoutes = [
+  { label: '账号管理', path: '/admin/accounts', hint: '用户账号管理' },
+  { label: '人培方案', path: '/admin/programs', hint: '上传与发布人培方案' },
+  { label: '数据管理', path: '/admin/data', hint: '学习数据与人培方案管理' },
+];
+
+interface ProgramScope {
+  school: string;
+  major: string;
+  className: string;
+}
+
 function getGradeName(semester: string): string {
   const sem = parseInt(semester, 10);
   if (sem <= 2) return '大一 (Freshman)';
   if (sem <= 4) return '大二 (Sophomore)';
   if (sem <= 6) return '大三 (Junior)';
   return '大四 (Senior)';
+}
+
+interface ProgramScopePanelProps {
+  scope: ProgramScope;
+  onChange: (nextScope: ProgramScope) => void;
+}
+
+function ProgramScopePanel({ scope, onChange }: ProgramScopePanelProps) {
+  const setScopeField = (key: keyof ProgramScope, value: string) => {
+    onChange({ ...scope, [key]: value });
+  };
+
+  return (
+    <section className="program-scope-panel" aria-labelledby="program-scope-title">
+      <div className="program-scope-copy">
+        <p className="program-scope-kicker">// publish scope</p>
+        <h2 id="program-scope-title">发布范围</h2>
+        <p>学生端会按学校、专业、班级完全一致自动导入这份人培方案。</p>
+      </div>
+      <div className="program-scope-fields">
+        <label className="program-scope-field" htmlFor="program-school">
+          <span>学校</span>
+          <input
+            id="program-school"
+            value={scope.school}
+            onChange={(event) => setScopeField('school', event.target.value)}
+            placeholder="请输入学校"
+          />
+        </label>
+        <label className="program-scope-field" htmlFor="program-major">
+          <span>专业</span>
+          <input
+            id="program-major"
+            value={scope.major}
+            onChange={(event) => setScopeField('major', event.target.value)}
+            placeholder="请输入专业"
+          />
+        </label>
+        <label className="program-scope-field" htmlFor="program-class-name">
+          <span>班级</span>
+          <input
+            id="program-class-name"
+            value={scope.className}
+            onChange={(event) => setScopeField('className', event.target.value)}
+            placeholder="请输入班级"
+          />
+        </label>
+      </div>
+    </section>
+  );
 }
 
 function getGradeKey(semester: string): string {
@@ -599,7 +662,7 @@ function SemesterBarChart({ data, type }: SemesterBarChartProps) {
 }
 
 export function TeacherPage() {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
   const [pageState, setPageState] = useState<TeacherPageState>('empty');
@@ -607,11 +670,24 @@ export function TeacherPage() {
   const [activeCourseId, setActiveCourseId] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [programScope, setProgramScope] = useState<ProgramScope>({
+    school: '',
+    major: '',
+    className: '',
+  });
 
   const [activeTab, setActiveTab] = useState<'editor' | 'graph'>('editor');
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const inviteCode = user ? buildTeacherProgramInviteCode(user) : null;
+
+  useEffect(() => {
+    if (!user) return;
+    setProgramScope({
+      school: user.school,
+      major: user.major,
+      className: user.class_name,
+    });
+  }, [user]);
 
   const graphData = useMemo(() => {
     const nodeStatusMap: Record<string, string> = {};
@@ -718,19 +794,28 @@ export function TeacherPage() {
   };
 
   useEffect(() => {
-    const saved = localStorage.getItem('teacher_cultivation_program');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setCourses(parsed);
-          setPageState('editor');
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
-  }, []);
+    if (!token) return;
+    let cancelled = false;
+    teacherProgramApi.getTeacherProgram(token)
+      .then((program) => {
+        if (cancelled || !program) return;
+        setCourses(program.courses.map((course) => ({ ...course, is_custom: true })));
+        setProgramScope({
+          school: program.school,
+          major: program.major,
+          className: program.class_name,
+        });
+        setPageState('editor');
+      })
+      .catch((programError) => {
+        if (cancelled) return;
+        setFileError(programError instanceof Error ? programError.message : '人培方案加载失败');
+        setPageState('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const handleUploadSuccess = () => {
     setPageState('loading');
@@ -746,15 +831,34 @@ export function TeacherPage() {
     setPageState('editor');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    const scope = {
+      school: programScope.school.trim(),
+      major: programScope.major.trim(),
+      className: programScope.className.trim(),
+    };
+    if (!scope.school || !scope.major || !scope.className) {
+      setToastMessage('请先填写学校、专业、班级');
+      setTimeout(() => {
+        setToastMessage(null);
+      }, 1800);
+      return;
+    }
     const publishedCourses = courses.map((course) => ({
       ...course,
       is_custom: true,
     }));
     setCourses(publishedCourses);
-    localStorage.setItem('teacher_cultivation_program', JSON.stringify(publishedCourses));
-    if (user) {
-      publishTeacherProgramShare(user, publishedCourses);
+    if (token) {
+      try {
+        await teacherProgramApi.publishTeacherProgram(token, publishedCourses, scope);
+      } catch (programError) {
+        setToastMessage(programError instanceof Error ? programError.message : '人培方案发布失败');
+        setTimeout(() => {
+          setToastMessage(null);
+        }, 1800);
+        return;
+      }
     }
     setToastMessage('人培方案已成功发布并对齐！');
     setTimeout(() => {
@@ -764,20 +868,10 @@ export function TeacherPage() {
 
   const handleReimport = () => {
     if (window.confirm('确定要重新导入培养方案吗？当前所有修改将被覆盖。')) {
-      localStorage.removeItem('teacher_cultivation_program');
       setCourses([]);
       setActiveCourseId(null);
       setPageState('empty');
     }
-  };
-
-  const handleCopyInviteCode = () => {
-    if (!inviteCode) return;
-    void navigator.clipboard?.writeText(inviteCode);
-    setToastMessage('教师口令已复制');
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 1500);
   };
 
   const renderContent = () => {
@@ -807,8 +901,8 @@ export function TeacherPage() {
           return (
             <div className="graph-view-container">
               <div className="canvas-panel">
-                <div className="canvas-header">
-                  <h3>方案关系图谱</h3>
+              <div className="canvas-header">
+                  <h3>方案依赖图谱</h3>
                   <p>培养方案中课程前置依赖与关系拓扑图</p>
                 </div>
                 <div className="canvas-wrapper" onClick={handleCanvasClick}>
@@ -833,27 +927,13 @@ export function TeacherPage() {
             <div className="editor-header">
               <div className="header-info">
                 <h2>培养方案大纲对齐</h2>
-                <p>教师：{user?.username ?? '教师'} | 正在编辑已对齐的人培课程方案</p>
+                <p>管理员：{user?.username ?? '管理员'} | 正在编辑已对齐的人培课程方案</p>
               </div>
-              {inviteCode ? (
-                <div className="teacher-invite-card" aria-label="教师口令">
-                  <span className="teacher-invite-label">教师口令</span>
-                  <span className="teacher-invite-code">{inviteCode}</span>
-                  <button
-                    type="button"
-                    className="teacher-invite-copy"
-                    onClick={handleCopyInviteCode}
-                    aria-label={`复制教师口令 ${inviteCode}`}
-                  >
-                    复制
-                  </button>
-                </div>
-              ) : null}
               <div className="header-actions">
                 <button type="button" className="btn btn-secondary" onClick={handleReimport}>
                   重新导入
                 </button>
-                <button type="button" className="btn btn-primary" onClick={handleSave}>
+                <button type="button" className="btn btn-primary" onClick={() => void handleSave()}>
                   保存并发布
                 </button>
               </div>
@@ -881,37 +961,27 @@ export function TeacherPage() {
       transition={reduceMotion ? undefined : { duration: 0.76, ease: [0.25, 1, 0.5, 1] }}
     >
       <header className="teacher-header">
-        <div className="teacher-brand">
+        <button
+          type="button"
+          className="teacher-brand teacher-brand-button"
+          aria-label="回到管理员端人培方案"
+          onClick={() => navigate('/admin/programs')}
+        >
           <img src="/logo.png" alt="one-tree logo" className="teacher-logo-img" />
-          <span className="teacher-brand-name">one-tree 教师工作台</span>
-        </div>
-        <div className="teacher-nav-tabs">
-          <button
-            type="button"
-            className={`teacher-tab ${activeTab === 'editor' ? 'tab-active' : ''} ${courses.length === 0 ? 'tab-disabled' : ''}`}
-            disabled={courses.length === 0}
-            onClick={() => {
-              if (courses.length > 0) {
-                setActiveTab('editor');
-              }
-            }}
-          >
-            大纲对齐编辑
-            {activeTab === 'editor' && <div className="teacher-tab-indicator" />}
-          </button>
-          <button
-            type="button"
-            className={`teacher-tab ${activeTab === 'graph' ? 'tab-active' : ''} ${courses.length === 0 ? 'tab-disabled' : ''}`}
-            disabled={courses.length === 0}
-            onClick={() => {
-              if (courses.length > 0) {
-                setActiveTab('graph');
-              }
-            }}
-          >
-            方案关系图谱
-            {activeTab === 'graph' && <div className="teacher-tab-indicator" />}
-          </button>
+          <span className="teacher-brand-name">one-tree 管理端</span>
+        </button>
+        <div className="teacher-admin-menu" aria-label="管理员菜单">
+          {adminRoutes.map((route) => (
+            <button
+              key={route.path}
+              type="button"
+              className={`teacher-admin-link ${route.path === '/admin/programs' ? 'active' : ''}`}
+              title={route.hint}
+              onClick={() => navigate(route.path)}
+            >
+              {route.label}
+            </button>
+          ))}
         </div>
         <div className="teacher-user-area" ref={dropdownRef}>
           <button
@@ -919,12 +989,12 @@ export function TeacherPage() {
             className="teacher-avatar-btn"
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
           >
-            {user?.username ? user.username.substring(0, 1).toUpperCase() : '教'}
+            {user?.username ? user.username.substring(0, 1).toUpperCase() : '管'}
           </button>
           {isDropdownOpen && (
             <div className="teacher-user-dropdown">
               <div className="teacher-dropdown-header">
-                <span className="teacher-dropdown-name">{user?.username ?? '教师'}</span>
+                <span className="teacher-dropdown-name">{user?.username ?? '管理员'}</span>
                 <span>{user?.identifier ?? 'teacher@example.com'}</span>
               </div>
               <button
@@ -941,6 +1011,25 @@ export function TeacherPage() {
       </header>
 
       <div className="teacher-container">
+        <ProgramScopePanel scope={programScope} onChange={setProgramScope} />
+        {courses.length > 0 ? (
+          <div className="teacher-nav-tabs" aria-label="人培方案视图">
+            <button
+              type="button"
+              className={`teacher-tab ${activeTab === 'editor' ? 'tab-active' : ''}`}
+              onClick={() => setActiveTab('editor')}
+            >
+              大纲对齐编辑
+            </button>
+            <button
+              type="button"
+              className={`teacher-tab ${activeTab === 'graph' ? 'tab-active' : ''}`}
+              onClick={() => setActiveTab('graph')}
+            >
+              方案依赖图谱
+            </button>
+          </div>
+        ) : null}
         {renderContent()}
       </div>
       <AnimatePresence>

@@ -10,6 +10,9 @@ const mockUser = {
   username: '林小鹿',
   identifier: 'lin@example.com',
   role: 'student' as const,
+  school: '南山大学',
+  major: '软件工程',
+  class_name: '一班',
   provider: 'password',
   is_active: true,
   created_at: '2026-01-01T00:00:00.000000',
@@ -50,15 +53,15 @@ describe('AuthPage', () => {
     expect(screen.getByRole('tab', { name: '登录' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: '注册' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: '学生' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: '教师' })).toBeTruthy();
-    expect(screen.queryByRole('tab', { name: '管理员' })).toBeNull();
+    expect(screen.getByRole('tab', { name: '管理员' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: '教师' })).toBeNull();
     expect(screen.getByRole('button', { name: /QQ 登录/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /学习通登录/ })).toBeTruthy();
     expect(screen.getByText('Planner Agent 倾听你的原始需求')).toBeTruthy();
     expect(screen.getByText('动态更新的多Agent协同学习系统')).toBeTruthy();
   });
 
-  it('routes teacher login to the teacher page', async () => {
+  it('routes teacher login to the program management page', async () => {
     vi.stubGlobal('localStorage', {
       getItem: vi.fn(),
       setItem: vi.fn(),
@@ -96,7 +99,7 @@ describe('AuthPage', () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole('tab', { name: '教师' }));
+    fireEvent.click(screen.getByRole('tab', { name: '管理员' }));
     fireEvent.change(screen.getByLabelText('账号'), {
       target: { value: 'lin@example.com' },
     });
@@ -113,7 +116,7 @@ describe('AuthPage', () => {
     expect(await screen.findByText('思绪已对齐')).toBeTruthy();
 
     await waitFor(() => {
-      expect(screen.getByTestId('location-path').textContent).toBe('/teacher');
+      expect(screen.getByTestId('location-path').textContent).toBe('/admin/programs');
     }, { timeout: 2200 });
   });
 

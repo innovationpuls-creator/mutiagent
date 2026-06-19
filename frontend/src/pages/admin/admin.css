@@ -479,6 +479,9 @@
     minmax(var(--space-120), 0.9fr)
     minmax(calc(var(--space-80) + var(--space-96)), 1.3fr)
     minmax(calc(var(--space-64) + var(--space-8)), 0.5fr)
+    minmax(var(--space-120), 0.8fr)
+    minmax(var(--space-120), 0.8fr)
+    minmax(calc(var(--space-80) + var(--space-16)), 0.7fr)
     minmax(calc(var(--space-64) + var(--space-12)), 0.5fr)
     minmax(calc(var(--space-64) + var(--space-12)), 0.55fr)
     minmax(calc(var(--space-120) + var(--space-16)), 0.9fr)
@@ -486,7 +489,7 @@
     minmax(calc(var(--space-120) + var(--space-16)), auto);
   gap: var(--space-12);
   align-items: center;
-  min-inline-size: calc(var(--space-120) * 9);
+  min-inline-size: calc(var(--space-120) * 12);
   min-block-size: var(--space-64);
   padding: var(--space-12) var(--space-16);
   border-radius: var(--radius-md);
@@ -620,6 +623,116 @@
   gap: var(--space-16);
   padding: var(--space-24);
   border-radius: var(--radius-lg);
+}
+
+.admin-data-tabs,
+.admin-data-overview,
+.admin-data-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+}
+
+.admin-data-tab {
+  padding: var(--space-12) var(--space-24);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-data-tab.active {
+  color: var(--color-text-inverse);
+  background: var(--gradient-coral);
+  box-shadow: var(--shadow-md);
+}
+
+.admin-data-search,
+.admin-data-detail > label {
+  display: grid;
+  gap: var(--space-8);
+  color: var(--color-text-secondary);
+}
+
+.admin-data-search input,
+.admin-data-detail select {
+  min-block-size: calc(var(--space-40) + var(--space-8));
+  padding: 0 var(--space-16);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  color: var(--color-text-primary);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-data-overview article,
+.admin-data-metrics article,
+.admin-data-user-card {
+  display: grid;
+  gap: var(--space-8);
+  min-inline-size: calc(var(--space-120) + var(--space-64));
+  padding: var(--space-24);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-data-overview strong,
+.admin-data-metrics strong {
+  color: var(--color-secondary);
+  font-size: var(--text-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.2;
+}
+
+.admin-data-table {
+  display: grid;
+  gap: var(--space-8);
+  overflow-x: auto;
+}
+
+.admin-data-row {
+  display: grid;
+  grid-template-columns:
+    minmax(var(--space-120), 1fr)
+    minmax(var(--space-120), 1fr)
+    minmax(calc(var(--space-80) + var(--space-16)), 0.8fr)
+    minmax(var(--space-80), 0.6fr)
+    minmax(var(--space-80), 0.6fr)
+    minmax(var(--space-120), 1fr)
+    minmax(var(--space-120), auto);
+  gap: var(--space-12);
+  align-items: center;
+  min-inline-size: calc(var(--space-120) * 7);
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-data-row span {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-data-head {
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  background: transparent;
+  box-shadow: none;
+}
+
+.admin-data-row button {
+  min-block-size: calc(var(--space-32) + var(--space-8));
+  padding: 0 var(--space-16);
+}
+
+.admin-data-detail {
+  display: grid;
+  gap: var(--space-16);
+}
+
+.admin-data-user-card span {
+  color: var(--color-text-secondary);
 }
 
 .admin-modal p {
