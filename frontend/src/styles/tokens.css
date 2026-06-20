@@ -1,230 +1,276 @@
 :root {
-  color-scheme: light;
+	color-scheme: light;
 
-  /* =========================================
+	/* =========================================
      1. Global Tokens (The Morandi Calibration)
      ========================================= */
 
-  /* The Canvas (基础环境) */
-  --color-canvas-base: oklch(97.5% 0.003 80);
-  --color-canvas-surface: oklch(95.5% 0.005 80);
-  --color-text-primary: oklch(35% 0.005 80);
-  --color-text-whisper: oklch(60% 0.005 80);
+	/* The Canvas (基础环境) */
+	--color-canvas-base: oklch(97.5% 0.003 80);
+	--color-canvas-surface: oklch(95.5% 0.005 80);
+	--color-text-primary: oklch(35% 0.005 80);
+	--color-text-whisper: oklch(60% 0.005 80);
 
-  /* The Actors (角色与状态) */
-  --color-intent-planner: oklch(75% 0.05 285); /* 柔和紫 */
-  --color-intent-feedback: oklch(80% 0.06 140); /* 鼠尾草绿 */
-  --color-intent-active: oklch(82% 0.08 60); /* 蜜桃沙色 */
+	/* The Actors (角色与状态) */
+	--color-intent-planner: oklch(75% 0.05 285); /* 柔和紫 */
+	--color-intent-feedback: oklch(80% 0.06 140); /* 鼠尾草绿 */
+	--color-intent-active: oklch(82% 0.08 60); /* 蜜桃沙色 */
 
-  /* Sandtable semantic actors (沙盘语义色 — 暖场内的冷色锚点对比) */
-  --color-intent-success: oklch(72% 0.09 145); /* 寻源绿 — Researcher / 集群 */
-  --color-intent-warning: oklch(76% 0.10 70); /* 路径琥珀 — Path / 拓扑 */
-  --color-intent-info: oklch(72% 0.07 250); /* 意图蓝 — User / Planner 冷锚点 */
+	/* Sandtable semantic actors (沙盘语义色 — 暖场内的冷色锚点对比) */
+	--color-intent-success: oklch(72% 0.09 145); /* 寻源绿 — Researcher / 集群 */
+	--color-intent-warning: oklch(76% 0.1 70); /* 路径琥珀 — Path / 拓扑 */
+	--color-intent-info: oklch(72% 0.07 250); /* 意图蓝 — User / Planner 冷锚点 */
 
-  /* Elevated glass surface & hairline border (沙盘卡片) */
-  --color-surface-elevated: oklch(98% 0.004 80 / 0.72);
-  --color-border-subtle: oklch(78% 0.012 80 / 0.55);
+	/* Elevated glass surface & hairline border (沙盘卡片) */
+	--color-surface-elevated: oklch(98% 0.004 80 / 0.72);
+	--color-border-subtle: oklch(78% 0.012 80 / 0.55);
 
-  /* Legacy Colors (To be refactored out over time) */
-  --color-primary: oklch(78% 0.06 60); 
-  --color-primary-soft: oklch(91% 0.05 55);
-  --color-secondary: oklch(49% 0.05 235);
-  --color-secondary-soft: oklch(88% 0.03 220);
-  --color-background: var(--color-canvas-base);
-  --color-background-warm: var(--color-canvas-surface);
-  --color-surface: var(--color-canvas-surface);
-  --color-surface-raised: oklch(99% 0.01 80);
-  --color-surface-inset: oklch(90% 0.03 73);
-  --color-border: oklch(84% 0.03 73);
-  --color-text-secondary: var(--color-text-whisper);
-  --color-text-muted: var(--color-text-whisper);
-  --color-text-inverse: var(--color-canvas-base);
-  --color-success: var(--color-intent-success);
-  --color-warning: var(--color-intent-warning);
-  --color-error: oklch(72% 0.13 28);
-  --color-error-bg: oklch(93% 0.04 28);
-  --color-warning-bg: oklch(94% 0.04 58);
-  --color-success-bg: oklch(93% 0.04 135);
-  --color-info: var(--color-secondary);
-  --color-info-bg: var(--color-secondary-soft);
+	/* Legacy Colors (To be refactored out over time) */
+	--color-primary: oklch(78% 0.06 60);
+	--color-primary-soft: oklch(91% 0.05 55);
+	--color-secondary: oklch(49% 0.05 235);
+	--color-secondary-soft: oklch(88% 0.03 220);
+	--color-background: var(--color-canvas-base);
+	--color-background-warm: var(--color-canvas-surface);
+	--color-surface: var(--color-canvas-surface);
+	--color-surface-raised: oklch(99% 0.01 80);
+	--color-surface-inset: oklch(90% 0.03 73);
+	--color-border: oklch(84% 0.03 73);
+	--color-text-secondary: var(--color-text-whisper);
+	--color-text-muted: var(--color-text-whisper);
+	--color-text-inverse: var(--color-canvas-base);
+	--color-success: var(--color-intent-success);
+	--color-warning: var(--color-intent-warning);
+	--color-error: oklch(72% 0.13 28);
+	--color-error-bg: oklch(93% 0.04 28);
+	--color-warning-bg: oklch(94% 0.04 58);
+	--color-success-bg: oklch(93% 0.04 135);
+	--color-info: var(--color-secondary);
+	--color-info-bg: var(--color-secondary-soft);
 
-  /* Interaction States (交互态) */
-  --color-hover-wash: oklch(99% 0.01 80 / 0.68);
-  --color-focus-ring: oklch(76% 0.12 55 / 0.42);
-  --color-primary-hover: oklch(70% 0.12 55);
-  --color-overlay: oklch(26% 0.04 235 / 0.42);
-  --color-link-underline: oklch(78% 0.12 55 / 0.4);
+	/* Interaction States (交互态) */
+	--color-hover-wash: oklch(99% 0.01 80 / 0.68);
+	--color-focus-ring: oklch(76% 0.12 55 / 0.42);
+	--color-primary-hover: oklch(70% 0.12 55);
+	--color-overlay: oklch(26% 0.04 235 / 0.42);
+	--color-link-underline: oklch(78% 0.12 55 / 0.4);
 
-  /* =========================================
+	/* =========================================
      2. Semantic Tokens (语义变量)
      ========================================= */
 
-  /* Action Gradients */
-  --gradient-action-send: linear-gradient(135deg, oklch(78% 0.06 60), oklch(85% 0.05 60));
+	/* Action Gradients */
+	--gradient-action-send: linear-gradient(
+		135deg,
+		oklch(78% 0.06 60),
+		oklch(85% 0.05 60)
+	);
 
-  /* Brand Gradients (品牌渐变 — from docs/06) */
-  --gradient-paper: linear-gradient(135deg, oklch(94% 0.04 73), oklch(97% 0.02 75));
-  --gradient-coral: linear-gradient(135deg, oklch(78% 0.12 55), oklch(72% 0.13 28));
-  --gradient-night: linear-gradient(135deg, oklch(16% 0.035 235), oklch(22% 0.04 235));
+	/* Brand Gradients (品牌渐变 — from docs/06) */
+	--gradient-paper: linear-gradient(
+		135deg,
+		oklch(94% 0.04 73),
+		oklch(97% 0.02 75)
+	);
+	--gradient-coral: linear-gradient(
+		135deg,
+		oklch(78% 0.12 55),
+		oklch(72% 0.13 28)
+	);
+	--gradient-night: linear-gradient(
+		135deg,
+		oklch(16% 0.035 235),
+		oklch(22% 0.04 235)
+	);
 
-  /* =========================================
+	/* =========================================
      3. Component Tokens & Material Physics
      ========================================= */
 
-  /* The Groove (凹槽内阴影) */
-  --shadow-groove-shallow: inset 0 1px 3px oklch(35% 0.005 80 / 0.04), inset 0 1px 2px oklch(35% 0.005 80 / 0.02);
-  --shadow-groove-deep: inset 0 2px 6px oklch(35% 0.005 80 / 0.06), inset 0 4px 12px oklch(35% 0.005 80 / 0.04);
+	/* The Groove (凹槽内阴影) */
+	--shadow-groove-shallow:
+		inset 0 1px 3px oklch(35% 0.005 80 / 0.04),
+		inset 0 1px 2px oklch(35% 0.005 80 / 0.02);
+	--shadow-groove-deep:
+		inset 0 2px 6px oklch(35% 0.005 80 / 0.06),
+		inset 0 4px 12px oklch(35% 0.005 80 / 0.04);
 
-  /* The Pebble (卵石外浮与硅胶透光) */
-  --shadow-pebble-float: 0 4px 14px oklch(35% 0.005 80 / 0.04), 0 1px 3px oklch(35% 0.005 80 / 0.02);
-  --glass-pebble-bg: oklch(97.5% 0.003 80 / 0.65);
-  --glass-pebble-border: 1px solid oklch(100% 0 0 / 0.5);
-  --glass-pebble-blur: blur(16px);
-  
-  --color-pebble-matte: oklch(100% 0 0 / 0.18);
-  --glass-pebble-blur-matte: blur(4px);
+	/* The Pebble (卵石外浮与硅胶透光) */
+	--shadow-pebble-float:
+		0 4px 14px oklch(35% 0.005 80 / 0.04), 0 1px 3px oklch(35% 0.005 80 / 0.02);
+	--glass-pebble-bg: oklch(97.5% 0.003 80 / 0.65);
+	--glass-pebble-border: 1px solid oklch(100% 0 0 / 0.5);
+	--glass-pebble-blur: blur(16px);
 
-  /* Glass Material (轻毛玻璃) */
-  --glass-bg: oklch(97% 0.02 75 / 0.76);
-  --glass-dark-bg: oklch(20% 0.04 235 / 0.72);
-  --glass-blur: blur(12px);
-  --glass-border: oklch(100% 0 0 / 0.42);
-  --material-dark-panel: oklch(18% 0.035 235);
-  --material-dark-panel-raised: oklch(22% 0.04 235);
-  --dark-surface: oklch(16% 0.035 235);
-  --dark-surface-raised: oklch(20% 0.04 235);
-  --dark-surface-inset: oklch(12% 0.035 235);
-  --dark-text-primary: oklch(92% 0.01 80);
-  --dark-text-secondary: oklch(84% 0.015 80 / 0.88);
-  --dark-text-muted: oklch(76% 0.012 80 / 0.72);
-  --dark-border: oklch(58% 0.02 235 / 0.34);
-  --dark-highlight: oklch(28% 0.03 235 / 0.82);
-  --status-running: oklch(78% 0.08 145);
-  --status-waiting: oklch(76% 0.1 70);
-  --status-error: oklch(72% 0.13 28);
-  --status-neutral: oklch(80% 0.04 250 / 0.92);
+	--color-pebble-matte: oklch(100% 0 0 / 0.18);
+	--glass-pebble-blur-matte: blur(4px);
 
-  /* Shadow Scale (多层叠加) */
-  --shadow-sm: 0 1px 2px oklch(50% 0.05 55 / 0.08), 0 8px 24px oklch(76% 0.12 55 / 0.10);
-  --shadow-md: 0 2px 6px oklch(50% 0.05 55 / 0.08), 0 18px 48px oklch(76% 0.12 55 / 0.16);
-  --shadow-lg: 0 4px 12px oklch(50% 0.05 55 / 0.10), 0 32px 80px oklch(76% 0.12 55 / 0.22), 0 64px 120px oklch(84% 0.12 63 / 0.14);
-  --shadow-inset: inset 0 1px 2px oklch(20% 0.04 235 / 0.18), inset 0 -1px 1px oklch(100% 0 0 / 0.18);
-  --shadow-glow: 0 0 48px oklch(76% 0.12 55 / 0.24), 0 0 96px oklch(84% 0.12 63 / 0.16);
+	/* Glass Material (轻毛玻璃) */
+	--glass-bg: oklch(97% 0.02 75 / 0.76);
+	--glass-dark-bg: oklch(20% 0.04 235 / 0.72);
+	--glass-blur: blur(12px);
+	--glass-border: oklch(100% 0 0 / 0.42);
+	--material-dark-panel: oklch(18% 0.035 235);
+	--material-dark-panel-raised: oklch(22% 0.04 235);
+	--dark-surface: oklch(16% 0.035 235);
+	--dark-surface-raised: oklch(20% 0.04 235);
+	--dark-surface-inset: oklch(12% 0.035 235);
+	--dark-text-primary: oklch(92% 0.01 80);
+	--dark-text-secondary: oklch(84% 0.015 80 / 0.88);
+	--dark-text-muted: oklch(76% 0.012 80 / 0.72);
+	--dark-border: oklch(58% 0.02 235 / 0.34);
+	--dark-highlight: oklch(28% 0.03 235 / 0.82);
+	--status-running: oklch(78% 0.08 145);
+	--status-waiting: oklch(76% 0.1 70);
+	--status-error: oklch(72% 0.13 28);
+	--status-neutral: oklch(80% 0.04 250 / 0.92);
 
-  /* Ambient Effects (晨光与弥散 — from docs/06) */
-  --effect-sun-glow: radial-gradient(circle, oklch(84% 0.12 63 / 0.72), oklch(84% 0.12 63 / 0) 68%);
-  --effect-peach-glow: radial-gradient(circle, oklch(76% 0.12 55 / 0.34), oklch(76% 0.12 55 / 0) 70%);
-  --effect-sage-glow: radial-gradient(circle, oklch(75% 0.09 135 / 0.28), oklch(75% 0.09 135 / 0) 70%);
-  --effect-blur-soft: blur(32px);
-  --effect-blur-sun: blur(120px);
+	/* Shadow Scale (多层叠加) */
+	--shadow-sm:
+		0 1px 2px oklch(50% 0.05 55 / 0.08), 0 8px 24px oklch(76% 0.12 55 / 0.1);
+	--shadow-md:
+		0 2px 6px oklch(50% 0.05 55 / 0.08), 0 18px 48px oklch(76% 0.12 55 / 0.16);
+	--shadow-lg:
+		0 4px 12px oklch(50% 0.05 55 / 0.1), 0 32px 80px oklch(76% 0.12 55 / 0.22),
+		0 64px 120px oklch(84% 0.12 63 / 0.14);
+	--shadow-inset:
+		inset 0 1px 2px oklch(20% 0.04 235 / 0.18),
+		inset 0 -1px 1px oklch(100% 0 0 / 0.18);
+	--shadow-glow:
+		0 0 48px oklch(76% 0.12 55 / 0.24), 0 0 96px oklch(84% 0.12 63 / 0.16);
 
-  /* =========================================
+	/* Ambient Effects (晨光与弥散 — from docs/06) */
+	--effect-sun-glow: radial-gradient(
+		circle,
+		oklch(84% 0.12 63 / 0.72),
+		oklch(84% 0.12 63 / 0) 68%
+	);
+	--effect-peach-glow: radial-gradient(
+		circle,
+		oklch(76% 0.12 55 / 0.34),
+		oklch(76% 0.12 55 / 0) 70%
+	);
+	--effect-sage-glow: radial-gradient(
+		circle,
+		oklch(75% 0.09 135 / 0.28),
+		oklch(75% 0.09 135 / 0) 70%
+	);
+	--effect-blur-soft: blur(32px);
+	--effect-blur-sun: blur(120px);
+
+	/* =========================================
      4. Micro-Geometry & Optical Spacing
      ========================================= */
-  
-  /* 4pt Grid */
-  --space-xs: 4px;
-  --space-sm: 8px;
-  --space-md: 16px;
-  --space-pill-padding: 6px;
 
-  /* Additional Grid Steps for Layout */
-  --space-4: 4px;
-  --space-8: 8px;
-  --space-12: 12px;
-  --space-16: 16px;
-  --space-20: 20px;
-  --space-24: 24px;
-  --space-32: 32px;
-  --space-40: 40px;
-  --space-48: 48px;
-  --space-64: 64px;
-  --space-80: 80px;
-  --space-96: 96px;
-  --space-120: 120px;
-  --gap-xs: var(--space-8);
-  --gap-sm: var(--space-16);
-  --gap-md: var(--space-24);
-  --gap-lg: var(--space-40);
-  --gap-xl: var(--space-64);
-  --container-narrow: 640px;
-  --container-default: 960px;
-  --container-wide: 1120px;
+	/* 4pt Grid */
+	--space-xs: 4px;
+	--space-sm: 8px;
+	--space-md: 16px;
+	--space-pill-padding: 6px;
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 24px;
-  --radius-full: 9999px;
+	/* Additional Grid Steps for Layout */
+	--space-4: 4px;
+	--space-8: 8px;
+	--space-12: 12px;
+	--space-16: 16px;
+	--space-20: 20px;
+	--space-24: 24px;
+	--space-32: 32px;
+	--space-40: 40px;
+	--space-48: 48px;
+	--space-64: 64px;
+	--space-80: 80px;
+	--space-96: 96px;
+	--space-120: 120px;
+	--gap-xs: var(--space-8);
+	--gap-sm: var(--space-16);
+	--gap-md: var(--space-24);
+	--gap-lg: var(--space-40);
+	--gap-xl: var(--space-64);
+	--container-narrow: 640px;
+	--container-default: 960px;
+	--container-wide: 1120px;
 
-  --radius-pill-inner: 14px;
-  --height-groove-track: 44px;
+	--radius-sm: 8px;
+	--radius-md: 12px;
+	--radius-lg: 24px;
+	--radius-full: 9999px;
 
-  /* Typography */
-  --font-brand: 'Caveat', 'LXGW WenKai', cursive;
-  --font-heading: 'LXGW WenKai', serif;
-  --font-body: 'LXGW WenKai', serif;
-  --font-mono: 'LXGW WenKai', serif;
+	--radius-pill-inner: 14px;
+	--height-groove-track: 44px;
 
-  /* Whisper Typography */
-  --font-whisper-caps: uppercase;
-  --font-whisper-spacing: 0.05em;
+	/* Typography */
+	--font-brand: "Caveat", "LXGW WenKai", cursive;
+	--font-heading: "LXGW WenKai", serif;
+	--font-body: "LXGW WenKai", serif;
+	--font-mono: "LXGW WenKai", serif;
 
-  --font-weight-light: 300;
-  --font-weight-regular: 400;
-  --font-weight-medium: 500;
-  --font-weight-bold: 500;
+	/* Whisper Typography */
+	--font-whisper-caps: uppercase;
+	--font-whisper-spacing: 0.05em;
 
-  --text-h1: 2.5rem;
-  --text-h2: 2rem;
-  --text-h3: 1.5rem;
-  --text-h4: 1.25rem;
-  --text-h5: 1.0625rem;
-  --text-h6: 0.9375rem;
-  --text-body: 1rem;
-  --text-body-sm: 0.9rem;
-  --text-body-relaxed: 1.0625rem;
-  --text-caption: 0.8125rem;
+	--font-weight-light: 300;
+	--font-weight-regular: 400;
+	--font-weight-medium: 500;
+	--font-weight-bold: 500;
 
-  --ease-editorial: cubic-bezier(0.25, 1, 0.5, 1);
-  --ease-lazy: cubic-bezier(0.33, 1, 0.68, 1);
-  --ease-flip: cubic-bezier(0.64, 0, 0.35, 1);
-  --ease-breathe: ease-in-out;
-  --duration-instant: 120ms;
-  --duration-lazy-hover: 420ms;
-  --duration-reveal: 760ms;
-  --duration-route: 980ms;
-  --duration-flip: 1200ms;
-  --duration-breathe: 4200ms;
+	--text-h1: 2.5rem;
+	--text-h2: 2rem;
+	--text-h3: 1.5rem;
+	--text-h4: 1.25rem;
+	--text-h5: 1.0625rem;
+	--text-h6: 0.9375rem;
+	--text-body: 1rem;
+	--text-body-sm: 0.9rem;
+	--text-body-relaxed: 1.0625rem;
+	--text-caption: 0.8125rem;
 
-  /* Mobile Typography */
-  --text-h1-mobile: 2rem;
-  --text-h2-mobile: 1.625rem;
-  --text-h3-mobile: 1.25rem;
-  --text-h4-mobile: 1.125rem;
+	--ease-editorial: cubic-bezier(0.25, 1, 0.5, 1);
+	--ease-lazy: cubic-bezier(0.33, 1, 0.68, 1);
+	--ease-flip: cubic-bezier(0.64, 0, 0.35, 1);
+	--ease-breathe: ease-in-out;
+	--duration-instant: 120ms;
+	--duration-lazy-hover: 420ms;
+	--duration-reveal: 760ms;
+	--duration-route: 980ms;
+	--duration-flip: 1200ms;
+	--duration-breathe: 4200ms;
+
+	/* Mobile Typography */
+	--text-h1-mobile: 2rem;
+	--text-h2-mobile: 1.625rem;
+	--text-h3-mobile: 1.25rem;
+	--text-h4-mobile: 1.125rem;
 }
 
 body {
-  background-color: var(--color-canvas-base);
-  color: var(--color-text-primary);
-  font-family: var(--font-body);
+	background-color: var(--color-canvas-base);
+	color: var(--color-text-primary);
+	font-family: var(--font-body);
 }
 
 .whisper-badge {
-  text-transform: var(--font-whisper-caps);
-  letter-spacing: var(--font-whisper-spacing);
-  color: var(--color-text-whisper);
-  font-size: var(--text-caption);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-sm);
-  background: transparent;
+	text-transform: var(--font-whisper-caps);
+	letter-spacing: var(--font-whisper-spacing);
+	color: var(--color-text-whisper);
+	font-size: var(--text-caption);
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-sm);
+	background: transparent;
 }
 
 .whisper-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
 }
-.whisper-dot.planner { background-color: var(--color-intent-planner); }
-.whisper-dot.feedback { background-color: var(--color-intent-feedback); }
-.whisper-dot.active { background-color: var(--color-intent-active); }
+.whisper-dot.planner {
+	background-color: var(--color-intent-planner);
+}
+.whisper-dot.feedback {
+	background-color: var(--color-intent-feedback);
+}
+.whisper-dot.active {
+	background-color: var(--color-intent-active);
+}

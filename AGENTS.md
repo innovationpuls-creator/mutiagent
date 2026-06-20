@@ -120,6 +120,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 禁止深层嵌套（> 4 层），用 early return
 - 禁止硬编码魔法数字，用 token 或常量
 - 不可变数据模式，不修改已有对象
+- **Biome 规范**：所有修改后的前端代码（JS/TS/JSX/TSX）必须符合 Biome 的规则。AI（包括 Antigravity、Codex 和其他 Agent）在修改任何前端文件后，必须自动使用 Biome 进行格式化和代码清理（执行 `npx biome check --write`），以确保无残留垃圾代码或格式异常。
 
 ### 后端规范
 - **强类型化**：必须使用 Python Type Hints（Pydantic/SQLModel）保证类型安全。

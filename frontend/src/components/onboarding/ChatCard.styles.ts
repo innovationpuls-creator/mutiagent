@@ -1,4 +1,4 @@
-import styled from 'styled-components';
+import styled from "styled-components";
 
 export const CardWrapper = styled.article`
   max-inline-size: min(100%, var(--container-narrow));

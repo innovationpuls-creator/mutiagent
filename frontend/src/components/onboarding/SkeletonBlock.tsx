@@ -1,23 +1,23 @@
-import React from 'react';
-import styled from 'styled-components';
+import React from "react";
+import styled from "styled-components";
 
 interface SkeletonBlockProps {
-  type: 'table' | 'heading' | 'paragraph' | 'code' | 'divider' | 'list';
+	type: "table" | "heading" | "paragraph" | "code" | "divider" | "list";
 }
 
 const HEIGHT_MAP: Record<string, string> = {
-  table: '140px',
-  heading: '24px',
-  paragraph: '50px',
-  code: '120px',
-  divider: '1px',
-  list: '80px',
+	table: "140px",
+	heading: "24px",
+	paragraph: "50px",
+	code: "120px",
+	divider: "1px",
+	list: "80px",
 };
 
 export function SkeletonBlock({ type }: SkeletonBlockProps) {
-  const height = HEIGHT_MAP[type] || '50px';
+	const height = HEIGHT_MAP[type] || "50px";
 
-  return <SkeletonWrapper style={{ height }} data-testid="skeleton-block" />;
+	return <SkeletonWrapper style={{ height }} data-testid="skeleton-block" />;
 }
 
 const SkeletonWrapper = styled.div`

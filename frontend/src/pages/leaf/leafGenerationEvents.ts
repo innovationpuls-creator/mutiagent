@@ -1,45 +1,56 @@
-import type { SessionAgentEvent } from '../../api/orchestration';
+import type { SessionAgentEvent } from "../../api/orchestration";
 
-export const LEAF_GENERATION_EVENT = 'mutiagent-leaf-generation-event';
-export const LEAF_GENERATION_COMPLETED_EVENT = 'mutiagent-leaf-generation-completed';
+export const LEAF_GENERATION_EVENT = "mutiagent-leaf-generation-event";
+export const LEAF_GENERATION_COMPLETED_EVENT =
+	"mutiagent-leaf-generation-completed";
 
 export interface LeafGenerationEventDetail {
-  courseId: string;
-  chapterSectionId: string;
-  sectionId: string | null;
-  phase: string;
-  status: string;
-  message: string;
+	courseId: string;
+	chapterSectionId: string;
+	sectionId: string | null;
+	phase: string;
+	status: string;
+	message: string;
 }
 
-export type LeafGenerationCompletedReason = 'course_outline' | 'course_resource';
+export type LeafGenerationCompletedReason =
+	| "course_outline"
+	| "course_resource";
 
 export interface LeafGenerationCompletedEventDetail {
-  courseId: string;
-  reason: LeafGenerationCompletedReason;
+	courseId: string;
+	reason: LeafGenerationCompletedReason;
 }
 
 export function dispatchLeafGenerationEvent(event: SessionAgentEvent) {
-  if (!event.course_id || !event.chapter_section_id) return;
-  if (event.kind !== 'course_resource_section' && event.kind !== 'course_resource_chapter') return;
-  window.dispatchEvent(new CustomEvent<LeafGenerationEventDetail>(LEAF_GENERATION_EVENT, {
-    detail: {
-      courseId: event.course_id,
-      chapterSectionId: event.chapter_section_id,
-      sectionId: event.section_id ?? null,
-      phase: event.phase ?? '',
-      status: event.status ?? '',
-      message: event.message ?? event.error ?? event.summary ?? '',
-    },
-  }));
+	if (!event.course_id || !event.chapter_section_id) return;
+	if (
+		event.kind !== "course_resource_section" &&
+		event.kind !== "course_resource_chapter"
+	)
+		return;
+	window.dispatchEvent(
+		new CustomEvent<LeafGenerationEventDetail>(LEAF_GENERATION_EVENT, {
+			detail: {
+				courseId: event.course_id,
+				chapterSectionId: event.chapter_section_id,
+				sectionId: event.section_id ?? null,
+				phase: event.phase ?? "",
+				status: event.status ?? "",
+				message: event.message ?? event.error ?? event.summary ?? "",
+			},
+		}),
+	);
 }
 
 export function dispatchLeafGenerationCompleted(
-  courseId: string,
-  reason: LeafGenerationCompletedReason = 'course_resource',
+	courseId: string,
+	reason: LeafGenerationCompletedReason = "course_resource",
 ) {
-  window.dispatchEvent(new CustomEvent<LeafGenerationCompletedEventDetail>(
-    LEAF_GENERATION_COMPLETED_EVENT,
-    { detail: { courseId, reason } },
-  ));
+	window.dispatchEvent(
+		new CustomEvent<LeafGenerationCompletedEventDetail>(
+			LEAF_GENERATION_COMPLETED_EVENT,
+			{ detail: { courseId, reason } },
+		),
+	);
 }

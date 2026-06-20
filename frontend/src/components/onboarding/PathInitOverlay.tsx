@@ -1,126 +1,136 @@
-import { useEffect, useState } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { motionTokens, DURATION_INSTANT } from '../../styles/motion-tokens';
-import { useAiWidget } from '../../context/AiWidgetContext';
-import { buildCourseOutlineDraft } from '../../onboarding/learningPathFlow';
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useEffect, useState } from "react";
+import { useAiWidget } from "../../context/AiWidgetContext";
+import { buildCourseOutlineDraft } from "../../onboarding/learningPathFlow";
+import { DURATION_INSTANT, motionTokens } from "../../styles/motion-tokens";
 
 interface Props {
-  currentCourseName?: string | null;
-  currentCourseId?: string | null;
-  onComplete?: () => void;
+	currentCourseName?: string | null;
+	currentCourseId?: string | null;
+	onComplete?: () => void;
 }
 
-export function PathInitOverlay({ currentCourseName, currentCourseId, onComplete }: Props) {
-  const [phase, setPhase] = useState<number>(0);
-  const [isStarting, setIsStarting] = useState(false);
-  const reduceMotion = useReducedMotion();
-  const { openWithDraft } = useAiWidget();
-  const courseName = currentCourseName?.trim() || '第一门课';
-  const courseId = currentCourseId?.trim() || '';
-  const startLabel = currentCourseName?.trim() ? `开始《${courseName}》` : '开始第一门课';
+export function PathInitOverlay({
+	currentCourseName,
+	currentCourseId,
+	onComplete,
+}: Props) {
+	const [phase, setPhase] = useState<number>(0);
+	const [isStarting, setIsStarting] = useState(false);
+	const reduceMotion = useReducedMotion();
+	const { openWithDraft } = useAiWidget();
+	const courseName = currentCourseName?.trim() || "第一门课";
+	const courseId = currentCourseId?.trim() || "";
+	const startLabel = currentCourseName?.trim()
+		? `开始《${courseName}》`
+		: "开始第一门课";
 
-  useEffect(() => {
-    if (reduceMotion) {
-      setPhase(2);
-      return;
-    }
-    const t1 = setTimeout(() => setPhase(1), 1200); // 概要文本淡入
-    const t2 = setTimeout(() => setPhase(2), 2800); // 按钮滑入
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
-  }, [reduceMotion]);
+	useEffect(() => {
+		if (reduceMotion) {
+			setPhase(2);
+			return;
+		}
+		const t1 = setTimeout(() => setPhase(1), 1200); // 概要文本淡入
+		const t2 = setTimeout(() => setPhase(2), 2800); // 按钮滑入
+		return () => {
+			clearTimeout(t1);
+			clearTimeout(t2);
+		};
+	}, [reduceMotion]);
 
-  return (
-    <motion.div
-      initial={reduceMotion ? false : { opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={reduceMotion ? { duration: DURATION_INSTANT } : motionTokens.route}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 9999,
-        backgroundColor: 'oklch(97% 0.02 75 / 0.45)',
-        backdropFilter: 'blur(56px)',
-        WebkitBackdropFilter: 'blur(56px)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        textAlign: 'center',
-      }}
-    >
-      <div style={{ maxWidth: '600px', padding: '0 var(--space-24)' }}>
-        <motion.h1
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={motionTokens.editorial}
-          style={{
-            fontFamily: 'var(--font-heading)',
-            fontSize: '32px',
-            color: 'oklch(28% 0.01 60)',
-            fontWeight: 400,
-            margin: '0 0 var(--space-24) 0',
-          }}
-        >
-          你的自适应学习路径已顺利编织完成。
-        </motion.h1>
+	return (
+		<motion.div
+			initial={reduceMotion ? false : { opacity: 0 }}
+			animate={{ opacity: 1 }}
+			exit={{ opacity: 0 }}
+			transition={
+				reduceMotion ? { duration: DURATION_INSTANT } : motionTokens.route
+			}
+			style={{
+				position: "fixed",
+				inset: 0,
+				zIndex: 9999,
+				backgroundColor: "oklch(97% 0.02 75 / 0.45)",
+				backdropFilter: "blur(56px)",
+				WebkitBackdropFilter: "blur(56px)",
+				display: "flex",
+				flexDirection: "column",
+				alignItems: "center",
+				justifyContent: "center",
+				textAlign: "center",
+			}}
+		>
+			<div style={{ maxWidth: "600px", padding: "0 var(--space-24)" }}>
+				<motion.h1
+					initial={{ opacity: 0, y: 12 }}
+					animate={{ opacity: 1, y: 0 }}
+					transition={motionTokens.editorial}
+					style={{
+						fontFamily: "var(--font-heading)",
+						fontSize: "32px",
+						color: "oklch(28% 0.01 60)",
+						fontWeight: 400,
+						margin: "0 0 var(--space-24) 0",
+					}}
+				>
+					你的自适应学习路径已顺利编织完成。
+				</motion.h1>
 
-        <AnimatePresence>
-          {phase >= 1 && (
-            <motion.p
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={motionTokens.editorial}
-              style={{
-                fontFamily: 'var(--font-body)',
-                fontSize: '18px',
-                color: 'oklch(55% 0.02 60)',
-                lineHeight: 1.8,
-                margin: '0 0 var(--space-32) 0',
-              }}
-            >
-              系统已根据你的画像基础，为你自动<strong>剪枝精简了 2 门</strong>已知的基础课程，并针对你的薄弱点<strong>融入了 1 门</strong>专项强化课。
-            </motion.p>
-          )}
-        </AnimatePresence>
+				<AnimatePresence>
+					{phase >= 1 && (
+						<motion.p
+							initial={{ opacity: 0, y: 10 }}
+							animate={{ opacity: 1, y: 0 }}
+							transition={motionTokens.editorial}
+							style={{
+								fontFamily: "var(--font-body)",
+								fontSize: "18px",
+								color: "oklch(55% 0.02 60)",
+								lineHeight: 1.8,
+								margin: "0 0 var(--space-32) 0",
+							}}
+						>
+							系统已根据你的画像基础，为你自动<strong>剪枝精简了 2 门</strong>
+							已知的基础课程，并针对你的薄弱点<strong>融入了 1 门</strong>
+							专项强化课。
+						</motion.p>
+					)}
+				</AnimatePresence>
 
-        <AnimatePresence>
-          {phase >= 2 && (
-            <motion.button
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={motionTokens.lazy}
-              onClick={() => {
-                setIsStarting(true);
-                openWithDraft(
-                  courseId
-                    ? buildCourseOutlineDraft(courseName, courseId)
-                    : `帮我生成《${courseName}》的课程大纲`,
-                );
-                onComplete?.();
-              }}
-              style={{
-                padding: 'var(--space-12) var(--space-32)',
-                borderRadius: 'var(--radius-full)',
-                background: 'var(--color-primary)',
-                color: 'var(--color-text-inverse)',
-                fontFamily: 'var(--font-body)',
-                fontSize: '16px',
-                fontWeight: 'var(--font-weight-medium)',
-                border: 'none',
-                cursor: 'pointer',
-                boxShadow: 'var(--shadow-md)',
-              }}
-            >
-              {isStarting ? '正在启动课程...' : startLabel}
-            </motion.button>
-          )}
-        </AnimatePresence>
-      </div>
-    </motion.div>
-  );
+				<AnimatePresence>
+					{phase >= 2 && (
+						<motion.button
+							initial={{ opacity: 0, y: 16 }}
+							animate={{ opacity: 1, y: 0 }}
+							exit={{ opacity: 0 }}
+							transition={motionTokens.lazy}
+							onClick={() => {
+								setIsStarting(true);
+								openWithDraft(
+									courseId
+										? buildCourseOutlineDraft(courseName, courseId)
+										: `帮我生成《${courseName}》的课程大纲`,
+								);
+								onComplete?.();
+							}}
+							style={{
+								padding: "var(--space-12) var(--space-32)",
+								borderRadius: "var(--radius-full)",
+								background: "var(--color-primary)",
+								color: "var(--color-text-inverse)",
+								fontFamily: "var(--font-body)",
+								fontSize: "16px",
+								fontWeight: "var(--font-weight-medium)",
+								border: "none",
+								cursor: "pointer",
+								boxShadow: "var(--shadow-md)",
+							}}
+						>
+							{isStarting ? "正在启动课程..." : startLabel}
+						</motion.button>
+					)}
+				</AnimatePresence>
+			</div>
+		</motion.div>
+	);
 }

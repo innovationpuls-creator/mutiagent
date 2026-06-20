@@ -1,489 +1,555 @@
-import React, { useRef, useState, useEffect } from 'react';
-import styled from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
-import { PenTool, Move, Check, HelpCircle, FileText, Code, Trash } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
-import { streamForestAi } from '../../api/forest';
-import { motionTokens } from '../../styles/motion-tokens';
+import { AnimatePresence, motion } from "framer-motion";
+import {
+	Check,
+	Code,
+	FileText,
+	HelpCircle,
+	Move,
+	PenTool,
+	Trash,
+} from "lucide-react";
+import type React from "react";
+import { useEffect, useRef, useState } from "react";
+import styled from "styled-components";
+import { streamForestAi } from "../../api/forest";
+import { useAuth } from "../../contexts/AuthContext";
+import { motionTokens } from "../../styles/motion-tokens";
 
 interface CanvasItem {
-  id: string;
-  type: 'note' | 'course' | 'code';
-  x: number;
-  y: number;
-  content: string;
-  title?: string;
-  color?: string;
+	id: string;
+	type: "note" | "course" | "code";
+	x: number;
+	y: number;
+	content: string;
+	title?: string;
+	color?: string;
 }
 
 interface Point {
-  x: number;
-  y: number;
+	x: number;
+	y: number;
 }
 
 export function ScratchpadCanvas() {
-  const { token } = useAuth();
-  const containerRef = useRef<HTMLDivElement>(null);
-  
-  // Viewport transformation states
-  const [panX, setPanX] = useState(0);
-  const [panY, setPanY] = useState(0);
-  const [zoom, setZoom] = useState(1);
-  const [isPanning, setIsPanning] = useState(false);
-  const panStartRef = useRef<Point>({ x: 0, y: 0 });
+	const { token } = useAuth();
+	const containerRef = useRef<HTMLDivElement>(null);
 
-  // Tool states: 'pan' | 'brush' | 'lasso'
-  const [activeTool, setActiveTool] = useState<'pan' | 'brush' | 'lasso'>('brush');
+	// Viewport transformation states
+	const [panX, setPanX] = useState(0);
+	const [panY, setPanY] = useState(0);
+	const [zoom, setZoom] = useState(1);
+	const [isPanning, setIsPanning] = useState(false);
+	const panStartRef = useRef<Point>({ x: 0, y: 0 });
 
-  // Drawing strokes
-  const [strokes, setStrokes] = useState<Point[][]>([]);
-  const [currentStroke, setCurrentStroke] = useState<Point[]>([]);
-  const [isDrawing, setIsDrawing] = useState(false);
+	// Tool states: 'pan' | 'brush' | 'lasso'
+	const [activeTool, setActiveTool] = useState<"pan" | "brush" | "lasso">(
+		"brush",
+	);
 
-  // Lasso points
-  const [lassoPoints, setLassoPoints] = useState<Point[]>([]);
-  const [isLassoing, setIsLassoing] = useState(false);
+	// Drawing strokes
+	const [strokes, setStrokes] = useState<Point[][]>([]);
+	const [currentStroke, setCurrentStroke] = useState<Point[]>([]);
+	const [isDrawing, setIsDrawing] = useState(false);
 
-  // Drag-and-drop items
-  const [items, setItems] = useState<CanvasItem[]>([
-    { id: '1', type: 'note', x: 100, y: 120, content: '多模态 AI 交互脑图：你可以拖拽小卡片，使用画笔在空白区域勾勒逻辑，再用套索框选求助。', color: 'oklch(96% 0.04 95)' },
-    { id: '2', type: 'course', x: 400, y: 80, title: '智能体协作开发', content: '使用 supervisor 模式调度各子智能体完成任务。' },
-    { id: '3', type: 'code', x: 250, y: 340, content: 'class SupervisorAgent:\n    def __init__(self):\n        self.workers = []' },
-  ]);
-  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
-  const dragStartOffsetRef = useRef<Point>({ x: 0, y: 0 });
+	// Lasso points
+	const [lassoPoints, setLassoPoints] = useState<Point[]>([]);
+	const [isLassoing, setIsLassoing] = useState(false);
 
-  // Multimodal Lasso Ask Popover
-  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
-  const [askText, setAskText] = useState('');
-  const [aiResponse, setAiResponse] = useState('');
-  const [aiStatus, setAiStatus] = useState<'idle' | 'streaming' | 'error'>('idle');
+	// Drag-and-drop items
+	const [items, setItems] = useState<CanvasItem[]>([
+		{
+			id: "1",
+			type: "note",
+			x: 100,
+			y: 120,
+			content:
+				"多模态 AI 交互脑图：你可以拖拽小卡片，使用画笔在空白区域勾勒逻辑，再用套索框选求助。",
+			color: "oklch(96% 0.04 95)",
+		},
+		{
+			id: "2",
+			type: "course",
+			x: 400,
+			y: 80,
+			title: "智能体协作开发",
+			content: "使用 supervisor 模式调度各子智能体完成任务。",
+		},
+		{
+			id: "3",
+			type: "code",
+			x: 250,
+			y: 340,
+			content:
+				"class SupervisorAgent:\n    def __init__(self):\n        self.workers = []",
+		},
+	]);
+	const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+	const dragStartOffsetRef = useRef<Point>({ x: 0, y: 0 });
 
-  // Handle Zoom
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const zoomFactor = 1.1;
-    const nextZoom = e.deltaY < 0 ? zoom * zoomFactor : zoom / zoomFactor;
-    setZoom(Math.max(0.5, Math.min(nextZoom, 2.5)));
-  };
+	// Multimodal Lasso Ask Popover
+	const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
+	const [askText, setAskText] = useState("");
+	const [aiResponse, setAiResponse] = useState("");
+	const [aiStatus, setAiStatus] = useState<"idle" | "streaming" | "error">(
+		"idle",
+	);
 
-  // Canvas Coordinates Converter
-  const getCanvasCoords = (clientX: number, clientY: number): Point => {
-    if (!containerRef.current) return { x: 0, y: 0 };
-    const rect = containerRef.current.getBoundingClientRect();
-    return {
-      x: (clientX - rect.left - panX) / zoom,
-      y: (clientY - rect.top - panY) / zoom,
-    };
-  };
+	// Handle Zoom
+	const handleWheel = (e: React.WheelEvent) => {
+		e.preventDefault();
+		const zoomFactor = 1.1;
+		const nextZoom = e.deltaY < 0 ? zoom * zoomFactor : zoom / zoomFactor;
+		setZoom(Math.max(0.5, Math.min(nextZoom, 2.5)));
+	};
 
-  // Mouse Interaction Router
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (draggingItemId) return;
+	// Canvas Coordinates Converter
+	const getCanvasCoords = (clientX: number, clientY: number): Point => {
+		if (!containerRef.current) return { x: 0, y: 0 };
+		const rect = containerRef.current.getBoundingClientRect();
+		return {
+			x: (clientX - rect.left - panX) / zoom,
+			y: (clientY - rect.top - panY) / zoom,
+		};
+	};
 
-    if (activeTool === 'pan' || e.button === 1) {
-      setIsPanning(true);
-      panStartRef.current = { x: e.clientX - panX, y: e.clientY - panY };
-      e.preventDefault();
-    } else if (activeTool === 'brush') {
-      setIsDrawing(true);
-      const pt = getCanvasCoords(e.clientX, e.clientY);
-      setCurrentStroke([pt]);
-    } else if (activeTool === 'lasso') {
-      setIsLassoing(true);
-      const pt = getCanvasCoords(e.clientX, e.clientY);
-      setLassoPoints([pt]);
-    }
-  };
+	// Mouse Interaction Router
+	const handleMouseDown = (e: React.MouseEvent) => {
+		if (draggingItemId) return;
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
-      setPanX(e.clientX - panStartRef.current.x);
-      setPanY(e.clientY - panStartRef.current.y);
-    } else if (isDrawing && currentStroke.length > 0) {
-      const pt = getCanvasCoords(e.clientX, e.clientY);
-      setCurrentStroke((prev) => [...prev, pt]);
-    } else if (isLassoing && lassoPoints.length > 0) {
-      const pt = getCanvasCoords(e.clientX, e.clientY);
-      setLassoPoints((prev) => [...prev, pt]);
-    }
-  };
+		if (activeTool === "pan" || e.button === 1) {
+			setIsPanning(true);
+			panStartRef.current = { x: e.clientX - panX, y: e.clientY - panY };
+			e.preventDefault();
+		} else if (activeTool === "brush") {
+			setIsDrawing(true);
+			const pt = getCanvasCoords(e.clientX, e.clientY);
+			setCurrentStroke([pt]);
+		} else if (activeTool === "lasso") {
+			setIsLassoing(true);
+			const pt = getCanvasCoords(e.clientX, e.clientY);
+			setLassoPoints([pt]);
+		}
+	};
 
-  const handleMouseUp = () => {
-    if (isPanning) {
-      setIsPanning(false);
-    } else if (isDrawing) {
-      setIsDrawing(false);
-      if (currentStroke.length > 1) {
-        setStrokes((prev) => [...prev, currentStroke]);
-      }
-      setCurrentStroke([]);
-    } else if (isLassoing) {
-      setIsLassoing(false);
-      if (lassoPoints.length > 2) {
-        cropLassoedRegion();
-      } else {
-        setLassoPoints([]);
-      }
-    }
-  };
+	const handleMouseMove = (e: React.MouseEvent) => {
+		if (isPanning) {
+			setPanX(e.clientX - panStartRef.current.x);
+			setPanY(e.clientY - panStartRef.current.y);
+		} else if (isDrawing && currentStroke.length > 0) {
+			const pt = getCanvasCoords(e.clientX, e.clientY);
+			setCurrentStroke((prev) => [...prev, pt]);
+		} else if (isLassoing && lassoPoints.length > 0) {
+			const pt = getCanvasCoords(e.clientX, e.clientY);
+			setLassoPoints((prev) => [...prev, pt]);
+		}
+	};
 
-  // Item dragging
-  const handleItemDragStart = (e: React.MouseEvent, item: CanvasItem) => {
-    e.stopPropagation();
-    setDraggingItemId(item.id);
-    dragStartOffsetRef.current = {
-      x: e.clientX - item.x * zoom,
-      y: e.clientY - item.y * zoom,
-    };
-  };
+	const handleMouseUp = () => {
+		if (isPanning) {
+			setIsPanning(false);
+		} else if (isDrawing) {
+			setIsDrawing(false);
+			if (currentStroke.length > 1) {
+				setStrokes((prev) => [...prev, currentStroke]);
+			}
+			setCurrentStroke([]);
+		} else if (isLassoing) {
+			setIsLassoing(false);
+			if (lassoPoints.length > 2) {
+				cropLassoedRegion();
+			} else {
+				setLassoPoints([]);
+			}
+		}
+	};
 
-  const handleItemDragMove = (e: React.MouseEvent) => {
-    if (!draggingItemId) return;
-    const item = items.find((it) => it.id === draggingItemId);
-    if (!item) return;
+	// Item dragging
+	const handleItemDragStart = (e: React.MouseEvent, item: CanvasItem) => {
+		e.stopPropagation();
+		setDraggingItemId(item.id);
+		dragStartOffsetRef.current = {
+			x: e.clientX - item.x * zoom,
+			y: e.clientY - item.y * zoom,
+		};
+	};
 
-    // Calculate new position relative to pan/zoom
-    const newX = (e.clientX - dragStartOffsetRef.current.x + item.x * zoom) / zoom;
-    const newY = (e.clientY - dragStartOffsetRef.current.y + item.y * zoom) / zoom;
+	const handleItemDragMove = (e: React.MouseEvent) => {
+		if (!draggingItemId) return;
+		const item = items.find((it) => it.id === draggingItemId);
+		if (!item) return;
 
-    setItems((prev) =>
-      prev.map((it) => (it.id === draggingItemId ? { ...it, x: newX, y: newY } : it))
-    );
-  };
+		// Calculate new position relative to pan/zoom
+		const newX =
+			(e.clientX - dragStartOffsetRef.current.x + item.x * zoom) / zoom;
+		const newY =
+			(e.clientY - dragStartOffsetRef.current.y + item.y * zoom) / zoom;
 
-  const handleItemDragEnd = () => {
-    setDraggingItemId(null);
-  };
+		setItems((prev) =>
+			prev.map((it) =>
+				it.id === draggingItemId ? { ...it, x: newX, y: newY } : it,
+			),
+		);
+	};
 
-  // Lasso Crop Base64 Generator
-  const cropLassoedRegion = () => {
-    if (lassoPoints.length < 3) return;
-    
-    // Bounding Box
-    const xs = lassoPoints.map((p) => p.x);
-    const ys = lassoPoints.map((p) => p.y);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
+	const handleItemDragEnd = () => {
+		setDraggingItemId(null);
+	};
 
-    const width = maxX - minX;
-    const height = maxY - minY;
+	// Lasso Crop Base64 Generator
+	const cropLassoedRegion = () => {
+		if (lassoPoints.length < 3) return;
 
-    if (width < 20 || height < 20) {
-      setLassoPoints([]);
-      return;
-    }
+		// Bounding Box
+		const xs = lassoPoints.map((p) => p.x);
+		const ys = lassoPoints.map((p) => p.y);
+		const minX = Math.min(...xs);
+		const maxX = Math.max(...xs);
+		const minY = Math.min(...ys);
+		const maxY = Math.max(...ys);
 
-    // Create temporary HTML5 canvas to export Base64
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+		const width = maxX - minX;
+		const height = maxY - minY;
 
-    // Background paper color oklch
-    ctx.fillStyle = '#f9f8f6';
-    ctx.fillRect(0, 0, width, height);
+		if (width < 20 || height < 20) {
+			setLassoPoints([]);
+			return;
+		}
 
-    // Draw strokes relative to Crop origin
-    ctx.translate(-minX, -minY);
-    ctx.strokeStyle = 'oklch(26% 0.04 235)'; // Deep ink blue
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+		// Create temporary HTML5 canvas to export Base64
+		const canvas = document.createElement("canvas");
+		canvas.width = width;
+		canvas.height = height;
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return;
 
-    for (const stroke of strokes) {
-      if (stroke.length === 0) continue;
-      ctx.beginPath();
-      ctx.moveTo(stroke[0].x, stroke[0].y);
-      for (let i = 1; i < stroke.length; i++) {
-        ctx.lineTo(stroke[i].x, stroke[i].y);
-      }
-      ctx.stroke();
-    }
+		// Background paper color oklch
+		ctx.fillStyle = "#f9f8f6";
+		ctx.fillRect(0, 0, width, height);
 
-    // Also draw items falling in this box
-    ctx.font = '12px LXGW WenKai, sans-serif';
-    ctx.fillStyle = 'oklch(26% 0.04 235)';
-    for (const item of items) {
-      if (item.x >= minX && item.x <= maxX && item.y >= minY && item.y <= maxY) {
-        ctx.strokeRect(item.x, item.y, 150, 80);
-        ctx.fillText(item.type === 'course' ? item.title || 'Course' : item.type, item.x + 8, item.y + 20);
-        ctx.fillText(item.content.slice(0, 20) + '...', item.x + 8, item.y + 40);
-      }
-    }
+		// Draw strokes relative to Crop origin
+		ctx.translate(-minX, -minY);
+		ctx.strokeStyle = "oklch(26% 0.04 235)"; // Deep ink blue
+		ctx.lineWidth = 3;
+		ctx.lineCap = "round";
+		ctx.lineJoin = "round";
 
-    try {
-      setSelectedRegion(canvas.toDataURL('image/png'));
-    } catch {
-      // Fallback in case of origin security restrictions
-      setSelectedRegion('data:image/png;base64,iVBORw0KGgoAAAANS');
-    }
-    setLassoPoints([]);
-  };
+		for (const stroke of strokes) {
+			if (stroke.length === 0) continue;
+			ctx.beginPath();
+			ctx.moveTo(stroke[0].x, stroke[0].y);
+			for (let i = 1; i < stroke.length; i++) {
+				ctx.lineTo(stroke[i].x, stroke[i].y);
+			}
+			ctx.stroke();
+		}
 
-  // Add Item Helpers
-  const addStickyNote = () => {
-    const pt = getCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
-    setItems((prev) => [
-      ...prev,
-      {
-        id: `note-${Date.now()}`,
-        type: 'note',
-        x: pt.x,
-        y: pt.y,
-        content: '新便签，双击修改文本...',
-        color: 'oklch(95% 0.05 140)',
-      },
-    ]);
-  };
+		// Also draw items falling in this box
+		ctx.font = "12px LXGW WenKai, sans-serif";
+		ctx.fillStyle = "oklch(26% 0.04 235)";
+		for (const item of items) {
+			if (
+				item.x >= minX &&
+				item.x <= maxX &&
+				item.y >= minY &&
+				item.y <= maxY
+			) {
+				ctx.strokeRect(item.x, item.y, 150, 80);
+				ctx.fillText(
+					item.type === "course" ? item.title || "Course" : item.type,
+					item.x + 8,
+					item.y + 20,
+				);
+				ctx.fillText(
+					item.content.slice(0, 20) + "...",
+					item.x + 8,
+					item.y + 40,
+				);
+			}
+		}
 
-  const addCodeBox = () => {
-    const pt = getCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
-    setItems((prev) => [
-      ...prev,
-      {
-        id: `code-${Date.now()}`,
-        type: 'code',
-        x: pt.x,
-        y: pt.y,
-        content: '# 编写你的草稿代码...\ndef solve():\n    pass',
-      },
-    ]);
-  };
+		try {
+			setSelectedRegion(canvas.toDataURL("image/png"));
+		} catch {
+			// Fallback in case of origin security restrictions
+			setSelectedRegion("data:image/png;base64,iVBORw0KGgoAAAANS");
+		}
+		setLassoPoints([]);
+	};
 
-  // Stream Lasso Prompt to AI
-  const handleAskAI = async () => {
-    if (!token || !selectedRegion || aiStatus === 'streaming') return;
-    setAiStatus('streaming');
-    setAiResponse('');
+	// Add Item Helpers
+	const addStickyNote = () => {
+		const pt = getCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+		setItems((prev) => [
+			...prev,
+			{
+				id: `note-${Date.now()}`,
+				type: "note",
+				x: pt.x,
+				y: pt.y,
+				content: "新便签，双击修改文本...",
+				color: "oklch(95% 0.05 140)",
+			},
+		]);
+	};
 
-    const mockContext = {
-      course_node_id: 'canvas-scratchpad',
-      chapter_id: 'global-canvas',
-      quiz_id: null,
-      question_id: null,
-      question: null,
-      answer: null,
-      grading_result: null,
-    };
+	const addCodeBox = () => {
+		const pt = getCanvasCoords(window.innerWidth / 2, window.innerHeight / 2);
+		setItems((prev) => [
+			...prev,
+			{
+				id: `code-${Date.now()}`,
+				type: "code",
+				x: pt.x,
+				y: pt.y,
+				content: "# 编写你的草稿代码...\ndef solve():\n    pass",
+			},
+		]);
+	};
 
-    try {
-      await streamForestAi(
-        token,
-        mockContext,
-        askText || '请解释一下我框选的这些草图与概念之间的关系。',
-        (event) => {
-          if (event.event === 'forest_ai_text_chunk' && event.chunk) {
-            setAiResponse((prev) => prev + event.chunk);
-          }
-          if (event.event === 'forest_error') {
-            setAiStatus('error');
-            setAiResponse(event.message ?? 'AI 暂时不可用');
-          }
-          if (event.event === 'forest_ai_completed') {
-            setAiStatus('idle');
-          }
-        },
-        selectedRegion
-      );
-    } catch (err) {
-      setAiStatus('error');
-      setAiResponse(err instanceof Error ? err.message : 'AI 暂时不可用');
-    }
-  };
+	// Stream Lasso Prompt to AI
+	const handleAskAI = async () => {
+		if (!token || !selectedRegion || aiStatus === "streaming") return;
+		setAiStatus("streaming");
+		setAiResponse("");
 
-  return (
-    <CanvasWrapper
-      ref={containerRef}
-      onWheel={handleWheel}
-      onMouseDown={handleMouseDown}
-      onMouseMove={(e) => {
-        handleMouseMove(e);
-        handleItemDragMove(e);
-      }}
-      onMouseUp={() => {
-        handleMouseUp();
-        handleItemDragEnd();
-      }}
-      aria-label="画布白板空间"
-    >
-      {/* Meditative Sun Background */}
-      <div className="forest-ambient-sun" aria-hidden="true" />
+		const mockContext = {
+			course_node_id: "canvas-scratchpad",
+			chapter_id: "global-canvas",
+			quiz_id: null,
+			question_id: null,
+			question: null,
+			answer: null,
+			grading_result: null,
+		};
 
-      {/* Infinite Canvas Container */}
-      <div
-        className="canvas-viewport"
-        style={{
-          transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
-          transformOrigin: '0 0',
-        }}
-      >
-        {/* Draw strokes */}
-        <svg className="drawing-overlay" style={{ pointerEvents: 'none' }}>
-          {strokes.map((stroke, index) => (
-            <path
-              key={index}
-              d={`M ${stroke.map((p) => `${p.x} ${p.y}`).join(' L ')}`}
-              fill="none"
-              stroke="oklch(26% 0.04 235)"
-              strokeWidth={3}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          ))}
-          {currentStroke.length > 0 && (
-            <path
-              d={`M ${currentStroke.map((p) => `${p.x} ${p.y}`).join(' L ')}`}
-              fill="none"
-              stroke="oklch(26% 0.04 235)"
-              strokeWidth={3}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          )}
-          
-          {/* Drawing Lasso */}
-          {lassoPoints.length > 0 && (
-            <polygon
-              points={lassoPoints.map((p) => `${p.x},${p.y}`).join(' ')}
-              fill="oklch(76% 0.11 75 / 0.08)"
-              stroke="oklch(76% 0.11 75)"
-              strokeWidth={1.5}
-              strokeDasharray="4,4"
-            />
-          )}
-        </svg>
+		try {
+			await streamForestAi(
+				token,
+				mockContext,
+				askText || "请解释一下我框选的这些草图与概念之间的关系。",
+				(event) => {
+					if (event.event === "forest_ai_text_chunk" && event.chunk) {
+						setAiResponse((prev) => prev + event.chunk);
+					}
+					if (event.event === "forest_error") {
+						setAiStatus("error");
+						setAiResponse(event.message ?? "AI 暂时不可用");
+					}
+					if (event.event === "forest_ai_completed") {
+						setAiStatus("idle");
+					}
+				},
+				selectedRegion,
+			);
+		} catch (err) {
+			setAiStatus("error");
+			setAiResponse(err instanceof Error ? err.message : "AI 暂时不可用");
+		}
+	};
 
-        {/* Drag-and-drop Items */}
-        {items.map((item) => (
-          <div
-            key={item.id}
-            className={`canvas-item-wrapper ${item.type}`}
-            style={{
-              left: `${item.x}px`,
-              top: `${item.y}px`,
-              backgroundColor: item.color,
-            }}
-            onMouseDown={(e) => handleItemDragStart(e, item)}
-          >
-            <div className="item-drag-handle">
-              <Move className="w-3.5 h-3.5 text-gray-400" />
-              <button
-                className="item-delete-btn"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={() => setItems((prev) => prev.filter((it) => it.id !== item.id))}
-              >
-                <Trash className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="item-content-body">
-              {item.type === 'course' && <h4>{item.title}</h4>}
-              {item.type === 'code' ? (
-                <textarea
-                  value={item.content}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onChange={(e) =>
-                    setItems((prev) =>
-                      prev.map((it) => (it.id === item.id ? { ...it, content: e.target.value } : it))
-                    )
-                  }
-                  className="code-textarea"
-                />
-              ) : (
-                <textarea
-                  value={item.content}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onChange={(e) =>
-                    setItems((prev) =>
-                      prev.map((it) => (it.id === item.id ? { ...it, content: e.target.value } : it))
-                    )
-                  }
-                  className="note-textarea"
-                />
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+	return (
+		<CanvasWrapper
+			ref={containerRef}
+			onWheel={handleWheel}
+			onMouseDown={handleMouseDown}
+			onMouseMove={(e) => {
+				handleMouseMove(e);
+				handleItemDragMove(e);
+			}}
+			onMouseUp={() => {
+				handleMouseUp();
+				handleItemDragEnd();
+			}}
+			aria-label="画布白板空间"
+		>
+			{/* Meditative Sun Background */}
+			<div className="forest-ambient-sun" aria-hidden="true" />
 
-      {/* Floating Toolbar */}
-      <div className="canvas-toolbar">
-        <button
-          className={activeTool === 'brush' ? 'is-active' : ''}
-          onClick={() => setActiveTool('brush')}
-          title="画笔"
-        >
-          <PenTool className="w-5 h-5" />
-        </button>
-        <button
-          className={activeTool === 'lasso' ? 'is-active' : ''}
-          onClick={() => setActiveTool('lasso')}
-          title="套索工具 (框选追问)"
-        >
-          <HelpCircle className="w-5 h-5" />
-        </button>
-        <button
-          className={activeTool === 'pan' ? 'is-active' : ''}
-          onClick={() => setActiveTool('pan')}
-          title="移动画布"
-        >
-          <Move className="w-5 h-5" />
-        </button>
-        <div className="divider" />
-        <button onClick={addStickyNote} title="新建便签">
-          <FileText className="w-5 h-5" />
-        </button>
-        <button onClick={addCodeBox} title="代码容器">
-          <Code className="w-5 h-5" />
-        </button>
-      </div>
+			{/* Infinite Canvas Container */}
+			<div
+				className="canvas-viewport"
+				style={{
+					transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+					transformOrigin: "0 0",
+				}}
+			>
+				{/* Draw strokes */}
+				<svg className="drawing-overlay" style={{ pointerEvents: "none" }}>
+					{strokes.map((stroke, index) => (
+						<path
+							key={index}
+							d={`M ${stroke.map((p) => `${p.x} ${p.y}`).join(" L ")}`}
+							fill="none"
+							stroke="oklch(26% 0.04 235)"
+							strokeWidth={3}
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						/>
+					))}
+					{currentStroke.length > 0 && (
+						<path
+							d={`M ${currentStroke.map((p) => `${p.x} ${p.y}`).join(" L ")}`}
+							fill="none"
+							stroke="oklch(26% 0.04 235)"
+							strokeWidth={3}
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						/>
+					)}
 
-      {/* Lasso Ask Modal Dialog */}
-      <AnimatePresence>
-        {selectedRegion && (
-          <motion.div
-            className="lasso-ask-modal"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={motionTokens.lazy}
-          >
-            <div className="modal-header">
-              <h3>对框选区域发起追问</h3>
-              <button onClick={() => setSelectedRegion(null)}>✕</button>
-            </div>
-            <div className="modal-body">
-              <div className="crop-preview-box">
-                <img src={selectedRegion} alt="Lasso Crop" className="crop-img" />
-              </div>
-              <textarea
-                placeholder="在此输入你针对框选演算草图/概念的疑惑..."
-                value={askText}
-                onChange={(e) => setAskText(e.target.value)}
-              />
-              <button
-                type="button"
-                className="modal-send-btn"
-                onClick={handleAskAI}
-                disabled={aiStatus === 'streaming'}
-              >
-                {aiStatus === 'streaming' ? '分析中...' : '提交求助'}
-              </button>
-              {aiResponse && (
-                <div className="ai-response-box">
-                  <strong>Forest AI 解析:</strong>
-                  <p>{aiResponse}</p>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </CanvasWrapper>
-  );
+					{/* Drawing Lasso */}
+					{lassoPoints.length > 0 && (
+						<polygon
+							points={lassoPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+							fill="oklch(76% 0.11 75 / 0.08)"
+							stroke="oklch(76% 0.11 75)"
+							strokeWidth={1.5}
+							strokeDasharray="4,4"
+						/>
+					)}
+				</svg>
+
+				{/* Drag-and-drop Items */}
+				{items.map((item) => (
+					<div
+						key={item.id}
+						className={`canvas-item-wrapper ${item.type}`}
+						style={{
+							left: `${item.x}px`,
+							top: `${item.y}px`,
+							backgroundColor: item.color,
+						}}
+						onMouseDown={(e) => handleItemDragStart(e, item)}
+					>
+						<div className="item-drag-handle">
+							<Move className="w-3.5 h-3.5 text-gray-400" />
+							<button
+								className="item-delete-btn"
+								onMouseDown={(e) => e.stopPropagation()}
+								onClick={() =>
+									setItems((prev) => prev.filter((it) => it.id !== item.id))
+								}
+							>
+								<Trash className="w-3.5 h-3.5" />
+							</button>
+						</div>
+						<div className="item-content-body">
+							{item.type === "course" && <h4>{item.title}</h4>}
+							{item.type === "code" ? (
+								<textarea
+									value={item.content}
+									onMouseDown={(e) => e.stopPropagation()}
+									onChange={(e) =>
+										setItems((prev) =>
+											prev.map((it) =>
+												it.id === item.id
+													? { ...it, content: e.target.value }
+													: it,
+											),
+										)
+									}
+									className="code-textarea"
+								/>
+							) : (
+								<textarea
+									value={item.content}
+									onMouseDown={(e) => e.stopPropagation()}
+									onChange={(e) =>
+										setItems((prev) =>
+											prev.map((it) =>
+												it.id === item.id
+													? { ...it, content: e.target.value }
+													: it,
+											),
+										)
+									}
+									className="note-textarea"
+								/>
+							)}
+						</div>
+					</div>
+				))}
+			</div>
+
+			{/* Floating Toolbar */}
+			<div className="canvas-toolbar">
+				<button
+					className={activeTool === "brush" ? "is-active" : ""}
+					onClick={() => setActiveTool("brush")}
+					title="画笔"
+				>
+					<PenTool className="w-5 h-5" />
+				</button>
+				<button
+					className={activeTool === "lasso" ? "is-active" : ""}
+					onClick={() => setActiveTool("lasso")}
+					title="套索工具 (框选追问)"
+				>
+					<HelpCircle className="w-5 h-5" />
+				</button>
+				<button
+					className={activeTool === "pan" ? "is-active" : ""}
+					onClick={() => setActiveTool("pan")}
+					title="移动画布"
+				>
+					<Move className="w-5 h-5" />
+				</button>
+				<div className="divider" />
+				<button onClick={addStickyNote} title="新建便签">
+					<FileText className="w-5 h-5" />
+				</button>
+				<button onClick={addCodeBox} title="代码容器">
+					<Code className="w-5 h-5" />
+				</button>
+			</div>
+
+			{/* Lasso Ask Modal Dialog */}
+			<AnimatePresence>
+				{selectedRegion && (
+					<motion.div
+						className="lasso-ask-modal"
+						initial={{ opacity: 0, scale: 0.95 }}
+						animate={{ opacity: 1, scale: 1 }}
+						exit={{ opacity: 0, scale: 0.95 }}
+						transition={motionTokens.lazy}
+					>
+						<div className="modal-header">
+							<h3>对框选区域发起追问</h3>
+							<button onClick={() => setSelectedRegion(null)}>✕</button>
+						</div>
+						<div className="modal-body">
+							<div className="crop-preview-box">
+								<img
+									src={selectedRegion}
+									alt="Lasso Crop"
+									className="crop-img"
+								/>
+							</div>
+							<textarea
+								placeholder="在此输入你针对框选演算草图/概念的疑惑..."
+								value={askText}
+								onChange={(e) => setAskText(e.target.value)}
+							/>
+							<button
+								type="button"
+								className="modal-send-btn"
+								onClick={handleAskAI}
+								disabled={aiStatus === "streaming"}
+							>
+								{aiStatus === "streaming" ? "分析中..." : "提交求助"}
+							</button>
+							{aiResponse && (
+								<div className="ai-response-box">
+									<strong>Forest AI 解析:</strong>
+									<p>{aiResponse}</p>
+								</div>
+							)}
+						</div>
+					</motion.div>
+				)}
+			</AnimatePresence>
+		</CanvasWrapper>
+	);
 }
 
 const CanvasWrapper = styled.section`

@@ -1,115 +1,122 @@
-import type { ReactNode } from 'react';
-import styled from 'styled-components';
-import type { CourseKnowledgeResult, CourseKnowledgeSection } from '../../types/chat';
+import type { ReactNode } from "react";
+import styled from "styled-components";
+import type {
+	CourseKnowledgeResult,
+	CourseKnowledgeSection,
+} from "../../types/chat";
 import {
-  getChildSections,
-  getOutlineCourseName,
-  getOutlineGradeLabel,
-  getOutlineHours,
-  getOutlineSummary,
-  getOrderedSections,
-  getReadableLearningSequence,
-  getSectionDescription,
-  getSectionHeading,
-  getSectionLabel,
-} from './courseKnowledgeHelpers';
+	getChildSections,
+	getOrderedSections,
+	getOutlineCourseName,
+	getOutlineGradeLabel,
+	getOutlineHours,
+	getOutlineSummary,
+	getReadableLearningSequence,
+	getSectionDescription,
+	getSectionHeading,
+	getSectionLabel,
+} from "./courseKnowledgeHelpers";
 
 interface CourseKnowledgeCardProps {
-  outline: CourseKnowledgeResult;
+	outline: CourseKnowledgeResult;
 }
 
 function listText(items: string[]) {
-  if (items.length === 0) {
-    return <EmptyText>等待进一步补充。</EmptyText>;
-  }
+	if (items.length === 0) {
+		return <EmptyText>等待进一步补充。</EmptyText>;
+	}
 
-  return (
-    <InlineList>
-      {items.map((item, index) => (
-        <li key={`${item}-${index}`}>{item}</li>
-      ))}
-    </InlineList>
-  );
+	return (
+		<InlineList>
+			{items.map((item, index) => (
+				<li key={`${item}-${index}`}>{item}</li>
+			))}
+		</InlineList>
+	);
 }
 
 function renderSectionTree(
-  sections: CourseKnowledgeSection[],
-  parentId: string | null,
+	sections: CourseKnowledgeSection[],
+	parentId: string | null,
 ): ReactNode {
-  const children = getChildSections(sections, parentId);
+	const children = getChildSections(sections, parentId);
 
-  if (children.length === 0) {
-    return null;
-  }
+	if (children.length === 0) {
+		return null;
+	}
 
-  return (
-    <NestedStack>
-      {children.map((section) => (
-        <NestedCard key={section.section_id}>
-          <strong>{getSectionHeading(section)}</strong>
-          <p>{getSectionDescription(section)}</p>
-          {listText(section.key_knowledge_points)}
-          {renderSectionTree(sections, section.section_id)}
-        </NestedCard>
-      ))}
-    </NestedStack>
-  );
+	return (
+		<NestedStack>
+			{children.map((section) => (
+				<NestedCard key={section.section_id}>
+					<strong>{getSectionHeading(section)}</strong>
+					<p>{getSectionDescription(section)}</p>
+					{listText(section.key_knowledge_points)}
+					{renderSectionTree(sections, section.section_id)}
+				</NestedCard>
+			))}
+		</NestedStack>
+	);
 }
 
 export function CourseKnowledgeCard({ outline }: CourseKnowledgeCardProps) {
-  const orderedSections = getOrderedSections(outline);
-  const topLevelSections = orderedSections.filter((section) => section.parent_section_id === null);
-  const learningSequence = getReadableLearningSequence(outline);
+	const orderedSections = getOrderedSections(outline);
+	const topLevelSections = orderedSections.filter(
+		(section) => section.parent_section_id === null,
+	);
+	const learningSequence = getReadableLearningSequence(outline);
 
-  return (
-    <Card>
-      <Header>
-        <span>课程大纲 · {getOutlineGradeLabel(outline)}</span>
-        <strong>{getOutlineCourseName(outline)}</strong>
-      </Header>
+	return (
+		<Card>
+			<Header>
+				<span>课程大纲 · {getOutlineGradeLabel(outline)}</span>
+				<strong>{getOutlineCourseName(outline)}</strong>
+			</Header>
 
-      <HeroSection>
-        <div>
-          <SectionLabel>个性化安排</SectionLabel>
-          <p>{getOutlineSummary(outline)}</p>
-        </div>
-        <MetaPill>{getOutlineHours(outline)}</MetaPill>
-      </HeroSection>
+			<HeroSection>
+				<div>
+					<SectionLabel>个性化安排</SectionLabel>
+					<p>{getOutlineSummary(outline)}</p>
+				</div>
+				<MetaPill>{getOutlineHours(outline)}</MetaPill>
+			</HeroSection>
 
-      <Section>
-        <h3>推荐学习步骤</h3>
-        {listText(learningSequence)}
-      </Section>
+			<Section>
+				<h3>推荐学习步骤</h3>
+				{listText(learningSequence)}
+			</Section>
 
-      <Section>
-        <h3>章节展开</h3>
-        <SectionStack>
-          {topLevelSections.map((section) => {
-            return (
-              <SectionCard key={section.section_id}>
-                <SectionHeader>
-                  <SectionIndex>{getSectionLabel(section.section_id)}</SectionIndex>
-                  <div>
-                    <h4>{getSectionHeading(section)}</h4>
-                    <p>{getSectionDescription(section)}</p>
-                  </div>
-                </SectionHeader>
+			<Section>
+				<h3>章节展开</h3>
+				<SectionStack>
+					{topLevelSections.map((section) => {
+						return (
+							<SectionCard key={section.section_id}>
+								<SectionHeader>
+									<SectionIndex>
+										{getSectionLabel(section.section_id)}
+									</SectionIndex>
+									<div>
+										<h4>{getSectionHeading(section)}</h4>
+										<p>{getSectionDescription(section)}</p>
+									</div>
+								</SectionHeader>
 
-                <SectionBody>
-                  <SectionBlock>
-                    <h5>核心知识点</h5>
-                    {listText(section.key_knowledge_points)}
-                  </SectionBlock>
+								<SectionBody>
+									<SectionBlock>
+										<h5>核心知识点</h5>
+										{listText(section.key_knowledge_points)}
+									</SectionBlock>
 
-                  {renderSectionTree(orderedSections, section.section_id)}
-                </SectionBody>
-              </SectionCard>
-            );
-          })}
-        </SectionStack>
-      </Section>
-    </Card>
-  );
+									{renderSectionTree(orderedSections, section.section_id)}
+								</SectionBody>
+							</SectionCard>
+						);
+					})}
+				</SectionStack>
+			</Section>
+		</Card>
+	);
 }
 
 const Card = styled.article`

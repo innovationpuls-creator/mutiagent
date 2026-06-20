@@ -1,443 +1,554 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
-import styled from 'styled-components';
-import { motion, useReducedMotion } from 'framer-motion';
-import { GrowthTreeSVG } from '../../components/canopy/GrowthTreeSVG';
-import { fetchCanopyOverview } from '../../api/branch';
-import { useAuth } from '../../contexts/AuthContext';
-import { motionTokens } from '../../styles/motion-tokens';
-import type { CanopyCourseNode, CanopyCourseStatus, CanopyMilestone } from '../../types/canopy';
+import { motion, useReducedMotion } from "framer-motion";
+import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import styled from "styled-components";
+import { fetchCanopyOverview } from "../../api/branch";
+import { GrowthTreeSVG } from "../../components/canopy/GrowthTreeSVG";
+import { useAuth } from "../../contexts/AuthContext";
+import { motionTokens } from "../../styles/motion-tokens";
+import type {
+	CanopyCourseNode,
+	CanopyCourseStatus,
+	CanopyMilestone,
+} from "../../types/canopy";
 
 interface SlotPoint {
-  x: number;
-  y: number;
+	x: number;
+	y: number;
 }
 
 interface PositionedCourse extends CanopyCourseNode, SlotPoint {
-  gradeLabel: string;
+	gradeLabel: string;
 }
 
 interface CourseConnection {
-  id: string;
-  source: PositionedCourse;
-  target: PositionedCourse;
+	id: string;
+	source: PositionedCourse;
+	target: PositionedCourse;
 }
 
 const PREDEFINED_SLOTS: SlotPoint[] = [
-  { x: 180, y: 150 },
-  { x: 130, y: 260 },
-  { x: 260, y: 230 },
-  { x: 370, y: 320 },
-  { x: 470, y: 210 },
-  { x: 340, y: 450 },
-  { x: 600, y: 180 },
-  { x: 530, y: 410 },
-  { x: 650, y: 320 },
-  { x: 780, y: 230 },
-  { x: 740, y: 440 },
-  { x: 820, y: 350 },
+	{ x: 180, y: 150 },
+	{ x: 130, y: 260 },
+	{ x: 260, y: 230 },
+	{ x: 370, y: 320 },
+	{ x: 470, y: 210 },
+	{ x: 340, y: 450 },
+	{ x: 600, y: 180 },
+	{ x: 530, y: 410 },
+	{ x: 650, y: 320 },
+	{ x: 780, y: 230 },
+	{ x: 740, y: 440 },
+	{ x: 820, y: 350 },
 ];
 
 const GRADE_TO_SLOT_OFFSET: Record<string, number> = {
-  year_1: 0,
-  year_2: 3,
-  year_3: 6,
-  year_4: 9,
+	year_1: 0,
+	year_2: 3,
+	year_3: 6,
+	year_4: 9,
 };
 
 const GRADE_LABELS: Record<string, string> = {
-  year_1: '大一',
-  year_2: '大二',
-  year_3: '大三',
-  year_4: '大四',
+	year_1: "大一",
+	year_2: "大二",
+	year_3: "大三",
+	year_4: "大四",
 };
 
 const STAGE_LABELS: Record<number, string> = {
-  1: '种子',
-  2: '萌芽',
-  3: '繁枝',
-  4: '叶茂',
-  5: '成林',
-  6: '成森',
+	1: "种子",
+	2: "萌芽",
+	3: "繁枝",
+	4: "叶茂",
+	5: "成林",
+	6: "成森",
 };
 
 function statusLabel(status: CanopyCourseStatus): string {
-  switch (status) {
-    case 'completed':
-      return '已点亮';
-    case 'in_progress':
-      return '生长中';
-    default:
-      return '锁定中';
-  }
+	switch (status) {
+		case "completed":
+			return "已点亮";
+		case "in_progress":
+			return "生长中";
+		default:
+			return "锁定中";
+	}
 }
 
 function truncateLabel(title: string): string {
-  return title.length > 12 ? `${title.slice(0, 12)}...` : title;
+	return title.length > 12 ? `${title.slice(0, 12)}...` : title;
 }
 
 function mapCoursesToSlots(courses: CanopyCourseNode[]): PositionedCourse[] {
-  const countsByGrade: Record<string, number> = {};
-  const positioned: PositionedCourse[] = [];
+	const countsByGrade: Record<string, number> = {};
+	const positioned: PositionedCourse[] = [];
 
-  courses.forEach((course) => {
-    const offset = GRADE_TO_SLOT_OFFSET[course.grade];
-    if (offset === undefined) {
-      return;
-    }
+	courses.forEach((course) => {
+		const offset = GRADE_TO_SLOT_OFFSET[course.grade];
+		if (offset === undefined) {
+			return;
+		}
 
-    const indexInGrade = countsByGrade[course.grade] ?? 0;
-    countsByGrade[course.grade] = indexInGrade + 1;
-    const slot = PREDEFINED_SLOTS[offset + indexInGrade];
-    if (!slot) {
-      return;
-    }
+		const indexInGrade = countsByGrade[course.grade] ?? 0;
+		countsByGrade[course.grade] = indexInGrade + 1;
+		const slot = PREDEFINED_SLOTS[offset + indexInGrade];
+		if (!slot) {
+			return;
+		}
 
-    positioned.push({
-      ...course,
-      x: slot.x,
-      y: slot.y,
-      gradeLabel: GRADE_LABELS[course.grade] ?? course.grade,
-    });
-  });
+		positioned.push({
+			...course,
+			x: slot.x,
+			y: slot.y,
+			gradeLabel: GRADE_LABELS[course.grade] ?? course.grade,
+		});
+	});
 
-  return positioned;
+	return positioned;
 }
 
 function mapConnections(courses: PositionedCourse[]): CourseConnection[] {
-  const byId = new Map(courses.map((course) => [course.id, course]));
-  return courses.flatMap((target) =>
-    target.prerequisite_ids.flatMap((sourceId) => {
-      const source = byId.get(sourceId);
-      return source ? [{ id: `${source.id}-${target.id}`, source, target }] : [];
-    }),
-  );
+	const byId = new Map(courses.map((course) => [course.id, course]));
+	return courses.flatMap((target) =>
+		target.prerequisite_ids.flatMap((sourceId) => {
+			const source = byId.get(sourceId);
+			return source
+				? [{ id: `${source.id}-${target.id}`, source, target }]
+				: [];
+		}),
+	);
 }
 
 function milestoneState(milestones: CanopyMilestone[], index: number): string {
-  const milestone = milestones[index];
-  if (!milestone.reached) {
-    return 'locked';
-  }
-  const nextMilestone = milestones[index + 1];
-  return !nextMilestone || !nextMilestone.reached ? 'active' : 'reached';
+	const milestone = milestones[index];
+	if (!milestone.reached) {
+		return "locked";
+	}
+	const nextMilestone = milestones[index + 1];
+	return !nextMilestone || !nextMilestone.reached ? "active" : "reached";
 }
 
 export function CanopyPage() {
-  const reduceMotion = useReducedMotion();
-  const navigate = useNavigate();
-  const { token, isAuthReady } = useAuth();
-  const [courses, setCourses] = useState<CanopyCourseNode[]>([]);
-  const [milestones, setMilestones] = useState<CanopyMilestone[]>([]);
-  const [growthStage, setGrowthStage] = useState(1);
-  const [completedCount, setCompletedCount] = useState(0);
-  const [activeRate, setActiveRate] = useState(0);
-  const [avgScore, setAvgScore] = useState(0);
-  const [focusedHours, setFocusedHours] = useState(0);
-  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
-  const [qualityScores, setQualityScores] = useState<Record<string, import('../../types/canopy').CourseQualityScore>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+	const reduceMotion = useReducedMotion();
+	const navigate = useNavigate();
+	const { token, isAuthReady } = useAuth();
+	const [courses, setCourses] = useState<CanopyCourseNode[]>([]);
+	const [milestones, setMilestones] = useState<CanopyMilestone[]>([]);
+	const [growthStage, setGrowthStage] = useState(1);
+	const [completedCount, setCompletedCount] = useState(0);
+	const [activeRate, setActiveRate] = useState(0);
+	const [avgScore, setAvgScore] = useState(0);
+	const [focusedHours, setFocusedHours] = useState(0);
+	const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+	const [qualityScores, setQualityScores] = useState<
+		Record<string, import("../../types/canopy").CourseQualityScore>
+	>({});
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+	useEffect(() => {
+		let cancelled = false;
 
-    async function loadCanopy() {
-      if (!isAuthReady) {
-        return;
-      }
+		async function loadCanopy() {
+			if (!isAuthReady) {
+				return;
+			}
 
-      if (!token) {
-        if (!cancelled) {
-          setLoading(false);
-          setError('登录后可查看成森进度。');
-        }
-        return;
-      }
+			if (!token) {
+				if (!cancelled) {
+					setLoading(false);
+					setError("登录后可查看成森进度。");
+				}
+				return;
+			}
 
-      if (!cancelled) {
-        setLoading(true);
-        setError(null);
-      }
+			if (!cancelled) {
+				setLoading(true);
+				setError(null);
+			}
 
-      try {
-        const overview = await fetchCanopyOverview(token);
-        if (cancelled) {
-          return;
-        }
-        setCourses(overview.courses);
-        setMilestones(overview.milestones);
-        setGrowthStage(overview.growthStage);
-        setCompletedCount(overview.completedCount);
-        setActiveRate(overview.activeRate);
-        setAvgScore(overview.avgScore);
-        setFocusedHours(overview.focusedHours);
-        setQualityScores(overview.qualityScores ?? {});
-      } catch (loadError) {
-        if (cancelled) {
-          return;
-        }
-        setCourses([]);
-        setMilestones([]);
-        setError(loadError instanceof Error ? loadError.message : '成森数据加载失败');
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
+			try {
+				const overview = await fetchCanopyOverview(token);
+				if (cancelled) {
+					return;
+				}
+				setCourses(overview.courses);
+				setMilestones(overview.milestones);
+				setGrowthStage(overview.growthStage);
+				setCompletedCount(overview.completedCount);
+				setActiveRate(overview.activeRate);
+				setAvgScore(overview.avgScore);
+				setFocusedHours(overview.focusedHours);
+				setQualityScores(overview.qualityScores ?? {});
+			} catch (loadError) {
+				if (cancelled) {
+					return;
+				}
+				setCourses([]);
+				setMilestones([]);
+				setError(
+					loadError instanceof Error ? loadError.message : "成森数据加载失败",
+				);
+			} finally {
+				if (!cancelled) {
+					setLoading(false);
+				}
+			}
+		}
 
-    void loadCanopy();
+		void loadCanopy();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthReady, token]);
+		return () => {
+			cancelled = true;
+		};
+	}, [isAuthReady, token]);
 
-  const positionedCourses = useMemo(() => mapCoursesToSlots(courses), [courses]);
-  const connections = useMemo(() => mapConnections(positionedCourses), [positionedCourses]);
-  const stageLabel = STAGE_LABELS[growthStage] ?? STAGE_LABELS[1];
+	const positionedCourses = useMemo(
+		() => mapCoursesToSlots(courses),
+		[courses],
+	);
+	const connections = useMemo(
+		() => mapConnections(positionedCourses),
+		[positionedCourses],
+	);
+	const stageLabel = STAGE_LABELS[growthStage] ?? STAGE_LABELS[1];
 
-  function handleCourseClick(course: PositionedCourse) {
-    navigate(`/leaf/${course.id}`);
-  }
+	function handleCourseClick(course: PositionedCourse) {
+		navigate(`/leaf/${course.id}`);
+	}
 
-  function handleCourseKeyDown(event: KeyboardEvent<SVGGElement>, course: PositionedCourse) {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-    event.preventDefault();
-    handleCourseClick(course);
-  }
+	function handleCourseKeyDown(
+		event: KeyboardEvent<SVGGElement>,
+		course: PositionedCourse,
+	) {
+		if (event.key !== "Enter" && event.key !== " ") {
+			return;
+		}
+		event.preventDefault();
+		handleCourseClick(course);
+	}
 
-  return (
-    <PageWrapper aria-label="成森知识雨林页面">
-      <div className="forest-ambient-sun" aria-hidden="true" />
-      <div className="forest-paper-canvas" aria-hidden="true" />
+	return (
+		<PageWrapper aria-label="成森知识雨林页面">
+			<div className="forest-ambient-sun" aria-hidden="true" />
+			<div className="forest-paper-canvas" aria-hidden="true" />
 
-      <motion.main
-        className="canopy-layout"
-        initial={reduceMotion ? false : { opacity: 0, y: 16 }}
-        animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -16 }}
-        transition={motionTokens.editorial}
-      >
-        <section className="graph-section" aria-label="知识雨林图谱">
-          <header className="section-header">
-            <span>// knowledge canopy</span>
-            <h2>知识雨林图谱</h2>
-            <p>当前阶段：{stageLabel} · 雨林点亮率 {activeRate}%</p>
-          </header>
+			<motion.main
+				className="canopy-layout"
+				initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+				animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+				exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -16 }}
+				transition={motionTokens.editorial}
+			>
+				<section className="graph-section" aria-label="知识雨林图谱">
+					<header className="section-header">
+						<span>// knowledge canopy</span>
+						<h2>知识雨林图谱</h2>
+						<p>
+							当前阶段：{stageLabel} · 雨林点亮率 {activeRate}%
+						</p>
+					</header>
 
-          <div className="network-container">
-            {loading ? (
-              <div className="feedback-panel" role="status">
-                <p>正在加载成森进度</p>
-                <span>请稍候片刻。</span>
-              </div>
-            ) : error ? (
-              <div className="feedback-panel" role="alert">
-                <p>成森进度暂时不可用</p>
-                <span>{error}</span>
-              </div>
-            ) : (
-              <>
-                <svg viewBox="0 0 900 600" className="network-svg" aria-hidden={positionedCourses.length === 0}>
-                  <defs>
-                    <radialGradient id="completed-glow" cx="50%" cy="50%" r="50%">
-                      <stop offset="0%" stopColor="oklch(75% 0.09 135 / 0.42)" />
-                      <stop offset="100%" stopColor="oklch(75% 0.09 135 / 0)" />
-                    </radialGradient>
-                    <radialGradient id="inprogress-glow" cx="50%" cy="50%" r="50%">
-                      <stop offset="0%" stopColor="oklch(76% 0.12 55 / 0.42)" />
-                      <stop offset="100%" stopColor="oklch(76% 0.12 55 / 0)" />
-                    </radialGradient>
-                  </defs>
+					<div className="network-container">
+						{loading ? (
+							<div className="feedback-panel" role="status">
+								<p>正在加载成森进度</p>
+								<span>请稍候片刻。</span>
+							</div>
+						) : error ? (
+							<div className="feedback-panel" role="alert">
+								<p>成森进度暂时不可用</p>
+								<span>{error}</span>
+							</div>
+						) : (
+							<>
+								<svg
+									viewBox="0 0 900 600"
+									className="network-svg"
+									aria-hidden={positionedCourses.length === 0}
+								>
+									<defs>
+										<radialGradient
+											id="completed-glow"
+											cx="50%"
+											cy="50%"
+											r="50%"
+										>
+											<stop
+												offset="0%"
+												stopColor="oklch(75% 0.09 135 / 0.42)"
+											/>
+											<stop offset="100%" stopColor="oklch(75% 0.09 135 / 0)" />
+										</radialGradient>
+										<radialGradient
+											id="inprogress-glow"
+											cx="50%"
+											cy="50%"
+											r="50%"
+										>
+											<stop offset="0%" stopColor="oklch(76% 0.12 55 / 0.42)" />
+											<stop offset="100%" stopColor="oklch(76% 0.12 55 / 0)" />
+										</radialGradient>
+									</defs>
 
-                  <g className="links">
-                    {connections.map((connection) => {
-                      const isHighlighted =
-                        hoveredNode === connection.source.id || hoveredNode === connection.target.id;
-                      const isCompletedConnection =
-                        connection.source.status === 'completed' && connection.target.status === 'completed';
+									<g className="links">
+										{connections.map((connection) => {
+											const isHighlighted =
+												hoveredNode === connection.source.id ||
+												hoveredNode === connection.target.id;
+											const isCompletedConnection =
+												connection.source.status === "completed" &&
+												connection.target.status === "completed";
 
-                      return (
-                        <line
-                          key={connection.id}
-                          x1={connection.source.x}
-                          y1={connection.source.y}
-                          x2={connection.target.x}
-                          y2={connection.target.y}
-                          className={[
-                            'network-link',
-                            isHighlighted ? 'is-highlighted' : '',
-                            isCompletedConnection ? 'is-completed' : '',
-                          ].join(' ')}
-                          strokeDasharray={connection.target.status === 'in_progress' ? '4 8' : undefined}
-                        />
-                      );
-                    })}
-                  </g>
+											return (
+												<line
+													key={connection.id}
+													x1={connection.source.x}
+													y1={connection.source.y}
+													x2={connection.target.x}
+													y2={connection.target.y}
+													className={[
+														"network-link",
+														isHighlighted ? "is-highlighted" : "",
+														isCompletedConnection ? "is-completed" : "",
+													].join(" ")}
+													strokeDasharray={
+														connection.target.status === "in_progress"
+															? "4 8"
+															: undefined
+													}
+												/>
+											);
+										})}
+									</g>
 
-                  <g className="nodes">
-                    {positionedCourses.map((course) => {
-                      const isHovered = hoveredNode === course.id;
-                      return (
-                        <g
-                          key={course.id}
-                          className={`course-node course-node-${course.status} ${isHovered ? 'is-hovered' : ''}`}
-                          transform={`translate(${course.x}, ${course.y})`}
-                          role="link"
-                          tabIndex={0}
-                          aria-label={`${course.title}，${statusLabel(course.status)}`}
-                          onClick={() => handleCourseClick(course)}
-                          onKeyDown={(event) => handleCourseKeyDown(event, course)}
-                          onMouseEnter={() => setHoveredNode(course.id)}
-                          onMouseLeave={() => setHoveredNode(null)}
-                          onFocus={() => setHoveredNode(course.id)}
-                          onBlur={() => setHoveredNode(null)}
-                        >
-                          <title>{`${course.gradeLabel} · ${course.title}`}</title>
-                          <circle className="node-glow" r="42" />
-                          <circle className="node-shell" r="15" />
-                          <circle className="node-core" r="7" />
-                          <text y="-30" textAnchor="middle" className="node-text">
-                            {truncateLabel(course.title)}
-                          </text>
-                          <text y="40" textAnchor="middle" className="node-meta">
-                            {course.gradeLabel}
-                          </text>
-                          {qualityScores[course.id] && (
-                            <g transform="translate(18, -18)">
-                              <circle
-                                r="8"
-                                fill={
-                                  qualityScores[course.id].overall >= 80
-                                    ? 'oklch(75% 0.12 145)'
-                                    : qualityScores[course.id].overall >= 60
-                                      ? 'oklch(78% 0.12 85)'
-                                      : 'oklch(65% 0.15 25)'
-                                }
-                              />
-                              <text
-                                textAnchor="middle"
-                                dominantBaseline="central"
-                                fill="oklch(99% 0 0)"
-                                fontSize="8"
-                                fontWeight="600"
-                              >
-                                {qualityScores[course.id].overall >= 80 ? '✓' : qualityScores[course.id].overall >= 60 ? '~' : '!'}
-                              </text>
-                            </g>
-                          )}
-                        </g>
-                      );
-                    })}
-                  </g>
-                </svg>
+									<g className="nodes">
+										{positionedCourses.map((course) => {
+											const isHovered = hoveredNode === course.id;
+											return (
+												<g
+													key={course.id}
+													className={`course-node course-node-${course.status} ${isHovered ? "is-hovered" : ""}`}
+													transform={`translate(${course.x}, ${course.y})`}
+													role="link"
+													tabIndex={0}
+													aria-label={`${course.title}，${statusLabel(course.status)}`}
+													onClick={() => handleCourseClick(course)}
+													onKeyDown={(event) =>
+														handleCourseKeyDown(event, course)
+													}
+													onMouseEnter={() => setHoveredNode(course.id)}
+													onMouseLeave={() => setHoveredNode(null)}
+													onFocus={() => setHoveredNode(course.id)}
+													onBlur={() => setHoveredNode(null)}
+												>
+													<title>{`${course.gradeLabel} · ${course.title}`}</title>
+													<circle className="node-glow" r="42" />
+													<circle className="node-shell" r="15" />
+													<circle className="node-core" r="7" />
+													<text
+														y="-30"
+														textAnchor="middle"
+														className="node-text"
+													>
+														{truncateLabel(course.title)}
+													</text>
+													<text
+														y="40"
+														textAnchor="middle"
+														className="node-meta"
+													>
+														{course.gradeLabel}
+													</text>
+													{qualityScores[course.id] && (
+														<g transform="translate(18, -18)">
+															<circle
+																r="8"
+																fill={
+																	qualityScores[course.id].overall >= 80
+																		? "oklch(75% 0.12 145)"
+																		: qualityScores[course.id].overall >= 60
+																			? "oklch(78% 0.12 85)"
+																			: "oklch(65% 0.15 25)"
+																}
+															/>
+															<text
+																textAnchor="middle"
+																dominantBaseline="central"
+																fill="oklch(99% 0 0)"
+																fontSize="8"
+																fontWeight="600"
+															>
+																{qualityScores[course.id].overall >= 80
+																	? "✓"
+																	: qualityScores[course.id].overall >= 60
+																		? "~"
+																		: "!"}
+															</text>
+														</g>
+													)}
+												</g>
+											);
+										})}
+									</g>
+								</svg>
 
-                {hoveredNode && qualityScores[hoveredNode] && (
-                  <div
-                    style={{
-                      background: 'var(--glass-bg)',
-                      backdropFilter: 'blur(12px)',
-                      border: '1px solid var(--glass-border)',
-                      borderRadius: 'var(--radius-lg)',
-                      padding: 'var(--space-16)',
-                      marginTop: 'var(--space-12)',
-                    }}
-                  >
-                    <h4 style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 'var(--space-8)' }}>资源质量评估</h4>
-                    {[
-                      { label: '内容准确性', value: qualityScores[hoveredNode].accuracy },
-                      { label: '难度适配度', value: qualityScores[hoveredNode].difficulty_fit },
-                      { label: '内容完整性', value: qualityScores[hoveredNode].completeness },
-                    ].map((item) => (
-                      <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-8)', fontSize: '0.8rem', marginBottom: 'var(--space-4)' }}>
-                        <span style={{ minWidth: '5rem' }}>{item.label}</span>
-                        <div style={{ flex: 1, height: '6px', background: 'var(--color-surface-inset)', borderRadius: '3px', overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${item.value}%`, background: 'var(--color-primary)', borderRadius: '3px' }} />
-                        </div>
-                        <span>{item.value}</span>
-                      </div>
-                    ))}
-                    {qualityScores[hoveredNode].suggestions.length > 0 && (
-                      <ul style={{ marginTop: 'var(--space-8)', fontSize: '0.75rem', color: 'var(--color-text-muted)', listStyle: 'disc', paddingLeft: 'var(--space-16)' }}>
-                        {qualityScores[hoveredNode].suggestions.map((s, i) => (
-                          <li key={i}>{s}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
+								{hoveredNode && qualityScores[hoveredNode] && (
+									<div
+										style={{
+											background: "var(--glass-bg)",
+											backdropFilter: "blur(12px)",
+											border: "1px solid var(--glass-border)",
+											borderRadius: "var(--radius-lg)",
+											padding: "var(--space-16)",
+											marginTop: "var(--space-12)",
+										}}
+									>
+										<h4
+											style={{
+												fontSize: "0.85rem",
+												fontWeight: 600,
+												marginBottom: "var(--space-8)",
+											}}
+										>
+											资源质量评估
+										</h4>
+										{[
+											{
+												label: "内容准确性",
+												value: qualityScores[hoveredNode].accuracy,
+											},
+											{
+												label: "难度适配度",
+												value: qualityScores[hoveredNode].difficulty_fit,
+											},
+											{
+												label: "内容完整性",
+												value: qualityScores[hoveredNode].completeness,
+											},
+										].map((item) => (
+											<div
+												key={item.label}
+												style={{
+													display: "flex",
+													alignItems: "center",
+													gap: "var(--space-8)",
+													fontSize: "0.8rem",
+													marginBottom: "var(--space-4)",
+												}}
+											>
+												<span style={{ minWidth: "5rem" }}>{item.label}</span>
+												<div
+													style={{
+														flex: 1,
+														height: "6px",
+														background: "var(--color-surface-inset)",
+														borderRadius: "3px",
+														overflow: "hidden",
+													}}
+												>
+													<div
+														style={{
+															height: "100%",
+															width: `${item.value}%`,
+															background: "var(--color-primary)",
+															borderRadius: "3px",
+														}}
+													/>
+												</div>
+												<span>{item.value}</span>
+											</div>
+										))}
+										{qualityScores[hoveredNode].suggestions.length > 0 && (
+											<ul
+												style={{
+													marginTop: "var(--space-8)",
+													fontSize: "0.75rem",
+													color: "var(--color-text-muted)",
+													listStyle: "disc",
+													paddingLeft: "var(--space-16)",
+												}}
+											>
+												{qualityScores[hoveredNode].suggestions.map((s, i) => (
+													<li key={i}>{s}</li>
+												))}
+											</ul>
+										)}
+									</div>
+								)}
 
-                {positionedCourses.length === 0 ? (
-                  <div className="empty-state" role="status">
-                    <span aria-hidden="true">*</span>
-                    <p>画像评估尚未完成，请先进行冷启动评估生成你专属的学业树。</p>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
-        </section>
+								{positionedCourses.length === 0 ? (
+									<div className="empty-state" role="status">
+										<span aria-hidden="true">*</span>
+										<p>
+											画像评估尚未完成，请先进行冷启动评估生成你专属的学业树。
+										</p>
+									</div>
+								) : null}
+							</>
+						)}
+					</div>
+				</section>
 
-        <section className="stats-section" aria-label="成森统计指标">
-          <article className="stats-card tree-card">
-            <header className="card-header">
-              <span>// growth tree</span>
-              <h3>成长树</h3>
-            </header>
-            <div className="growth-tree-panel">
-              <GrowthTreeSVG stage={growthStage} />
-            </div>
-            <div className="tree-stage-label">
-              <strong>{stageLabel}</strong>
-              <span>{activeRate}%</span>
-            </div>
-          </article>
+				<section className="stats-section" aria-label="成森统计指标">
+					<article className="stats-card tree-card">
+						<header className="card-header">
+							<span>// growth tree</span>
+							<h3>成长树</h3>
+						</header>
+						<div className="growth-tree-panel">
+							<GrowthTreeSVG stage={growthStage} />
+						</div>
+						<div className="tree-stage-label">
+							<strong>{stageLabel}</strong>
+							<span>{activeRate}%</span>
+						</div>
+					</article>
 
-          <div className="stats-grid">
-            <article className="stats-card mini-card">
-              <span>已点亮叶片数</span>
-              <div className="value">{completedCount}</div>
-            </article>
-            <article className="stats-card mini-card">
-              <span>测验平均得分</span>
-              <div className="value">{avgScore}分</div>
-            </article>
-            <article className="stats-card mini-card full-width">
-              <span>专注学习时长</span>
-              <div className="value">{focusedHours.toFixed(1)}小时</div>
-            </article>
-          </div>
+					<div className="stats-grid">
+						<article className="stats-card mini-card">
+							<span>已点亮叶片数</span>
+							<div className="value">{completedCount}</div>
+						</article>
+						<article className="stats-card mini-card">
+							<span>测验平均得分</span>
+							<div className="value">{avgScore}分</div>
+						</article>
+						<article className="stats-card mini-card full-width">
+							<span>专注学习时长</span>
+							<div className="value">{focusedHours.toFixed(1)}小时</div>
+						</article>
+					</div>
+				</section>
 
-        </section>
-
-        <article className="stats-card timeline-card">
-          <header className="card-header">
-            <span>// milestones</span>
-            <h3>成长里程</h3>
-          </header>
-          <div className="milestones-list">
-            {milestones.map((milestone, index) => {
-              const state = milestoneState(milestones, index);
-              return (
-                <div key={milestone.title} className={`milestone-item milestone-${state}`}>
-                  <span className="milestone-dot" aria-hidden="true" />
-                  <span className="date">{milestone.date}</span>
-                  <div className="details">
-                    <strong>{milestone.title}</strong>
-                    <p>{milestone.desc}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </article>
-      </motion.main>
-    </PageWrapper>
-  );
+				<article className="stats-card timeline-card">
+					<header className="card-header">
+						<span>// milestones</span>
+						<h3>成长里程</h3>
+					</header>
+					<div className="milestones-list">
+						{milestones.map((milestone, index) => {
+							const state = milestoneState(milestones, index);
+							return (
+								<div
+									key={milestone.title}
+									className={`milestone-item milestone-${state}`}
+								>
+									<span className="milestone-dot" aria-hidden="true" />
+									<span className="date">{milestone.date}</span>
+									<div className="details">
+										<strong>{milestone.title}</strong>
+										<p>{milestone.desc}</p>
+									</div>
+								</div>
+							);
+						})}
+					</div>
+				</article>
+			</motion.main>
+		</PageWrapper>
+	);
 }
 
 const PageWrapper = styled.section`

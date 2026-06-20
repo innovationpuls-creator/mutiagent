@@ -1,36 +1,52 @@
-import React from 'react';
-import styled from 'styled-components';
-import { motion } from 'framer-motion';
+import { motion } from "framer-motion";
+import React from "react";
+import styled from "styled-components";
 
 interface StatusBarProps {
-  text: string;
-  time?: string;
-  status?: 'running' | 'done' | 'none';
-  onClick?: () => void;
+	text: string;
+	time?: string;
+	status?: "running" | "done" | "none";
+	onClick?: () => void;
 }
 
-export function StatusBar({ text, time, status = 'running', onClick }: StatusBarProps) {
-  return (
-    <>
-      <Divider />
-      <Bar
-        as={onClick ? motion.button : 'div'}
-        type={onClick ? "button" : undefined}
-        onClick={onClick}
-        whileHover={onClick ? { background: 'var(--dark-highlight)' } : undefined}
-        whileTap={onClick ? { scale: 0.99 } : undefined}
-        $clickable={!!onClick}
-        $hasTime={!!time}
-      >
-        {status !== 'none' && (
-          <Dot className={status === 'running' ? 'dot-running' : status === 'done' ? 'dot-done' : ''} data-testid="status-dot" />
-        )}
-        <span className="text">{text}</span>
-        {time && <span className="time">{time}</span>}
-        {onClick && <span className="chevron">收起详情</span>}
-      </Bar>
-    </>
-  );
+export function StatusBar({
+	text,
+	time,
+	status = "running",
+	onClick,
+}: StatusBarProps) {
+	return (
+		<>
+			<Divider />
+			<Bar
+				as={onClick ? motion.button : "div"}
+				type={onClick ? "button" : undefined}
+				onClick={onClick}
+				whileHover={
+					onClick ? { background: "var(--dark-highlight)" } : undefined
+				}
+				whileTap={onClick ? { scale: 0.99 } : undefined}
+				$clickable={!!onClick}
+				$hasTime={!!time}
+			>
+				{status !== "none" && (
+					<Dot
+						className={
+							status === "running"
+								? "dot-running"
+								: status === "done"
+									? "dot-done"
+									: ""
+						}
+						data-testid="status-dot"
+					/>
+				)}
+				<span className="text">{text}</span>
+				{time && <span className="time">{time}</span>}
+				{onClick && <span className="chevron">收起详情</span>}
+			</Bar>
+		</>
+	);
 }
 
 const Divider = styled.div`
@@ -54,7 +70,9 @@ const Bar = styled.div<{ $clickable?: boolean; $hasTime?: boolean }>`
   transition:
     background var(--duration-lazy-hover) var(--ease-lazy),
     opacity var(--duration-lazy-hover) var(--ease-lazy);
-  ${props => props.$clickable && `
+  ${(props) =>
+		props.$clickable &&
+		`
     cursor: pointer;
   `}
 
@@ -72,7 +90,7 @@ const Bar = styled.div<{ $clickable?: boolean; $hasTime?: boolean }>`
   .chevron {
     color: var(--dark-text-muted);
     font-size: var(--text-caption);
-    margin-left: ${props => props.$hasTime ? 'var(--space-8)' : 'auto'};
+    margin-left: ${(props) => (props.$hasTime ? "var(--space-8)" : "auto")};
     flex-shrink: 0;
   }
 

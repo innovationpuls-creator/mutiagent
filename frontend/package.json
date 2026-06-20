@@ -33,6 +33,7 @@
     "vite": "^6.0.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.0",
     "@playwright/test": "^1.49.0",
     "@testing-library/react": "^16.1.0",
     "@types/dagre": "^0.7.54",

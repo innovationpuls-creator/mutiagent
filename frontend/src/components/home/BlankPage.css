@@ -1,88 +1,106 @@
 .home-page {
-  /* 基础暖色托底 */
-  background-color: oklch(96% 0.02 75);
-  /* 丰富的多层空间环境渐变 */
-  background-image: 
-    radial-gradient(circle at 85% 95%, oklch(80% 0.05 320 / 0.8) 0%, transparent 55%),
-    radial-gradient(circle at 10% 75%, oklch(85% 0.1 55 / 0.8) 0%, transparent 65%),
-    radial-gradient(circle at 15% 15%, oklch(96% 0.04 75 / 0.6) 0%, transparent 50%),
-    linear-gradient(135deg, oklch(96% 0.03 75) 0%, oklch(93% 0.04 70) 100%);
-  
-  min-height: 100vh;
-  width: 100%;
-  position: relative;
-  overflow-x: hidden; /* 只防止水平溢出，允许垂直滚动 */
-  display: flex;
-  flex-direction: column;
+	/* 基础暖色托底 */
+	background-color: oklch(96% 0.02 75);
+	/* 丰富的多层空间环境渐变 */
+	background-image:
+		radial-gradient(
+			circle at 85% 95%,
+			oklch(80% 0.05 320 / 0.8) 0%,
+			transparent 55%
+		),
+		radial-gradient(
+			circle at 10% 75%,
+			oklch(85% 0.1 55 / 0.8) 0%,
+			transparent 65%
+		),
+		radial-gradient(
+			circle at 15% 15%,
+			oklch(96% 0.04 75 / 0.6) 0%,
+			transparent 50%
+		),
+		linear-gradient(135deg, oklch(96% 0.03 75) 0%, oklch(93% 0.04 70) 100%);
+
+	min-height: 100vh;
+	width: 100%;
+	position: relative;
+	overflow-x: hidden; /* 只防止水平溢出，允许垂直滚动 */
+	display: flex;
+	flex-direction: column;
 }
 
 .home-ambient-sun {
-  position: absolute;
-  /* 定位在右上角，溢出屏幕边缘 */
-  inset-block-start: -150px;
-  inset-inline-end: -150px;
-  width: 550px;
-  height: 550px;
-  border-radius: 50%;
-  
-  /* 柔和的发光球体渐变：左上极亮偏白，右下过渡到蜜桃橙 */
-  background: linear-gradient(135deg, oklch(98% 0.05 85), oklch(84% 0.14 55));
-  
-  /* 消除矢量生硬感：极小的边缘模糊，加上环境外发光和微小的内阴影塑造体积 */
-  filter: blur(2px);
-  box-shadow: 
-    0 0 120px 0 oklch(88% 0.12 60 / 0.4), /* 暖橘色外发光晕染 */
-    inset -20px -20px 60px 0 oklch(75% 0.16 45 / 0.15); /* 暗部微内阴影 */
-  
-  z-index: 0;
-  pointer-events: none;
-  /* 极缓慢的呼吸和位移，模拟天体感，但不破坏实体形状 */
-  animation: sun-breathe 15000ms ease-in-out infinite alternate;
+	position: absolute;
+	/* 定位在右上角，溢出屏幕边缘 */
+	inset-block-start: -150px;
+	inset-inline-end: -150px;
+	width: 550px;
+	height: 550px;
+	border-radius: 50%;
+
+	/* 柔和的发光球体渐变：左上极亮偏白，右下过渡到蜜桃橙 */
+	background: linear-gradient(135deg, oklch(98% 0.05 85), oklch(84% 0.14 55));
+
+	/* 消除矢量生硬感：极小的边缘模糊，加上环境外发光和微小的内阴影塑造体积 */
+	filter: blur(2px);
+	box-shadow:
+		0 0 120px 0 oklch(88% 0.12 60 / 0.4), /* 暖橘色外发光晕染 */
+		inset -20px -20px 60px 0 oklch(75% 0.16 45 / 0.15); /* 暗部微内阴影 */
+
+	z-index: 0;
+	pointer-events: none;
+	/* 极缓慢的呼吸和位移，模拟天体感，但不破坏实体形状 */
+	animation: sun-breathe 15000ms ease-in-out infinite alternate;
 }
 
 @keyframes sun-breathe {
-  from { transform: scale(0.98) translate(5px, -5px); }
-  to { transform: scale(1.02) translate(-5px, 5px); }
+	from {
+		transform: scale(0.98) translate(5px, -5px);
+	}
+	to {
+		transform: scale(1.02) translate(-5px, 5px);
+	}
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .home-ambient-sun {
-    animation: none;
-    transform: none;
-  }
+	.home-ambient-sun {
+		animation: none;
+		transform: none;
+	}
 }
 
 .home-paper-canvas {
-  position: absolute;
-  inset: 0;
-  /* SVG Noise 噪点，模拟高级印刷品或冥想界面的物理质感 */
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-  opacity: 0.06; /* 极轻微的噪点透明度 */
-  mix-blend-mode: multiply; /* 与下层丰富色彩正片叠底，咬合出胶片颗粒感 */
-  pointer-events: none;
-  z-index: 1;
+	position: absolute;
+	inset: 0;
+	/* SVG Noise 噪点，模拟高级印刷品或冥想界面的物理质感 */
+	background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+	opacity: 0.06; /* 极轻微的噪点透明度 */
+	mix-blend-mode: multiply; /* 与下层丰富色彩正片叠底，咬合出胶片颗粒感 */
+	pointer-events: none;
+	z-index: 1;
 }
 
 .home-content {
-  position: relative;
-  z-index: 10;
-  padding: calc(var(--space-80, 80px) + var(--space-40, 40px)) var(--space-40, 40px) var(--space-40, 40px);
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+	position: relative;
+	z-index: 10;
+	padding: calc(var(--space-80, 80px) + var(--space-40, 40px))
+		var(--space-40, 40px) var(--space-40, 40px);
+	flex: 1;
+	display: flex;
+	flex-direction: column;
 }
 
 @media (max-width: 768px) {
-  .home-content {
-    /* 移动端 padding */
-    padding: calc(var(--space-80, 80px) + var(--space-24, 24px)) var(--space-24, 24px) var(--space-24, 24px);
-  }
-  
-  .home-ambient-sun {
-    /* 移动端缩小太阳尺寸 */
-    width: 350px;
-    height: 350px;
-    inset-block-start: -80px;
-    inset-inline-end: -80px;
-  }
+	.home-content {
+		/* 移动端 padding */
+		padding: calc(var(--space-80, 80px) + var(--space-24, 24px))
+			var(--space-24, 24px) var(--space-24, 24px);
+	}
+
+	.home-ambient-sun {
+		/* 移动端缩小太阳尺寸 */
+		width: 350px;
+		height: 350px;
+		inset-block-start: -80px;
+		inset-inline-end: -80px;
+	}
 }

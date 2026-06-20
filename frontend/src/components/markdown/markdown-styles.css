@@ -4,12 +4,12 @@
 
 /* Base Container */
 .markdown-renderer {
-  font-family: var(--font-body);
-  color: var(--color-text-primary);
-  line-height: 2;
-  max-width: 65ch;
-  word-break: break-word;
-  overflow-wrap: break-word;
+	font-family: var(--font-body);
+	color: var(--color-text-primary);
+	line-height: 2;
+	max-width: 65ch;
+	word-break: break-word;
+	overflow-wrap: break-word;
 }
 
 /* =========================================
@@ -17,75 +17,75 @@
    ========================================= */
 
 .markdown-renderer h1 {
-  font-size: var(--text-h1);
-  font-weight: var(--font-weight-medium);
-  line-height: 1.2;
-  margin-top: var(--space-32);
-  margin-bottom: var(--space-16);
-  padding-bottom: var(--space-8);
-  border-bottom: 2px solid var(--color-primary);
-  color: var(--color-text-primary);
-  text-wrap: pretty;
+	font-size: var(--text-h1);
+	font-weight: var(--font-weight-medium);
+	line-height: 1.2;
+	margin-top: var(--space-32);
+	margin-bottom: var(--space-16);
+	padding-bottom: var(--space-8);
+	border-bottom: 2px solid var(--color-primary);
+	color: var(--color-text-primary);
+	text-wrap: pretty;
 }
 
 .markdown-renderer h2 {
-  font-size: var(--text-h2);
-  font-weight: var(--font-weight-medium);
-  line-height: 1.3;
-  margin-top: var(--space-24);
-  margin-bottom: var(--space-12);
-  padding: var(--space-8) var(--space-12);
-  border-left: 4px solid var(--color-primary);
-  background: var(--color-surface);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  color: var(--color-text-primary);
-  text-wrap: pretty;
+	font-size: var(--text-h2);
+	font-weight: var(--font-weight-medium);
+	line-height: 1.3;
+	margin-top: var(--space-24);
+	margin-bottom: var(--space-12);
+	padding: var(--space-8) var(--space-12);
+	border-left: 4px solid var(--color-primary);
+	background: var(--color-surface);
+	border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+	color: var(--color-text-primary);
+	text-wrap: pretty;
 }
 
 .markdown-renderer h3 {
-  font-size: var(--text-h3);
-  font-weight: var(--font-weight-medium);
-  line-height: 1.35;
-  margin-top: var(--space-20);
-  margin-bottom: var(--space-12);
-  padding: var(--space-12) var(--space-16);
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  color: var(--color-text-primary);
-  text-wrap: pretty;
+	font-size: var(--text-h3);
+	font-weight: var(--font-weight-medium);
+	line-height: 1.35;
+	margin-top: var(--space-20);
+	margin-bottom: var(--space-12);
+	padding: var(--space-12) var(--space-16);
+	background: var(--color-surface-raised);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	color: var(--color-text-primary);
+	text-wrap: pretty;
 }
 
 .markdown-renderer h4 {
-  font-size: var(--text-h4);
-  font-weight: var(--font-weight-regular);
-  line-height: 1.4;
-  margin-top: var(--space-16);
-  margin-bottom: var(--space-8);
-  color: var(--color-text-primary);
-  text-wrap: pretty;
+	font-size: var(--text-h4);
+	font-weight: var(--font-weight-regular);
+	line-height: 1.4;
+	margin-top: var(--space-16);
+	margin-bottom: var(--space-8);
+	color: var(--color-text-primary);
+	text-wrap: pretty;
 }
 
 .markdown-renderer h5 {
-  font-size: var(--text-h5);
-  font-weight: var(--font-weight-regular);
-  line-height: 1.4;
-  margin-top: var(--space-12);
-  margin-bottom: var(--space-8);
-  color: var(--color-text-secondary);
-  text-wrap: pretty;
+	font-size: var(--text-h5);
+	font-weight: var(--font-weight-regular);
+	line-height: 1.4;
+	margin-top: var(--space-12);
+	margin-bottom: var(--space-8);
+	color: var(--color-text-secondary);
+	text-wrap: pretty;
 }
 
 .markdown-renderer h6 {
-  font-size: var(--text-h6);
-  font-weight: var(--font-weight-regular);
-  line-height: 1.4;
-  margin-top: var(--space-12);
-  margin-bottom: var(--space-8);
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  text-wrap: pretty;
+	font-size: var(--text-h6);
+	font-weight: var(--font-weight-regular);
+	line-height: 1.4;
+	margin-top: var(--space-12);
+	margin-bottom: var(--space-8);
+	color: var(--color-text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	text-wrap: pretty;
 }
 
 /* =========================================
@@ -93,26 +93,28 @@
    ========================================= */
 
 .markdown-renderer p {
-  margin-bottom: var(--space-16);
-  font-size: var(--text-body);
-  line-height: 2;
-  color: var(--color-text-primary);
-  text-wrap: pretty;
+	margin-bottom: var(--space-16);
+	font-size: var(--text-body);
+	line-height: 2;
+	color: var(--color-text-primary);
+	text-wrap: pretty;
 }
 
 .markdown-renderer p:last-child {
-  margin-bottom: 0;
+	margin-bottom: 0;
 }
 
 .markdown-renderer strong {
-  font-weight: var(--font-weight-medium);
-  color: oklch(20% 0.005 80);
-  text-shadow: 0.35px 0 0.08px currentColor, -0.1px 0 0.08px currentColor;
+	font-weight: var(--font-weight-medium);
+	color: oklch(20% 0.005 80);
+	text-shadow:
+		0.35px 0 0.08px currentColor,
+		-0.1px 0 0.08px currentColor;
 }
 
 .markdown-renderer em {
-  font-style: italic;
-  color: var(--color-text-secondary);
+	font-style: italic;
+	color: var(--color-text-secondary);
 }
 
 /* =========================================
@@ -120,18 +122,19 @@
    ========================================= */
 
 .markdown-renderer a {
-  color: var(--color-primary);
-  text-decoration: underline;
-  text-underline-offset: var(--space-4);
-  text-decoration-thickness: 1px;
-  text-decoration-color: var(--color-link-underline);
-  transition: color var(--duration-instant) var(--ease-editorial),
-              text-decoration-color var(--duration-instant) var(--ease-editorial);
+	color: var(--color-primary);
+	text-decoration: underline;
+	text-underline-offset: var(--space-4);
+	text-decoration-thickness: 1px;
+	text-decoration-color: var(--color-link-underline);
+	transition:
+		color var(--duration-instant) var(--ease-editorial),
+		text-decoration-color var(--duration-instant) var(--ease-editorial);
 }
 
 .markdown-renderer a:hover {
-  color: var(--color-primary-hover);
-  text-decoration-color: var(--color-primary);
+	color: var(--color-primary-hover);
+	text-decoration-color: var(--color-primary);
 }
 
 /* =========================================
@@ -140,71 +143,72 @@
 
 .markdown-renderer ul,
 .markdown-renderer ol {
-  padding-left: var(--space-24);
-  margin: var(--space-16) 0;
+	padding-left: var(--space-24);
+	margin: var(--space-16) 0;
 }
 
 .markdown-renderer ul {
-  list-style-type: disc;
+	list-style-type: disc;
 }
 
 .markdown-renderer ol {
-  list-style-type: decimal;
+	list-style-type: decimal;
 }
 
 .markdown-renderer li {
-  margin-bottom: var(--space-8);
-  line-height: 1.8;
-  color: var(--color-text-primary);
+	margin-bottom: var(--space-8);
+	line-height: 1.8;
+	color: var(--color-text-primary);
 }
 
 .markdown-renderer li::marker {
-  color: var(--color-primary);
+	color: var(--color-primary);
 }
 
 .markdown-renderer li > ul,
 .markdown-renderer li > ol {
-  margin-top: var(--space-8);
-  margin-bottom: 0;
+	margin-top: var(--space-8);
+	margin-bottom: 0;
 }
 
 /* Task List */
 .markdown-renderer .task-list-item {
-  list-style: none;
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-12);
-  margin-left: calc(var(--space-24) * -1);
+	list-style: none;
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-12);
+	margin-left: calc(var(--space-24) * -1);
 }
 
 .markdown-renderer .task-list-item input[type="checkbox"] {
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  margin-top: 6px;
-  flex-shrink: 0;
-  cursor: pointer;
-  transition: background var(--duration-instant) var(--ease-editorial),
-              border-color var(--duration-instant) var(--ease-editorial);
+	appearance: none;
+	width: 18px;
+	height: 18px;
+	border: 2px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	margin-top: 6px;
+	flex-shrink: 0;
+	cursor: pointer;
+	transition:
+		background var(--duration-instant) var(--ease-editorial),
+		border-color var(--duration-instant) var(--ease-editorial);
 }
 
 .markdown-renderer .task-list-item input[type="checkbox"]:checked {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
+	background: var(--color-primary);
+	border-color: var(--color-primary);
 }
 
 .markdown-renderer .task-list-item input[type="checkbox"]:checked::after {
-  content: '';
-  display: block;
-  width: 5px;
-  height: 9px;
-  border: solid white;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-  margin-left: var(--space-xs);
-  margin-top: 1px;
+	content: "";
+	display: block;
+	width: 5px;
+	height: 9px;
+	border: solid white;
+	border-width: 0 2px 2px 0;
+	transform: rotate(45deg);
+	margin-left: var(--space-xs);
+	margin-top: 1px;
 }
 
 /* =========================================
@@ -212,61 +216,61 @@
    ========================================= */
 
 .markdown-renderer blockquote {
-  border-left: 4px solid var(--color-border);
-  padding: var(--space-16) var(--space-24);
-  margin: var(--space-24) 0;
-  background: var(--color-surface);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  color: var(--color-text-secondary);
-  font-style: italic;
+	border-left: 4px solid var(--color-border);
+	padding: var(--space-16) var(--space-24);
+	margin: var(--space-24) 0;
+	background: var(--color-surface);
+	border-radius: 0 var(--radius-md) var(--radius-md) 0;
+	color: var(--color-text-secondary);
+	font-style: italic;
 }
 
 .markdown-renderer blockquote p {
-  color: var(--color-text-secondary);
+	color: var(--color-text-secondary);
 }
 
 /* Alert Variants */
 .markdown-renderer blockquote.alert-note {
-  border-left-color: var(--color-primary);
-  background: var(--color-primary-soft);
+	border-left-color: var(--color-primary);
+	background: var(--color-primary-soft);
 }
 
 .markdown-renderer blockquote.alert-important,
 .markdown-renderer blockquote.alert-caution {
-  border-left-color: var(--color-error);
-  background: var(--color-error-bg);
+	border-left-color: var(--color-error);
+	background: var(--color-error-bg);
 }
 
 .markdown-renderer blockquote.alert-warning {
-  border-left-color: var(--color-warning);
-  background: var(--color-warning-bg);
+	border-left-color: var(--color-warning);
+	background: var(--color-warning-bg);
 }
 
 .markdown-renderer blockquote.alert-tip {
-  border-left-color: var(--color-success);
-  background: var(--color-success-bg);
+	border-left-color: var(--color-success);
+	background: var(--color-success-bg);
 }
 
 .markdown-renderer .alert-label {
-  font-size: var(--text-caption);
-  font-weight: var(--font-weight-medium);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: var(--space-8);
-  opacity: 0.7;
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  color: var(--color-text-whisper);
-  font-style: normal;
+	font-size: var(--text-caption);
+	font-weight: var(--font-weight-medium);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	margin-bottom: var(--space-8);
+	opacity: 0.7;
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm);
+	color: var(--color-text-whisper);
+	font-style: normal;
 }
 
 .markdown-renderer .alert-label::before {
-  content: '';
-  width: var(--space-sm);
-  height: var(--space-sm);
-  border-radius: 50%;
-  background: currentColor;
+	content: "";
+	width: var(--space-sm);
+	height: var(--space-sm);
+	border-radius: 50%;
+	background: currentColor;
 }
 
 /* =========================================
@@ -274,89 +278,90 @@
    ========================================= */
 
 .markdown-renderer code {
-  font-family: var(--font-mono);
-  font-size: var(--text-caption);
-  line-height: 1.6;
+	font-family: var(--font-mono);
+	font-size: var(--text-caption);
+	line-height: 1.6;
 }
 
 /* Inline Code */
 .markdown-renderer :not(pre) > code {
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  color: var(--color-primary);
-  padding: var(--space-xs) var(--space-sm);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-caption);
+	background: var(--color-surface-raised);
+	border: 1px solid var(--color-border);
+	color: var(--color-primary);
+	padding: var(--space-xs) var(--space-sm);
+	border-radius: var(--radius-sm);
+	font-size: var(--text-caption);
 }
 
 /* Code Block Container */
 .markdown-renderer .code-block {
-  margin: var(--space-24) 0;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
+	margin: var(--space-24) 0;
+	border-radius: var(--radius-md);
+	border: 1px solid var(--color-border);
+	overflow: hidden;
+	box-shadow: var(--shadow-sm);
 }
 
 .markdown-renderer .code-block-header {
-  background: var(--color-surface-raised);
-  border-bottom: 1px solid var(--color-border);
-  padding: var(--space-8) var(--space-16);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: var(--text-caption);
-  color: var(--color-text-whisper);
-  font-family: var(--font-mono);
+	background: var(--color-surface-raised);
+	border-bottom: 1px solid var(--color-border);
+	padding: var(--space-8) var(--space-16);
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-size: var(--text-caption);
+	color: var(--color-text-whisper);
+	font-family: var(--font-mono);
 }
 
 .markdown-renderer .code-block-lang {
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
 }
 
 .markdown-renderer .code-block-copy {
-  background: none;
-  border: 1px solid var(--color-border);
-  color: var(--color-text-whisper);
-  padding: var(--space-xs) var(--space-sm);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-caption);
-  cursor: pointer;
-  font-family: var(--font-mono);
-  transition: color var(--duration-instant) var(--ease-editorial),
-              border-color var(--duration-instant) var(--ease-editorial);
+	background: none;
+	border: 1px solid var(--color-border);
+	color: var(--color-text-whisper);
+	padding: var(--space-xs) var(--space-sm);
+	border-radius: var(--radius-sm);
+	font-size: var(--text-caption);
+	cursor: pointer;
+	font-family: var(--font-mono);
+	transition:
+		color var(--duration-instant) var(--ease-editorial),
+		border-color var(--duration-instant) var(--ease-editorial);
 }
 
 .markdown-renderer .code-block-copy:hover {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
+	color: var(--color-primary);
+	border-color: var(--color-primary);
 }
 
 .markdown-renderer .code-block-copy:active {
-  transform: scale(0.95);
+	transform: scale(0.95);
 }
 
 .markdown-renderer pre {
-  background: var(--glass-dark-bg);
-  padding: var(--space-16);
-  overflow-x: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  font-family: var(--font-mono);
-  font-size: var(--text-body-sm);
-  line-height: 1.6;
-  color: var(--dark-text-primary);
-  margin: 0;
+	background: var(--glass-dark-bg);
+	padding: var(--space-16);
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+	font-family: var(--font-mono);
+	font-size: var(--text-body-sm);
+	line-height: 1.6;
+	color: var(--dark-text-primary);
+	margin: 0;
 }
 
 .markdown-renderer pre code {
-  background: transparent;
-  border: none;
-  color: inherit;
-  padding: 0;
-  font-size: inherit;
+	background: transparent;
+	border: none;
+	color: inherit;
+	padding: 0;
+	font-size: inherit;
 }
 
 /* =========================================
@@ -364,53 +369,53 @@
    ========================================= */
 
 .markdown-renderer .table-wrapper {
-  margin: var(--space-24) 0;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  overflow-x: auto;
-  box-shadow: var(--shadow-sm);
-  background: var(--color-surface);
+	margin: var(--space-24) 0;
+	border-radius: var(--radius-md);
+	border: 1px solid var(--color-border);
+	overflow-x: auto;
+	box-shadow: var(--shadow-sm);
+	background: var(--color-surface);
 }
 
 .markdown-renderer table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--text-body-sm);
-  text-align: left;
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--text-body-sm);
+	text-align: left;
 }
 
 .markdown-renderer th {
-  background: var(--color-surface-raised);
-  padding: var(--space-14) var(--space-20);
-  font-weight: var(--font-weight-medium);
-  font-size: var(--text-body-sm);
-  color: var(--color-text-primary);
-  border-bottom: 2px solid var(--color-border);
-  white-space: nowrap;
-  letter-spacing: 0.02em;
+	background: var(--color-surface-raised);
+	padding: var(--space-14) var(--space-20);
+	font-weight: var(--font-weight-medium);
+	font-size: var(--text-body-sm);
+	color: var(--color-text-primary);
+	border-bottom: 2px solid var(--color-border);
+	white-space: nowrap;
+	letter-spacing: 0.02em;
 }
 
 .markdown-renderer td {
-  padding: var(--space-12) var(--space-20);
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
-  line-height: 1.6;
+	padding: var(--space-12) var(--space-20);
+	border-bottom: 1px solid var(--color-border);
+	color: var(--color-text-secondary);
+	line-height: 1.6;
 }
 
 .markdown-renderer tr {
-  transition: background-color var(--duration-instant) var(--ease-editorial);
+	transition: background-color var(--duration-instant) var(--ease-editorial);
 }
 
 .markdown-renderer tr:last-child td {
-  border-bottom: none;
+	border-bottom: none;
 }
 
 .markdown-renderer tr:nth-child(even) {
-  background: var(--color-surface-raised);
+	background: var(--color-surface-raised);
 }
 
 .markdown-renderer tr:hover {
-  background: var(--color-hover-wash);
+	background: var(--color-hover-wash);
 }
 
 /* =========================================
@@ -418,10 +423,10 @@
    ========================================= */
 
 .markdown-renderer hr {
-  border: none;
-  height: 1px;
-  background: linear-gradient(to right, var(--color-border), transparent);
-  margin: var(--space-32) 0;
+	border: none;
+	height: 1px;
+	background: linear-gradient(to right, var(--color-border), transparent);
+	margin: var(--space-32) 0;
 }
 
 /* =========================================
@@ -429,11 +434,11 @@
    ========================================= */
 
 .markdown-renderer img {
-  max-width: 100%;
-  height: auto;
-  border-radius: var(--radius-md);
-  margin: var(--space-24) 0;
-  box-shadow: var(--shadow-sm);
+	max-width: 100%;
+	height: auto;
+	border-radius: var(--radius-md);
+	margin: var(--space-24) 0;
+	box-shadow: var(--shadow-sm);
 }
 
 /* =========================================
@@ -441,18 +446,18 @@
    ========================================= */
 
 .markdown-renderer dl {
-  margin: var(--space-16) 0;
+	margin: var(--space-16) 0;
 }
 
 .markdown-renderer dt {
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-primary);
-  margin-top: var(--space-16);
+	font-weight: var(--font-weight-medium);
+	color: var(--color-text-primary);
+	margin-top: var(--space-16);
 }
 
 .markdown-renderer dd {
-  margin-left: var(--space-24);
-  color: var(--color-text-secondary);
+	margin-left: var(--space-24);
+	color: var(--color-text-secondary);
 }
 
 /* =========================================
@@ -460,13 +465,13 @@
    ========================================= */
 
 .markdown-renderer.editorial {
-  max-width: 65ch;
-  line-height: 2.15;
+	max-width: 65ch;
+	line-height: 2.15;
 }
 
 .markdown-renderer.editorial p {
-  font-size: var(--text-body-relaxed);
-  line-height: 2.15;
+	font-size: var(--text-body-relaxed);
+	line-height: 2.15;
 }
 
 /* =========================================
@@ -474,32 +479,32 @@
    ========================================= */
 
 .markdown-renderer.compact {
-  line-height: 1.6;
+	line-height: 1.6;
 }
 
 .markdown-renderer.compact p {
-  font-size: var(--text-body-sm);
-  line-height: 1.6;
-  margin-bottom: var(--space-8);
+	font-size: var(--text-body-sm);
+	line-height: 1.6;
+	margin-bottom: var(--space-8);
 }
 
 .markdown-renderer.compact h1 {
-  font-size: var(--text-h2);
-  margin-top: var(--space-24);
-  margin-bottom: var(--space-12);
+	font-size: var(--text-h2);
+	margin-top: var(--space-24);
+	margin-bottom: var(--space-12);
 }
 
 .markdown-renderer.compact h2 {
-  font-size: var(--text-h3);
-  margin-top: var(--space-20);
-  margin-bottom: var(--space-8);
+	font-size: var(--text-h3);
+	margin-top: var(--space-20);
+	margin-bottom: var(--space-8);
 }
 
 .markdown-renderer.compact h3 {
-  font-size: var(--text-h4);
-  margin-top: var(--space-16);
-  margin-bottom: var(--space-8);
-  padding: var(--space-8) var(--space-12);
+	font-size: var(--text-h4);
+	margin-top: var(--space-16);
+	margin-bottom: var(--space-8);
+	padding: var(--space-8) var(--space-12);
 }
 
 /* =========================================
@@ -507,32 +512,32 @@
    ========================================= */
 
 @media (max-width: 767px) {
-  .markdown-renderer {
-    font-size: var(--text-body-sm);
-  }
+	.markdown-renderer {
+		font-size: var(--text-body-sm);
+	}
 
-  .markdown-renderer h1 {
-    font-size: var(--text-h1-mobile);
-  }
+	.markdown-renderer h1 {
+		font-size: var(--text-h1-mobile);
+	}
 
-  .markdown-renderer h2 {
-    font-size: var(--text-h2-mobile);
-  }
+	.markdown-renderer h2 {
+		font-size: var(--text-h2-mobile);
+	}
 
-  .markdown-renderer h3 {
-    font-size: var(--text-h3-mobile);
-  }
+	.markdown-renderer h3 {
+		font-size: var(--text-h3-mobile);
+	}
 
-  .markdown-renderer th,
-  .markdown-renderer td {
-    padding: var(--space-8) var(--space-12);
-    font-size: var(--text-caption);
-  }
+	.markdown-renderer th,
+	.markdown-renderer td {
+		padding: var(--space-8) var(--space-12);
+		font-size: var(--text-caption);
+	}
 
-  .markdown-renderer pre {
-    font-size: var(--text-caption);
-    padding: var(--space-12);
-  }
+	.markdown-renderer pre {
+		font-size: var(--text-caption);
+		padding: var(--space-12);
+	}
 }
 
 /* =========================================
@@ -543,12 +548,12 @@
 .markdown-renderer .token.prolog,
 .markdown-renderer .token.doctype,
 .markdown-renderer .token.cdata {
-  color: var(--color-text-whisper);
-  font-style: italic;
+	color: var(--color-text-whisper);
+	font-style: italic;
 }
 
 .markdown-renderer .token.punctuation {
-  color: var(--color-text-secondary);
+	color: var(--color-text-secondary);
 }
 
 .markdown-renderer .token.property,
@@ -558,7 +563,7 @@
 .markdown-renderer .token.constant,
 .markdown-renderer .token.symbol,
 .markdown-renderer .token.deleted {
-  color: var(--color-warning);
+	color: var(--color-warning);
 }
 
 .markdown-renderer .token.selector,
@@ -567,30 +572,30 @@
 .markdown-renderer .token.char,
 .markdown-renderer .token.builtin,
 .markdown-renderer .token.inserted {
-  color: var(--color-success);
+	color: var(--color-success);
 }
 
 .markdown-renderer .token.operator,
 .markdown-renderer .token.entity,
 .markdown-renderer .token.url {
-  color: var(--color-text-secondary);
+	color: var(--color-text-secondary);
 }
 
 .markdown-renderer .token.atrule,
 .markdown-renderer .token.attr-value,
 .markdown-renderer .token.keyword {
-  color: var(--color-primary);
+	color: var(--color-primary);
 }
 
 .markdown-renderer .token.function,
 .markdown-renderer .token.class-name {
-  color: var(--color-info);
+	color: var(--color-info);
 }
 
 .markdown-renderer .token.regex,
 .markdown-renderer .token.important,
 .markdown-renderer .token.variable {
-  color: var(--color-warning);
+	color: var(--color-warning);
 }
 
 /* High-contrast Syntax Highlighting for Dark Background pre Chunks */
@@ -598,12 +603,12 @@
 .markdown-renderer pre .token.prolog,
 .markdown-renderer pre .token.doctype,
 .markdown-renderer pre .token.cdata {
-  color: oklch(75% 0.01 235 / 0.8);
-  font-style: italic;
+	color: oklch(75% 0.01 235 / 0.8);
+	font-style: italic;
 }
 
 .markdown-renderer pre .token.punctuation {
-  color: oklch(90% 0.01 235);
+	color: oklch(90% 0.01 235);
 }
 
 .markdown-renderer pre .token.property,
@@ -613,7 +618,7 @@
 .markdown-renderer pre .token.constant,
 .markdown-renderer pre .token.symbol,
 .markdown-renderer pre .token.deleted {
-  color: oklch(85% 0.12 75);
+	color: oklch(85% 0.12 75);
 }
 
 .markdown-renderer pre .token.selector,
@@ -622,49 +627,48 @@
 .markdown-renderer pre .token.char,
 .markdown-renderer pre .token.builtin,
 .markdown-renderer pre .token.inserted {
-  color: oklch(85% 0.12 140);
+	color: oklch(85% 0.12 140);
 }
 
 .markdown-renderer pre .token.operator,
 .markdown-renderer pre .token.entity,
 .markdown-renderer pre .token.url {
-  color: oklch(90% 0.01 235);
+	color: oklch(90% 0.01 235);
 }
 
 .markdown-renderer pre .token.atrule,
 .markdown-renderer pre .token.attr-value,
 .markdown-renderer pre .token.keyword {
-  color: oklch(85% 0.12 300);
+	color: oklch(85% 0.12 300);
 }
 
 .markdown-renderer pre .token.function,
 .markdown-renderer pre .token.class-name {
-  color: oklch(82% 0.10 210);
+	color: oklch(82% 0.1 210);
 }
-
 
 /* =========================================
    Math Formulas (MathJax)
    ========================================= */
 
 .markdown-renderer .math-block {
-  margin: var(--space-24) 0;
-  padding: var(--space-16);
-  background: var(--color-surface);
-  border-radius: var(--radius-md);
-  overflow-x: auto;
-  text-align: center;
+	margin: var(--space-24) 0;
+	padding: var(--space-16);
+	background: var(--color-surface);
+	border-radius: var(--radius-md);
+	overflow-x: auto;
+	text-align: center;
 }
 
 .markdown-renderer .math-inline {
-  display: inline;
-  font-size: var(--text-body-sm);
-  vertical-align: middle;
+	display: inline;
+	font-size: var(--text-body-sm);
+	vertical-align: middle;
 }
 
 .markdown-renderer mjx-container {
-  overflow-x: auto;
-  max-width: 100%;
+	overflow-x: auto;
+	max-width: 100%;
 }
 
 /* =========================================
@@ -672,26 +676,26 @@
    ========================================= */
 
 .markdown-renderer .mermaid-container {
-  margin: var(--space-24) 0;
-  padding: var(--space-16);
-  background: var(--color-surface);
-  border-radius: var(--radius-md);
-  text-align: center;
-  overflow-x: auto;
+	margin: var(--space-24) 0;
+	padding: var(--space-16);
+	background: var(--color-surface);
+	border-radius: var(--radius-md);
+	text-align: center;
+	overflow-x: auto;
 }
 
 .markdown-renderer .mermaid-container svg {
-  max-width: 100%;
-  height: auto;
+	max-width: 100%;
+	height: auto;
 }
 
 .markdown-renderer .mermaid-error {
-  background: var(--color-error-bg);
-  color: var(--color-error);
-  padding: var(--space-16);
-  border-radius: var(--radius-md);
-  font-family: var(--font-mono);
-  font-size: var(--text-body-sm);
+	background: var(--color-error-bg);
+	color: var(--color-error);
+	padding: var(--space-16);
+	border-radius: var(--radius-md);
+	font-family: var(--font-mono);
+	font-size: var(--text-body-sm);
 }
 
 /* =========================================
@@ -707,16 +711,18 @@
 .markdown-renderer.streaming-cursor h4:last-child::after,
 .markdown-renderer.streaming-cursor h5:last-child::after,
 .markdown-renderer.streaming-cursor h6:last-child::after {
-  content: '▊';
-  animation: blink 1s step-end infinite;
-  color: var(--color-primary);
-  margin-left: 4px;
-  display: inline-block;
-  vertical-align: baseline;
+	content: "▊";
+	animation: blink 1s step-end infinite;
+	color: var(--color-primary);
+	margin-left: 4px;
+	display: inline-block;
+	vertical-align: baseline;
 }
 
 @keyframes blink {
-  50% { opacity: 0; }
+	50% {
+		opacity: 0;
+	}
 }
 
 /* =========================================
@@ -724,22 +730,22 @@
    ========================================= */
 
 @media (prefers-reduced-motion: reduce) {
-  .markdown-renderer a,
-  .markdown-renderer .task-list-item input[type="checkbox"],
-  .markdown-renderer .code-block-copy {
-    transition: none;
-  }
+	.markdown-renderer a,
+	.markdown-renderer .task-list-item input[type="checkbox"],
+	.markdown-renderer .code-block-copy {
+		transition: none;
+	}
 
-  .markdown-renderer.streaming-cursor p:last-child::after,
-  .markdown-renderer.streaming-cursor li:last-child::after,
-  .markdown-renderer.streaming-cursor pre:last-child::after,
-  .markdown-renderer.streaming-cursor h1:last-child::after,
-  .markdown-renderer.streaming-cursor h2:last-child::after,
-  .markdown-renderer.streaming-cursor h3:last-child::after,
-  .markdown-renderer.streaming-cursor h4:last-child::after,
-  .markdown-renderer.streaming-cursor h5:last-child::after,
-  .markdown-renderer.streaming-cursor h6:last-child::after {
-    animation: none;
-    opacity: 0.7;
-  }
+	.markdown-renderer.streaming-cursor p:last-child::after,
+	.markdown-renderer.streaming-cursor li:last-child::after,
+	.markdown-renderer.streaming-cursor pre:last-child::after,
+	.markdown-renderer.streaming-cursor h1:last-child::after,
+	.markdown-renderer.streaming-cursor h2:last-child::after,
+	.markdown-renderer.streaming-cursor h3:last-child::after,
+	.markdown-renderer.streaming-cursor h4:last-child::after,
+	.markdown-renderer.streaming-cursor h5:last-child::after,
+	.markdown-renderer.streaming-cursor h6:last-child::after {
+		animation: none;
+		opacity: 0.7;
+	}
 }

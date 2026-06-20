@@ -1,35 +1,35 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { useAuth } from '../../contexts/AuthContext';
-import { fetchProfileDashboard } from '../../api/profile';
-import type { ProfileDashboardData } from '../../types/profile';
-import { ProfileCard } from './ProfileCard';
-import { TodayLearningCard } from './TodayLearningCard';
-import { RecommendationCard } from './RecommendationCard';
-import { ProfileDetailOverlay } from './ProfileDetailOverlay';
-import { TodayLearningDetailOverlay } from './TodayLearningDetailOverlay';
-import { motionTokens } from '../../styles/motion-tokens';
-import './SproutHero.css';
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { fetchProfileDashboard } from "../../api/profile";
+import { useAuth } from "../../contexts/AuthContext";
+import { motionTokens } from "../../styles/motion-tokens";
+import type { ProfileDashboardData } from "../../types/profile";
+import { ProfileCard } from "./ProfileCard";
+import { ProfileDetailOverlay } from "./ProfileDetailOverlay";
+import { RecommendationCard } from "./RecommendationCard";
+import { TodayLearningCard } from "./TodayLearningCard";
+import { TodayLearningDetailOverlay } from "./TodayLearningDetailOverlay";
+import "./SproutHero.css";
 
 /**
  * 获取当前时段的中文问候语
  */
 function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 6) return '夜深了';
-  if (hour < 12) return '早上好';
-  if (hour < 14) return '中午好';
-  if (hour < 18) return '下午好';
-  return '晚上好';
+	const hour = new Date().getHours();
+	if (hour < 6) return "夜深了";
+	if (hour < 12) return "早上好";
+	if (hour < 14) return "中午好";
+	if (hour < 18) return "下午好";
+	return "晚上好";
 }
 
 /**
  * 获取当前星期的中文名
  */
 function getWeekday(): string {
-  const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  return days[new Date().getDay()];
+	const days = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+	return days[new Date().getDay()];
 }
 
 /**
@@ -42,161 +42,167 @@ function getWeekday(): string {
  * 4. 底部推荐行 — 3 列柔色小卡
  */
 export function SproutHero() {
-  const auth = useAuth();
-  const navigate = useNavigate();
-  const reduceMotion = useReducedMotion();
-  const [data, setData] = useState<ProfileDashboardData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isOverlayOpen, setIsOverlayOpen] = useState(false);
-  const [isTodayOverlayOpen, setIsTodayOverlayOpen] = useState(false);
+	const auth = useAuth();
+	const navigate = useNavigate();
+	const reduceMotion = useReducedMotion();
+	const [data, setData] = useState<ProfileDashboardData | null>(null);
+	const [error, setError] = useState<string | null>(null);
+	const [isOverlayOpen, setIsOverlayOpen] = useState(false);
+	const [isTodayOverlayOpen, setIsTodayOverlayOpen] = useState(false);
 
-  const username = auth.user?.username ?? '同学';
+	const username = auth.user?.username ?? "同学";
 
-  useEffect(() => {
-    if (!auth.token) {
-      setError('请先登录后查看画像数据。');
-      return;
-    }
+	useEffect(() => {
+		if (!auth.token) {
+			setError("请先登录后查看画像数据。");
+			return;
+		}
 
-    const token = auth.token;
-    let alive = true;
-    const loadDashboard = () => {
-      fetchProfileDashboard(token)
-      .then((dashboard) => {
-        if (!alive) return;
-        setData(dashboard);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!alive) return;
-        setError(err instanceof Error ? err.message : '画像数据加载失败');
-      });
-    };
+		const token = auth.token;
+		let alive = true;
+		const loadDashboard = () => {
+			fetchProfileDashboard(token)
+				.then((dashboard) => {
+					if (!alive) return;
+					setData(dashboard);
+					setError(null);
+				})
+				.catch((err) => {
+					if (!alive) return;
+					setError(err instanceof Error ? err.message : "画像数据加载失败");
+				});
+		};
 
-    loadDashboard();
-    window.addEventListener('mutiagent-profile-updated', loadDashboard);
+		loadDashboard();
+		window.addEventListener("mutiagent-profile-updated", loadDashboard);
 
-    return () => {
-      alive = false;
-      window.removeEventListener('mutiagent-profile-updated', loadDashboard);
-    };
-  }, [auth.token]);
+		return () => {
+			alive = false;
+			window.removeEventListener("mutiagent-profile-updated", loadDashboard);
+		};
+	}, [auth.token]);
 
-  if (error) {
-    return (
-      <section className="sprout-hero">
-        <div className="hero-greeting-zone">
-          <p className="hero-whisper">{error}</p>
-        </div>
-      </section>
-    );
-  }
+	if (error) {
+		return (
+			<section className="sprout-hero">
+				<div className="hero-greeting-zone">
+					<p className="hero-whisper">{error}</p>
+				</div>
+			</section>
+		);
+	}
 
-  /* 加载态：skeleton 呼吸 */
-  if (!data) {
-    return (
-      <section className="sprout-hero">
-        <div className="hero-greeting-zone">
-          <motion.div
-            style={{
-              width: 200,
-              height: 20,
-              borderRadius: 'var(--radius-full)',
-              background: 'var(--color-surface)',
-            }}
-            animate={reduceMotion ? undefined : { opacity: [0.56, 0.86, 0.56] }}
-            transition={{ duration: 2.1, repeat: Infinity, ease: 'easeInOut' }}
-          />
-        </div>
-      </section>
-    );
-  }
+	/* 加载态：skeleton 呼吸 */
+	if (!data) {
+		return (
+			<section className="sprout-hero">
+				<div className="hero-greeting-zone">
+					<motion.div
+						style={{
+							width: 200,
+							height: 20,
+							borderRadius: "var(--radius-full)",
+							background: "var(--color-surface)",
+						}}
+						animate={reduceMotion ? undefined : { opacity: [0.56, 0.86, 0.56] }}
+						transition={{ duration: 2.1, repeat: Infinity, ease: "easeInOut" }}
+					/>
+				</div>
+			</section>
+		);
+	}
 
-  const currentLearningCourse = data.todayLearning.currentLearningCourse;
-  const canStartCurrentLearning = Boolean(
-    currentLearningCourse && currentLearningCourse.progress_state !== 'completed',
-  );
+	const currentLearningCourse = data.todayLearning.currentLearningCourse;
+	const canStartCurrentLearning = Boolean(
+		currentLearningCourse &&
+			currentLearningCourse.progress_state !== "completed",
+	);
 
-  return (
-    <section className="sprout-hero">
-      {/* ── 问候区 ── */}
-      <div className="hero-greeting-zone">
-        <motion.p
-          className="hero-whisper"
-          initial={reduceMotion ? false : { opacity: 0 }}
-          animate={reduceMotion ? undefined : { opacity: 1 }}
-          transition={motionTokens.editorial}
-        >
-          {getWeekday()} · {getGreeting()}，{username}
-        </motion.p>
+	return (
+		<section className="sprout-hero">
+			{/* ── 问候区 ── */}
+			<div className="hero-greeting-zone">
+				<motion.p
+					className="hero-whisper"
+					initial={reduceMotion ? false : { opacity: 0 }}
+					animate={reduceMotion ? undefined : { opacity: 1 }}
+					transition={motionTokens.editorial}
+				>
+					{getWeekday()} · {getGreeting()}，{username}
+				</motion.p>
 
-        <motion.h1
-          className="hero-title"
-          initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-          animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-          transition={{ ...motionTokens.editorial, delay: 0.1 }}
-        >
-          了解自己，是成长的
-          <span className="hero-title-accent">第一步</span>
-          。
-        </motion.h1>
+				<motion.h1
+					className="hero-title"
+					initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+					animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+					transition={{ ...motionTokens.editorial, delay: 0.1 }}
+				>
+					了解自己，是成长的
+					<span className="hero-title-accent">第一步</span>。
+				</motion.h1>
 
-        {/* 辅助信息条 — 对应 Headspace 的 streak / sunrise */}
-        <motion.div
-          className="hero-meta-strip"
-          initial={reduceMotion ? false : { opacity: 0 }}
-          animate={reduceMotion ? undefined : { opacity: 1 }}
-          transition={{ ...motionTokens.editorial, delay: 0.15 }}
-        >
-          <span className="hero-meta-highlight">
-            <span className="hero-whisper-dot" aria-hidden="true" />
-            画像完成度 {data.profileCompleteness}%
-          </span>
-          <span className="hero-meta-separator" aria-hidden="true" />
-          <span>{data.profile.major}</span>
-          <span className="hero-meta-separator" aria-hidden="true" />
-          <span>{data.profile.currentGrade}</span>
-        </motion.div>
-      </div>
+				{/* 辅助信息条 — 对应 Headspace 的 streak / sunrise */}
+				<motion.div
+					className="hero-meta-strip"
+					initial={reduceMotion ? false : { opacity: 0 }}
+					animate={reduceMotion ? undefined : { opacity: 1 }}
+					transition={{ ...motionTokens.editorial, delay: 0.15 }}
+				>
+					<span className="hero-meta-highlight">
+						<span className="hero-whisper-dot" aria-hidden="true" />
+						画像完成度 {data.profileCompleteness}%
+					</span>
+					<span className="hero-meta-separator" aria-hidden="true" />
+					<span>{data.profile.major}</span>
+					<span className="hero-meta-separator" aria-hidden="true" />
+					<span>{data.profile.currentGrade}</span>
+				</motion.div>
+			</div>
 
-      {/* ── 双卡区 ── */}
-      <div className="hero-cards-row">
-        <ProfileCard
-          profile={data.profile}
-          completeness={data.profileCompleteness}
-          summaryText={data.profileSummaryText}
-          onClick={() => setIsOverlayOpen(true)}
-        />
-        <TodayLearningCard
-          data={data.todayLearning}
-          onClick={currentLearningCourse ? () => setIsTodayOverlayOpen(true) : undefined}
-          onStartLearning={canStartCurrentLearning ? () => navigate('/branch') : undefined}
-        />
-      </div>
+			{/* ── 双卡区 ── */}
+			<div className="hero-cards-row">
+				<ProfileCard
+					profile={data.profile}
+					completeness={data.profileCompleteness}
+					summaryText={data.profileSummaryText}
+					onClick={() => setIsOverlayOpen(true)}
+				/>
+				<TodayLearningCard
+					data={data.todayLearning}
+					onClick={
+						currentLearningCourse
+							? () => setIsTodayOverlayOpen(true)
+							: undefined
+					}
+					onStartLearning={
+						canStartCurrentLearning ? () => navigate("/branch") : undefined
+					}
+				/>
+			</div>
 
-      {/* ── 底部推荐行 ── */}
-      <div className="hero-recs-row">
-        {data.recommendations.map((rec, i) => (
-          <RecommendationCard key={rec.id} data={rec} index={i} />
-        ))}
-      </div>
+			{/* ── 底部推荐行 ── */}
+			<div className="hero-recs-row">
+				{data.recommendations.map((rec, i) => (
+					<RecommendationCard key={rec.id} data={rec} index={i} />
+				))}
+			</div>
 
-      <AnimatePresence>
-        {isOverlayOpen && (
-          <ProfileDetailOverlay
-            isOpen={isOverlayOpen}
-            onClose={() => setIsOverlayOpen(false)}
-            profile={data.profile}
-          />
-        )}
-        {isTodayOverlayOpen && (
-          <TodayLearningDetailOverlay
-            isOpen={isTodayOverlayOpen}
-            onClose={() => setIsTodayOverlayOpen(false)}
-            data={data.todayLearning}
-          />
-        )}
-      </AnimatePresence>
-    </section>
-  );
+			<AnimatePresence>
+				{isOverlayOpen && (
+					<ProfileDetailOverlay
+						isOpen={isOverlayOpen}
+						onClose={() => setIsOverlayOpen(false)}
+						profile={data.profile}
+					/>
+				)}
+				{isTodayOverlayOpen && (
+					<TodayLearningDetailOverlay
+						isOpen={isTodayOverlayOpen}
+						onClose={() => setIsTodayOverlayOpen(false)}
+						data={data.todayLearning}
+					/>
+				)}
+			</AnimatePresence>
+		</section>
+	);
 }

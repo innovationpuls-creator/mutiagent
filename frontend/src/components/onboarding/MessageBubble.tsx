@@ -1,31 +1,34 @@
-import React from 'react';
-import styled from 'styled-components';
+import React from "react";
+import styled from "styled-components";
 
 interface MessageBubbleProps {
-  content: string;
-  imageAttachment?: string | null;
+	content: string;
+	imageAttachment?: string | null;
 }
 
-export function MessageBubble({ content, imageAttachment }: MessageBubbleProps) {
-  return (
-    <BubbleWrapper>
-      <div className="bubble">
-        <span className="avatar">U</span>
-        <div className="bubble-content">
-          {content && <p className="text">{content}</p>}
-          {imageAttachment && (
-            <div className="image-container">
-              <img
-                src={imageAttachment}
-                alt="Attachment"
-                className="bubble-image"
-              />
-            </div>
-          )}
-        </div>
-      </div>
-    </BubbleWrapper>
-  );
+export function MessageBubble({
+	content,
+	imageAttachment,
+}: MessageBubbleProps) {
+	return (
+		<BubbleWrapper>
+			<div className="bubble">
+				<span className="avatar">U</span>
+				<div className="bubble-content">
+					{content && <p className="text">{content}</p>}
+					{imageAttachment && (
+						<div className="image-container">
+							<img
+								src={imageAttachment}
+								alt="Attachment"
+								className="bubble-image"
+							/>
+						</div>
+					)}
+				</div>
+			</div>
+		</BubbleWrapper>
+	);
 }
 
 const BubbleWrapper = styled.article`

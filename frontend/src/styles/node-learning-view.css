@@ -1,102 +1,112 @@
 /* Learning View Split Layout */
 .learning-view-root {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: var(--color-canvas-base);
-  z-index: 100;
-  display: flex;
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100vw;
+	height: 100vh;
+	background: var(--color-canvas-base);
+	z-index: 100;
+	display: flex;
 }
 
 .learning-left-pane {
-  flex: 1;
-  height: 100%;
-  overflow-y: auto;
-  padding: var(--section-padding-y-lg) var(--section-padding-x);
-  display: flex;
-  justify-content: center;
+	flex: 1;
+	height: 100%;
+	overflow-y: auto;
+	padding: var(--section-padding-y-lg) var(--section-padding-x);
+	display: flex;
+	justify-content: center;
 }
 
 /* Constrain content to 65ch internally using editorial-canvas */
 .learning-content-wrapper {
-  width: 100%;
-  max-width: 65ch;
-  display: flex;
-  flex-direction: column;
+	width: 100%;
+	max-width: 65ch;
+	display: flex;
+	flex-direction: column;
 }
 
 .learning-title-area {
-  margin-bottom: var(--space-xl);
+	margin-bottom: var(--space-xl);
 }
 
 .learning-right-pane {
-  width: 40%;
-  min-width: 320px;
-  max-width: 480px;
-  height: 100%;
-  background: var(--glass-dark-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border-left: 1px solid rgba(255, 255, 255, 0.05);
-  display: flex;
-  flex-direction: column;
+	width: 40%;
+	min-width: 320px;
+	max-width: 480px;
+	height: 100%;
+	background: var(--glass-dark-bg);
+	backdrop-filter: var(--glass-blur);
+	-webkit-backdrop-filter: var(--glass-blur);
+	border-left: 1px solid rgba(255, 255, 255, 0.05);
+	display: flex;
+	flex-direction: column;
 }
 
 /* Header of Agent Hub */
 .agent-hub-header {
-  padding: var(--space-lg);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  display: flex;
-  align-items: center;
+	padding: var(--space-lg);
+	border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+	display: flex;
+	align-items: center;
 }
 
 /* Skeleton Hydration Lines (Matching LXGW 1.8 Line Height) */
 .skeleton-container {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem; /* 1.8 line height - 1.2 font size = 0.6 gap approx */
-  margin-top: var(--space-lg);
+	display: flex;
+	flex-direction: column;
+	gap: 0.6rem; /* 1.8 line height - 1.2 font size = 0.6 gap approx */
+	margin-top: var(--space-lg);
 }
 
 .skeleton-line {
-  height: 1rem;
-  background: var(--color-canvas-surface);
-  border-radius: var(--radius-sm);
-  width: 100%;
-  animation: wave-pulse 3s infinite ease-in-out;
+	height: 1rem;
+	background: var(--color-canvas-surface);
+	border-radius: var(--radius-sm);
+	width: 100%;
+	animation: wave-pulse 3s infinite ease-in-out;
 }
 
-.skeleton-line.short { width: 65%; }
-.skeleton-line.medium { width: 85%; }
+.skeleton-line.short {
+	width: 65%;
+}
+.skeleton-line.medium {
+	width: 85%;
+}
 
 @keyframes wave-pulse {
-  0% { opacity: 0.3; }
-  50% { opacity: 0.7; }
-  100% { opacity: 0.3; }
+	0% {
+		opacity: 0.3;
+	}
+	50% {
+		opacity: 0.7;
+	}
+	100% {
+		opacity: 0.3;
+	}
 }
 
 /* Close Button Overlay */
 .learning-close-btn {
-  position: absolute;
-  top: var(--space-lg);
-  right: calc(40% + var(--space-lg));
-  z-index: 101;
-  background: var(--color-canvas-surface);
-  border: none;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-full);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  color: var(--color-text-primary);
-  transition: transform var(--duration-instant) var(--ease-editorial);
+	position: absolute;
+	top: var(--space-lg);
+	right: calc(40% + var(--space-lg));
+	z-index: 101;
+	background: var(--color-canvas-surface);
+	border: none;
+	width: 40px;
+	height: 40px;
+	border-radius: var(--radius-full);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	box-shadow: var(--shadow-sm);
+	color: var(--color-text-primary);
+	transition: transform var(--duration-instant) var(--ease-editorial);
 }
 
 .learning-close-btn:hover {
-  transform: scale(1.05);
+	transform: scale(1.05);
 }

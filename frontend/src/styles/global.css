@@ -3,86 +3,94 @@
 @tailwind utilities;
 
 @font-face {
-  font-family: 'LXGW WenKai';
-  src: url('../../node_modules/@fontsource/lxgw-wenkai/files/lxgw-wenkai-latin-300-normal.woff2') format('woff2');
-  font-weight: 300;
-  font-display: swap;
+	font-family: "LXGW WenKai";
+	src: url("../../node_modules/@fontsource/lxgw-wenkai/files/lxgw-wenkai-latin-300-normal.woff2")
+		format("woff2");
+	font-weight: 300;
+	font-display: swap;
 }
 
 @font-face {
-  font-family: 'LXGW WenKai';
-  src: url('../../node_modules/@fontsource/lxgw-wenkai/files/lxgw-wenkai-latin-500-normal.woff2') format('woff2');
-  font-weight: 400;
-  font-display: swap;
+	font-family: "LXGW WenKai";
+	src: url("../../node_modules/@fontsource/lxgw-wenkai/files/lxgw-wenkai-latin-500-normal.woff2")
+		format("woff2");
+	font-weight: 400;
+	font-display: swap;
 }
 
 @font-face {
-  font-family: 'LXGW WenKai';
-  src: url('../../node_modules/@fontsource/lxgw-wenkai/files/lxgw-wenkai-latin-500-normal.woff2') format('woff2');
-  font-weight: 500;
-  font-display: swap;
+	font-family: "LXGW WenKai";
+	src: url("../../node_modules/@fontsource/lxgw-wenkai/files/lxgw-wenkai-latin-500-normal.woff2")
+		format("woff2");
+	font-weight: 500;
+	font-display: swap;
 }
 
 *,
 *::before,
 *::after {
-  box-sizing: border-box;
+	box-sizing: border-box;
 }
 
 html {
-  min-block-size: 100%;
-  background: var(--color-background);
+	min-block-size: 100%;
+	background: var(--color-background);
 }
 
 body {
-  min-block-size: 100%;
-  margin: 0;
-  font-family: var(--font-body);
-  font-size: var(--text-body);
-  font-weight: var(--font-weight-regular);
-  line-height: 2;
-  color: var(--color-text-primary);
-  background: var(--color-background);
-  text-rendering: geometricPrecision;
-  font-synthesis: none;
+	min-block-size: 100%;
+	margin: 0;
+	font-family: var(--font-body);
+	font-size: var(--text-body);
+	font-weight: var(--font-weight-regular);
+	line-height: 2;
+	color: var(--color-text-primary);
+	background: var(--color-background);
+	text-rendering: geometricPrecision;
+	font-synthesis: none;
 }
 
 button,
 input {
-  font: inherit;
+	font: inherit;
 }
 
 button {
-  border: 0;
+	border: 0;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-heading);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: 0;
-  text-wrap: pretty;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+	font-family: var(--font-heading);
+	font-weight: var(--font-weight-medium);
+	letter-spacing: 0;
+	text-wrap: pretty;
 }
 
 #root {
-  min-block-size: 100svh;
+	min-block-size: 100svh;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation: none !important;
-    transition: none !important;
-    transform: none !important;
-    scroll-behavior: auto !important;
-  }
+	*,
+	*::before,
+	*::after {
+		animation: none !important;
+		transition: none !important;
+		transform: none !important;
+		scroll-behavior: auto !important;
+	}
 }
 
 /* 当有二级弹窗打开时，暂时降低 Navbar 的 z-index，并提升 main 的 z-index，防止遮挡，同时保持 Framer Motion layoutId 动画正常 */
-html[data-overlay-open='true'] [class*="navbarWrapper"] {
-  z-index: 5 !important;
+html[data-overlay-open="true"] [class*="navbarWrapper"] {
+	z-index: 5 !important;
 }
 
-html[data-overlay-open='true'] main {
-  z-index: 10 !important;
+html[data-overlay-open="true"] main {
+	z-index: 10 !important;
 }

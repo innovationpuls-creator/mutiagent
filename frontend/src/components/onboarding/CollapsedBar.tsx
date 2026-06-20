@@ -1,38 +1,38 @@
-import React from 'react';
-import { motion } from 'framer-motion';
-import styled from 'styled-components';
-import { formatRunSummary } from './stepLabels';
+import { motion } from "framer-motion";
+import React from "react";
+import styled from "styled-components";
+import { formatRunSummary } from "./stepLabels";
 
 interface CollapsedBarProps {
-  label: string;
-  runStatus: 'running' | 'completed' | 'failed';
-  stepCount: number;
-  duration: string;
-  onClick: () => void;
+	label: string;
+	runStatus: "running" | "completed" | "failed";
+	stepCount: number;
+	duration: string;
+	onClick: () => void;
 }
 
 export function CollapsedBar({
-  label,
-  runStatus,
-  stepCount,
-  duration,
-  onClick,
+	label,
+	runStatus,
+	stepCount,
+	duration,
+	onClick,
 }: CollapsedBarProps) {
-  const summary = formatRunSummary({ label, runStatus, stepCount, duration });
+	const summary = formatRunSummary({ label, runStatus, stepCount, duration });
 
-  return (
-    <CollapsedButton
-      as={motion.button}
-      type="button"
-      onClick={onClick}
-      whileHover={{ background: 'var(--color-hover-wash)' }}
-      whileTap={{ scale: 0.99 }}
-      transition={{ duration: 0.3, ease: [0.33, 1, 0.68, 1] }}
-    >
-      <span>{summary}</span>
-      <span className="chevron">展开详情</span>
-    </CollapsedButton>
-  );
+	return (
+		<CollapsedButton
+			as={motion.button}
+			type="button"
+			onClick={onClick}
+			whileHover={{ background: "var(--color-hover-wash)" }}
+			whileTap={{ scale: 0.99 }}
+			transition={{ duration: 0.3, ease: [0.33, 1, 0.68, 1] }}
+		>
+			<span>{summary}</span>
+			<span className="chevron">展开详情</span>
+		</CollapsedButton>
+	);
 }
 
 const CollapsedButton = styled.button`
