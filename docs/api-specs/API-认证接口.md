@@ -1,6 +1,6 @@
 # 认证接口 (Auth API)
 
-> 💡 关于 Chat 对话、路径规划、章节精读、测验及学情管理等业务接口，请参考 [业务接口文档](file:///Users/torch/torch/opt/mutiagent/docs/API-业务接口.md)。
+> 💡 关于 Chat 对话、路径规划、章节精读、测验及学情管理等业务接口，请参考 [业务接口文档](file:///Users/torch/torch/opt/mutiagent/docs/api-specs/API-业务接口.md)。
 
 Base URL: `/api/auth`
 uv run uvicorn app.main:app --port 8000 --reload

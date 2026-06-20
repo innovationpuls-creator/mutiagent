@@ -63,7 +63,7 @@ uv run uvicorn app.main:app --reload --port 8000
 
 ## 数据库模型
 
-项目包含以下 11 个核心 SQLModel 数据库表（各表字段定义与约束详见 [数据库表结构文档](file:///Users/torch/torch/opt/mutiagent/docs/数据库表结构.md)）：
+项目包含以下 11 个核心 SQLModel 数据库表（各表字段定义与约束详见 [数据库表结构文档](file:///Users/torch/torch/opt/mutiagent/docs/database/数据库表结构.md)）：
 
 1. **User** (`user`)：用户账户及基本属性。
 2. **CultivationProgram** (`cultivationprogram`)：通用培养方案大纲模板。
@@ -87,8 +87,8 @@ uv run uvicorn app.main:app --reload --port 8000
 ## API 端点
 
 关于完整、详细的 API 协议约定及示例，请参考以下文档：
-* **认证接口**：[API-认证接口.md](file:///Users/torch/torch/opt/mutiagent/docs/API-认证接口.md)
-* **业务接口**：[API-业务接口.md](file:///Users/torch/torch/opt/mutiagent/docs/API-业务接口.md)
+* **认证接口**：[API-认证接口.md](file:///Users/torch/torch/opt/mutiagent/docs/api-specs/API-认证接口.md)
+* **业务接口**：[API-业务接口.md](file:///Users/torch/torch/opt/mutiagent/docs/api-specs/API-业务接口.md)
 
 ### 1. 认证端点 (`/api/auth`)
 * `POST /register` — 注册新用户

@@ -70,13 +70,13 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 **开始任何前端任务前，必须先调用 `/web-design-engineer` skill的Headspace meditation 风格** 
 
 **参考文档，按需加载**：
-   - `docs/01-颜色系统.md` — OKLCH 色彩 token、品牌色、语义色、交互态
-   - `docs/02-字体系统.md` — LXGW WenKai 字体、字阶、行高规则
-   - `docs/03-间距系统.md` — 4px 基础单位、间距 Scale、Section Padding
-   - `docs/04-圆角与阴影.md` — 多层阴影、层级对照、圆角 Scale
-   - `docs/06-materials-effects.md` — 毛玻璃、品牌渐变、发光弥散
-   - `docs/07-motion-physics.md` — 弹性缓动、Haptics、骨架屏动画
-   - `docs/session-desgin.md` -所有session开发的规范
+   - `docs/ui-design/01-颜色系统.md` — OKLCH 色彩 token、品牌色、语义色、交互态
+   - `docs/ui-design/02-字体系统.md` — LXGW WenKai 字体、字阶、行高规则
+   - `docs/ui-design/03-间距系统.md` — 4px 基础单位、间距 Scale、Section Padding
+   - `docs/ui-design/04-圆角与阴影.md` — 多层阴影、层级对照、圆角 Scale
+   - `docs/ui-design/06-materials-effects.md` — 毛玻璃、品牌渐变、发光弥散
+   - `docs/ui-design/07-motion-physics.md` — 弹性缓动、Haptics、骨架屏动画
+   - `docs/ui-design/session-desgin.md` -所有session开发的规范
 
 ### Hard Rules from Docs
 
@@ -109,7 +109,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **LLM 接入**：OpenAI-compatible API (当前: 阿里百炼 Qwen3.5+)
 - **数据库**：PostgreSQL (psycopg2)
 - **异步**：全链路 asyncio
-- **参考文档，按需加载**：`docs/后端技术栈.md` 包含完整架构说明
+- **参考文档，按需加载**：`docs/backend/backend-tech-stack.md` 包含完整架构说明
 
 ## Code Style
 
@@ -125,6 +125,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **强类型化**：必须使用 Python Type Hints（Pydantic/SQLModel）保证类型安全。
 - **路由拆分**：FastAPI 的接口必须基于功能模块通过 `APIRouter` 拆分，禁止在 main.py 中堆砌逻辑。
 - **节点解耦**：LangGraph 的 State 与 Node 必须解耦，保持中枢路由的轻量化。Worker Agent 各自是独立的 LangChain Chain，不直接互相调用。
+- **Ruff 规范**：所有修改后的 Python 代码必须符合 Ruff 的规则。AI（包括 Antigravity、Codex 和其他 Agent）在修改任何 Python 文件后，必须使用 Ruff 进行格式化和代码清理（自动执行 `ruff check --fix` 和 `ruff format`），以清除未使用的导入、变量或不合规语法。
 
 ## Git
 
