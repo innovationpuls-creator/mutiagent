@@ -1,5 +1,7 @@
 # 认证接口 (Auth API)
 
+> 💡 关于 Chat 对话、路径规划、章节精读、测验及学情管理等业务接口，请参考 [业务接口文档](file:///Users/torch/torch/opt/mutiagent/docs/API-业务接口.md)。
+
 Base URL: `/api/auth`
 uv run uvicorn app.main:app --port 8000 --reload
 ---
@@ -16,6 +18,10 @@ uv run uvicorn app.main:app --port 8000 --reload
 | `identifier` | string | 是 | 登录标识（邮箱），3-128 字符，全局唯一 |
 | `password` | string | 是 | 密码，6-128 字符 |
 | `confirm_password` | string | 是 | 确认密码，须与 password 一致 |
+| `role` | string | 否 | 用户角色，支持 student / teacher / admin，默认为 "student" |
+| `school` | string | 是 | 学校名称，1-128 字符 |
+| `major` | string | 是 | 专业名称，1-128 字符 |
+| `class_name` | string | 是 | 班级名称，1-128 字符 |
 
 **响应** `201 Created`
 
@@ -28,6 +34,10 @@ uv run uvicorn app.main:app --port 8000 --reload
     "uid": "4c1a6f86-2352-49dd-bff7-9ba0f6ba5d03",
     "username": "测试用户",
     "identifier": "test@example.com",
+    "role": "student",
+    "school": "测试学校",
+    "major": "计算机科学与技术",
+    "class_name": "计科2201班",
     "provider": "password",
     "is_active": true,
     "created_at": "2026-05-30T16:30:10.302710",
@@ -67,6 +77,10 @@ uv run uvicorn app.main:app --port 8000 --reload
     "uid": "4c1a6f86-2352-49dd-bff7-9ba0f6ba5d03",
     "username": "测试用户",
     "identifier": "test@example.com",
+    "role": "student",
+    "school": "测试学校",
+    "major": "计算机科学与技术",
+    "class_name": "计科2201班",
     "provider": "password",
     "is_active": true,
     "created_at": "2026-05-30T16:30:10.302710",
@@ -102,12 +116,16 @@ uv run uvicorn app.main:app --port 8000 --reload
   "token_type": "bearer",
   "auth_type": "oauth",
   "user": {
-    "uid": "...",
+    "uid": "user-uuid-123",
     "username": "学习伙伴",
     "identifier": "xuexitong-learner@mock.local",
+    "role": "student",
+    "school": "学习通试点学校",
+    "major": "人工智能",
+    "class_name": "AI班",
     "provider": "xuexitong",
     "is_active": true,
-    "created_at": "...",
+    "created_at": "2026-05-30T16:30:10.302710",
     "last_login_at": null
   }
 }
@@ -132,6 +150,10 @@ Authorization: Bearer <access_token>
   "uid": "4c1a6f86-2352-49dd-bff7-9ba0f6ba5d03",
   "username": "测试用户",
   "identifier": "test@example.com",
+  "role": "student",
+  "school": "测试学校",
+  "major": "计算机科学与技术",
+  "class_name": "计科2201班",
   "provider": "password",
   "is_active": true,
   "created_at": "2026-05-30T16:30:10.302710",

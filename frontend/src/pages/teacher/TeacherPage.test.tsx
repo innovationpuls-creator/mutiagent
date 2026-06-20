@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AuthUser } from '../../types/auth';
 import type { BranchCourseNode } from '../../types/branch';
 import { TeacherPage } from './TeacherPage';
 
@@ -9,26 +10,49 @@ const teacherProgramApiMocks = vi.hoisted(() => ({
   publishTeacherProgram: vi.fn(),
 }));
 
-const logoutMock = vi.fn();
+const adminDataApiMocks = vi.hoisted(() => ({
+  programs: vi.fn(),
+}));
+
+const defaultAuthUser: AuthUser = {
+  uid: 'teacher-1',
+  username: '测试教师',
+  identifier: 'teacher@example.com',
+  role: 'teacher',
+  school: '南山大学',
+  major: '软件工程',
+  class_name: '一班',
+  provider: 'password',
+  is_active: true,
+  created_at: '2026-06-02T00:00:00Z',
+  last_login_at: null,
+};
+
+const authMocks = vi.hoisted(() => ({
+  logout: vi.fn(),
+  user: {
+    uid: 'teacher-1',
+    username: '测试教师',
+    identifier: 'teacher@example.com',
+    role: 'teacher',
+    school: '南山大学',
+    major: '软件工程',
+    class_name: '一班',
+    provider: 'password',
+    is_active: true,
+    created_at: '2026-06-02T00:00:00Z',
+    last_login_at: null,
+  } as AuthUser,
+}));
+
+const logoutMock = authMocks.logout;
 vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({
     token: 'test-token',
     isAuthReady: true,
-    user: {
-      uid: 'teacher-1',
-      username: '测试教师',
-      identifier: 'teacher@example.com',
-      role: 'teacher',
-      school: '南山大学',
-      major: '软件工程',
-      class_name: '一班',
-      provider: 'password',
-      is_active: true,
-      created_at: '2026-06-02T00:00:00Z',
-      last_login_at: null,
-    },
+    user: authMocks.user,
     login: vi.fn(),
-    logout: logoutMock,
+    logout: authMocks.logout,
   }),
 }));
 
@@ -36,6 +60,12 @@ vi.mock('../../api/teacherProgram', () => ({
   teacherProgramApi: {
     getTeacherProgram: teacherProgramApiMocks.getTeacherProgram,
     publishTeacherProgram: teacherProgramApiMocks.publishTeacherProgram,
+  },
+}));
+
+vi.mock('../../api/adminData', () => ({
+  adminDataApi: {
+    programs: adminDataApiMocks.programs,
   },
 }));
 
@@ -131,6 +161,35 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
     vi.useFakeTimers();
     teacherProgramApiMocks.getTeacherProgram.mockReset();
     teacherProgramApiMocks.publishTeacherProgram.mockReset();
+    adminDataApiMocks.programs.mockReset();
+    Object.assign(authMocks.user, defaultAuthUser);
+    authMocks.logout.mockReset();
+    adminDataApiMocks.programs.mockResolvedValue([
+      {
+        program_id: 'program-1',
+        teacher_uid: 'teacher-1',
+        teacher_name: '测试教师',
+        teacher_identifier: 'teacher@example.com',
+        school: '南山大学',
+        major: '软件工程',
+        class_name: '一班',
+        courses: [],
+        published_at: '2026-06-15T10:00:00Z',
+        updated_at: '2026-06-15T10:00:00Z',
+      },
+      {
+        program_id: 'program-2',
+        teacher_uid: 'teacher-1',
+        teacher_name: '测试教师',
+        teacher_identifier: 'teacher@example.com',
+        school: 'wc',
+        major: '计算机',
+        class_name: '2301',
+        courses: [],
+        published_at: '2026-06-15T10:00:00Z',
+        updated_at: '2026-06-15T10:00:00Z',
+      },
+    ]);
     teacherProgramApiMocks.getTeacherProgram.mockResolvedValue(null);
     teacherProgramApiMocks.publishTeacherProgram.mockResolvedValue({
       program_id: 'program-1',
@@ -281,6 +340,99 @@ describe('TeacherPage State Machine & localStorage Saves', () => {
 
     expect(screen.getByText('拖拽或点击上传培养方案文档')).toBeTruthy();
     expect(screen.queryByText('高等数学 I')).toBeNull();
+  });
+
+  it('shows editable publishing scope with completion hints from existing programs', async () => {
+    render(<TeacherPage />);
+    await flushProgramLoad();
+
+    expect(screen.getByDisplayValue('南山大学')).toBeTruthy();
+    expect(screen.getByDisplayValue('软件工程')).toBeTruthy();
+    expect(screen.getByDisplayValue('一班')).toBeTruthy();
+    expect(screen.getByText('必须和学生账号里的 school 完全一致。')).toBeTruthy();
+    expect(screen.getByText('选定学校后，会优先提示该学校已有专业。')).toBeTruthy();
+    expect(screen.getByText('发布后只会匹配同一学校、专业、班级的学生。')).toBeTruthy();
+    expect(screen.queryByRole('listbox', { name: '学校选项' })).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '展开学校选项' }));
+    });
+
+    expect(screen.getByRole('listbox', { name: '学校选项' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: '南山大学' })).toBeTruthy();
+  });
+
+  it('opens a real dropdown from published programs even when the typed school does not match a program scope', async () => {
+    authMocks.user.school = 'wc';
+    authMocks.user.major = '软件工程';
+    authMocks.user.class_name = '2301';
+
+    render(<TeacherPage />);
+    await flushProgramLoad();
+
+    expect(screen.getByDisplayValue('wc')).toBeTruthy();
+    expect(screen.getByDisplayValue('2301')).toBeTruthy();
+    expect(screen.queryByRole('listbox', { name: '学校选项' })).toBeNull();
+
+    await act(async () => {
+      fireEvent.focus(screen.getByLabelText('学校'));
+    });
+
+    expect(screen.getByRole('listbox', { name: '学校选项' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'wc' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: '南山大学' })).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.focus(screen.getByLabelText('班级'));
+    });
+
+    expect(screen.getByRole('listbox', { name: '班级选项' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: '2301' })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: '18771701100' })).toBeNull();
+  });
+
+  it('uses a dropdown option to fill the publishing scope and blocks publishing when it is incomplete', async () => {
+    authMocks.user.school = '';
+    render(<TeacherPage />);
+    const dropzone = screen.getByTestId('dropzone');
+    const validFile = new File(['dummy content'], 'syllabus.pdf', {
+      type: 'application/pdf',
+    });
+
+    await act(async () => {
+      fireEvent.drop(dropzone, {
+        dataTransfer: {
+          files: [validFile],
+        },
+      });
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(screen.getByText('学校、专业、班级都填写后才能发布')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.focus(screen.getByLabelText('学校'));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('option', { name: '南山大学' }));
+    });
+    expect(screen.getByDisplayValue('南山大学')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.change(screen.getByDisplayValue('南山大学'), { target: { value: '' } });
+    });
+
+    const saveBtn = screen.getByRole('button', { name: '保存并发布' });
+    await act(async () => {
+      fireEvent.click(saveBtn);
+    });
+
+    expect(screen.getByText('请填写学校、专业、班级；这些值必须和学生账号完全一致')).toBeTruthy();
+    expect(teacherProgramApiMocks.publishTeacherProgram).not.toHaveBeenCalled();
   });
 
   it('opens DetailDrawer, edits values, and publishes updates through the management API', async () => {

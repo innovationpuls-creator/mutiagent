@@ -63,49 +63,19 @@ uv run uvicorn app.main:app --reload --port 8000
 
 ## 数据库模型
 
-```text
-User
-  uid PK
-  username
-  identifier UNIQUE
-  provider
-  password_hash
-  is_active
-  created_at
-  updated_at
-  last_login_at
+项目包含以下 11 个核心 SQLModel 数据库表（各表字段定义与约束详见 [数据库表结构文档](file:///Users/torch/torch/opt/mutiagent/docs/数据库表结构.md)）：
 
-UserProfile
-  user_uid PK/FK -> User.uid
-  profile_data JSONB
-  profile_text
-  created_at
-  updated_at
-
-UserYearLearningPath
-  user_uid PK/FK -> User.uid
-  grade_year PK
-  learning_topic
-  path_data JSONB
-  created_at
-  updated_at
-
-UserCourseKnowledgeOutline
-  user_uid PK/FK -> User.uid
-  course_id PK
-  grade_year
-  course_name
-  outline_data JSONB
-  created_at
-  updated_at
-
-ConversationSession
-  session_id PK
-  user_uid FK -> User.uid
-  messages JSONB
-  created_at
-  updated_at
-```
+1. **User** (`user`)：用户账户及基本属性。
+2. **CultivationProgram** (`cultivationprogram`)：通用培养方案大纲模板。
+3. **UserProfile** (`userprofile`)：用户个人画像特征及自然语言总结。
+4. **UserYearLearningPath** (`useryearlearningpath`)：按学年生成的课程规划拓扑。
+5. **UserCourseKnowledgeOutline** (`usercourseknowledgeoutline`)：单门课程的具体章节知识大纲。
+6. **ChapterQuiz** (`chapterquiz`)：为章节动态生成的测验题集。
+7. **ChapterQuizAttempt** (`chapterquizattempt`)：学生每次提交试卷的打分批改记录。
+8. **ChapterProgress** (`chapterprogress`)：章节通关/解锁进度状态。
+9. **ChapterWeakness** (`chapterweakness`)：测验中暴露出的薄弱知识点记录。
+10. **CourseResourceQuality** (`courseresourcequality`)：章节图文及动画生成质量评分。
+11. **ConversationSession** (`conversationsession`)：会话消息历史持久化记录。
 
 启动时 `schema_upgrades.py` 会将旧结构升级到当前结构：
 
@@ -116,55 +86,32 @@ ConversationSession
 
 ## API 端点
 
-### 认证
+关于完整、详细的 API 协议约定及示例，请参考以下文档：
+* **认证接口**：[API-认证接口.md](file:///Users/torch/torch/opt/mutiagent/docs/API-认证接口.md)
+* **业务接口**：[API-业务接口.md](file:///Users/torch/torch/opt/mutiagent/docs/API-业务接口.md)
 
-| Method | Path | 说明 |
-|---|---|---|
-| POST | `/api/auth/register` | 注册，返回 JWT |
-| POST | `/api/auth/login` | 登录，返回 JWT |
-| POST | `/api/auth/oauth/mock` | Mock OAuth |
-| GET | `/api/auth/me` | 当前用户信息 |
+### 1. 认证端点 (`/api/auth`)
+* `POST /register` — 注册新用户
+* `POST /login` — 密码登录
+* `POST /oauth/mock` — Mock OAuth 登录
+* `GET /me` — 获取当前用户信息
 
-### Chat 编排
+### 2. Chat 编排端点 (`/api/chat`)
+* `POST /start` — 启动 AI 对话
+* `POST /message` — 发送消息 (SSE 流式事件)
+* `GET /sessions/{session_id}` — 获取会话消息历史
 
-| Method | Path | 说明 |
-|---|---|---|
-| POST | `/api/chat/start` | 创建会话，返回 `session_id` 和开场回复 |
-| POST | `/api/chat/message` | 发送用户消息，返回 SSE |
-| GET | `/api/chat/sessions/{session_id}` | 读取 DB 中的会话状态 |
+### 3. 业务模块端点 (`/api/*`)
+* **画像大盘**：`GET /api/profile/dashboard`
+* **学习路径**：`GET /api/learning-path/me`
+* **繁枝总览**：`GET /api/branch/canopy`、`GET /api/branch/overview`
+* **展叶大纲**：`GET /api/leaf/courses/{course_node_id}`
+* **测验森林**：`GET /api/forest/courses/.../quiz`、`POST /api/forest/courses/.../quiz/generate`、`POST /api/forest/quizzes/{quiz_id}/attempts` (或 `/attempts/stream` 流式批改)、`POST /api/forest/ai/stream` (AI答疑)
+* **教师与学生**：`GET /api/student/matched-program`、`GET/PUT /api/teacher/program`、`POST /api/teacher/program/publish`
+* **系统管理**：包含 `/api/admin/accounts/*` (账号CSV导入导出等) 及 `/api/admin/data/*` (学情监控) 的完整后台路由
 
-`POST /api/chat/message` 请求体：
-
-```json
-{
-  "session_id": "uuid",
-  "message": "你好"
-}
-```
-
-SSE 事件：
-
-```text
-session_started
-message(type=supervisor_thinking)
-message(type=supervisor_plan)
-agent_calling
-agent_progress
-agent_result
-data_update
-text_chunk
-message_completed
-session_completed
-error
-```
-
-### 其他
-
-| Method | Path | 说明 |
-|---|---|---|
-| GET | `/api/profile/dashboard` | 用户画像仪表盘 |
-| GET | `/api/learning-path/me` | 用户全部按年学习路径 |
-| GET | `/api/health` | 健康检查 |
+### 4. 其他
+* `GET /api/health` — 健康检查 (健康度与数据库连接状态)
 
 ## 环境变量
 

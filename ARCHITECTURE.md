@@ -1,310 +1,159 @@
-# Chatflow 多轮对话编排架构
+# OneTree (一棵树) 多智能体对话与编排架构
 
-## 概述
+一棵树系统的核心后端是一个本地运行的、基于 **FastAPI + LangGraph + LangChain** 的多智能体协作与决策网络。该系统弃用了任何外部 Dify Chatflow 依赖，完全通过本地代码以及规则引擎进行确定性的决策和状态流转。
 
-本系统实现了一个基于 Dify Chatflow 的多轮对话编排流程：**前端 → 后端 API → Chatflow 多轮对话 → 完成检测 → w1/w2 并行执行 → SSE 推送结果**。
+---
 
-核心创新在于 Chatflow 本身是一个多轮对话 Agent（非单次 API 调用），后端通过 `start/continue` 端点管理其生命周期，在检测到对话"完成"信号后自动触发下游工作流并行执行。
+## 1. 架构总览
 
-## 架构总览
-
-```
-Frontend (React+Zustand)          Backend (FastAPI)                 Dify
-      │                               │                              │
-      │── POST /chatflow/start ──────>│                              │
-      │                               │── POST /chat-messages ──────>│
-      │                               │    (conversation_id="" 新对话) │
-      │<── {exec_id, ans, conv_id} ──│<──── answer + conv_id ───────│
-      │                               │                              │
-      │  ... N 轮信息收集 ...          │                              │
-      │                               │                              │
-      │── POST /chatflow/continue ───>│                              │
-      │                               │── POST /chat-messages ──────>│
-      │                               │    (复用 conversation_id)     │
-      │<── {answer, completed=false} ─│<──── still collecting ───────│
-      │                               │                              │
-      │  ... 最终用户说"可以了" ...    │                              │
-      │                               │                              │
-      │── POST /chatflow/continue ───>│                              │
-      │                               │── POST /chat-messages ──────>│
-      │                               │<──── JSON/教学大纲文档 ──────│
-      │                               │                              │
-      │  检测到完成!                   │                              │
-      │                               ├── 并行执行 w1/w2 (Dify Workflow)
-      │                               │                              │
-      │  SSE: chatflow_completed      │<──── w1 result ──────────────│
-      │  SSE: workflow_result(w1)     │<──── w2 result ──────────────│
-      │  SSE: workflow_result(w2)     │                              │
-      │  SSE: complete                │                              │
-      │                               │                              │
-      │── GET /result/{exec_id} ─────>│  (断线重连拉取)              │
-```
-
-## 状态机
-
-### Chatflow 对话状态
+本系统实现了一个基于 **Supervisor-Worker** 拓扑的多智能体协作系统：
+* **输入入口**：用户在前端（通过全局 AI 助手）输入提问或指令 ➡️ 后端接收请求并从数据库加载上下文 ➡️ 拼接为单轮 Graph 运行状态。
+* **中枢调度 (Supervisor)**：由大语言模型（绑定多个智能体工具）与硬性规则引擎共同担任。
+* **智能体执行层 (Workers)**：每个 Worker 是一个独立的 LangChain 链（结合 `structured_output`），在 Supervisor 指示下执行特定任务并输出结构化结果。
+* **异步事件广播 (SSE)**：LangGraph 执行过程中产生的所有中间步骤（思考、智能体调用、部分结果生成、大模型流式文本等）均通过 Server-Sent Events (SSE) 实时推送到前端。
+* **状态持久化**：不使用 LangGraph 的内存或 Redis checkpoint。状态在每次请求前从数据库重构，执行完毕后将数据（画像、按年路径、课程大纲等）持久化至 PostgreSQL。
 
 ```
-pending → in_progress → awaiting_input → in_progress → ... → completed
-                                                                ↓
-                                                          触发 w1/w2
+                    ┌────────────────────────┐
+                    │ 前端界面 (React/Zustand)│
+                    └───────────┬────────────┘
+                                │
+                      POST /api/chat/message
+                                │
+                                ▼
+         ┌────────────────────────────────────────────────┐
+         │              后端 API (FastAPI)                │
+         │  1. 加载 DB 上下文 (画像/大纲/路径/会话历史)    │
+         │  2. 构建单轮 OrchestrationState                │
+         │  3. 启动 LangGraph 异步事件生成                │
+         └──────────────────────┬─────────────────────────┘
+                                │
+                                ▼
+         ┌────────────────────────────────────────────────┐
+         │             LangGraph 编排流                   │
+         │                                                │
+         │            ┌───────────────────┐               │
+         │            │    Supervisor     │               │
+         │            └──────┬──────┬─────┘               │
+         │                   │      ▲                     │
+         │             路由选择│      │Worker 返回结果      │
+         │                   ▼      │                     │
+         │    ┌─────────────────────┴───────────────┐     │
+         │    │  Worker Agents (7 个协同智能体)     │     │
+         │    │  - profile_agent                    │     │
+         │    │  - learning_path_intake_agent       │     │
+         │    │  - learning_path_agent              │     │
+         │    │  - course_knowledge_agent           │     │
+         │    │  - section_markdown_agent           │     │
+         │    │  - section_video_search_agent       │     │
+         │    │  - section_html_animation_agent     │     │
+         │    └─────────────────────────────────────┘     │
+         └──────────────────────┬─────────────────────────┘
+                                │
+                      SSE 流式推送中间事件
+                                │
+                                ▼
+                    ┌────────────────────────┐
+                    │ 前端接收事件并更新状态 │
+                    └────────────────────────┘
 ```
 
-- `pending`: 初始状态
-- `in_progress`: 正在等待 Dify API 响应
-- `awaiting_input`: 等待用户输入下一轮消息
-- `completed`: 检测到完成信号，进入 w1/w2 阶段
-- `failed`: 出错
+---
 
-### 前端阶段
+## 2. 核心状态：`OrchestrationState`
 
-```
-idle → chatflow → generating → completed
-                    ↓
-                  error
-```
-
-- `idle`: 欢迎页面
-- `chatflow`: 多轮对话进行中（含 isPending 控制输入框禁用）
-- `generating`: Chatflow 结束，w1/w2 执行中
-- `completed`: 全部完成
-- `error`: 出现错误
-
-## 后端组件
-
-### 1. ExecutionRegistry（单例）
-- **文件**: [`execution_registry.py`](execution_registry.py)
-- **职责**: 管理所有执行状态和 SSE 事件队列
-- **关键状态字段**:
-  ```python
-  @dataclass
-  class ExecutionState:
-      execution_id: str
-      chatflow_result: dict | None        # 最终结果 {"text": "...", "type": "..."}
-      chatflow_completed: bool
-      workflows: dict[str, WorkflowResult]  # {"workflow_a": WorkflowResult, ...}
-      all_workflows_completed: bool
-      conversation: ChatflowConversation    # 多轮对话状态
-      queue: asyncio.Queue                 # SSE 事件队列
-  ```
-- **重要**: 5 分钟后自动清理已完成执行（`cleanup_completed`）
-
-### 2. ChatflowConversationOrchestrator
-- **文件**: [`chatflow_conversation.py`](chatflow_conversation.py)
-- **职责**: 管理多轮对话生命周期
-- **核心方法**:
-  - `start_conversation(execution_id, query)` — 发起新对话
-  - `continue_conversation(execution_id, query)` — 继续对话
-  - `_call_chatflow_turn(query, conversation_id)` — 单次 Dify API 调用（每次新建 httpx.Client）
-  - `_on_chatflow_completed(execution_id, final_result)` — 完成后触发 w1/w2
-- **重要**: 每次 API 调用创建新 `DifyClient`（`httpx.Client` 非线程安全）
-
-### 3. WorkflowExecutor
-- **文件**: [`workflow_executor.py`](workflow_executor.py)
-- **职责**: `asyncio.gather` 并行执行 w1/w2，结果推送 SSE 队列
-- **重试**: 最多 3 次
-- **输入**: `chatflow_result` 的 `text` 字段作为 `u_in`
-- **清理**: 完成后 5 分钟自动清理
-
-### 4. DifyClient
-- **文件**: [`dify/client.py`](../../dify/client.py)
-- **职责**: 封装 Dify Chatflow/Workflow API 调用
-- **关键**: `httpx.Client` NOT thread-safe，需每次调用新建实例
-
-### 5. DifyResponseNormalizer（注意修复）
-- **文件**: [`dify/response_normalizer.py`](../../dify/response_normalizer.py)
-- **Workflow 响应标准化**: 必须访问 `data.get("data", {})` 的嵌套层级
-  ```python
-  # Dify API 返回结构:
-  { "task_id": "...", "data": { "id": "...", "outputs": {...} } }
-  # 正确做法:
-  inner = data.get("data", {})
-  outputs = inner.get("outputs")
-  ```
-
-## API 端点
-
-### `POST /api/orchestration/chatflow/start`
-- **请求**: `{ "query": "我要生成教学大纲" }`
-- **响应**: `{ "execution_id", "conversation_id", "answer", "completed" }`
-- **说明**: 创建新执行实例，发起第一轮对话
-
-### `POST /api/orchestration/chatflow/continue`
-- **请求**: `{ "execution_id": "...", "query": "课程名称是数据结构" }`
-- **响应**: `{ "answer", "completed", "final_result?" }`
-- **说明**: 继续已有对话，`completed=true` 表示检测到完成
-- **错误**: 409 (already completed), 500 (not found), 404 (wrong status)
-
-### `GET /api/orchestration/stream/{execution_id}`
-- **说明**: SSE 流式推送 w1/w2 结果
-- **重要**: 所有事件使用 `event: message`（确保 `EventSource.onmessage` 兼容）
-- **心跳**: 30 秒超时发送 `{"type": "heartbeat", "status": "still_running"}`
-
-### `GET /api/orchestration/result/{execution_id}`
-- **说明**: 获取已完成的执行结果（断线重连）
-- **返回**: chatflow_result + workflows 结果
-
-## SSE 事件协议
-
-**关键约定**: 所有 SSE 事件使用 `event: message`，类型信息放在 data 的 `type` 字段。
-
-```javascript
-// EventSource 只能通过 onmessage 接收 event: message
-const es = new EventSource(url);
-es.onmessage = (msg) => {
-  const event = JSON.parse(msg.data);
-  switch (event.type) {
-    case 'chatflow_turn':      // 每轮 Chatflow 回复
-    case 'chatflow_completed': // Chatflow 结束
-    case 'workflow_result':    // w1/w2 完成
-    case 'heartbeat':          // 存活心跳（30s）
-    case 'complete':           // 全部完成
-    case 'error':              // 错误
-  }
-};
-```
-
-| type | 时机 | data |
-|------|------|------|
-| `chatflow_turn` | 每轮对话后 | `{conversation_id, answer, turn_index}` |
-| `chatflow_completed` | Chatflow 结束 | `{final_result}` |
-| `workflow_result` | w1/w2 完成 | `{workflow, status, result, error, retry_count, all_completed}` |
-| `heartbeat` | 30s 无事件 | `{status: "still_running"}` |
-| `complete` | 全部完成 | `{status: "all_completed"}` |
-| `error` | 出错 | `{error}` |
-
-## 完成检测策略
-
-在 `is_chatflow_completed(answer)` 中实现，按优先级检测：
-
-### 策略 1: JSON 提取
-1. 去除 markdown 代码块包裹（` ```json `）
-2. 从文本中提取第一个 `{` 到最后一个 `}` 的内容
-3. `json.loads()` 解析
-4. 检查 `data["type"] in ("teaching_syllabus", "teaching_plan", "teaching_calendar")`
-
-### 策略 2: Markdown 标题结构检测（降级）
-当 LLM 未按 JSON 格式输出时，在整个文本中搜索标题模式：
+系统运行的状态存储在 `OrchestrationState` 中。因为系统设计为**单轮无 Checkpoint**，因此每一轮对话在进入图谱前，都会从数据库加载关联的历史记录来完整初始化该状态。
 
 ```python
-_DOC_HEADING_PATTERNS = [
-    (r'#\s*《[^》]*》\s*(?:课程)?教学大纲', 'teaching_syllabus'),
-    (r'#\s*《[^》]*》\s*教学教案',            'teaching_plan'),
-    (r'#\s*《[^》]*》\s*教案',               'teaching_plan'),
-    (r'#\s*《[^》]*》\s*(?:课程)?教学日历',   'teaching_calendar'),
-    (r'#\s*第\d+次课.*教案',                 'teaching_plan'),
-]
+class OrchestrationState(TypedDict, total=False):
+    # 输入参数
+    user_id: str
+    session_id: str
+    query: str
+
+    # 会话历史消息（通过 LangGraph 的 add_messages 进行追加合并）
+    messages: Annotated[list[BaseMessage], add_messages]
+
+    # 从数据库中预加载的业务数据上下文
+    profile: Optional[dict]                  # 用户画像数据
+    learning_path_intake: Optional[dict]     # 学习路径意见收集状态
+    year_learning_paths: Optional[dict]      # 按年学习路径：{ "year_1": ..., "year_2": ... }
+    course_knowledge: Optional[dict]         # 最近生成的课程大纲/知识大纲
+    course_knowledges: Optional[list[dict]]  # 全量课程大纲列表
+
+    # 本轮运行期间各智能体的结构化输出
+    response: Optional[str]                  # Supervisor 给用户的文本回复
+    grade_year: Optional[str]                # 正在处理的目标学年 (如 year_1)
+    latest_grade_year: Optional[str]         # 用户的最新活跃学年
+    course_resource_plan: Optional[dict]     # 课程资源（文档/视频/动画）的生成计划
+    course_resource_result: Optional[dict]   # 课程资源生成的结果
 ```
 
-**重要**: 必须在**整个文本**中搜索（不是仅第一行），因为 LLM 可能在标题前添加介绍段落。
+---
 
-### `_extract_json` 兼容性
-```python
-# 兼容场景:
-"{'text':..., 'type':'...'}"         # 纯 JSON
-"```json\n{'text':...}\n```"          # Markdown 代码块包裹
-"好的，已生成：\n{'text':..., 'type':'...'}"  # 前后有文本
-"{'text': '含 { 和 } 的内容', ...}"   # 嵌套大括号
+## 3. 图谱拓扑结构与路由逻辑
+
+图谱的节点注册在 `backend/app/orchestration/graph.py` 中。
+
+### 3.1 节点列表
+1. **`supervisor`**：决策中枢，分析用户当前对话阶段和输入，选择调用哪一个 Worker 或是直接给用户文本答复。
+2. **`profile_agent`**：破冰阶段，通过与用户的多轮问答补充画像数据。
+3. **`learning_path_intake_agent`**：在画像生成后，与用户确认期望重点学习哪些课程方向，生成草案结构。
+4. **`learning_path_agent`**：当草案确认后，由该智能体规划生成完整的 4 年课程节点及按学年分布的学习路径。
+5. **`course_knowledge_agent`**：当用户点亮某一课程并进入精读时，该智能体负责划分该课程的章节大纲以及对应知识点 ID。
+6. **`section_markdown_agent`**：为特定课程章节生成详细的文本和核心要点 Markdown。
+7. **`section_video_search_agent`**：联网搜索匹配该章节内容的视频学习资源。
+8. **`section_html_animation_agent`**：为该章节的抽象概念（如物理、算法）实时编写带控制交互的纯 HTML/JS 动画卡片代码。
+
+### 3.2 路由规则
+图谱的控制流主要依赖两个路由函数：
+
+* **中枢后路由 (`route_after_supervisor`)**：
+  * 分析 `supervisor` 节点的最近一条输出消息是否包含 Tool Call。
+  * 如果包含，则直接跳转至对应的 Worker Agent 节点。
+  * 如果不包含（表示 Supervisor 选择直接解答用户或已结束任务），则跳转至 `END`。
+
+* **Worker 后路由 (`route_after_worker`)**：
+  * **画像到路径**：当 `profile_agent` 刚收集满用户画像字段后，通过 `should_auto_continue_learning_path_after_profile` 自动跳回 `supervisor`，以此触发路径推荐。
+  * **草案确认**：当 `learning_path_intake_agent` 完成收集并标记状态为 `confirmed` 时，跳回 `supervisor` 以自动触发完整的按年路径生成（`learning_path_agent`）。
+  * **大纲资源生成链**：当 `course_knowledge_agent` 生成完章节后，如果该查询是资源生成指令，会跳转到 Supervisor，接着通过 conditional edge 顺次流转给 `section_markdown_agent` ➡️ `section_video_search_agent` ➡️ `section_html_animation_agent`，最终组装完成后跳转至 `END`。
+
+---
+
+## 4. SSE (Server-Sent Events) 事件协议
+
+后端通过 FastAPI 的 `StreamingResponse` 建立 SSE 连接，以前端可直接捕获的事件格式实时推送执行细节。
+
+### 4.1 SSE 消息格式
+后端主要统一使用 `event: message` 的事件推送通道（为保持前端标准 `EventSource` 的跨端兼容），而具体事件的区分放在 data payload 中的 `type` 字段：
+
+```text
+event: message
+data: {
+  "type": "supervisor_thinking",
+  "text": "规划中：我需要首先为您构建个人画像..."
+}
 ```
 
-## 配置文件
+### 4.2 常见事件类型定义
 
-### `.env`
-```
-DIFY_API_KEY=app-xxx                          # Chatflow 入口 API Key
-DIFY_API_URL=http://localhost/v1
-DIFY_WF_DOCGEN_API_KEY=app-yyy                # Workflow1（文档生成）
-DIFY_WF_SEARCH_API_KEY=app-zzz                # Workflow2（联网检索）
-```
+| 事件 (type) | 数据负载 (payload) 关键字段 | 说明 |
+| :--- | :--- | :--- |
+| `session_started` | `{ "session_id": "uuid" }` | SSE 通道已成功建立且会话启动 |
+| `supervisor_thinking` | `{ "text": "思考字符串" }` | Supervisor 的中间思考与状态决策 |
+| `agent_calling` | `{ "agent": "profile_agent", "label": "画像智能体" }` | 即将调用哪一个 Worker 节点 |
+| `agent_progress` | `{ "agent": "...", "status": "running", "message": "正在生成..." }` | Worker 执行过程 of 流式进度更新 |
+| `agent_result` | `{ "agent": "...", "success": true, "output_key": "..." }` | Worker 执行完毕并向 State 写入了对应输出 |
+| `data_update` | `{ "profile?": ..., "year_paths?": ... }` | 告诉前端 State 中的数据已被更新，需同步至状态机 |
+| `text_chunk` | `{ "chunk": "流式文本内容" }` | 最终回复给用户的文本流式输出 |
+| `message_completed` | `{ "message": "本轮对话处理完毕" }` | 本轮会话完成，消息已被写入 ConversationSession 归档 |
+| `session_completed` | `{ "session_id": "uuid" }` | SSE 通道即将关闭 |
+| `error` | `{ "message": "错误原因" }` | 系统内部故障或 LLM 抛出异常 |
 
-### `config/chatflow_orchestration.yaml`
-```yaml
-agents:
-  chatflow:  # Chatflow 入口 - type 为 chatflow
-    type: "chatflow"
-    app_id: "chatflow"
-    api_key: "${DIFY_API_KEY}"
+---
 
-  workflow1:  # 文档生成 - type 为 workflow，输入字段 u_in
-    type: "workflow"
-    app_id: "workflow1"
-    api_key: "${DIFY_WF_DOCGEN_API_KEY}"
+## 5. 状态同步与持久化细节
 
-  workflow2:  # 联网检索 - type 为 workflow，输入字段 u_in
-    type: "workflow"
-    app_id: "workflow2"
-    api_key: "${DIFY_WF_SEARCH_API_KEY}"
-```
-
-## 前端组件
-
-### Zustand Store: `orchestrationStore.ts`
-- **状态字段**: `phase`, `messages`, `executionId`, `conversationId`, `workflowResults`, `error`, `isPending`
-- **关键逻辑**:
-  - `isPending` 控制输入框禁用状态（API 调用期间为 true，返回后为 false）
-  - `phase === 'generating'` 时显示 workflow 卡片
-  - SSE 连接在 `startChatflow` 成功后自动创建
-  - `completed=true` 时关闭 SSE（不等待 w1/w2 全部完成）
-
-### API 客户端: `orchestration.ts`
-- `startChatflow(query)` → `POST /chatflow/start`
-- `continueChatflow(executionId, query)` → `POST /chatflow/continue`
-- `connectSse(executionId, onEvent, onError)` → `EventSource /stream/{id}`
-
-### 组件: `App.tsx`
-- 欢迎页面（3 个建议按钮）
-- 聊天区域（ChatMessage + 打字指示器 + workflow cards + 完成/错误横幅）
-- 输入区域（ChatInput 组件）
-- 自动滚动 `useEffect` + `scrollIntoView`
-
-## 关键陷阱修复
-
-| 问题 | 表现 | 修复 |
-|------|------|------|
-| `httpx.Client` 非线程安全 | 多线程竞争导致连接异常 | 每次 `_call_chatflow_turn` 新建 `DifyClient` 实例 |
-| SSE event type 不匹配 | `EventSource.onmessage` 只接收 `event: message` | 所有事件使用 `event: message`，type 放 data 里 |
-| Workflow API 响应嵌套层级错误 | outputs 始终为 None | `normalizer` 访问 `data.get("data", {}).get("outputs")` |
-| LLM 未按 JSON 格式输出 | `is_chatflow_completed` 永远返回 False | 增加 Markdown 标题结构检测 |
-| 标题前有介绍段落 | 第一行匹配不到标题 | 全文搜索，非仅第一行 |
-| `str(dict)` 得到 Python repr | workflow 输入变成 `{'text': '...'}` 非 JSON | 使用 `chatflow_result.get("text", ...)` 直接传字符串 |
-
-## 自定义适配指南
-
-要在新项目中使用此架构，需要修改：
-
-1. `_CHATFLOW_COMPLETION_TYPES` — 设置为自己的完成类型
-2. `_DOC_HEADING_PATTERNS` — 匹配自己的文档标题格式
-3. `_call_workflow` 中的 `u_in` — 改为 Dify Workflow 实际需要的输入字段名
-4. 前端 `orchestrationStore.ts` 中的 SSE 事件处理逻辑
-5. 前端 `App.tsx` 中的 UI 文案和样式
-
-## 文件清单
-
-```
-backend/
-├── .env                                           # API Keys
-├── config/chatflow_orchestration.yaml              # Agent 配置
-└── src/
-    ├── agents/
-    │   ├── base.py                                 # AgentConfig, AgentResult
-    │   └── dify_agent.py                           # DifyAgent 调用封装
-    ├── dify/
-    │   ├── client.py                               # Dify HTTP 客户端
-    │   ├── response_normalizer.py                  # 响应标准化（已修复嵌套）
-    │   └── types.py                                # DifyAppType 枚举
-    ├── api/routes/orchestration.py                 # FastAPI 路由
-    └── orchestration/
-        ├── __init__.py                             # 导出声明
-        ├── execution_registry.py                   # 执行状态 + SSE 队列
-        ├── chatflow_conversation.py                # 多轮对话编排器
-        └── workflow_executor.py                    # w1/w2 并行执行器
-
-frontend/
-└── src/
-    ├── api/orchestration.ts                        # 后端 API 客户端
-    ├── store/orchestrationStore.ts                 # Zustand 状态管理
-    ├── App.tsx                                     # 主 UI 组件
-    └── components/
-        ├── ChatInput.tsx                           # 输入框组件
-        └── ChatMessage.tsx                         # 消息气泡组件
-```
+虽然 LangGraph 在图的节点间流动状态，但在 FastAPI 响应的最后阶段，系统会进行持久化以确保状态安全：
+* 每一轮 Supervisor 或 Worker 执行对画像、按年级路径、课程大纲造成的修改，在单轮 Graph 执行结束后，会通过各自的 ORM 服务保存回 PostgreSQL。
+* **消息历史**：用户的提问与 LLM 生成的 `text_chunk` 文本在单轮结束后会被包装为 `BaseMessage` 结构并整体追加持久化到 `ConversationSession`（存储在 SQLite/Postgre 的 JSONB 中），避免由于无 checkpoint 而遗忘历史对话。
