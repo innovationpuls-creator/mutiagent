@@ -80,7 +80,9 @@ def _year_path(theme: str, grade_id: str = "year_3") -> dict:
                         "learning_sequence": ["需求拆解", "接口接入", "最小闭环演示"],
                         "knowledge_relations": [],
                         "downstream_resource_direction_ids": [],
-                        "acceptance_criteria": ["完成一个可运行的 AI 功能模块并接入 Web 应用"],
+                        "acceptance_criteria": [
+                            "完成一个可运行的 AI 功能模块并接入 Web 应用"
+                        ],
                     }
                 ],
             }
@@ -217,7 +219,9 @@ def _multi_year_path() -> dict:
 
 
 def test_learning_path_me_requires_auth(tmp_path: Path) -> None:
-    client = TestClient(create_app(database_url=f"sqlite:///{tmp_path / 'learning-path-auth.db'}"))
+    client = TestClient(
+        create_app(database_url=f"sqlite:///{tmp_path / 'learning-path-auth.db'}")
+    )
 
     response = client.get("/api/learning-path/me")
 
@@ -225,23 +229,31 @@ def test_learning_path_me_requires_auth(tmp_path: Path) -> None:
 
 
 def test_learning_path_me_returns_404_before_path_generated(tmp_path: Path) -> None:
-    client = TestClient(create_app(database_url=f"sqlite:///{tmp_path / 'learning-path-empty.db'}"))
+    client = TestClient(
+        create_app(database_url=f"sqlite:///{tmp_path / 'learning-path-empty.db'}")
+    )
     token, _ = _register(client, "learning-path-empty@example.com")
 
-    response = client.get("/api/learning-path/me", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/learning-path/me", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 404
     assert response.json()["detail"] == "还没有生成学习路径"
 
 
-def test_learning_path_me_returns_year_learning_paths_and_latest_updated_at(tmp_path: Path) -> None:
+def test_learning_path_me_returns_year_learning_paths_and_latest_updated_at(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'learning-path-saved.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "learning-path-saved@example.com")
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
     with Session(engine) as session:
-        user = session.exec(select(User).where(User.identifier == "learning-path-saved@example.com")).one()
+        user = session.exec(
+            select(User).where(User.identifier == "learning-path-saved@example.com")
+        ).one()
         session.add(
             UserYearLearningPath(
                 user_uid=user.uid,
@@ -270,24 +282,43 @@ def test_learning_path_me_returns_year_learning_paths_and_latest_updated_at(tmp_
         session.add(earlier)
         session.commit()
 
-    response = client.get("/api/learning-path/me", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/learning-path/me", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["year_learning_paths"]["year_2"]["schema_version"] == "learning_path.v2.course_node"
-    assert body["year_learning_paths"]["year_3"]["current_learning_course"]["course_or_chapter_theme"] == "AI 项目实战"
-    assert body["year_learning_paths"]["year_3"]["current_learning_courses"][0]["course_node_id"] == "year_3_course_1"
+    assert (
+        body["year_learning_paths"]["year_2"]["schema_version"]
+        == "learning_path.v2.course_node"
+    )
+    assert (
+        body["year_learning_paths"]["year_3"]["current_learning_course"][
+            "course_or_chapter_theme"
+        ]
+        == "AI 项目实战"
+    )
+    assert (
+        body["year_learning_paths"]["year_3"]["current_learning_courses"][0][
+            "course_node_id"
+        ]
+        == "year_3_course_1"
+    )
     assert body["updated_at"].startswith("2026-06-05")
 
 
-def test_learning_path_me_expands_multi_grade_plan_from_single_saved_row(tmp_path: Path) -> None:
+def test_learning_path_me_expands_multi_grade_plan_from_single_saved_row(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'learning-path-expanded.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "learning-path-expanded@example.com")
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
     with Session(engine) as session:
-        user = session.exec(select(User).where(User.identifier == "learning-path-expanded@example.com")).one()
+        user = session.exec(
+            select(User).where(User.identifier == "learning-path-expanded@example.com")
+        ).one()
         session.add(
             UserYearLearningPath(
                 user_uid=user.uid,
@@ -298,24 +329,44 @@ def test_learning_path_me_expands_multi_grade_plan_from_single_saved_row(tmp_pat
         )
         session.commit()
 
-    response = client.get("/api/learning-path/me", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/learning-path/me", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
     assert set(body["year_learning_paths"]) == {"year_1", "year_2", "year_3", "year_4"}
-    assert body["year_learning_paths"]["year_1"]["grade_plans"]["year_1"]["course_nodes"][0]["course_node_id"] == "year_1_course_1"
-    assert body["year_learning_paths"]["year_4"]["grade_plans"]["year_4"]["course_nodes"][0]["course_node_id"] == "year_4_course_1"
+    assert (
+        body["year_learning_paths"]["year_1"]["grade_plans"]["year_1"]["course_nodes"][
+            0
+        ]["course_node_id"]
+        == "year_1_course_1"
+    )
+    assert (
+        body["year_learning_paths"]["year_4"]["grade_plans"]["year_4"]["course_nodes"][
+            0
+        ]["course_node_id"]
+        == "year_4_course_1"
+    )
 
 
-def test_upsert_year_learning_path_clears_chapter_progress_when_course_identity_changes(tmp_path: Path) -> None:
+def test_upsert_year_learning_path_clears_chapter_progress_when_course_identity_changes(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'learning-path-progress-reset.db'}"
     client = TestClient(create_app(database_url=database_url))
     _token, _ = _register(client, "learning-path-progress-reset@example.com")
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
     with Session(engine) as session:
-        user = session.exec(select(User).where(User.identifier == "learning-path-progress-reset@example.com")).one()
-        upsert_year_learning_path(session, user.uid, "year_3", "AI 项目", _year_path("旧课程"))
+        user = session.exec(
+            select(User).where(
+                User.identifier == "learning-path-progress-reset@example.com"
+            )
+        ).one()
+        upsert_year_learning_path(
+            session, user.uid, "year_3", "AI 项目", _year_path("旧课程")
+        )
         session.add(
             ChapterProgress(
                 user_uid=user.uid,
@@ -327,7 +378,9 @@ def test_upsert_year_learning_path_clears_chapter_progress_when_course_identity_
         )
         session.commit()
 
-        upsert_year_learning_path(session, user.uid, "year_3", "AI 项目", _year_path("新课程"))
+        upsert_year_learning_path(
+            session, user.uid, "year_3", "AI 项目", _year_path("新课程")
+        )
 
         progress = session.get(ChapterProgress, (user.uid, "year_3_course_1", "1"))
 

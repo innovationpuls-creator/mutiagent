@@ -4,14 +4,16 @@ from datetime import datetime, timezone
 
 from sqlalchemy import Column, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlmodel import Field, SQLModel
+from sqlalchemy.types import JSON as SAJSON
 
 # Use JSONB for PostgreSQL, fall back to JSON for SQLite/test environments
-from sqlalchemy.types import TypeDecorator, JSON as SAJSON
+from sqlalchemy.types import TypeDecorator
+from sqlmodel import Field, SQLModel
 
 
 class _JSONBOrJSON(TypeDecorator):
     """Use JSONB on PostgreSQL, plain JSON on SQLite."""
+
     impl = SAJSON
     cache_ok = True
 
@@ -42,8 +44,11 @@ class User(SQLModel, table=True):
 
 class CultivationProgram(SQLModel, table=True):
     """Published human cultivation program for one school/major/class scope."""
+
     __table_args__ = (
-        UniqueConstraint("school", "major", "class_name", name="uq_cultivation_program_cohort"),
+        UniqueConstraint(
+            "school", "major", "class_name", name="uq_cultivation_program_cohort"
+        ),
         Index("idx_cultivation_program_teacher", "teacher_uid"),
         Index("idx_cultivation_program_cohort", "school", "major", "class_name"),
     )
@@ -69,6 +74,7 @@ class UserProfile(SQLModel, table=True):
 
 class UserYearLearningPath(SQLModel, table=True):
     """每个用户每年一条记录，按年存储学习路径（简版 Schema）。"""
+
     __table_args__ = (
         Index("idx_year_learning_path_updated", "user_uid", "updated_at"),
     )
@@ -82,6 +88,7 @@ class UserYearLearningPath(SQLModel, table=True):
 
 class UserCourseKnowledgeOutline(SQLModel, table=True):
     """课程大纲（详版 Schema），按课程节点存储。"""
+
     __table_args__ = (
         Index("idx_course_knowledge_user_grade", "user_uid", "grade_year"),
     )
@@ -96,8 +103,11 @@ class UserCourseKnowledgeOutline(SQLModel, table=True):
 
 class ChapterQuiz(SQLModel, table=True):
     """Generated quiz for one user/course/chapter."""
+
     __table_args__ = (
-        UniqueConstraint("user_uid", "course_node_id", "chapter_id", name="uq_chapter_quiz_scope"),
+        UniqueConstraint(
+            "user_uid", "course_node_id", "chapter_id", name="uq_chapter_quiz_scope"
+        ),
         Index("idx_chapter_quiz_user_course", "user_uid", "course_node_id"),
     )
 
@@ -115,6 +125,7 @@ class ChapterQuiz(SQLModel, table=True):
 
 class ChapterQuizAttempt(SQLModel, table=True):
     """Submitted answer set and grading result for a quiz."""
+
     __table_args__ = (
         Index("idx_chapter_quiz_attempt_user_quiz", "user_uid", "quiz_id"),
     )
@@ -131,6 +142,7 @@ class ChapterQuizAttempt(SQLModel, table=True):
 
 class ChapterProgress(SQLModel, table=True):
     """Unlock state for one user/course/chapter."""
+
     __table_args__ = (
         Index("idx_chapter_progress_user_course", "user_uid", "course_node_id"),
     )
@@ -147,6 +159,7 @@ class ChapterProgress(SQLModel, table=True):
 
 class ChapterWeakness(SQLModel, table=True):
     """薄弱知识点记录，由测验表现分析产生。"""
+
     __table_args__ = (
         Index("idx_chapter_weakness_user_course", "user_uid", "course_node_id"),
         Index("idx_chapter_weakness_consumed", "user_uid", "consumed"),
@@ -165,6 +178,7 @@ class ChapterWeakness(SQLModel, table=True):
 
 class CourseResourceQuality(SQLModel, table=True):
     """Automated quality scores for generated course resources."""
+
     __table_args__ = (
         Index("idx_resource_quality_user_course", "user_uid", "course_node_id"),
     )
@@ -183,9 +197,8 @@ class CourseResourceQuality(SQLModel, table=True):
 
 class ConversationSession(SQLModel, table=True):
     """持久化会话消息，替代 LangGraph MemorySaver。"""
-    __table_args__ = (
-        Index("idx_conversation_user_time", "user_uid", "updated_at"),
-    )
+
+    __table_args__ = (Index("idx_conversation_user_time", "user_uid", "updated_at"),)
     session_id: str = Field(primary_key=True)
     user_uid: str = Field(foreign_key="user.uid", index=True)
     messages: list = Field(default_factory=list, sa_column=Column(_jsonb))

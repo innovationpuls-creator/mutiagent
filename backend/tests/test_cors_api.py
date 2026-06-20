@@ -23,4 +23,3 @@ def test_cors_preflight_allows_public_https_origin(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "https://app.example.com"
-

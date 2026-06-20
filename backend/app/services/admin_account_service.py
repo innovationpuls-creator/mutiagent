@@ -14,8 +14,8 @@ from app.models import (
     ChapterQuiz,
     ChapterQuizAttempt,
     ChapterWeakness,
-    CourseResourceQuality,
     ConversationSession,
+    CourseResourceQuality,
     CultivationProgram,
     User,
     UserCourseKnowledgeOutline,
@@ -32,7 +32,16 @@ from app.schemas import (
 )
 from app.services.auth_service import find_user, to_user_read
 
-CSV_FIELDS = ["username", "identifier", "password", "role", "is_active", "school", "major", "class_name"]
+CSV_FIELDS = [
+    "username",
+    "identifier",
+    "password",
+    "role",
+    "is_active",
+    "school",
+    "major",
+    "class_name",
+]
 VALID_ROLES = {"student", "teacher", "admin"}
 
 
@@ -69,7 +78,12 @@ def create_account(session: Session, payload: AdminAccountCreateRequest) -> User
     return to_user_read(user)
 
 
-def update_account(session: Session, uid: str, payload: AdminAccountUpdateRequest, current_user: User | None = None) -> UserRead:
+def update_account(
+    session: Session,
+    uid: str,
+    payload: AdminAccountUpdateRequest,
+    current_user: User | None = None,
+) -> UserRead:
     user = session.get(User, uid)
     if user is None:
         raise HTTPException(
@@ -103,7 +117,9 @@ def update_account(session: Session, uid: str, payload: AdminAccountUpdateReques
     return to_user_read(user)
 
 
-def delete_account(session: Session, uid: str, current_user: User | None = None) -> None:
+def delete_account(
+    session: Session, uid: str, current_user: User | None = None
+) -> None:
     user = session.get(User, uid)
     if user is None:
         raise HTTPException(
@@ -120,7 +136,9 @@ def delete_account(session: Session, uid: str, current_user: User | None = None)
     session.commit()
 
 
-def batch_accounts(session: Session, payload: AdminAccountBatchRequest, current_user: User) -> list[UserRead]:
+def batch_accounts(
+    session: Session, payload: AdminAccountBatchRequest, current_user: User
+) -> list[UserRead]:
     users = session.exec(select(User).where(User.uid.in_(payload.uids))).all()
     found_uids = {user.uid for user in users}
     missing_uids = [uid for uid in payload.uids if uid not in found_uids]
@@ -147,7 +165,9 @@ def batch_accounts(session: Session, payload: AdminAccountBatchRequest, current_
 
     now = datetime.now(timezone.utc)
     for user in users:
-        next_role = payload.role if payload.action == "set_role" and payload.role else user.role
+        next_role = (
+            payload.role if payload.action == "set_role" and payload.role else user.role
+        )
         next_active = user.is_active
         if payload.action == "activate":
             next_active = True
@@ -162,7 +182,9 @@ def batch_accounts(session: Session, payload: AdminAccountBatchRequest, current_
     return list_accounts(session)
 
 
-def import_accounts(session: Session, csv_text: str, current_user: User) -> AdminAccountImportResponse:
+def import_accounts(
+    session: Session, csv_text: str, current_user: User
+) -> AdminAccountImportResponse:
     reader = csv.DictReader(io.StringIO(csv_text))
     if reader.fieldnames != CSV_FIELDS:
         return AdminAccountImportResponse(
@@ -270,7 +292,9 @@ def _delete_user_owned_rows(session: Session, uid: str) -> None:
 
 def delete_user_learning_data(session: Session, uid: str) -> None:
     # Delete ChapterQuizAttempt first (depends on ChapterQuiz via FK), then flush
-    rows = session.exec(select(ChapterQuizAttempt).where(ChapterQuizAttempt.user_uid == uid)).all()
+    rows = session.exec(
+        select(ChapterQuizAttempt).where(ChapterQuizAttempt.user_uid == uid)
+    ).all()
     for row in rows:
         session.delete(row)
     session.flush()
@@ -288,12 +312,16 @@ def delete_user_learning_data(session: Session, uid: str) -> None:
         for row in rows:
             session.delete(row)
 
-    programs = session.exec(select(CultivationProgram).where(CultivationProgram.teacher_uid == uid)).all()
+    programs = session.exec(
+        select(CultivationProgram).where(CultivationProgram.teacher_uid == uid)
+    ).all()
     for program in programs:
         session.delete(program)
 
 
-def _ensure_not_self_lockout(user: User, current_user: User | None, role: str, is_active: bool) -> None:
+def _ensure_not_self_lockout(
+    user: User, current_user: User | None, role: str, is_active: bool
+) -> None:
     if not current_user or user.uid != current_user.uid:
         return
     if role != "admin":

@@ -31,7 +31,9 @@ def migrate_removed_learning_path_table(engine: Engine) -> None:
         return
 
     with Session(engine) as session:
-        rows = session.exec(text("SELECT user_uid, path_data FROM userlearningpath")).all()
+        rows = session.exec(
+            text("SELECT user_uid, path_data FROM userlearningpath")
+        ).all()
         for user_uid, path_data in rows:
             if isinstance(path_data, str):
                 path_data = json.loads(path_data)
@@ -57,7 +59,11 @@ def _upgrade_user_role_column(connection: Any) -> None:
     if "role" in columns:
         return
 
-    connection.execute(text('ALTER TABLE "user" ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT \'student\''))
+    connection.execute(
+        text(
+            "ALTER TABLE \"user\" ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'student'"
+        )
+    )
     connection.execute(text('CREATE INDEX IF NOT EXISTS ix_user_role ON "user" (role)'))
 
 
@@ -69,8 +75,16 @@ def _upgrade_user_cohort_columns(connection: Any) -> None:
     columns = {column["name"] for column in inspector.get_columns("user")}
     for column_name in ("school", "major", "class_name"):
         if column_name not in columns:
-            connection.execute(text(f'ALTER TABLE "user" ADD COLUMN {column_name} VARCHAR(128) NOT NULL DEFAULT \'\''))
-            connection.execute(text(f'CREATE INDEX IF NOT EXISTS ix_user_{column_name} ON "user" ({column_name})'))
+            connection.execute(
+                text(
+                    f"ALTER TABLE \"user\" ADD COLUMN {column_name} VARCHAR(128) NOT NULL DEFAULT ''"
+                )
+            )
+            connection.execute(
+                text(
+                    f'CREATE INDEX IF NOT EXISTS ix_user_{column_name} ON "user" ({column_name})'
+                )
+            )
 
 
 def _upgrade_profile_json_storage(connection: Any) -> None:
@@ -80,7 +94,9 @@ def _upgrade_profile_json_storage(connection: Any) -> None:
     if not inspector.has_table("userprofile"):
         return
     connection.execute(
-        text("ALTER TABLE userprofile ALTER COLUMN profile_data TYPE JSONB USING profile_data::jsonb")
+        text(
+            "ALTER TABLE userprofile ALTER COLUMN profile_data TYPE JSONB USING profile_data::jsonb"
+        )
     )
 
 
@@ -89,12 +105,17 @@ def _upgrade_course_knowledge_outline_table(connection: Any) -> None:
     if not inspector.has_table("usercourseknowledgeoutline"):
         return
 
-    columns = {column["name"] for column in inspector.get_columns("usercourseknowledgeoutline")}
+    columns = {
+        column["name"] for column in inspector.get_columns("usercourseknowledgeoutline")
+    }
     needs_rebuild = not {"course_id", "grade_year"}.issubset(columns)
     if connection.dialect.name == "postgresql":
         outline_type = next(
-            (str(column["type"]).lower() for column in inspector.get_columns("usercourseknowledgeoutline")
-             if column["name"] == "outline_data"),
+            (
+                str(column["type"]).lower()
+                for column in inspector.get_columns("usercourseknowledgeoutline")
+                if column["name"] == "outline_data"
+            ),
             "",
         )
         needs_rebuild = needs_rebuild or outline_type != "jsonb"
@@ -104,7 +125,9 @@ def _upgrade_course_knowledge_outline_table(connection: Any) -> None:
 
     legacy_table = "usercourseknowledgeoutline_legacy_upgrade"
     connection.execute(text(f"DROP TABLE IF EXISTS {legacy_table}"))
-    connection.execute(text(f"ALTER TABLE usercourseknowledgeoutline RENAME TO {legacy_table}"))
+    connection.execute(
+        text(f"ALTER TABLE usercourseknowledgeoutline RENAME TO {legacy_table}")
+    )
     _create_course_knowledge_outline_table(connection)
     _copy_course_knowledge_outline_rows(connection, legacy_table)
     connection.execute(text(f"DROP TABLE IF EXISTS {legacy_table}"))
@@ -149,7 +172,11 @@ def _copy_course_knowledge_outline_rows(connection: Any, legacy_table: str) -> N
 
     course_expr = "course_id" if "course_id" in columns else "course_node_id"
     grade_expr = "grade_year" if "grade_year" in columns else "grade_id"
-    outline_expr = "outline_data::jsonb" if connection.dialect.name == "postgresql" else "outline_data"
+    outline_expr = (
+        "outline_data::jsonb"
+        if connection.dialect.name == "postgresql"
+        else "outline_data"
+    )
 
     connection.execute(
         text(
@@ -173,7 +200,9 @@ def _copy_course_knowledge_outline_rows(connection: Any, legacy_table: str) -> N
     )
 
 
-def _migrate_legacy_path_row(session: Session, user_uid: str, path_data: dict[str, Any]) -> None:
+def _migrate_legacy_path_row(
+    session: Session, user_uid: str, path_data: dict[str, Any]
+) -> None:
     grade_plans = path_data.get("grade_plans")
     if not isinstance(grade_plans, dict):
         return
@@ -212,7 +241,9 @@ def _migrate_legacy_path_row(session: Session, user_uid: str, path_data: dict[st
         session.add(row)
 
 
-def _build_year_path_from_legacy_grade(grade_year: str, grade_plan: dict[str, Any]) -> dict[str, Any]:
+def _build_year_path_from_legacy_grade(
+    grade_year: str, grade_plan: dict[str, Any]
+) -> dict[str, Any]:
     courses = []
     sequence = []
     course_nodes = grade_plan.get("course_nodes")
@@ -255,7 +286,9 @@ def _build_year_path_from_legacy_grade(grade_year: str, grade_plan: dict[str, An
 
 def _legacy_key_topics(course_node: dict[str, Any]) -> list[str]:
     key_points = course_node.get("key_points")
-    if isinstance(key_points, list) and all(isinstance(item, str) for item in key_points):
+    if isinstance(key_points, list) and all(
+        isinstance(item, str) for item in key_points
+    ):
         return key_points
 
     knowledge_points = course_node.get("core_knowledge_points")

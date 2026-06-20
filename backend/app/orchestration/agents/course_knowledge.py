@@ -9,12 +9,15 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 
-from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.agents.models import (
     CourseKnowledgeOutput,
 )
+from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.agents.prompts import COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
-from app.orchestration.agents.utils import extract_last_tool_call_args, extract_last_tool_call_id
+from app.orchestration.agents.utils import (
+    extract_last_tool_call_args,
+    extract_last_tool_call_id,
+)
 from app.orchestration.state import OrchestrationState
 from app.services.learning_path_service import iter_year_learning_paths
 
@@ -24,11 +27,17 @@ SINGLE_COURSE_OUTLINE_TIMEOUT_SECONDS = 180.0
 YEAR_COURSE_OUTLINE_TIMEOUT_SECONDS = 360.0
 COURSE_KNOWLEDGE_RETRY_ERROR = "课程大纲生成失败，请稍后重试。"
 ALL_CURRENT_GRADE_COURSES_ID = "__all_current_grade__"
-_JSON_CODE_BLOCK_PATTERN = re.compile(r"```(?:json)?\s*(?P<body>.*?)```", re.DOTALL | re.IGNORECASE)
+_JSON_CODE_BLOCK_PATTERN = re.compile(
+    r"```(?:json)?\s*(?P<body>.*?)```", re.DOTALL | re.IGNORECASE
+)
 
 
 def _normalized_course_match_text(value: object) -> str:
-    return re.sub(r"[\s《》“”\"'：:，,。！？!?、；;（）()【】\[\]\-_/]+", "", str(value).strip().lower())
+    return re.sub(
+        r"[\s《》“”\"'：:，,。！？!?、；;（）()【】\[\]\-_/]+",
+        "",
+        str(value).strip().lower(),
+    )
 
 
 def _matches_course_identifier(course: dict, explicit_course_text: str) -> bool:
@@ -37,7 +46,9 @@ def _matches_course_identifier(course: dict, explicit_course_text: str) -> bool:
     course_id = _clean_text(course.get("course_node_id"))
     if course_id == explicit_course_text:
         return True
-    course_name_key = _normalized_course_match_text(course.get("course_or_chapter_theme", ""))
+    course_name_key = _normalized_course_match_text(
+        course.get("course_or_chapter_theme", "")
+    )
     explicit_key = _normalized_course_match_text(explicit_course_text)
     return bool(course_name_key and explicit_key and course_name_key == explicit_key)
 
@@ -62,7 +73,9 @@ def _select_course_for_outline(
             if not isinstance(course_nodes, list):
                 continue
             for course in course_nodes:
-                if isinstance(course, dict) and _matches_course_identifier(course, course_id):
+                if isinstance(course, dict) and _matches_course_identifier(
+                    course, course_id
+                ):
                     return course
         if explicit_course_requested:
             continue
@@ -80,7 +93,10 @@ def _select_course_for_outline(
         if not isinstance(course_nodes, list):
             continue
         for course in course_nodes:
-            if isinstance(course, dict) and course.get("course_node_id") == current_course_id:
+            if (
+                isinstance(course, dict)
+                and course.get("course_node_id") == current_course_id
+            ):
                 return course
     if explicit_course_requested:
         raise ValueError("指定课程无法定位。")
@@ -126,7 +142,7 @@ def _extract_json_payload(raw_output: object) -> dict:
         start = text.find("{")
         end = text.rfind("}")
         if start >= 0 and end > start:
-            text = text[start:end + 1]
+            text = text[start : end + 1]
 
     try:
         payload = json.loads(text)
@@ -140,10 +156,21 @@ def _extract_json_payload(raw_output: object) -> dict:
 def _strip_top_level_title_prefix(title: str) -> str:
     if not title:
         return ""
-    prefixes = ("第一章：", "第二章：", "第三章：", "第四章：", "第五章：", "第六章：", "第七章：", "第八章：", "第九章：", "第十章：")
+    prefixes = (
+        "第一章：",
+        "第二章：",
+        "第三章：",
+        "第四章：",
+        "第五章：",
+        "第六章：",
+        "第七章：",
+        "第八章：",
+        "第九章：",
+        "第十章：",
+    )
     for prefix in prefixes:
         if title.startswith(prefix):
-            return title[len(prefix):].strip()
+            return title[len(prefix) :].strip()
     return title
 
 
@@ -152,10 +179,10 @@ def _strip_subsection_id_prefix(title: str, section_id: str) -> str:
         return title
     prefix = f"{section_id} "
     if title.startswith(prefix):
-        return title[len(prefix):].strip()
+        return title[len(prefix) :].strip()
     prefix_no_space = f"{section_id}　"
     if title.startswith(prefix_no_space):
-        return title[len(prefix_no_space):].strip()
+        return title[len(prefix_no_space) :].strip()
     return title
 
 
@@ -236,7 +263,7 @@ def _is_direct_child_section_id(section_id: str, parent_id: str) -> bool:
     prefix = f"{parent_id}."
     if not section_id.startswith(prefix):
         return False
-    suffix = section_id[len(prefix):]
+    suffix = section_id[len(prefix) :]
     return _is_positive_integer_text(suffix)
 
 
@@ -304,9 +331,15 @@ def _select_grade_courses_for_outlines(
         grade_years: list[str] = []
         if latest_grade_year and latest_grade_year in grade_plans:
             grade_years.append(latest_grade_year)
-        if current_grade_id and current_grade_id in grade_plans and current_grade_id not in grade_years:
+        if (
+            current_grade_id
+            and current_grade_id in grade_plans
+            and current_grade_id not in grade_years
+        ):
             grade_years.append(current_grade_id)
-        grade_years.extend(grade_year for grade_year in grade_plans if grade_year not in grade_years)
+        grade_years.extend(
+            grade_year for grade_year in grade_plans if grade_year not in grade_years
+        )
 
         for grade_year in grade_years:
             grade_plan = grade_plans.get(grade_year)
@@ -379,7 +412,8 @@ def _normalize_generated_sections(raw_sections: object) -> list[dict]:
         raise ValueError("课程大纲缺少有效章节。")
 
     has_nested_sections = any(
-        section.get("parent_section_id") is not None and int(section.get("depth", 1)) > 1
+        section.get("parent_section_id") is not None
+        and int(section.get("depth", 1)) > 1
         for section in normalized_sections
         if isinstance(section, dict)
     )
@@ -414,8 +448,15 @@ def _normalize_generated_sections(raw_sections: object) -> list[dict]:
         children = top_level_children.get(top_level_id, [])
         if len(children) < 3:
             raise ValueError("每个一级章节至少需要三个二级小节。")
-        if not all(_is_direct_child_section_id(_clean_text(child.get("section_id")), str(top_level_id)) for child in children):
-            raise ValueError("二级小节 section_id 必须使用 1.1、1.2、1.3 这种编号并归属对应一级章节。")
+        if not all(
+            _is_direct_child_section_id(
+                _clean_text(child.get("section_id")), str(top_level_id)
+            )
+            for child in children
+        ):
+            raise ValueError(
+                "二级小节 section_id 必须使用 1.1、1.2、1.3 这种编号并归属对应一级章节。"
+            )
 
     return normalized_sections
 
@@ -424,7 +465,11 @@ def _normalize_generated_course_outline(
     selected_course: dict,
     raw_outline: object,
 ) -> dict:
-    payload = raw_outline if isinstance(raw_outline, dict) else _extract_json_payload(raw_outline)
+    payload = (
+        raw_outline
+        if isinstance(raw_outline, dict)
+        else _extract_json_payload(raw_outline)
+    )
 
     course_id = _clean_text(selected_course.get("course_node_id"))
     course_name = _clean_text(selected_course.get("course_or_chapter_theme"))
@@ -434,14 +479,20 @@ def _normalize_generated_course_outline(
         or "课程大纲已根据当前学习画像与课程顺序生成。"
     )
     sections = _normalize_generated_sections(payload.get("sections"))
-    section_ids = [section["section_id"] for section in sections if isinstance(section, dict)]
+    section_ids = [
+        section["section_id"] for section in sections if isinstance(section, dict)
+    ]
     learning_sequence = _string_list(payload.get("learning_sequence"))
-    if learning_sequence and all(section_id in section_ids for section_id in learning_sequence):
+    if learning_sequence and all(
+        section_id in section_ids for section_id in learning_sequence
+    ):
         learning_sequence = _learning_sequence_texts(sections, learning_sequence)
     elif learning_sequence:
         learning_sequence = [step for step in learning_sequence if step]
     else:
-        preferred_sequence_ids = [section_id for section_id in section_ids if "." not in section_id]
+        preferred_sequence_ids = [
+            section_id for section_id in section_ids if "." not in section_id
+        ]
         learning_sequence = _learning_sequence_texts(sections, preferred_sequence_ids)
     total_estimated_hours = _normalize_total_estimated_hours(
         payload.get("total_estimated_hours"),
@@ -464,7 +515,11 @@ def _normalize_generated_year_course_outlines(
     courses: list[dict],
     raw_output: object,
 ) -> list[dict]:
-    payload = raw_output if isinstance(raw_output, dict) else _extract_json_payload(raw_output)
+    payload = (
+        raw_output
+        if isinstance(raw_output, dict)
+        else _extract_json_payload(raw_output)
+    )
 
     raw_outlines = payload.get("course_outlines")
     if not isinstance(raw_outlines, list) or not raw_outlines:
@@ -491,15 +546,15 @@ def _normalize_generated_year_course_outlines(
         raw_outline_map[course_id] = raw_payload
 
     missing_course_ids = [
-        course_id
-        for course_id in expected_courses
-        if course_id not in raw_outline_map
+        course_id for course_id in expected_courses if course_id not in raw_outline_map
     ]
     if missing_course_ids:
         raise ValueError(f"全年课程大纲缺少课程：{', '.join(missing_course_ids)}")
 
     return [
-        _normalize_generated_course_outline(course, raw_outline_map[_clean_text(course.get("course_node_id"))])
+        _normalize_generated_course_outline(
+            course, raw_outline_map[_clean_text(course.get("course_node_id"))]
+        )
         for course in courses
     ]
 
@@ -510,9 +565,15 @@ def _course_input_payload(course: dict) -> dict:
         "course_id": _clean_text(course.get("course_node_id")),
         "course_name": _clean_text(course.get("course_or_chapter_theme")),
         "grade_year": _clean_text(course.get("grade_id")),
-        "semester_scope": _clean_text(time_arrangement.get("semester_scope")) if isinstance(time_arrangement, dict) else "",
-        "duration": _clean_text(time_arrangement.get("duration")) if isinstance(time_arrangement, dict) else "",
-        "pace_reason": _clean_text(time_arrangement.get("pace_reason")) if isinstance(time_arrangement, dict) else "",
+        "semester_scope": _clean_text(time_arrangement.get("semester_scope"))
+        if isinstance(time_arrangement, dict)
+        else "",
+        "duration": _clean_text(time_arrangement.get("duration"))
+        if isinstance(time_arrangement, dict)
+        else "",
+        "pace_reason": _clean_text(time_arrangement.get("pace_reason"))
+        if isinstance(time_arrangement, dict)
+        else "",
         "course_goal": _clean_text(course.get("course_goal")),
         "key_points": _string_list(course.get("key_points")),
         "difficult_points": _string_list(course.get("difficult_points")),
@@ -521,21 +582,53 @@ def _course_input_payload(course: dict) -> dict:
 
 
 def _profile_input_payload(profile: dict) -> dict:
-    confirmed_info = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
+    confirmed_info = (
+        profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
+    )
     compact_profile = {
-        "current_grade": _clean_text(confirmed_info.get("current_grade")) if isinstance(confirmed_info, dict) else "",
-        "major": _clean_text(confirmed_info.get("major")) if isinstance(confirmed_info, dict) else "",
-        "learning_stage": _clean_text(confirmed_info.get("learning_stage")) if isinstance(confirmed_info, dict) else "",
-        "learning_method_preference": _clean_text(confirmed_info.get("learning_method_preference")) if isinstance(confirmed_info, dict) else "",
-        "learning_pace_preference": _clean_text(confirmed_info.get("learning_pace_preference")) if isinstance(confirmed_info, dict) else "",
-        "content_preference": _string_list(confirmed_info.get("content_preference")) if isinstance(confirmed_info, dict) else [],
-        "knowledge_foundation": _clean_text(confirmed_info.get("knowledge_foundation")) if isinstance(confirmed_info, dict) else "",
-        "weaknesses": _clean_text(confirmed_info.get("weaknesses")) if isinstance(confirmed_info, dict) else "",
-        "short_term_goal": _clean_text(confirmed_info.get("short_term_goal")) if isinstance(confirmed_info, dict) else "",
-        "weekly_available_time": _clean_text(confirmed_info.get("weekly_available_time")) if isinstance(confirmed_info, dict) else "",
-        "constraints": _clean_text(confirmed_info.get("constraints")) if isinstance(confirmed_info, dict) else "",
+        "current_grade": _clean_text(confirmed_info.get("current_grade"))
+        if isinstance(confirmed_info, dict)
+        else "",
+        "major": _clean_text(confirmed_info.get("major"))
+        if isinstance(confirmed_info, dict)
+        else "",
+        "learning_stage": _clean_text(confirmed_info.get("learning_stage"))
+        if isinstance(confirmed_info, dict)
+        else "",
+        "learning_method_preference": _clean_text(
+            confirmed_info.get("learning_method_preference")
+        )
+        if isinstance(confirmed_info, dict)
+        else "",
+        "learning_pace_preference": _clean_text(
+            confirmed_info.get("learning_pace_preference")
+        )
+        if isinstance(confirmed_info, dict)
+        else "",
+        "content_preference": _string_list(confirmed_info.get("content_preference"))
+        if isinstance(confirmed_info, dict)
+        else [],
+        "knowledge_foundation": _clean_text(confirmed_info.get("knowledge_foundation"))
+        if isinstance(confirmed_info, dict)
+        else "",
+        "weaknesses": _clean_text(confirmed_info.get("weaknesses"))
+        if isinstance(confirmed_info, dict)
+        else "",
+        "short_term_goal": _clean_text(confirmed_info.get("short_term_goal"))
+        if isinstance(confirmed_info, dict)
+        else "",
+        "weekly_available_time": _clean_text(
+            confirmed_info.get("weekly_available_time")
+        )
+        if isinstance(confirmed_info, dict)
+        else "",
+        "constraints": _clean_text(confirmed_info.get("constraints"))
+        if isinstance(confirmed_info, dict)
+        else "",
     }
-    summary_text = _clean_text(profile.get("summary_text")) if isinstance(profile, dict) else ""
+    summary_text = (
+        _clean_text(profile.get("summary_text")) if isinstance(profile, dict) else ""
+    )
     if summary_text:
         compact_profile["profile_summary"] = summary_text
     return compact_profile
@@ -829,12 +922,17 @@ def _current_outline_from_generated(
 ) -> dict:
     if current_course_id:
         for outline in outlines:
-            if isinstance(outline, dict) and outline.get("course_id") == current_course_id:
+            if (
+                isinstance(outline, dict)
+                and outline.get("course_id") == current_course_id
+            ):
                 return outline
     return outlines[0]
 
 
-async def run_course_knowledge_agent(state: OrchestrationState, llm: BaseChatModel) -> dict:
+async def run_course_knowledge_agent(
+    state: OrchestrationState, llm: BaseChatModel
+) -> dict:
     """Generate detailed course outline, auto-resolving next course if not specified."""
     tool_args = extract_last_tool_call_args(state)
     course_id = _clean_text(tool_args.get("course_id", ""))
@@ -868,14 +966,18 @@ async def run_course_knowledge_agent(state: OrchestrationState, llm: BaseChatMod
             _SINGLE_COURSE_JSON_CONTRACT,
         )
 
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT),
-            ("human", "{query}"),
-        ])
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT),
+                ("human", "{query}"),
+            ]
+        )
         chain = prompt | llm
 
         try:
-            generated_outlines = [await _invoke_json_outline(chain, selected_course, input_text)]
+            generated_outlines = [
+                await _invoke_json_outline(chain, selected_course, input_text)
+            ]
         except asyncio.TimeoutError:
             logger.warning(
                 "CourseKnowledgeAgent JSON prompt output timed out after %.1fs",
@@ -883,10 +985,14 @@ async def run_course_knowledge_agent(state: OrchestrationState, llm: BaseChatMod
             )
             return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
         except Exception as exc:
-            logger.warning("CourseKnowledgeAgent JSON prompt output failed, retrying once: %s", exc)
+            logger.warning(
+                "CourseKnowledgeAgent JSON prompt output failed, retrying once: %s", exc
+            )
             repair_input = _build_repair_input(input_text, str(exc))
             try:
-                generated_outlines = [await _invoke_json_outline(chain, selected_course, repair_input)]
+                generated_outlines = [
+                    await _invoke_json_outline(chain, selected_course, repair_input)
+                ]
             except asyncio.TimeoutError:
                 logger.warning(
                     "CourseKnowledgeAgent repair output timed out after %.1fs",
@@ -894,30 +1000,40 @@ async def run_course_knowledge_agent(state: OrchestrationState, llm: BaseChatMod
                 )
                 return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
             except Exception as repair_exc:
-                logger.warning("CourseKnowledgeAgent repair output failed: %s", repair_exc)
+                logger.warning(
+                    "CourseKnowledgeAgent repair output failed: %s", repair_exc
+                )
                 return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
         current_outline = generated_outlines[0]
     else:
         try:
-            grade_year, grade_courses, current_course_id = _select_grade_courses_for_outlines(
-                year_learning_paths,
-                latest_grade_year,
+            grade_year, grade_courses, current_course_id = (
+                _select_grade_courses_for_outlines(
+                    year_learning_paths,
+                    latest_grade_year,
+                )
             )
         except ValueError as exc:
             return {"error": str(exc), "hard_error": True}
 
         input_text = _append_json_output_contract(
-            _build_year_analysis_input(grade_year, grade_courses, current_course_id, profile),
+            _build_year_analysis_input(
+                grade_year, grade_courses, current_course_id, profile
+            ),
             _YEAR_COURSES_JSON_CONTRACT,
         )
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT),
-            ("human", "{query}"),
-        ])
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT),
+                ("human", "{query}"),
+            ]
+        )
         chain = prompt | llm
 
         try:
-            generated_outlines = await _invoke_json_year_outlines(chain, grade_courses, input_text)
+            generated_outlines = await _invoke_json_year_outlines(
+                chain, grade_courses, input_text
+            )
         except asyncio.TimeoutError:
             logger.warning(
                 "CourseKnowledgeAgent yearly JSON prompt output timed out after %.1fs",
@@ -925,10 +1041,15 @@ async def run_course_knowledge_agent(state: OrchestrationState, llm: BaseChatMod
             )
             return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
         except Exception as exc:
-            logger.warning("CourseKnowledgeAgent yearly JSON prompt output failed, retrying once: %s", exc)
+            logger.warning(
+                "CourseKnowledgeAgent yearly JSON prompt output failed, retrying once: %s",
+                exc,
+            )
             repair_input = _build_repair_input(input_text, str(exc))
             try:
-                generated_outlines = await _invoke_json_year_outlines(chain, grade_courses, repair_input)
+                generated_outlines = await _invoke_json_year_outlines(
+                    chain, grade_courses, repair_input
+                )
             except asyncio.TimeoutError:
                 logger.warning(
                     "CourseKnowledgeAgent yearly repair output timed out after %.1fs",
@@ -936,22 +1057,36 @@ async def run_course_knowledge_agent(state: OrchestrationState, llm: BaseChatMod
                 )
                 return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
             except Exception as repair_exc:
-                logger.warning("CourseKnowledgeAgent yearly repair output failed: %s", repair_exc)
+                logger.warning(
+                    "CourseKnowledgeAgent yearly repair output failed: %s", repair_exc
+                )
                 return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
-        current_outline = _current_outline_from_generated(generated_outlines, current_course_id)
+        current_outline = _current_outline_from_generated(
+            generated_outlines, current_course_id
+        )
 
     from sqlmodel import Session
 
     from app.database import get_engine
-    from app.services.course_knowledge_service import upsert_user_course_knowledge_outline
+    from app.services.course_knowledge_service import (
+        upsert_user_course_knowledge_outline,
+    )
 
     try:
         with Session(get_engine()) as db_session:
             for outline_dict in generated_outlines:
-                upsert_user_course_knowledge_outline(db_session, state["user_id"], outline_dict)
-        logger.info("CourseKnowledgeOutline persisted for user %s, %d course(s)", state["user_id"], len(generated_outlines))
+                upsert_user_course_knowledge_outline(
+                    db_session, state["user_id"], outline_dict
+                )
+        logger.info(
+            "CourseKnowledgeOutline persisted for user %s, %d course(s)",
+            state["user_id"],
+            len(generated_outlines),
+        )
     except Exception as exc:
-        logger.error("Failed to persist course_knowledge for user %s: %s", state["user_id"], exc)
+        logger.error(
+            "Failed to persist course_knowledge for user %s: %s", state["user_id"], exc
+        )
         return {"error": "课程大纲保存失败，请稍后重试。", "hard_error": True}
 
     result = {"course_knowledge": current_outline}

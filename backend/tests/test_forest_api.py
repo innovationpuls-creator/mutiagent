@@ -12,7 +12,6 @@ from app.models import (
     ChapterProgress,
     ChapterQuiz,
     ChapterQuizAttempt,
-    ChapterWeakness,
     User,
     UserCourseKnowledgeOutline,
     UserYearLearningPath,
@@ -171,11 +170,23 @@ def test_generate_or_read_quiz_reuses_ready_quiz(tmp_path: Path) -> None:
     TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
-    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+    questions = [
+        {
+            "question_id": "q1",
+            "type": "single_choice",
+            "prompt": "题目",
+            "options": [],
+            "points": 100,
+        }
+    ]
 
     with Session(engine) as session:
-        first = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
-        second = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+        first = generate_or_read_quiz(
+            session, user_uid, "year_3_course_2", "1", questions, regenerate=False
+        )
+        second = generate_or_read_quiz(
+            session, user_uid, "year_3_course_2", "1", questions, regenerate=False
+        )
 
     assert first.quiz_id == second.quiz_id
     assert first.questions[0].question_id == "q1"
@@ -186,10 +197,20 @@ def test_submit_quiz_attempt_passes_and_opens_next_chapter(tmp_path: Path) -> No
     TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
-    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+    questions = [
+        {
+            "question_id": "q1",
+            "type": "single_choice",
+            "prompt": "题目",
+            "options": [],
+            "points": 100,
+        }
+    ]
 
     with Session(engine) as session:
-        quiz = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+        quiz = generate_or_read_quiz(
+            session, user_uid, "year_3_course_2", "1", questions, regenerate=False
+        )
         result, _weaknesses = submit_quiz_attempt(
             session,
             user_uid,
@@ -230,7 +251,15 @@ def test_generate_forest_quiz_api_persists_questions(tmp_path: Path) -> None:
     user_uid = _seed_forest_data(database_url)
 
     async def fake_generate_questions(*_args, **_kwargs):
-        return [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+        return [
+            {
+                "question_id": "q1",
+                "type": "single_choice",
+                "prompt": "题目",
+                "options": [],
+                "points": 100,
+            }
+        ]
 
     with patch("app.api.forest.generate_quiz_questions", fake_generate_questions):
         response = client.post(
@@ -251,10 +280,20 @@ def test_generate_forest_quiz_api_reuses_ready_quiz_without_llm(tmp_path: Path) 
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
-    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+    questions = [
+        {
+            "question_id": "q1",
+            "type": "single_choice",
+            "prompt": "题目",
+            "options": [],
+            "points": 100,
+        }
+    ]
 
     with Session(engine) as session:
-        quiz = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+        quiz = generate_or_read_quiz(
+            session, user_uid, "year_3_course_2", "1", questions, regenerate=False
+        )
 
     async def fail_generate_questions(*_args, **_kwargs):
         raise AssertionError("ready quiz should be reused")
@@ -277,10 +316,20 @@ def test_submit_forest_quiz_attempt_api_opens_next_chapter(tmp_path: Path) -> No
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
-    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+    questions = [
+        {
+            "question_id": "q1",
+            "type": "single_choice",
+            "prompt": "题目",
+            "options": [],
+            "points": 100,
+        }
+    ]
 
     with Session(engine) as session:
-        quiz = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+        quiz = generate_or_read_quiz(
+            session, user_uid, "year_3_course_2", "1", questions, regenerate=False
+        )
 
     async def fake_grade_answers(*_args, **_kwargs):
         return {"score": 71, "passed": True, "question_results": [], "summary": "通过"}
@@ -358,12 +407,14 @@ def test_read_forest_quiz_session_with_string_options(tmp_path: Path) -> None:
                 "B. 选项二",
             ],
             "correct_option_id": "A",
-            "points": 100
+            "points": 100,
         }
     ]
 
     with Session(engine) as session:
-        generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+        generate_or_read_quiz(
+            session, user_uid, "year_3_course_2", "1", questions, regenerate=False
+        )
         result = read_forest_quiz_session(session, user_uid, "year_3_course_2", "1")
 
     assert result.quiz is not None
@@ -484,7 +535,7 @@ def test_weakness_name_resolution(tmp_path: Path) -> None:
                 "prompt": "问题 1",
                 "options": [],
                 "points": 50,
-                "knowledge_point_ids": ["功能边界"]
+                "knowledge_point_ids": ["功能边界"],
             },
             {
                 "question_id": "q2",
@@ -492,11 +543,13 @@ def test_weakness_name_resolution(tmp_path: Path) -> None:
                 "prompt": "问题 2",
                 "options": [],
                 "points": 50,
-                "knowledge_point_ids": ["kp_lp_1"]
-            }
+                "knowledge_point_ids": ["kp_lp_1"],
+            },
         ]
 
-        quiz = generate_or_read_quiz(session, "forest-user", "year_3_course_2", "1", questions, regenerate=False)
+        quiz = generate_or_read_quiz(
+            session, "forest-user", "year_3_course_2", "1", questions, regenerate=False
+        )
 
         answers = {"q1": "A", "q2": "B"}
         grading_result = {
@@ -504,17 +557,13 @@ def test_weakness_name_resolution(tmp_path: Path) -> None:
             "passed": False,
             "question_results": [
                 {"question_id": "q1", "score": 0, "max_score": 50},
-                {"question_id": "q2", "score": 0, "max_score": 50}
+                {"question_id": "q2", "score": 0, "max_score": 50},
             ],
-            "summary": "不及格"
+            "summary": "不及格",
         }
 
         _, weaknesses = submit_quiz_attempt(
-            session,
-            "forest-user",
-            quiz.quiz_id,
-            answers,
-            grading_result
+            session, "forest-user", quiz.quiz_id, answers, grading_result
         )
 
         assert len(weaknesses) == 2
@@ -529,14 +578,25 @@ def test_weakness_name_resolution(tmp_path: Path) -> None:
 
 def test_submit_forest_quiz_attempt_stream_api_done_data(tmp_path: Path) -> None:
     import json
+
     database_url = f"sqlite:///{tmp_path / 'forest-attempt-stream-api-done.db'}"
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
-    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+    questions = [
+        {
+            "question_id": "q1",
+            "type": "single_choice",
+            "prompt": "题目",
+            "options": [],
+            "points": 100,
+        }
+    ]
 
     with Session(engine) as session:
-        quiz = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+        quiz = generate_or_read_quiz(
+            session, user_uid, "year_3_course_2", "1", questions, regenerate=False
+        )
 
     async def fake_grade_answers(*_args, **_kwargs):
         return {"score": 75, "passed": True, "question_results": [], "summary": "通过"}
@@ -550,7 +610,11 @@ def test_submit_forest_quiz_attempt_stream_api_done_data(tmp_path: Path) -> None
 
     assert response.status_code == 200
     assert "event: done" in response.text
-    done_line = [line for line in response.text.split("\n") if line.startswith("data: ") and '"attempt"' in line][0]
+    done_line = [
+        line
+        for line in response.text.split("\n")
+        if line.startswith("data: ") and '"attempt"' in line
+    ][0]
     done_data = json.loads(done_line[6:])
     assert "canopy_overview" in done_data
     assert "next_unlocked_chapter_id" in done_data
@@ -559,15 +623,27 @@ def test_submit_forest_quiz_attempt_stream_api_done_data(tmp_path: Path) -> None
     assert done_data["next_course_id"] is None
 
 
-def test_submit_forest_quiz_attempt_stream_api_returns_error_event(tmp_path: Path) -> None:
+def test_submit_forest_quiz_attempt_stream_api_returns_error_event(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'forest-attempt-stream-api-error.db'}"
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
-    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+    questions = [
+        {
+            "question_id": "q1",
+            "type": "single_choice",
+            "prompt": "题目",
+            "options": [],
+            "points": 100,
+        }
+    ]
 
     with Session(engine) as session:
-        quiz = generate_or_read_quiz(session, user_uid, "year_3_course_2", "1", questions, regenerate=False)
+        quiz = generate_or_read_quiz(
+            session, user_uid, "year_3_course_2", "1", questions, regenerate=False
+        )
 
     async def fail_grade_answers(*_args, **_kwargs):
         raise RuntimeError("判题模型输入过长")
@@ -584,32 +660,47 @@ def test_submit_forest_quiz_attempt_stream_api_returns_error_event(tmp_path: Pat
     assert "判题模型输入过长" in response.text
 
 
-def test_submit_forest_quiz_attempt_stream_api_done_data_next_course(tmp_path: Path) -> None:
+def test_submit_forest_quiz_attempt_stream_api_done_data_next_course(
+    tmp_path: Path,
+) -> None:
     import json
-    database_url = f"sqlite:///{tmp_path / 'forest-attempt-stream-api-done-next-course.db'}"
+
+    database_url = (
+        f"sqlite:///{tmp_path / 'forest-attempt-stream-api-done-next-course.db'}"
+    )
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
-    questions = [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}]
+    questions = [
+        {
+            "question_id": "q1",
+            "type": "single_choice",
+            "prompt": "题目",
+            "options": [],
+            "points": 100,
+        }
+    ]
 
     with Session(engine) as session:
         progress_1 = ChapterProgress(
             user_uid=user_uid,
             course_node_id="year_3_course_2",
             chapter_id="1",
-            state="passed"
+            state="passed",
         )
         session.add(progress_1)
         progress_2 = ChapterProgress(
             user_uid=user_uid,
             course_node_id="year_3_course_2",
             chapter_id="2",
-            state="available"
+            state="available",
         )
         session.add(progress_2)
         session.commit()
 
-        quiz = generate_or_read_quiz(session, user_uid, "year_3_course_2", "2", questions, regenerate=False)
+        quiz = generate_or_read_quiz(
+            session, user_uid, "year_3_course_2", "2", questions, regenerate=False
+        )
 
     async def fake_grade_answers(*_args, **_kwargs):
         return {"score": 75, "passed": True, "question_results": [], "summary": "通过"}
@@ -623,7 +714,11 @@ def test_submit_forest_quiz_attempt_stream_api_done_data_next_course(tmp_path: P
 
     assert response.status_code == 200
     assert "event: done" in response.text
-    done_line = [line for line in response.text.split("\n") if line.startswith("data: ") and '"attempt"' in line][0]
+    done_line = [
+        line
+        for line in response.text.split("\n")
+        if line.startswith("data: ") and '"attempt"' in line
+    ][0]
     done_data = json.loads(done_line[6:])
     assert "canopy_overview" in done_data
     assert done_data["next_unlocked_chapter_id"] is None

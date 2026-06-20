@@ -6,7 +6,12 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, create_engine, select
 
 from app.main import create_app
-from app.models import ChapterProgress, User, UserCourseKnowledgeOutline, UserYearLearningPath
+from app.models import (
+    ChapterProgress,
+    User,
+    UserCourseKnowledgeOutline,
+    UserYearLearningPath,
+)
 
 
 def _register(client: TestClient, identifier: str) -> tuple[str, str]:
@@ -85,7 +90,10 @@ def _path() -> dict:
             },
         },
         "knowledge_graph": {"global_relations": [], "critical_paths": []},
-        "resource_generation_contract": {"downstream_agents": [], "resource_directions": []},
+        "resource_generation_contract": {
+            "downstream_agents": [],
+            "resource_directions": [],
+        },
         "dynamic_update_contract": {
             "trackable_metrics": [],
             "update_triggers": [],
@@ -148,7 +156,10 @@ def _outline(course_id: str, course_name: str) -> dict:
                 "title": "学习目标",
                 "markdown": "# 学习目标\n\n已经拼装好的内容。",
                 "blocks": [
-                    {"type": "markdown", "markdown": "# 学习目标\n\n已经拼装好的内容。"},
+                    {
+                        "type": "markdown",
+                        "markdown": "# 学习目标\n\n已经拼装好的内容。",
+                    },
                 ],
                 "generated_at": "2026-06-06T00:00:00Z",
             }
@@ -192,14 +203,18 @@ def _seed(client: TestClient, database_url: str, identifier: str) -> str:
 
 
 def test_leaf_course_requires_auth(tmp_path: Path) -> None:
-    client = TestClient(create_app(database_url=f"sqlite:///{tmp_path / 'leaf-auth.db'}"))
+    client = TestClient(
+        create_app(database_url=f"sqlite:///{tmp_path / 'leaf-auth.db'}")
+    )
 
     response = client.get("/api/leaf/courses/year_3_course_2")
 
     assert response.status_code == 401
 
 
-def test_leaf_course_returns_current_course_with_outline_and_composed_content(tmp_path: Path) -> None:
+def test_leaf_course_returns_current_course_with_outline_and_composed_content(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'leaf-current.db'}"
     client = TestClient(create_app(database_url=database_url))
     token = _seed(client, database_url, "leaf-current@example.com")
@@ -217,18 +232,24 @@ def test_leaf_course_returns_current_course_with_outline_and_composed_content(tm
     assert body["can_generate"] is True
     assert body["outline"]["course_id"] == "year_3_course_2"
     assert body["sections"][0]["section_id"] == "1"
-    assert body["section_composed_markdowns"]["1.1"]["markdown"].startswith("# 学习目标")
+    assert body["section_composed_markdowns"]["1.1"]["markdown"].startswith(
+        "# 学习目标"
+    )
     assert body["generation_status"] is None
 
 
-def test_leaf_course_opens_next_generatable_chapter_after_quiz_pass(tmp_path: Path) -> None:
+def test_leaf_course_opens_next_generatable_chapter_after_quiz_pass(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'leaf-next-chapter.db'}"
     client = TestClient(create_app(database_url=database_url))
     token = _seed(client, database_url, "leaf-next-chapter@example.com")
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
     with Session(engine) as session:
-        user = session.exec(select(User).where(User.identifier == "leaf-next-chapter@example.com")).one()
+        user = session.exec(
+            select(User).where(User.identifier == "leaf-next-chapter@example.com")
+        ).one()
         session.add(
             ChapterProgress(
                 user_uid=user.uid,
@@ -251,14 +272,18 @@ def test_leaf_course_opens_next_generatable_chapter_after_quiz_pass(tmp_path: Pa
     assert body["first_generatable_chapter_id"] == "2"
 
 
-def test_leaf_course_keeps_sections_empty_when_composed_content_missing(tmp_path: Path) -> None:
+def test_leaf_course_keeps_sections_empty_when_composed_content_missing(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'leaf-resource-fields.db'}"
     client = TestClient(create_app(database_url=database_url))
     token = _seed(client, database_url, "leaf-resource-fields@example.com")
 
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
     with Session(engine) as session:
-        user = session.exec(select(User).where(User.identifier == "leaf-resource-fields@example.com")).one()
+        user = session.exec(
+            select(User).where(User.identifier == "leaf-resource-fields@example.com")
+        ).one()
         row = session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_2"))
         assert row is not None
         outline_data = dict(row.outline_data)
@@ -313,7 +338,7 @@ def test_leaf_course_keeps_sections_empty_when_composed_content_missing(tmp_path
                         "brief_id": "anim_1",
                         "animation_id": "anim_1",
                         "title": "目标动画",
-                        "html": "<section class=\"section-animation\"></section>",
+                        "html": '<section class="section-animation"></section>',
                     }
                 ],
             }
@@ -349,7 +374,9 @@ def test_leaf_course_returns_completed_view_only(tmp_path: Path) -> None:
     assert body["can_generate"] is False
 
 
-def test_leaf_course_returns_locked_json_for_existing_locked_course(tmp_path: Path) -> None:
+def test_leaf_course_returns_locked_json_for_existing_locked_course(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'leaf-locked.db'}"
     client = TestClient(create_app(database_url=database_url))
     token = _seed(client, database_url, "leaf-locked@example.com")

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Annotated, Optional
 
-from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 
@@ -13,6 +13,7 @@ class OrchestrationState(TypedDict, total=False):
     All agent output and DB-loaded data is stored here.
     No checkpoint persistence — state is rebuilt from DB each turn.
     """
+
     # Input
     user_id: str
     session_id: str
@@ -25,7 +26,7 @@ class OrchestrationState(TypedDict, total=False):
     profile: Optional[dict]
     learning_path_intake: Optional[dict]
     year_learning_paths: Optional[dict]  # {year_1: YearLearningPathOutput, ...}
-    course_knowledge: Optional[dict]      # most recent CourseKnowledgeOutput
+    course_knowledge: Optional[dict]  # most recent CourseKnowledgeOutput
     course_knowledges: Optional[list[dict]]
 
     # Agent outputs for this turn

@@ -14,7 +14,11 @@ def test_completeness_empty_outline():
 def test_completeness_partial_content():
     outline = {
         "sections": [
-            {"section_id": "1", "parent_section_id": None, "composed_markdown": "# Hello"},
+            {
+                "section_id": "1",
+                "parent_section_id": None,
+                "composed_markdown": "# Hello",
+            },
             {"section_id": "2", "parent_section_id": None, "composed_markdown": ""},
         ]
     }
@@ -26,8 +30,16 @@ def test_completeness_partial_content():
 def test_completeness_full_content():
     outline = {
         "sections": [
-            {"section_id": "1", "parent_section_id": None, "composed_markdown": "# Hello"},
-            {"section_id": "2", "parent_section_id": None, "composed_markdown": "# World"},
+            {
+                "section_id": "1",
+                "parent_section_id": None,
+                "composed_markdown": "# Hello",
+            },
+            {
+                "section_id": "2",
+                "parent_section_id": None,
+                "composed_markdown": "# World",
+            },
         ]
     }
     score, _ = _score_outline_completeness(outline)
@@ -41,7 +53,11 @@ def test_difficulty_fit_no_profile():
 
 
 def test_difficulty_fit_beginner_too_many_sections():
-    outline = {"sections": [{"section_id": str(i), "parent_section_id": None} for i in range(15)]}
+    outline = {
+        "sections": [
+            {"section_id": str(i), "parent_section_id": None} for i in range(15)
+        ]
+    }
     profile = {"learning_stage": "刚入门", "learning_pace_preference": "每天少量"}
     score, suggestions = _score_difficulty_fit(outline, profile)
     assert score < 70

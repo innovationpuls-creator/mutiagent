@@ -8,7 +8,12 @@ from sqlmodel import Session
 from app.api.admin import require_admin_user
 from app.core.security import create_get_current_user
 from app.models import User
-from app.schemas import CultivationProgramRead, DataCohortRead, DataOverviewResponse, UserLearningDataRead
+from app.schemas import (
+    CultivationProgramRead,
+    DataCohortRead,
+    DataOverviewResponse,
+    UserLearningDataRead,
+)
 from app.services.admin_data_service import (
     delete_learning_data_for_user,
     delete_program_for_data_cohort,
@@ -66,7 +71,10 @@ def create_admin_data_router(session_dependency: SessionDependency) -> APIRouter
         delete_learning_data_for_user(session, uid)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    @router.delete("/cohorts/{school}/{major}/{class_name}/program", status_code=status.HTTP_204_NO_CONTENT)
+    @router.delete(
+        "/cohorts/{school}/{major}/{class_name}/program",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
     def delete_cohort_program(
         school: str,
         major: str,

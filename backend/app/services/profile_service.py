@@ -14,7 +14,9 @@ def get_user_profile(session: Session, user_uid: str) -> dict | None:
     return row.profile_data
 
 
-def upsert_user_profile(session: Session, user_uid: str, profile_data: dict) -> UserProfile:
+def upsert_user_profile(
+    session: Session, user_uid: str, profile_data: dict
+) -> UserProfile:
     now = datetime.now(timezone.utc)
     profile_text = profile_data.get("summary_text", profile_data.get("text", ""))
     row = session.get(UserProfile, user_uid)

@@ -8,16 +8,21 @@ from typing import Any
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, StateGraph
 
-from app.orchestration.agents.supervisor import create_supervisor_node
-from app.orchestration.agents.profile import create_profile_agent_node, is_complete_profile_data
-from app.orchestration.agents.learning_path_intake import create_learning_path_intake_agent_node
-from app.orchestration.agents.learning_path import create_learning_path_agent_node
 from app.orchestration.agents.course_knowledge import create_course_knowledge_agent_node
 from app.orchestration.agents.course_resources import (
     create_section_html_animation_agent_node,
     create_section_markdown_agent_node,
     create_section_video_search_agent_node,
 )
+from app.orchestration.agents.learning_path import create_learning_path_agent_node
+from app.orchestration.agents.learning_path_intake import (
+    create_learning_path_intake_agent_node,
+)
+from app.orchestration.agents.profile import (
+    create_profile_agent_node,
+    is_complete_profile_data,
+)
+from app.orchestration.agents.supervisor import create_supervisor_node
 from app.orchestration.llm import (
     get_search_worker_llm,
     get_supervisor_llm,
@@ -79,13 +84,24 @@ def route_after_worker(state: OrchestrationState) -> str:
         return SUPERVISOR_NODE
 
     resource_plan = state.get("course_resource_plan")
-    if isinstance(resource_plan, dict) and not isinstance(state.get("course_resource_result"), dict):
+    if isinstance(resource_plan, dict) and not isinstance(
+        state.get("course_resource_result"), dict
+    ):
         target_section_ids = resource_plan.get("target_section_ids")
         video_section_ids = resource_plan.get("video_section_ids")
         animation_section_ids = resource_plan.get("animation_section_ids")
-        if isinstance(target_section_ids, list) and target_section_ids and not video_section_ids:
+        if (
+            isinstance(target_section_ids, list)
+            and target_section_ids
+            and not video_section_ids
+        ):
             return "section_video_search_agent"
-        if isinstance(target_section_ids, list) and target_section_ids and video_section_ids and not animation_section_ids:
+        if (
+            isinstance(target_section_ids, list)
+            and target_section_ids
+            and video_section_ids
+            and not animation_section_ids
+        ):
             return "section_html_animation_agent"
 
     if isinstance(state.get("course_resource_result"), dict):
@@ -121,16 +137,28 @@ def build_orchestration_graph():
     worker_llm = get_worker_llm()
     thinking_worker_llm = get_thinking_worker_llm()
     search_worker_llm = get_search_worker_llm()
-    learning_path_llm = worker_llm if hasattr(worker_llm, "with_structured_output") else thinking_worker_llm
-    learning_path_intake_llm = worker_llm if hasattr(worker_llm, "with_structured_output") else thinking_worker_llm
+    learning_path_llm = (
+        worker_llm
+        if hasattr(worker_llm, "with_structured_output")
+        else thinking_worker_llm
+    )
+    learning_path_intake_llm = (
+        worker_llm
+        if hasattr(worker_llm, "with_structured_output")
+        else thinking_worker_llm
+    )
 
     supervisor_node = create_supervisor_node(supervisor_llm)
     profile_node = create_profile_agent_node(supervisor_llm)
-    learning_path_intake_node = create_learning_path_intake_agent_node(learning_path_intake_llm)
+    learning_path_intake_node = create_learning_path_intake_agent_node(
+        learning_path_intake_llm
+    )
     learning_path_node = create_learning_path_agent_node(learning_path_llm)
     course_knowledge_node = create_course_knowledge_agent_node(worker_llm)
     section_markdown_node = create_section_markdown_agent_node(worker_llm)
-    section_video_search_node = create_section_video_search_agent_node(search_worker_llm)
+    section_video_search_node = create_section_video_search_agent_node(
+        search_worker_llm
+    )
     section_html_animation_node = create_section_html_animation_agent_node(worker_llm)
 
     builder = StateGraph(OrchestrationState)
@@ -180,6 +208,7 @@ def build_orchestration_graph():
 
 # ── SSE streaming ────────────────────────────────────────────────────────
 
+
 def _emit(event_name: str, **kwargs: object) -> dict:
     return {"event": event_name, **kwargs}
 
@@ -203,7 +232,9 @@ def _event_for_agent_error(agent: str, message: str) -> dict:
     return event
 
 
-def _extract_current_learning_course(final_state: dict[str, Any]) -> dict[str, Any] | None:
+def _extract_current_learning_course(
+    final_state: dict[str, Any],
+) -> dict[str, Any] | None:
     year_learning_path = final_state.get("year_learning_path")
     if isinstance(year_learning_path, dict):
         current_learning_course = year_learning_path.get("current_learning_course")
@@ -216,7 +247,9 @@ def _extract_current_learning_course(final_state: dict[str, Any]) -> dict[str, A
 
     latest_grade_year = final_state.get("latest_grade_year")
     if isinstance(latest_grade_year, str):
-        preferred_path = get_preferred_year_learning_path(year_learning_paths, latest_grade_year)
+        preferred_path = get_preferred_year_learning_path(
+            year_learning_paths, latest_grade_year
+        )
         if isinstance(preferred_path, dict):
             current_learning_course = preferred_path.get("current_learning_course")
             if isinstance(current_learning_course, dict):
@@ -283,7 +316,9 @@ async def _iter_graph_events_with_idle_status(
             pending.cancel()
 
 
-def _final_response_from_state(final_state: dict[str, Any], supervisor_streaming_text: str) -> str:
+def _final_response_from_state(
+    final_state: dict[str, Any], supervisor_streaming_text: str
+) -> str:
     response = final_state.get("response")
     if isinstance(response, str) and response.strip():
         return response.strip()
@@ -384,7 +419,9 @@ async def stream_orchestration_events(
             )
 
         graph_events = graph.astream_events(state, version="v2")
-        async for event in _iter_graph_events_with_idle_status(graph_events, idle_timeout_seconds):
+        async for event in _iter_graph_events_with_idle_status(
+            graph_events, idle_timeout_seconds
+        ):
             kind = event.get("event", "")
             name = event.get("name", "")
 
@@ -420,8 +457,16 @@ async def stream_orchestration_events(
                 if name == SUPERVISOR_NODE or current_agent == SUPERVISOR_NODE:
                     if tool_call_chunks:
                         for tc in tool_call_chunks:
-                            tc_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
-                            tc_args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", "")
+                            tc_name = (
+                                tc.get("name")
+                                if isinstance(tc, dict)
+                                else getattr(tc, "name", None)
+                            )
+                            tc_args = (
+                                tc.get("args")
+                                if isinstance(tc, dict)
+                                else getattr(tc, "args", "")
+                            )
                             if tc_name:
                                 announced_agents.add(tc_name)
                                 yield _emit(
@@ -453,11 +498,19 @@ async def stream_orchestration_events(
                     # Check messages for error in ToolMessage
                     for msg in reversed(output.get("messages", [])):
                         from langchain_core.messages import ToolMessage
+
                         if isinstance(msg, ToolMessage):
                             try:
                                 import json
-                                data = json.loads(str(msg.content)) if isinstance(msg.content, str) else msg.content
-                                if isinstance(data, dict) and _is_hard_agent_error(data):
+
+                                data = (
+                                    json.loads(str(msg.content))
+                                    if isinstance(msg.content, str)
+                                    else msg.content
+                                )
+                                if isinstance(data, dict) and _is_hard_agent_error(
+                                    data
+                                ):
                                     yield _emit(
                                         "agent_result",
                                         stepId=f"{name}-result",
@@ -467,7 +520,9 @@ async def stream_orchestration_events(
                                         success=False,
                                         error=str(data["error"]),
                                     )
-                                    yield _event_for_agent_error(name, str(data["error"]))
+                                    yield _event_for_agent_error(
+                                        name, str(data["error"])
+                                    )
                                     return
                                 if isinstance(data, dict) and data.get("error"):
                                     has_error = True
@@ -508,12 +563,16 @@ async def stream_orchestration_events(
                     final_state = event.get("data", {}).get("output", state)
                     yield _emit(
                         "message_completed",
-                        full_text=_final_response_from_state(final_state, supervisor_streaming_text),
+                        full_text=_final_response_from_state(
+                            final_state, supervisor_streaming_text
+                        ),
                     )
                     yield _emit(
                         "session_completed",
                         session_id=state.get("session_id", ""),
-                        has_profile=is_complete_profile_data(final_state.get("profile")),
+                        has_profile=is_complete_profile_data(
+                            final_state.get("profile")
+                        ),
                         has_paths=_has_learning_paths(final_state),
                         has_outline=_has_course_knowledge(final_state),
                     )

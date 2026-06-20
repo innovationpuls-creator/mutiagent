@@ -18,11 +18,15 @@ def latest_learning_path_intake(messages: list[dict]) -> dict | None:
     return None
 
 
-def load_or_create_session(session: Session, session_id: str, user_uid: str) -> ConversationSession:
+def load_or_create_session(
+    session: Session, session_id: str, user_uid: str
+) -> ConversationSession:
     row = session.get(ConversationSession, session_id)
     if row is not None:
         if row.user_uid != user_uid:
-            raise ValueError(f"Conversation session {session_id} does not belong to user {user_uid}")
+            raise ValueError(
+                f"Conversation session {session_id} does not belong to user {user_uid}"
+            )
         return row
 
     now = datetime.now(timezone.utc)
@@ -39,14 +43,18 @@ def load_or_create_session(session: Session, session_id: str, user_uid: str) -> 
     return row
 
 
-def replace_latest_learning_path_intake(session: Session, session_id: str, intake: dict) -> ConversationSession:
+def replace_latest_learning_path_intake(
+    session: Session, session_id: str, intake: dict
+) -> ConversationSession:
     row = session.get(ConversationSession, session_id)
     if row is None:
         raise ValueError(f"Conversation session {session_id} not found")
     row.messages = [
         message
         for message in row.messages
-        if not (isinstance(message, dict) and message.get("type") == "learning_path_intake")
+        if not (
+            isinstance(message, dict) and message.get("type") == "learning_path_intake"
+        )
     ] + [intake]
     row.updated_at = datetime.now(timezone.utc)
     session.add(row)
@@ -55,7 +63,9 @@ def replace_latest_learning_path_intake(session: Session, session_id: str, intak
     return row
 
 
-def append_messages(session: Session, session_id: str, new_messages: list[dict]) -> ConversationSession:
+def append_messages(
+    session: Session, session_id: str, new_messages: list[dict]
+) -> ConversationSession:
     row = session.get(ConversationSession, session_id)
     if row is None:
         raise ValueError(f"Conversation session {session_id} not found")

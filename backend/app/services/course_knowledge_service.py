@@ -16,7 +16,9 @@ def get_user_course_knowledge_outline(
     return row.outline_data
 
 
-def list_user_course_outlines(session: Session, user_uid: str) -> list[UserCourseKnowledgeOutline]:
+def list_user_course_outlines(
+    session: Session, user_uid: str
+) -> list[UserCourseKnowledgeOutline]:
     stmt = select(UserCourseKnowledgeOutline).where(
         UserCourseKnowledgeOutline.user_uid == user_uid
     )
@@ -52,7 +54,9 @@ def delete_user_course_outlines_by_grade_year(
     return len(rows)
 
 
-def get_latest_user_course_knowledge_outline(session: Session, user_uid: str) -> dict | None:
+def get_latest_user_course_knowledge_outline(
+    session: Session, user_uid: str
+) -> dict | None:
     stmt = (
         select(UserCourseKnowledgeOutline)
         .where(UserCourseKnowledgeOutline.user_uid == user_uid)

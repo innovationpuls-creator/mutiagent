@@ -10,7 +10,9 @@ from app.models import CultivationProgram, User
 from app.schemas import CultivationProgramRead
 
 
-def to_program_read(program: CultivationProgram, teacher: User | None) -> CultivationProgramRead:
+def to_program_read(
+    program: CultivationProgram, teacher: User | None
+) -> CultivationProgramRead:
     return CultivationProgramRead(
         program_id=program.program_id,
         teacher_uid=program.teacher_uid,
@@ -25,7 +27,9 @@ def to_program_read(program: CultivationProgram, teacher: User | None) -> Cultiv
     )
 
 
-def get_program_for_teacher(session: Session, teacher: User) -> CultivationProgramRead | None:
+def get_program_for_teacher(
+    session: Session, teacher: User
+) -> CultivationProgramRead | None:
     _require_program_manager(teacher)
     program = session.exec(
         select(CultivationProgram).where(CultivationProgram.teacher_uid == teacher.uid)
@@ -44,7 +48,9 @@ def save_program_for_teacher(
     class_name: str | None = None,
 ) -> CultivationProgramRead:
     _require_program_manager(teacher)
-    program_school, program_major, program_class_name = _resolve_cohort(teacher, school, major, class_name)
+    program_school, program_major, program_class_name = _resolve_cohort(
+        teacher, school, major, class_name
+    )
     now = datetime.now(timezone.utc)
     program = session.exec(
         select(CultivationProgram).where(
@@ -90,7 +96,9 @@ def publish_program_for_teacher(
     class_name: str | None = None,
 ) -> CultivationProgramRead:
     _require_program_manager(teacher)
-    program_school, program_major, program_class_name = _resolve_cohort(teacher, school, major, class_name)
+    program_school, program_major, program_class_name = _resolve_cohort(
+        teacher, school, major, class_name
+    )
     existing = session.exec(
         select(CultivationProgram).where(
             CultivationProgram.school == program_school,
@@ -105,10 +113,14 @@ def publish_program_for_teacher(
             detail="该学校、专业、班级已有已发布人培方案",
         )
 
-    read = save_program_for_teacher(session, teacher, courses, program_school, program_major, program_class_name)
+    read = save_program_for_teacher(
+        session, teacher, courses, program_school, program_major, program_class_name
+    )
     program = session.get(CultivationProgram, read.program_id)
     if program is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="人培方案不存在")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="人培方案不存在"
+        )
     program.published_at = datetime.now(timezone.utc)
     program.updated_at = program.published_at
     session.add(program)
@@ -117,8 +129,14 @@ def publish_program_for_teacher(
     return to_program_read(program, teacher)
 
 
-def get_matched_program_for_student(session: Session, student: User) -> CultivationProgramRead | None:
-    if not student.school.strip() or not student.major.strip() or not student.class_name.strip():
+def get_matched_program_for_student(
+    session: Session, student: User
+) -> CultivationProgramRead | None:
+    if (
+        not student.school.strip()
+        or not student.major.strip()
+        or not student.class_name.strip()
+    ):
         return None
     program = session.exec(
         select(CultivationProgram).where(
@@ -134,7 +152,9 @@ def get_matched_program_for_student(session: Session, student: User) -> Cultivat
     return to_program_read(program, teacher)
 
 
-def delete_program_for_cohort(session: Session, school: str, major: str, class_name: str) -> None:
+def delete_program_for_cohort(
+    session: Session, school: str, major: str, class_name: str
+) -> None:
     program = session.exec(
         select(CultivationProgram).where(
             CultivationProgram.school == school.strip(),
@@ -143,14 +163,18 @@ def delete_program_for_cohort(session: Session, school: str, major: str, class_n
         )
     ).first()
     if program is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="人培方案不存在")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="人培方案不存在"
+        )
     session.delete(program)
     session.commit()
 
 
 def _require_program_manager(user: User) -> None:
     if user.role not in {"teacher", "admin"}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理端权限")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="需要管理端权限"
+        )
 
 
 def _resolve_cohort(
@@ -161,7 +185,11 @@ def _resolve_cohort(
 ) -> tuple[str, str, str]:
     resolved_school = (school if school is not None else user.school).strip()
     resolved_major = (major if major is not None else user.major).strip()
-    resolved_class_name = (class_name if class_name is not None else user.class_name).strip()
+    resolved_class_name = (
+        class_name if class_name is not None else user.class_name
+    ).strip()
     if not resolved_school or not resolved_major or not resolved_class_name:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="学校、专业、班级不能为空")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="学校、专业、班级不能为空"
+        )
     return resolved_school, resolved_major, resolved_class_name

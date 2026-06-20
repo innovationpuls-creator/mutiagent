@@ -87,6 +87,8 @@ def get_thinking_worker_llm() -> ChatOpenAI:
 def get_search_worker_llm() -> ChatOpenAI:
     global _search_worker_llm
     if _search_worker_llm is None:
-        _search_worker_llm = _build(_WORKER_TIMEOUT, enable_thinking=True, enable_search=True)
+        _search_worker_llm = _build(
+            _WORKER_TIMEOUT, enable_thinking=True, enable_search=True
+        )
         logger.info("Search worker LLM initialized (timeout=%ds)", _WORKER_TIMEOUT)
     return _search_worker_llm

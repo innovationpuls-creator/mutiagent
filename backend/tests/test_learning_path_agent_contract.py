@@ -7,19 +7,21 @@ from sqlmodel import Session
 
 from app.database import build_engine, init_db, set_engine
 from app.models import UserYearLearningPath
-from app.services.learning_path_service import upsert_year_learning_path
-from app.orchestration.agents.models import LearningPathPlanOutput
 from app.orchestration.agents.learning_path import (
     _grade_year_from_profile,
     _topic_from_profile,
-    create_learning_path_agent_node,
     _validate_learning_path_contract,
+    create_learning_path_agent_node,
     run_learning_path_agent,
 )
+from app.orchestration.agents.models import LearningPathPlanOutput
 from app.orchestration.agents.prompts import LEARNING_PATH_AGENT_SYSTEM_PROMPT
+from app.services.learning_path_service import upsert_year_learning_path
 
 
-def _complete_profile(summary_text: str = "【基础学习画像总结】大3软件工程，当前以AI 应用开发为主线。") -> dict:
+def _complete_profile(
+    summary_text: str = "【基础学习画像总结】大3软件工程，当前以AI 应用开发为主线。",
+) -> dict:
     return {
         "type": "basic_profile",
         "stage": "generated",
@@ -44,7 +46,10 @@ def _complete_profile(summary_text: str = "【基础学习画像总结】大3软
         },
         "defaulted_fields": [],
         "question_md": "画像已生成，是否继续生成学习路径？",
-        "question_box": {"question": "画像已生成，下一步要继续生成学习路径吗？", "options": []},
+        "question_box": {
+            "question": "画像已生成，下一步要继续生成学习路径吗？",
+            "options": [],
+        },
         "text": summary_text,
         "summary_text": summary_text,
     }
@@ -71,8 +76,7 @@ def _confirmed_intake(
         "grade_name": grade_name,
         "learning_topic": learning_topic,
         "courses": [
-            {"title": title, "purpose": f"完成 {title} 的关键训练"}
-            for title in titles
+            {"title": title, "purpose": f"完成 {title} 的关键训练"} for title in titles
         ],
         "recommendation_reasons": [f"目标是学习{learning_topic}"],
         "user_modification_summary": "",
@@ -190,7 +194,9 @@ def _llm_learning_path_payload() -> dict:
                         "learning_sequence": ["需求拆解", "接口接入", "最小闭环演示"],
                         "knowledge_relations": [],
                         "downstream_resource_direction_ids": [],
-                        "acceptance_criteria": ["完成一个可运行的 AI 功能模块并接入 Web 应用"],
+                        "acceptance_criteria": [
+                            "完成一个可运行的 AI 功能模块并接入 Web 应用"
+                        ],
                     },
                     {
                         "course_node_id": "year_3_course_2",
@@ -243,7 +249,10 @@ def _llm_learning_path_payload() -> dict:
             },
         },
         "knowledge_graph": {"global_relations": [], "critical_paths": []},
-        "resource_generation_contract": {"downstream_agents": ["learning_resource_agent"], "resource_directions": []},
+        "resource_generation_contract": {
+            "downstream_agents": ["learning_resource_agent"],
+            "resource_directions": [],
+        },
         "dynamic_update_contract": {
             "trackable_metrics": ["项目里程碑完成度"],
             "update_triggers": ["里程碑完成"],
@@ -290,8 +299,16 @@ def _llm_learning_path_plan_payload(
                 "duration": "6 周" if index != 2 else "8 周",
                 "pace_reason": "围绕周末集中与上线目标安排",
                 "goal": f"完成 {theme} 对应的关键训练",
-                "stage_titles": [f"{theme}需求拆解", f"{theme}实现联调", f"{theme}验收复盘"],
-                "key_points": [f"{theme}能力点 1", f"{theme}能力点 2", f"{theme}能力点 3"],
+                "stage_titles": [
+                    f"{theme}需求拆解",
+                    f"{theme}实现联调",
+                    f"{theme}验收复盘",
+                ],
+                "key_points": [
+                    f"{theme}能力点 1",
+                    f"{theme}能力点 2",
+                    f"{theme}能力点 3",
+                ],
                 "difficult_points": [f"{theme}部署稳定性", f"{theme}调试与回归"],
                 "acceptance_criteria": [f"完成 {theme} 的阶段验收并可演示"],
                 "difficulty_level": "中级",
@@ -317,12 +334,16 @@ def _single_year_learning_path_payload(
                 "grade_id": grade_year,
                 "course_or_chapter_theme": theme,
                 "time_arrangement": {
-                    "semester_scope": "上学期" if index < len(course_themes) else "下学期",
+                    "semester_scope": "上学期"
+                    if index < len(course_themes)
+                    else "下学期",
                     "duration": "6 周",
                     "pace_reason": "围绕当前阶段学习目标逐步推进",
                 },
                 "course_goal": f"完成 {theme} 对应的核心训练",
-                "prerequisite_node_ids": [f"{grade_year}_course_{index - 1}"] if index > 1 else [],
+                "prerequisite_node_ids": [f"{grade_year}_course_{index - 1}"]
+                if index > 1
+                else [],
                 "chapter_nodes": [
                     {
                         "chapter_node_id": f"{grade_year}_course_{index}_chapter_1",
@@ -334,7 +355,9 @@ def _single_year_learning_path_payload(
                         "prerequisite_node_ids": [],
                         "learning_sequence": [f"{theme} 学习顺序"],
                         "knowledge_relations": [],
-                        "downstream_resource_direction_ids": [f"{grade_year}_course_{index}_resource"],
+                        "downstream_resource_direction_ids": [
+                            f"{grade_year}_course_{index}_resource"
+                        ],
                     }
                 ],
                 "core_knowledge_points": [
@@ -351,7 +374,9 @@ def _single_year_learning_path_payload(
                 "difficult_points": [f"{theme} 难点"],
                 "learning_sequence": [f"{theme} 学习顺序"],
                 "knowledge_relations": [],
-                "downstream_resource_direction_ids": [f"{grade_year}_course_{index}_resource"],
+                "downstream_resource_direction_ids": [
+                    f"{grade_year}_course_{index}_resource"
+                ],
                 "acceptance_criteria": [f"完成 {theme} 的阶段验收"],
             }
         )
@@ -393,7 +418,9 @@ def _single_year_learning_path_payload(
                 {
                     "path_id": f"{grade_year}_critical_path",
                     "purpose": f"{grade_name}主学习路径",
-                    "ordered_node_ids": [course["course_node_id"] for course in course_nodes],
+                    "ordered_node_ids": [
+                        course["course_node_id"] for course in course_nodes
+                    ],
                 }
             ],
         },
@@ -406,7 +433,9 @@ def _single_year_learning_path_payload(
                     "resource_type": "文档",
                     "generation_goal": f"围绕 {course['course_or_chapter_theme']} 生成资源",
                     "content_requirements": ["包含阶段任务", "包含验收标准"],
-                    "difficulty_level": "中级" if grade_year in {"year_3", "year_4"} else "基础",
+                    "difficulty_level": "中级"
+                    if grade_year in {"year_3", "year_4"}
+                    else "基础",
                 }
                 for course in course_nodes
             ],
@@ -430,8 +459,14 @@ def _single_year_learning_path_payload(
 
 
 def test_grade_year_from_profile_maps_chinese_grade() -> None:
-    assert _grade_year_from_profile({"confirmed_info": {"current_grade": "大3"}}) == "year_3"
-    assert _grade_year_from_profile({"confirmed_info": {"current_grade": "大三"}}) == "year_3"
+    assert (
+        _grade_year_from_profile({"confirmed_info": {"current_grade": "大3"}})
+        == "year_3"
+    )
+    assert (
+        _grade_year_from_profile({"confirmed_info": {"current_grade": "大三"}})
+        == "year_3"
+    )
 
 
 def test_grade_year_from_profile_rejects_unsupported_postgraduate_grade() -> None:
@@ -450,7 +485,9 @@ def test_topic_from_profile_prefers_profile_direction() -> None:
     assert _topic_from_profile(profile) == "AI 应用开发"
 
 
-def test_topic_from_profile_uses_vibecoding_when_user_said_learning_vibecoding() -> None:
+def test_topic_from_profile_uses_vibecoding_when_user_said_learning_vibecoding() -> (
+    None
+):
     profile = {
         "confirmed_info": {
             "short_term_goal": "找工作，学习vibecoding",
@@ -470,16 +507,23 @@ def test_validate_learning_path_contract_rejects_missing_current_course() -> Non
     assert result == "学习路径缺少 current_learning_course。"
 
 
-def test_validate_learning_path_contract_rejects_current_course_that_is_not_active_or_completed() -> None:
+def test_validate_learning_path_contract_rejects_current_course_that_is_not_active_or_completed() -> (
+    None
+):
     payload = _llm_learning_path_payload()
     payload["current_learning_course"]["progress_state"] = "not_started"
 
     result = _validate_learning_path_contract(payload)
 
-    assert result == "current_learning_course.progress_state 必须是 in_progress 或 completed。"
+    assert (
+        result
+        == "current_learning_course.progress_state 必须是 in_progress 或 completed。"
+    )
 
 
-def test_validate_learning_path_contract_rejects_grade_with_less_than_three_courses() -> None:
+def test_validate_learning_path_contract_rejects_grade_with_less_than_three_courses() -> (
+    None
+):
     payload = _single_year_learning_path_payload(
         "year_3",
         "大三",
@@ -500,7 +544,9 @@ def test_learning_path_prompt_mentions_json_output() -> None:
     assert "必须且只能输出 3 门课程" not in LEARNING_PATH_AGENT_SYSTEM_PROMPT
 
 
-def test_run_learning_path_agent_uses_structured_llm_for_default_query(tmp_path: Path) -> None:
+def test_run_learning_path_agent_uses_structured_llm_for_default_query(
+    tmp_path: Path,
+) -> None:
     class RecordingLlm:
         def with_structured_output(self, schema, *_args, **_kwargs):
             captured["schema"] = schema
@@ -529,7 +575,9 @@ def test_run_learning_path_agent_uses_structured_llm_for_default_query(tmp_path:
     set_engine(engine)
     init_db(engine)
 
-    module = __import__("app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"])
+    module = __import__(
+        "app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"]
+    )
     original_factory = module.ChatPromptTemplate
 
     class PromptFactory:
@@ -560,10 +608,15 @@ def test_run_learning_path_agent_uses_structured_llm_for_default_query(tmp_path:
     assert captured["schema"] is LearningPathPlanOutput
     assert "用户画像关键信息" in str(captured["query"])
     assert "输出前先完成以下分析" in str(captured["query"])
-    assert result["year_learning_path"]["current_learning_course"]["course_node_id"] == "year_3_course_1"
+    assert (
+        result["year_learning_path"]["current_learning_course"]["course_node_id"]
+        == "year_3_course_1"
+    )
 
 
-def test_run_learning_path_agent_accepts_missing_desired_outcome_in_structured_plan(tmp_path: Path) -> None:
+def test_run_learning_path_agent_accepts_missing_desired_outcome_in_structured_plan(
+    tmp_path: Path,
+) -> None:
     class RecordingLlm:
         def with_structured_output(self, schema, *_args, **_kwargs):
             captured["schema"] = schema
@@ -588,11 +641,15 @@ def test_run_learning_path_agent_accepts_missing_desired_outcome_in_structured_p
             return RecordingChain()
 
     captured: dict[str, object] = {}
-    engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-missing-desired-outcome.db'}")
+    engine = build_engine(
+        f"sqlite:///{tmp_path / 'learning-path-missing-desired-outcome.db'}"
+    )
     set_engine(engine)
     init_db(engine)
 
-    module = __import__("app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"])
+    module = __import__(
+        "app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"]
+    )
     original_factory = module.ChatPromptTemplate
 
     class PromptFactory:
@@ -621,18 +678,33 @@ def test_run_learning_path_agent_accepts_missing_desired_outcome_in_structured_p
         module.ChatPromptTemplate = original_factory
 
     assert captured["schema"] is LearningPathPlanOutput
-    assert result["year_learning_path"]["learning_goal"]["desired_outcome"] == "完成一个围绕 AI 应用开发 的课程级项目"
-    assert result["year_learning_path"]["current_learning_course"]["course_node_id"] == "year_3_course_1"
+    assert (
+        result["year_learning_path"]["learning_goal"]["desired_outcome"]
+        == "完成一个围绕 AI 应用开发 的课程级项目"
+    )
+    assert (
+        result["year_learning_path"]["current_learning_course"]["course_node_id"]
+        == "year_3_course_1"
+    )
 
     with Session(engine) as session:
-        row = session.get(UserYearLearningPath, ("00000000-0000-0000-0000-000000000010", "year_3"))
+        row = session.get(
+            UserYearLearningPath, ("00000000-0000-0000-0000-000000000010", "year_3")
+        )
 
     assert row is not None
-    assert row.path_data["learning_goal"]["desired_outcome"] == "完成一个围绕 AI 应用开发 的课程级项目"
+    assert (
+        row.path_data["learning_goal"]["desired_outcome"]
+        == "完成一个围绕 AI 应用开发 的课程级项目"
+    )
 
 
-def test_run_learning_path_agent_rejects_incomplete_basic_profile(tmp_path: Path) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-incomplete-profile.db'}")
+def test_run_learning_path_agent_rejects_incomplete_basic_profile(
+    tmp_path: Path,
+) -> None:
+    engine = build_engine(
+        f"sqlite:///{tmp_path / 'learning-path-incomplete-profile.db'}"
+    )
     set_engine(engine)
     init_db(engine)
 
@@ -651,14 +723,20 @@ def test_run_learning_path_agent_rejects_incomplete_basic_profile(tmp_path: Path
     assert result == {"error": "请先完成基础画像再生成学习路径。", "hard_error": True}
 
 
-def test_run_learning_path_agent_rejects_unsupported_postgraduate_grade(tmp_path: Path) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-unsupported-grade.db'}")
+def test_run_learning_path_agent_rejects_unsupported_postgraduate_grade(
+    tmp_path: Path,
+) -> None:
+    engine = build_engine(
+        f"sqlite:///{tmp_path / 'learning-path-unsupported-grade.db'}"
+    )
     set_engine(engine)
     init_db(engine)
 
     profile = _complete_profile()
     profile["confirmed_info"]["current_grade"] = "研一"
-    profile["summary_text"] = "【基础学习画像总结】研一软件工程，当前以AI 应用开发为主线。"
+    profile["summary_text"] = (
+        "【基础学习画像总结】研一软件工程，当前以AI 应用开发为主线。"
+    )
     profile["text"] = profile["summary_text"]
 
     result = asyncio.run(
@@ -679,7 +757,9 @@ def test_run_learning_path_agent_rejects_unsupported_postgraduate_grade(tmp_path
     }
 
 
-def test_run_learning_path_agent_returns_error_when_structured_llm_setup_fails(tmp_path: Path) -> None:
+def test_run_learning_path_agent_returns_error_when_structured_llm_setup_fails(
+    tmp_path: Path,
+) -> None:
     class ExplodingLlm:
         def with_structured_output(self, *_args, **_kwargs):
             raise AssertionError("fallback should not call structured llm successfully")
@@ -715,7 +795,10 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_setup_fails(t
             },
             "defaulted_fields": [],
             "question_md": "画像已生成，是否继续生成学习路径？",
-            "question_box": {"question": "画像已生成，下一步要继续生成学习路径吗？", "options": []},
+            "question_box": {
+                "question": "画像已生成，下一步要继续生成学习路径吗？",
+                "options": [],
+            },
             "text": "【基础学习画像总结】大3软件工程，当前以AI 应用开发为主线，适合采用项目驱动学习。",
             "summary_text": "【基础学习画像总结】大3软件工程，当前以AI 应用开发为主线，适合采用项目驱动学习。",
         },
@@ -732,12 +815,16 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_setup_fails(t
     assert result.get("error", "").startswith("学习路径生成失败，请重试生成学习路径。")
 
     with Session(engine) as session:
-        row = session.get(UserYearLearningPath, ("00000000-0000-0000-0000-000000000001", "year_3"))
+        row = session.get(
+            UserYearLearningPath, ("00000000-0000-0000-0000-000000000001", "year_3")
+        )
 
     assert row is None
 
 
-def test_run_learning_path_agent_returns_error_when_contract_validation_fails(tmp_path: Path) -> None:
+def test_run_learning_path_agent_returns_error_when_contract_validation_fails(
+    tmp_path: Path,
+) -> None:
     class RecordingLlm:
         def with_structured_output(self, schema, *_args, **_kwargs):
             captured["schema"] = schema
@@ -764,11 +851,15 @@ def test_run_learning_path_agent_returns_error_when_contract_validation_fails(tm
             return RecordingChain()
 
     captured: dict[str, object] = {}
-    engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-two-course-fallback.db'}")
+    engine = build_engine(
+        f"sqlite:///{tmp_path / 'learning-path-two-course-fallback.db'}"
+    )
     set_engine(engine)
     init_db(engine)
 
-    module = __import__("app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"])
+    module = __import__(
+        "app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"]
+    )
     original_factory = module.ChatPromptTemplate
 
     class PromptFactory:
@@ -800,12 +891,16 @@ def test_run_learning_path_agent_returns_error_when_contract_validation_fails(tm
     assert result.get("error", "").startswith("学习路径生成失败，请重试生成学习路径。")
 
     with Session(engine) as session:
-        row = session.get(UserYearLearningPath, ("00000000-0000-0000-0000-000000000008", "year_3"))
+        row = session.get(
+            UserYearLearningPath, ("00000000-0000-0000-0000-000000000008", "year_3")
+        )
 
     assert row is None
 
 
-def test_run_learning_path_agent_navigation_path_uses_user_topic_and_keeps_unknown_time_visible(tmp_path: Path) -> None:
+def test_run_learning_path_agent_navigation_path_uses_user_topic_and_keeps_unknown_time_visible(
+    tmp_path: Path,
+) -> None:
     class RecordingLlm:
         def with_structured_output(self, schema, *_args, **_kwargs):
             captured["schema"] = schema
@@ -867,7 +962,10 @@ def test_run_learning_path_agent_navigation_path_uses_user_topic_and_keeps_unkno
             },
             "defaulted_fields": [],
             "question_md": "画像已生成，是否继续生成学习路径？",
-            "question_box": {"question": "画像已生成，下一步要继续生成学习路径吗？", "options": []},
+            "question_box": {
+                "question": "画像已生成，下一步要继续生成学习路径吗？",
+                "options": [],
+            },
             "text": "【基础学习画像总结】大三软件工程，目标是找工作，想学习vibecoding。",
             "summary_text": "【基础学习画像总结】大三软件工程，目标是找工作，想学习vibecoding。",
         },
@@ -883,7 +981,9 @@ def test_run_learning_path_agent_navigation_path_uses_user_topic_and_keeps_unkno
         "messages": [],
     }
 
-    module = __import__("app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"])
+    module = __import__(
+        "app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"]
+    )
     original_factory = module.ChatPromptTemplate
 
     class PromptFactory:
@@ -908,7 +1008,9 @@ def test_run_learning_path_agent_navigation_path_uses_user_topic_and_keeps_unkno
     assert len(path["grade_plans"]["year_3"]["course_nodes"]) == 4
 
 
-def test_run_learning_path_agent_returns_error_when_structured_llm_times_out(tmp_path: Path) -> None:
+def test_run_learning_path_agent_returns_error_when_structured_llm_times_out(
+    tmp_path: Path,
+) -> None:
     class SlowLlm:
         def with_structured_output(self, schema, *_args, **_kwargs):
             captured["schema"] = schema
@@ -917,7 +1019,9 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_times_out(tmp
     class SlowChain:
         async def ainvoke(self, _payload):
             await asyncio.sleep(0.05)
-            raise AssertionError("timeout fallback should fire before slow chain completes")
+            raise AssertionError(
+                "timeout fallback should fire before slow chain completes"
+            )
 
     class SlowPrompt:
         def __or__(self, _other):
@@ -928,7 +1032,9 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_times_out(tmp
     set_engine(engine)
     init_db(engine)
 
-    module = __import__("app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"])
+    module = __import__(
+        "app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"]
+    )
     original_factory = module.ChatPromptTemplate
     original_timeout = module.LEARNING_PATH_STRUCTURED_TIMEOUT_SECONDS
 
@@ -964,18 +1070,24 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_times_out(tmp
     assert result.get("error", "").startswith("学习路径生成失败，请重试生成学习路径。")
 
     with Session(engine) as session:
-        row = session.get(UserYearLearningPath, ("00000000-0000-0000-0000-000000000006", "year_3"))
+        row = session.get(
+            UserYearLearningPath, ("00000000-0000-0000-0000-000000000006", "year_3")
+        )
 
     assert row is None
 
 
-def test_run_learning_path_agent_requires_confirmed_intake_for_navigation_query(tmp_path: Path) -> None:
+def test_run_learning_path_agent_requires_confirmed_intake_for_navigation_query(
+    tmp_path: Path,
+) -> None:
     class RecordingLlm:
         called = False
 
         def with_structured_output(self, *_args, **_kwargs):
             self.called = True
-            raise AssertionError("learning path should require confirmed intake before LLM")
+            raise AssertionError(
+                "learning path should require confirmed intake before LLM"
+            )
 
     engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-navigation.db'}")
     set_engine(engine)
@@ -1014,10 +1126,15 @@ def test_run_learning_path_agent_requires_confirmed_intake_for_navigation_query(
     result = asyncio.run(run_learning_path_agent(state, llm))
 
     assert llm.called is False
-    assert result == {"error": "请先确认课程草案，再生成正式学习路径。", "hard_error": True}
+    assert result == {
+        "error": "请先确认课程草案，再生成正式学习路径。",
+        "hard_error": True,
+    }
 
 
-def test_run_learning_path_agent_refresh_query_uses_existing_progress_for_llm_and_progress_roll_forward(tmp_path: Path) -> None:
+def test_run_learning_path_agent_refresh_query_uses_existing_progress_for_llm_and_progress_roll_forward(
+    tmp_path: Path,
+) -> None:
     class RecordingLlm:
         def with_structured_output(self, schema, *_args, **_kwargs):
             captured["schema"] = schema
@@ -1061,16 +1178,26 @@ def test_run_learning_path_agent_refresh_query_uses_existing_progress_for_llm_an
         "course_node_id": "year_3_course_2",
         "course_or_chapter_theme": "AI 工程化服务编排",
         "course_goal": "完成 AI 工程化服务编排 对应的核心训练",
-        "time_arrangement": existing_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+        "time_arrangement": existing_path["grade_plans"]["year_3"]["course_nodes"][1][
+            "time_arrangement"
+        ],
         "current_focus": "第二门课程已完成，准备进入部署与监控实战",
         "progress_state": "completed",
         "next_action": "进入下一门课程",
     }
 
     with Session(engine) as session:
-        upsert_year_learning_path(session, "00000000-0000-0000-0000-000000000004", "year_3", "AI 应用开发", existing_path)
+        upsert_year_learning_path(
+            session,
+            "00000000-0000-0000-0000-000000000004",
+            "year_3",
+            "AI 应用开发",
+            existing_path,
+        )
 
-    module = __import__("app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"])
+    module = __import__(
+        "app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"]
+    )
     original_factory = module.ChatPromptTemplate
 
     class PromptFactory:
@@ -1103,18 +1230,30 @@ def test_run_learning_path_agent_refresh_query_uses_existing_progress_for_llm_an
     assert captured["schema"] is LearningPathPlanOutput
     assert "已有学习路径完成度摘要" in str(captured["query"])
     assert "year_3：共 3 门课程，已完成 2 门" in str(captured["query"])
-    assert result["year_learning_path"]["current_learning_course"]["course_node_id"] == "year_3_course_3"
-    assert result["year_learning_path"]["current_learning_course"]["progress_state"] == "in_progress"
+    assert (
+        result["year_learning_path"]["current_learning_course"]["course_node_id"]
+        == "year_3_course_3"
+    )
+    assert (
+        result["year_learning_path"]["current_learning_course"]["progress_state"]
+        == "in_progress"
+    )
 
     with Session(engine) as session:
-        row = session.get(UserYearLearningPath, ("00000000-0000-0000-0000-000000000004", "year_3"))
+        row = session.get(
+            UserYearLearningPath, ("00000000-0000-0000-0000-000000000004", "year_3")
+        )
 
     assert row is not None
     assert set(row.path_data["grade_plans"]) == {"year_3"}
-    assert row.path_data["current_learning_course"]["course_node_id"] == "year_3_course_3"
+    assert (
+        row.path_data["current_learning_course"]["course_node_id"] == "year_3_course_3"
+    )
 
 
-def test_run_learning_path_agent_new_grade_generation_includes_previous_year_progress_summary(tmp_path: Path) -> None:
+def test_run_learning_path_agent_new_grade_generation_includes_previous_year_progress_summary(
+    tmp_path: Path,
+) -> None:
     class RecordingLlm:
         def with_structured_output(self, schema, *_args, **_kwargs):
             captured["schema"] = schema
@@ -1144,7 +1283,9 @@ def test_run_learning_path_agent_new_grade_generation_includes_previous_year_pro
             return RecordingChain()
 
     captured: dict[str, object] = {}
-    engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-cross-grade-progress.db'}")
+    engine = build_engine(
+        f"sqlite:///{tmp_path / 'learning-path-cross-grade-progress.db'}"
+    )
     set_engine(engine)
     init_db(engine)
 
@@ -1163,21 +1304,33 @@ def test_run_learning_path_agent_new_grade_generation_includes_previous_year_pro
         "course_node_id": "year_3_course_3",
         "course_or_chapter_theme": "AI 应用部署与监控实战",
         "course_goal": "完成 AI 应用部署与监控实战 对应的核心训练",
-        "time_arrangement": existing_path["grade_plans"]["year_3"]["course_nodes"][2]["time_arrangement"],
+        "time_arrangement": existing_path["grade_plans"]["year_3"]["course_nodes"][2][
+            "time_arrangement"
+        ],
         "current_focus": "当前阶段课程已全部完成",
         "progress_state": "completed",
         "next_action": "当前年级课程已完成",
     }
 
     with Session(engine) as session:
-        upsert_year_learning_path(session, "00000000-0000-0000-0000-000000000007", "year_3", "AI 应用开发", existing_path)
+        upsert_year_learning_path(
+            session,
+            "00000000-0000-0000-0000-000000000007",
+            "year_3",
+            "AI 应用开发",
+            existing_path,
+        )
 
     profile = _complete_profile()
     profile["confirmed_info"]["current_grade"] = "大4"
-    profile["summary_text"] = "【基础学习画像总结】大4软件工程，准备进入毕业阶段并围绕 AI 应用开发沉淀作品。"
+    profile["summary_text"] = (
+        "【基础学习画像总结】大4软件工程，准备进入毕业阶段并围绕 AI 应用开发沉淀作品。"
+    )
     profile["text"] = profile["summary_text"]
 
-    module = __import__("app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"])
+    module = __import__(
+        "app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"]
+    )
     original_factory = module.ChatPromptTemplate
 
     class PromptFactory:
@@ -1219,17 +1372,26 @@ def test_run_learning_path_agent_new_grade_generation_includes_previous_year_pro
     assert "year_3：共 3 门课程，已完成 3 门" in str(captured["query"])
     assert result["grade_year"] == "year_4"
     assert set(result["year_learning_path"]["grade_plans"]) == {"year_4"}
-    assert result["year_learning_path"]["current_learning_course"]["course_node_id"] == "year_4_course_1"
+    assert (
+        result["year_learning_path"]["current_learning_course"]["course_node_id"]
+        == "year_4_course_1"
+    )
 
     with Session(engine) as session:
-        row = session.get(UserYearLearningPath, ("00000000-0000-0000-0000-000000000007", "year_4"))
+        row = session.get(
+            UserYearLearningPath, ("00000000-0000-0000-0000-000000000007", "year_4")
+        )
 
     assert row is not None
     assert set(row.path_data["grade_plans"]) == {"year_4"}
-    assert row.path_data["current_learning_course"]["course_node_id"] == "year_4_course_1"
+    assert (
+        row.path_data["current_learning_course"]["course_node_id"] == "year_4_course_1"
+    )
 
 
-def test_run_learning_path_agent_refresh_query_returns_error_when_structured_llm_setup_fails(tmp_path: Path) -> None:
+def test_run_learning_path_agent_refresh_query_returns_error_when_structured_llm_setup_fails(
+    tmp_path: Path,
+) -> None:
     class ExplodingLlm:
         def with_structured_output(self, *_args, **_kwargs):
             raise AssertionError("fallback should not call structured llm successfully")
@@ -1253,14 +1415,22 @@ def test_run_learning_path_agent_refresh_query_returns_error_when_structured_llm
         "course_node_id": "year_3_course_2",
         "course_or_chapter_theme": "AI 工程化服务编排",
         "course_goal": "完成 AI 工程化服务编排 对应的核心训练",
-        "time_arrangement": existing_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+        "time_arrangement": existing_path["grade_plans"]["year_3"]["course_nodes"][1][
+            "time_arrangement"
+        ],
         "current_focus": "第二门课程已完成，准备进入部署与监控实战",
         "progress_state": "completed",
         "next_action": "进入下一门课程",
     }
 
     with Session(engine) as session:
-        upsert_year_learning_path(session, "00000000-0000-0000-0000-000000000005", "year_3", "AI 应用开发", existing_path)
+        upsert_year_learning_path(
+            session,
+            "00000000-0000-0000-0000-000000000005",
+            "year_3",
+            "AI 应用开发",
+            existing_path,
+        )
 
     result = asyncio.run(
         run_learning_path_agent(
@@ -1284,14 +1454,20 @@ def test_run_learning_path_agent_refresh_query_returns_error_when_structured_llm
     assert result.get("error", "").startswith("学习路径生成失败，请重试生成学习路径。")
 
     with Session(engine) as session:
-        row = session.get(UserYearLearningPath, ("00000000-0000-0000-0000-000000000005", "year_3"))
+        row = session.get(
+            UserYearLearningPath, ("00000000-0000-0000-0000-000000000005", "year_3")
+        )
 
     assert row is not None
-    assert row.path_data["current_learning_course"]["course_node_id"] == "year_3_course_2"
+    assert (
+        row.path_data["current_learning_course"]["course_node_id"] == "year_3_course_2"
+    )
     assert row.path_data["current_learning_course"]["progress_state"] == "completed"
 
 
-def test_learning_path_agent_node_updates_year_learning_paths_state(tmp_path: Path) -> None:
+def test_learning_path_agent_node_updates_year_learning_paths_state(
+    tmp_path: Path,
+) -> None:
     class ExplodingLlm:
         def with_structured_output(self, *_args, **_kwargs):
             raise AssertionError("fallback should not call structured llm successfully")

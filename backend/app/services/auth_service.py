@@ -8,7 +8,14 @@ from sqlmodel import Session, select
 
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models import User
-from app.schemas import AuthResponse, AuthType, LoginRequest, OAuthRequest, RegisterRequest, UserRead
+from app.schemas import (
+    AuthResponse,
+    AuthType,
+    LoginRequest,
+    OAuthRequest,
+    RegisterRequest,
+    UserRead,
+)
 
 
 def to_user_read(user: User) -> UserRead:

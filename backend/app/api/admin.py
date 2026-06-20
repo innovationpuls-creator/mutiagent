@@ -51,7 +51,9 @@ def create_admin_router(session_dependency: SessionDependency) -> APIRouter:
     ) -> list[UserRead]:
         return list_accounts(session)
 
-    @router.post("/accounts", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+    @router.post(
+        "/accounts", response_model=UserRead, status_code=status.HTTP_201_CREATED
+    )
     def create(
         payload: AdminAccountCreateRequest,
         _: User = Depends(require_admin),

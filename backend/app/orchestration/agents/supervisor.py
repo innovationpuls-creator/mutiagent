@@ -12,20 +12,20 @@ from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.agents.prompts import SUPERVISOR_BASE_PROMPT
 from app.orchestration.rule_engine import (
     AGENT_COURSE_KNOWLEDGE,
-    AGENT_LEARNING_PATH_INTAKE,
     AGENT_LEARNING_PATH,
+    AGENT_LEARNING_PATH_INTAKE,
     AGENT_PROFILE,
-    AGENT_SECTION_HTML_ANIMATION,
     AGENT_SECTION_MARKDOWN,
-    AGENT_SECTION_VIDEO_SEARCH,
     build_blocked_agents_hint,
-    evaluate as evaluate_rules,
     has_pending_profile_update_followup,
     is_course_change_query,
     is_navigation_query,
     is_profile_refinement_query,
     is_profile_update_no_change_query,
     is_profile_update_query,
+)
+from app.orchestration.rule_engine import (
+    evaluate as evaluate_rules,
 )
 from app.orchestration.state import OrchestrationState
 from app.services.learning_path_service import iter_year_learning_paths
@@ -47,6 +47,7 @@ _FOLLOWUP_PAUSE_QUERIES = {
 
 
 # ── Dynamic system prompt builder ────────────────────────────────────────
+
 
 def _grade_name_for_path(year: str, path: dict) -> str:
     grade_plans = path.get("grade_plans")
@@ -86,6 +87,7 @@ def _course_count_for_path(path: dict) -> int:
         return len(courses)
     return 0
 
+
 def build_system_prompt(state: OrchestrationState) -> str:
     """Build a system prompt that tells the LLM what stage the conversation is in."""
     base = SUPERVISOR_BASE_PROMPT
@@ -93,22 +95,32 @@ def build_system_prompt(state: OrchestrationState) -> str:
 
     profile = state.get("profile")
     if is_complete_profile_data(profile):
-        summary_text = profile.get("summary_text") if isinstance(profile, dict) else None
+        summary_text = (
+            profile.get("summary_text") if isinstance(profile, dict) else None
+        )
         if isinstance(summary_text, str) and summary_text.strip():
             status_lines.append(f"✅ 用户画像已完成 — 摘要：{summary_text[:120]}")
         else:
             status_lines.append("✅ 用户画像已完成")
     elif profile and isinstance(profile, dict):
-        status_lines.append("❌ 用户画像未完成 — 当前仍需补全基础信息后再调用 profile_agent")
+        status_lines.append(
+            "❌ 用户画像未完成 — 当前仍需补全基础信息后再调用 profile_agent"
+        )
     else:
-        status_lines.append("❌ 用户画像未完成 — 需要通过对话收集信息后调用 profile_agent")
+        status_lines.append(
+            "❌ 用户画像未完成 — 需要通过对话收集信息后调用 profile_agent"
+        )
 
     year_paths = state.get("year_learning_paths", {})
     if year_paths:
         for year, path in year_paths.items():
-            grade_name = _grade_name_for_path(year, path) if isinstance(path, dict) else year
+            grade_name = (
+                _grade_name_for_path(year, path) if isinstance(path, dict) else year
+            )
             course_count = _course_count_for_path(path) if isinstance(path, dict) else 0
-            status_lines.append(f"✅ {grade_name}({year}) 学习路径已生成 — {course_count} 门课程")
+            status_lines.append(
+                f"✅ {grade_name}({year}) 学习路径已生成 — {course_count} 门课程"
+            )
     else:
         status_lines.append("❌ 尚无学习路径")
 
@@ -124,6 +136,7 @@ def build_system_prompt(state: OrchestrationState) -> str:
 
 
 # ── Tool definitions (matching new tool signatures) ──────────────────────
+
 
 def create_tools_for_llm() -> list:
 
@@ -165,7 +178,7 @@ def create_tools_for_llm() -> list:
         """为学习路径中的课程生成详细的章节大纲。
         前提：该年级的学习路径已生成。
         注意：仅在为特定课程生成大纲结构时使用。如果是通用的问答或概念解释，绝对禁止调用此工具。
-        
+
         Args:
             course_id: 课程 ID（可选，留空则生成当前课程；"__all_current_grade__" 表示当前年级全部课程）
         """
@@ -218,6 +231,7 @@ def create_tools_for_llm() -> list:
 
 # ── Force call helper ────────────────────────────────────────────────────
 
+
 def _next_course_id_for_course_change(state: OrchestrationState) -> str:
     query = str(state.get("query", "")).strip()
     if not is_course_change_query(query):
@@ -251,7 +265,8 @@ def _next_course_id_for_course_change(state: OrchestrationState) -> str:
             (
                 index
                 for index, course in enumerate(course_nodes)
-                if isinstance(course, dict) and course.get("course_node_id") == current_course_id
+                if isinstance(course, dict)
+                and course.get("course_node_id") == current_course_id
             ),
             -1,
         )
@@ -266,7 +281,11 @@ def _next_course_id_for_course_change(state: OrchestrationState) -> str:
 
 
 def _normalized_course_match_text(value: object) -> str:
-    return re.sub(r"[\s《》“”\"'：:，,。！？!?、；;（）()【】\[\]\-_/]+", "", str(value).strip().lower())
+    return re.sub(
+        r"[\s《》“”\"'：:，,。！？!?、；;（）()【】\[\]\-_/]+",
+        "",
+        str(value).strip().lower(),
+    )
 
 
 def _course_id_from_query_course_name(state: OrchestrationState) -> str:
@@ -294,7 +313,9 @@ def _course_id_from_query_course_name(state: OrchestrationState) -> str:
             for course in course_nodes:
                 if not isinstance(course, dict):
                     continue
-                course_name_key = _normalized_course_match_text(course.get("course_or_chapter_theme", ""))
+                course_name_key = _normalized_course_match_text(
+                    course.get("course_or_chapter_theme", "")
+                )
                 if not course_name_key or course_name_key not in query_key:
                     continue
                 course_id = course.get("course_node_id")
@@ -324,15 +345,18 @@ def _current_course_id_from_learning_path(state: OrchestrationState) -> str:
 
 def _requests_all_current_grade_course_outlines(query: str) -> bool:
     normalized = _normalized_course_match_text(query)
-    return any(keyword in normalized for keyword in (
-        "全年所有课程",
-        "全年全部课程",
-        "全部课程大纲",
-        "所有课程大纲",
-        "一整年所有课程",
-        "当前年级全部课程",
-        "当前年级所有课程",
-    ))
+    return any(
+        keyword in normalized
+        for keyword in (
+            "全年所有课程",
+            "全年全部课程",
+            "全部课程大纲",
+            "所有课程大纲",
+            "一整年所有课程",
+            "当前年级全部课程",
+            "当前年级所有课程",
+        )
+    )
 
 
 def _all_tasks_completed_response() -> str:
@@ -369,7 +393,9 @@ def _learning_path_force_args(state: OrchestrationState) -> dict[str, str]:
     return {
         "grade_year": "",
         "learning_topic": "",
-        "specific_requirements": "" if normalized_query in _GENERIC_PATH_REFRESH_QUERIES else query,
+        "specific_requirements": ""
+        if normalized_query in _GENERIC_PATH_REFRESH_QUERIES
+        else query,
     }
 
 
@@ -465,18 +491,34 @@ def _resolve_root_section_id_from_query(course_knowledge: object, query: str) ->
 def _section_markdown_force_args(state: OrchestrationState) -> dict[str, str]:
     query = str(state.get("query", "")).strip()
     course_knowledge = state.get("course_knowledge")
-    course_id = course_knowledge.get("course_id", "") if isinstance(course_knowledge, dict) else ""
+    course_id = (
+        course_knowledge.get("course_id", "")
+        if isinstance(course_knowledge, dict)
+        else ""
+    )
     first_root_id = _first_root_section_id(course_knowledge) or "1"
     if "当前课程" in query or "整门课" in query:
-        return {"course_id": course_id, "section_id": first_root_id, "scope": "chapter_sections"}
+        return {
+            "course_id": course_id,
+            "section_id": first_root_id,
+            "scope": "chapter_sections",
+        }
 
     resolved_root_id = _resolve_root_section_id_from_query(course_knowledge, query)
     if resolved_root_id:
-        return {"course_id": course_id, "section_id": resolved_root_id, "scope": "chapter_sections"}
+        return {
+            "course_id": course_id,
+            "section_id": resolved_root_id,
+            "scope": "chapter_sections",
+        }
 
     chapter_index = _chapter_index_from_query(query)
     if chapter_index is not None:
-        return {"course_id": course_id, "section_id": str(chapter_index), "scope": "chapter_sections"}
+        return {
+            "course_id": course_id,
+            "section_id": str(chapter_index),
+            "scope": "chapter_sections",
+        }
 
     return {"course_id": course_id, "section_id": "", "scope": "default_first_chapter"}
 
@@ -517,18 +559,22 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
         # Build summary from existing conversation messages
         messages = state.get("messages", [])
         if messages:
-            history = [m.content if hasattr(m, 'content') else str(m) for m in messages[-6:]]
+            history = [
+                m.content if hasattr(m, "content") else str(m) for m in messages[-6:]
+            ]
             conversation_summary = "\n".join(history)
 
         return {
             "messages": [
                 AIMessage(
                     content="",
-                    tool_calls=[{
-                        "name": AGENT_PROFILE,
-                        "args": {"conversation_summary": conversation_summary},
-                        "id": f"force_{AGENT_PROFILE}",
-                    }],
+                    tool_calls=[
+                        {
+                            "name": AGENT_PROFILE,
+                            "args": {"conversation_summary": conversation_summary},
+                            "id": f"force_{AGENT_PROFILE}",
+                        }
+                    ],
                 )
             ],
         }
@@ -538,11 +584,13 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
             "messages": [
                 AIMessage(
                     content="",
-                    tool_calls=[{
-                        "name": AGENT_LEARNING_PATH_INTAKE,
-                        "args": {},
-                        "id": f"force_{AGENT_LEARNING_PATH_INTAKE}",
-                    }],
+                    tool_calls=[
+                        {
+                            "name": AGENT_LEARNING_PATH_INTAKE,
+                            "args": {},
+                            "id": f"force_{AGENT_LEARNING_PATH_INTAKE}",
+                        }
+                    ],
                 )
             ],
         }
@@ -552,11 +600,13 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
             "messages": [
                 AIMessage(
                     content="",
-                    tool_calls=[{
-                        "name": AGENT_LEARNING_PATH,
-                        "args": _learning_path_force_args(state),
-                        "id": f"force_{AGENT_LEARNING_PATH}",
-                    }],
+                    tool_calls=[
+                        {
+                            "name": AGENT_LEARNING_PATH,
+                            "args": _learning_path_force_args(state),
+                            "id": f"force_{AGENT_LEARNING_PATH}",
+                        }
+                    ],
                 )
             ],
         }
@@ -569,7 +619,9 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
         elif _requests_all_current_grade_course_outlines(query):
             course_id = ALL_CURRENT_GRADE_COURSES_ID
         else:
-            course_id = _course_id_from_query_course_name(state) or _current_course_id_from_learning_path(state)
+            course_id = _course_id_from_query_course_name(
+                state
+            ) or _current_course_id_from_learning_path(state)
         if is_course_change and not course_id:
             response = _all_tasks_completed_response()
             return {
@@ -580,11 +632,13 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
             "messages": [
                 AIMessage(
                     content="",
-                    tool_calls=[{
-                        "name": AGENT_COURSE_KNOWLEDGE,
-                        "args": {"course_id": course_id},
-                        "id": f"force_{AGENT_COURSE_KNOWLEDGE}",
-                    }],
+                    tool_calls=[
+                        {
+                            "name": AGENT_COURSE_KNOWLEDGE,
+                            "args": {"course_id": course_id},
+                            "id": f"force_{AGENT_COURSE_KNOWLEDGE}",
+                        }
+                    ],
                 )
             ],
         }
@@ -594,11 +648,13 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
             "messages": [
                 AIMessage(
                     content="",
-                    tool_calls=[{
-                        "name": AGENT_SECTION_MARKDOWN,
-                        "args": _section_markdown_force_args(state),
-                        "id": f"force_{AGENT_SECTION_MARKDOWN}",
-                    }],
+                    tool_calls=[
+                        {
+                            "name": AGENT_SECTION_MARKDOWN,
+                            "args": _section_markdown_force_args(state),
+                            "id": f"force_{AGENT_SECTION_MARKDOWN}",
+                        }
+                    ],
                 )
             ],
         }
@@ -607,6 +663,7 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
 
 
 # ── Supervisor node factory ──────────────────────────────────────────────
+
 
 def create_supervisor_node(llm: BaseChatModel):
     """Create the Supervisor LangGraph node.
@@ -648,19 +705,23 @@ def create_supervisor_node(llm: BaseChatModel):
         except Exception as exc:
             logger.warning("Supervisor LLM call failed: %s", exc)
             return {
-                "messages": [AIMessage(content="抱歉，暂时无法处理你的请求，请稍后再试。")],
+                "messages": [
+                    AIMessage(content="抱歉，暂时无法处理你的请求，请稍后再试。")
+                ],
                 "response": "抱歉，暂时无法处理你的请求，请稍后再试。",
             }
 
         # Guard: block LLM from calling blocked agents
         if rule_result and rule_result.blocked_agents and response.tool_calls:
             filtered_calls = [
-                tc for tc in response.tool_calls
+                tc
+                for tc in response.tool_calls
                 if tc.get("name") not in rule_result.blocked_agents
             ]
             if len(filtered_calls) != len(response.tool_calls):
                 blocked_names = [
-                    tc["name"] for tc in response.tool_calls
+                    tc["name"]
+                    for tc in response.tool_calls
                     if tc["name"] in rule_result.blocked_agents
                 ]
                 logger.warning("Blocked LLM tool calls: %s", blocked_names)

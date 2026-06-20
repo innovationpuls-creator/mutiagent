@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timezone
 from collections.abc import Iterator
+from datetime import datetime, timezone
 
 from sqlalchemy import func
 from sqlmodel import Session, select
@@ -19,15 +19,26 @@ from app.models import (
 )
 from app.services.resource_quality_service import get_quality_scores_for_user
 
-
 YEAR_ORDER = ("year_1", "year_2", "year_3", "year_4")
 YEAR_INDEX = {grade_year: index for index, grade_year in enumerate(YEAR_ORDER)}
 MILESTONE_DEFINITIONS = {
-    1: {"title": "萌芽期 - 画像建立完成", "desc": "完成 AI 多轮对话评估，生成专属树苗。"},
+    1: {
+        "title": "萌芽期 - 画像建立完成",
+        "desc": "完成 AI 多轮对话评估，生成专属树苗。",
+    },
     2: {"title": "繁枝期 - 学习路径规划完成", "desc": "成功生成完整四学年路径树分支。"},
-    3: {"title": "叶茂期 - 点亮第一门课程", "desc": "获取并确认首门课程大纲与详细知识树。"},
-    4: {"title": "成林期 - 开启首次章节测验", "desc": "系统生成首套定制测验题，开启深度评估。"},
-    5: {"title": "成森期 - 顺利通过首门测验", "desc": "成功通关首个章节测验，达成成森里程碑。"},
+    3: {
+        "title": "叶茂期 - 点亮第一门课程",
+        "desc": "获取并确认首门课程大纲与详细知识树。",
+    },
+    4: {
+        "title": "成林期 - 开启首次章节测验",
+        "desc": "系统生成首套定制测验题，开启深度评估。",
+    },
+    5: {
+        "title": "成森期 - 顺利通过首门测验",
+        "desc": "成功通关首个章节测验，达成成森里程碑。",
+    },
 }
 GROWTH_TREE_SEED_STAGE = 1
 GROWTH_TREE_MAX_ADVANCED_STEPS = 5
@@ -56,7 +67,9 @@ def _normalize_current_learning_courses(path_data: dict) -> dict:
 
     current_course = normalized.get("current_learning_course")
     if not normalized_current_courses and isinstance(current_course, dict):
-        normalized_current_courses = [_normalize_current_learning_course_progress(current_course)]
+        normalized_current_courses = [
+            _normalize_current_learning_course_progress(current_course)
+        ]
 
     if normalized_current_courses:
         normalized["current_learning_course"] = normalized_current_courses[0]
@@ -94,7 +107,9 @@ def get_current_learning_course(path_data: dict) -> dict | None:
     current_courses = normalized_path.get("current_learning_courses")
     current = (
         current_courses[0]
-        if isinstance(current_courses, list) and current_courses and isinstance(current_courses[0], dict)
+        if isinstance(current_courses, list)
+        and current_courses
+        and isinstance(current_courses[0], dict)
         else normalized_path.get("current_learning_course")
     )
     return current if isinstance(current, dict) else None
@@ -161,19 +176,30 @@ def _grade_course_id_set(path_data: dict, grade_year: str) -> set[str]:
     return {
         course_id
         for course_id, _theme, _goal in (
-            _course_identity(course) for course in get_grade_courses(path_data, grade_year)
+            _course_identity(course)
+            for course in get_grade_courses(path_data, grade_year)
         )
         if course_id
     }
 
 
-def _grade_courses_changed(previous_path_data: dict, next_path_data: dict, grade_year: str) -> bool:
-    previous_courses = [_course_identity(course) for course in get_grade_courses(previous_path_data, grade_year)]
-    next_courses = [_course_identity(course) for course in get_grade_courses(next_path_data, grade_year)]
+def _grade_courses_changed(
+    previous_path_data: dict, next_path_data: dict, grade_year: str
+) -> bool:
+    previous_courses = [
+        _course_identity(course)
+        for course in get_grade_courses(previous_path_data, grade_year)
+    ]
+    next_courses = [
+        _course_identity(course)
+        for course in get_grade_courses(next_path_data, grade_year)
+    ]
     return previous_courses != next_courses
 
 
-def _delete_course_runtime_state(session: Session, user_uid: str, course_ids: set[str]) -> None:
+def _delete_course_runtime_state(
+    session: Session, user_uid: str, course_ids: set[str]
+) -> None:
     if not course_ids:
         return
 
@@ -252,7 +278,9 @@ def get_year_progress_snapshot(path_data: dict, grade_year: str) -> dict[str, ob
     current_grade_year = get_current_grade_year_from_path(path_data)
     if not current_grade_year:
         first_course_id = courses[0].get("course_node_id")
-        snapshot["next_course_id"] = first_course_id if isinstance(first_course_id, str) else ""
+        snapshot["next_course_id"] = (
+            first_course_id if isinstance(first_course_id, str) else ""
+        )
         return snapshot
 
     grade_compare = compare_grade_years(grade_year, current_grade_year)
@@ -262,25 +290,37 @@ def get_year_progress_snapshot(path_data: dict, grade_year: str) -> dict[str, ob
         return snapshot
     if grade_compare > 0:
         first_course_id = courses[0].get("course_node_id")
-        snapshot["next_course_id"] = first_course_id if isinstance(first_course_id, str) else ""
+        snapshot["next_course_id"] = (
+            first_course_id if isinstance(first_course_id, str) else ""
+        )
         return snapshot
 
     course_id = current.get("course_node_id") if isinstance(current, dict) else ""
     if not isinstance(course_id, str) or not course_id.strip():
         first_course_id = courses[0].get("course_node_id")
-        snapshot["next_course_id"] = first_course_id if isinstance(first_course_id, str) else ""
+        snapshot["next_course_id"] = (
+            first_course_id if isinstance(first_course_id, str) else ""
+        )
         return snapshot
 
     normalized_course_id = course_id.strip()
     current_index = _course_index(courses, normalized_course_id)
     if current_index < 0:
         first_course_id = courses[0].get("course_node_id")
-        snapshot["next_course_id"] = first_course_id if isinstance(first_course_id, str) else ""
+        snapshot["next_course_id"] = (
+            first_course_id if isinstance(first_course_id, str) else ""
+        )
         return snapshot
 
     progress_state = current.get("progress_state")
-    normalized_progress_state = progress_state.strip() if isinstance(progress_state, str) and progress_state.strip() else ""
-    completed_courses = current_index + 1 if normalized_progress_state == "completed" else current_index
+    normalized_progress_state = (
+        progress_state.strip()
+        if isinstance(progress_state, str) and progress_state.strip()
+        else ""
+    )
+    completed_courses = (
+        current_index + 1 if normalized_progress_state == "completed" else current_index
+    )
 
     snapshot["completed_courses"] = min(completed_courses, total_courses)
     snapshot["current_course_id"] = normalized_course_id
@@ -289,7 +329,9 @@ def get_year_progress_snapshot(path_data: dict, grade_year: str) -> dict[str, ob
     if normalized_progress_state == "completed":
         if current_index + 1 < total_courses:
             next_course_id = courses[current_index + 1].get("course_node_id")
-            snapshot["next_course_id"] = next_course_id if isinstance(next_course_id, str) else ""
+            snapshot["next_course_id"] = (
+                next_course_id if isinstance(next_course_id, str) else ""
+            )
         return snapshot
 
     snapshot["next_course_id"] = normalized_course_id
@@ -302,9 +344,13 @@ def get_learning_path_progress_snapshots(
     if not isinstance(year_learning_paths, dict):
         return []
 
-    ordered_years = [grade_year for grade_year in YEAR_ORDER if grade_year in year_learning_paths]
+    ordered_years = [
+        grade_year for grade_year in YEAR_ORDER if grade_year in year_learning_paths
+    ]
     ordered_years.extend(
-        grade_year for grade_year in year_learning_paths if grade_year not in ordered_years
+        grade_year
+        for grade_year in year_learning_paths
+        if grade_year not in ordered_years
     )
 
     snapshots: list[dict[str, object]] = []
@@ -316,13 +362,18 @@ def get_learning_path_progress_snapshots(
     return snapshots
 
 
-def get_year_learning_path(session: Session, user_uid: str, grade_year: str) -> dict | None:
+def get_year_learning_path(
+    session: Session, user_uid: str, grade_year: str
+) -> dict | None:
     row = session.get(UserYearLearningPath, (user_uid, grade_year))
     if row is None:
         stmt = (
             select(UserYearLearningPath)
             .where(UserYearLearningPath.user_uid == user_uid)
-            .order_by(UserYearLearningPath.updated_at.desc(), UserYearLearningPath.grade_year.asc())
+            .order_by(
+                UserYearLearningPath.updated_at.desc(),
+                UserYearLearningPath.grade_year.asc(),
+            )
         )
         rows = session.exec(stmt).all()
         for candidate in rows:
@@ -337,7 +388,10 @@ def get_all_year_learning_paths(session: Session, user_uid: str) -> dict[str, di
     stmt = (
         select(UserYearLearningPath)
         .where(UserYearLearningPath.user_uid == user_uid)
-        .order_by(UserYearLearningPath.updated_at.desc(), UserYearLearningPath.grade_year.asc())
+        .order_by(
+            UserYearLearningPath.updated_at.desc(),
+            UserYearLearningPath.grade_year.asc(),
+        )
     )
     rows = session.exec(stmt).all()
     paths_by_year: dict[str, dict] = {}
@@ -350,11 +404,16 @@ def get_all_year_learning_paths(session: Session, user_uid: str) -> dict[str, di
     return paths_by_year
 
 
-def get_latest_year_learning_path_row(session: Session, user_uid: str) -> UserYearLearningPath | None:
+def get_latest_year_learning_path_row(
+    session: Session, user_uid: str
+) -> UserYearLearningPath | None:
     stmt = (
         select(UserYearLearningPath)
         .where(UserYearLearningPath.user_uid == user_uid)
-        .order_by(UserYearLearningPath.updated_at.desc(), UserYearLearningPath.grade_year.asc())
+        .order_by(
+            UserYearLearningPath.updated_at.desc(),
+            UserYearLearningPath.grade_year.asc(),
+        )
     )
     return session.exec(stmt).first()
 
@@ -399,7 +458,9 @@ def _canopy_course_status(
     return "locked"
 
 
-def _canopy_courses_from_paths(paths_by_year: dict[str, dict]) -> list[dict[str, object]]:
+def _canopy_courses_from_paths(
+    paths_by_year: dict[str, dict],
+) -> list[dict[str, object]]:
     courses: list[dict[str, object]] = []
     for grade_id in YEAR_ORDER:
         path_data = paths_by_year.get(grade_id, {})
@@ -411,7 +472,11 @@ def _canopy_courses_from_paths(paths_by_year: dict[str, dict]) -> list[dict[str,
         if isinstance(current, dict):
             course_id = current.get("course_node_id")
             progress_state = current.get("progress_state")
-            current_course_id = course_id.strip() if isinstance(course_id, str) and course_id.strip() else ""
+            current_course_id = (
+                course_id.strip()
+                if isinstance(course_id, str) and course_id.strip()
+                else ""
+            )
             current_progress_state = (
                 progress_state.strip()
                 if isinstance(progress_state, str) and progress_state.strip()
@@ -435,7 +500,9 @@ def _canopy_courses_from_paths(paths_by_year: dict[str, dict]) -> list[dict[str,
             courses.append(
                 {
                     "id": course_id.strip(),
-                    "title": title.strip() if isinstance(title, str) and title.strip() else course_id.strip(),
+                    "title": title.strip()
+                    if isinstance(title, str) and title.strip()
+                    else course_id.strip(),
                     "grade": grade_id,
                     "status": _canopy_course_status(
                         grade_id,
@@ -450,7 +517,9 @@ def _canopy_courses_from_paths(paths_by_year: dict[str, dict]) -> list[dict[str,
                         if isinstance(description, str) and description.strip()
                         else "继续沿着学习路径稳步推进。"
                     ),
-                    "prerequisite_ids": _string_list(course.get("prerequisite_node_ids")),
+                    "prerequisite_ids": _string_list(
+                        course.get("prerequisite_node_ids")
+                    ),
                 }
             )
     return courses
@@ -470,12 +539,16 @@ def get_canopy_overview(session: Session, user_uid: str) -> dict[str, object]:
     profile = session.get(UserProfile, user_uid)
     path_rows = list(
         session.exec(
-            select(UserYearLearningPath).where(UserYearLearningPath.user_uid == user_uid)
+            select(UserYearLearningPath).where(
+                UserYearLearningPath.user_uid == user_uid
+            )
         ).all()
     )
     outline_rows = list(
         session.exec(
-            select(UserCourseKnowledgeOutline).where(UserCourseKnowledgeOutline.user_uid == user_uid)
+            select(UserCourseKnowledgeOutline).where(
+                UserCourseKnowledgeOutline.user_uid == user_uid
+            )
         ).all()
     )
     quiz_rows = list(
@@ -602,10 +675,9 @@ def upsert_year_learning_path(
     else:
         previous_path_data = row.path_data if isinstance(row.path_data, dict) else {}
         if _grade_courses_changed(previous_path_data, path_data, grade_year):
-            affected_course_ids = (
-                _grade_course_id_set(previous_path_data, grade_year)
-                | _grade_course_id_set(path_data, grade_year)
-            )
+            affected_course_ids = _grade_course_id_set(
+                previous_path_data, grade_year
+            ) | _grade_course_id_set(path_data, grade_year)
             _delete_course_runtime_state(session, user_uid, affected_course_ids)
         row.learning_topic = learning_topic
         row.path_data = path_data

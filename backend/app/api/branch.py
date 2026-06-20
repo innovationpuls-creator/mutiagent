@@ -49,7 +49,9 @@ def _grade_courses(path_data: dict, grade_id: str) -> list[dict]:
     return get_grade_courses(path_data, grade_id)
 
 
-def _current_course_id(path_data: dict, grade_id: str, courses: list[dict]) -> str | None:
+def _current_course_id(
+    path_data: dict, grade_id: str, courses: list[dict]
+) -> str | None:
     if not courses:
         return None
     current_learning_course = get_current_learning_course(path_data)
@@ -142,8 +144,9 @@ def create_branch_router(session_dependency: SessionDependency) -> APIRouter:
         paths_by_year = get_all_year_learning_paths(session, current_user.uid)
         outline_rows = list(
             session.exec(
-                select(UserCourseKnowledgeOutline)
-                .where(UserCourseKnowledgeOutline.user_uid == current_user.uid)
+                select(UserCourseKnowledgeOutline).where(
+                    UserCourseKnowledgeOutline.user_uid == current_user.uid
+                )
             ).all()
         )
 
@@ -185,8 +188,12 @@ def create_branch_router(session_dependency: SessionDependency) -> APIRouter:
                 branch_courses.append(
                     BranchCourseNodeRead(
                         course_node_id=course_id,
-                        course_or_chapter_theme=theme.strip() if isinstance(theme, str) and theme.strip() else course_id,
-                        course_goal=goal.strip() if isinstance(goal, str) and goal.strip() else "继续沿着学习路径稳步推进。",
+                        course_or_chapter_theme=theme.strip()
+                        if isinstance(theme, str) and theme.strip()
+                        else course_id,
+                        course_goal=goal.strip()
+                        if isinstance(goal, str) and goal.strip()
+                        else "继续沿着学习路径稳步推进。",
                         status=_course_status(
                             grade_id,
                             current_grade_id,

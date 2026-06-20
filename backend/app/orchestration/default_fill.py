@@ -29,4 +29,6 @@ def allows_default_profile_fill(text: str) -> bool:
         return False
     if any(marker in normalized for marker in DEFAULT_FILL_MARKERS):
         return True
-    return "默认" in normalized and any(marker in normalized for marker in DEFAULT_FILL_CONTEXT_MARKERS)
+    return "默认" in normalized and any(
+        marker in normalized for marker in DEFAULT_FILL_CONTEXT_MARKERS
+    )

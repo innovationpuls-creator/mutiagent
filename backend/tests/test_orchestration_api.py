@@ -1,24 +1,24 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
-import app.orchestration.graph as graph_module
-import app.services.conversation_session_service as conversation_session_service
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 from sqlmodel import Session, select
 
+import app.orchestration.graph as graph_module
+import app.services.conversation_session_service as conversation_session_service
 from app.database import build_engine
 from app.main import create_app
 from app.models import (
-    ConversationSession,
     ChapterProgress,
+    ConversationSession,
     User,
     UserCourseKnowledgeOutline,
     UserProfile,
@@ -39,15 +39,18 @@ def _auth_header(token: str) -> dict:
 
 def _register_user(client: TestClient, identifier: str, password: str) -> str:
     """Register a user and return the JWT token."""
-    resp = client.post("/api/auth/register", json={
-        "username": "测试用户",
-        "identifier": identifier,
-        "password": password,
-        "confirm_password": password,
-        "school": "测试大学",
-        "major": "软件工程",
-        "class_name": "三班",
-    })
+    resp = client.post(
+        "/api/auth/register",
+        json={
+            "username": "测试用户",
+            "identifier": identifier,
+            "password": password,
+            "confirm_password": password,
+            "school": "测试大学",
+            "major": "软件工程",
+            "class_name": "三班",
+        },
+    )
     assert resp.status_code == 201, resp.text
     return resp.json()["access_token"]
 
@@ -272,7 +275,9 @@ def _single_grade_generated_path(
 ) -> dict:
     course_nodes: list[dict] = []
     for index, theme in enumerate(course_themes, start=1):
-        course_nodes.append(_course_node(f"{grade_id}_course_{index}", theme, grade_id=grade_id))
+        course_nodes.append(
+            _course_node(f"{grade_id}_course_{index}", theme, grade_id=grade_id)
+        )
 
     current_course = course_nodes[current_index]
     return {
@@ -311,7 +316,9 @@ def _single_grade_generated_path(
                 {
                     "path_id": f"{grade_id}_critical_path",
                     "purpose": f"{grade_name}主学习路径",
-                    "ordered_node_ids": [course["course_node_id"] for course in course_nodes],
+                    "ordered_node_ids": [
+                        course["course_node_id"] for course in course_nodes
+                    ],
                 }
             ],
         },
@@ -335,6 +342,7 @@ def _single_grade_generated_path(
             "next_action": "继续推进当前课程",
         },
     }
+
 
 def _course_outline() -> dict:
     return {
@@ -463,17 +471,21 @@ def _year_course_outline_result(course_ids: list[str]) -> SimpleNamespace:
     )
 
 
-def _leaf_generation_prompt(course_node_id: str = "year_3_course_1", chapter_section_id: str = "1") -> str:
-    return "\n".join([
-        "帮我生成《AI Agent 开发》第一章教学内容。",
-        "",
-        "[LEAF_RESOURCE_GENERATION]",
-        f"course_node_id: {course_node_id}",
-        f"chapter_section_id: {chapter_section_id}",
-        "scope: chapter_sections",
-        "mode: generate",
-        "[/LEAF_RESOURCE_GENERATION]",
-    ])
+def _leaf_generation_prompt(
+    course_node_id: str = "year_3_course_1", chapter_section_id: str = "1"
+) -> str:
+    return "\n".join(
+        [
+            "帮我生成《AI Agent 开发》第一章教学内容。",
+            "",
+            "[LEAF_RESOURCE_GENERATION]",
+            f"course_node_id: {course_node_id}",
+            f"chapter_section_id: {chapter_section_id}",
+            "scope: chapter_sections",
+            "mode: generate",
+            "[/LEAF_RESOURCE_GENERATION]",
+        ]
+    )
 
 
 def test_parse_leaf_resource_generation_request_reads_exact_prompt_block() -> None:
@@ -587,7 +599,9 @@ class TestChatEndpoints:
             assert "session_id" in data
             assert len(data["session_id"]) > 0
 
-    def test_start_chat_returns_explicit_response_shell_fields(self, tmp_path: Path) -> None:
+    def test_start_chat_returns_explicit_response_shell_fields(
+        self, tmp_path: Path
+    ) -> None:
         with chat_app(tmp_path) as client:
             token = _register_user(client, "chat-shell@example.com", "chat123456")
 
@@ -600,7 +614,10 @@ class TestChatEndpoints:
             assert response.status_code == 200
             data = response.json()
             assert data["session_id"]
-            assert data["reply_text"] == "你好！我是你的学习助手。请告诉我你的基本情况，比如年级、专业、想学什么？"
+            assert (
+                data["reply_text"]
+                == "你好！我是你的学习助手。请告诉我你的基本情况，比如年级、专业、想学什么？"
+            )
             assert data["profile"] is None
             assert data["year_learning_paths"] is None
             assert data["course_knowledge"] is None
@@ -619,7 +636,9 @@ class TestChatEndpoints:
             )
             assert response.status_code == 404
 
-    def test_get_session_state_returns_empty_messages_for_fresh_session(self, tmp_path: Path) -> None:
+    def test_get_session_state_returns_empty_messages_for_fresh_session(
+        self, tmp_path: Path
+    ) -> None:
         with chat_app(tmp_path) as client:
             token = _register_user(client, "fresh-session@example.com", "fresh123456")
 
@@ -640,7 +659,9 @@ class TestChatEndpoints:
             assert data["session_id"] == session_id
             assert data["messages"] == []
 
-    def test_send_message_keeps_brief_profile_collecting_across_repeated_turns(self, tmp_path: Path) -> None:
+    def test_send_message_keeps_brief_profile_collecting_across_repeated_turns(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "brief-profile-repeat@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -697,7 +718,10 @@ class TestChatEndpoints:
             },
             "defaulted_fields": [],
             "question_md": "画像已生成，下一步要继续生成学习路径吗？",
-            "question_box": {"question": "画像已生成，下一步要继续生成学习路径吗？", "options": []},
+            "question_box": {
+                "question": "画像已生成，下一步要继续生成学习路径吗？",
+                "options": [],
+            },
             "text": "用户为软件工程专业大三学生，目标明确指向 Agent 开发与 Vibe Coding 学习。",
         }
 
@@ -726,10 +750,23 @@ class TestChatEndpoints:
         profile_llm = ProfileLlm()
         user_text = "我现在大三、软件工程、想学习agent开发vibe coding"
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=profile_llm), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_search_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm", return_value=profile_llm
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_search_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "brief123456")
 
@@ -746,7 +783,7 @@ class TestChatEndpoints:
                     headers=_auth_header(token),
                 )
                 assert first_response.status_code == 200
-                assert "\"has_profile\": false" in first_response.text
+                assert '"has_profile": false' in first_response.text
 
                 second_response = client.post(
                     "/api/chat/message",
@@ -754,20 +791,34 @@ class TestChatEndpoints:
                     headers=_auth_header(token),
                 )
                 assert second_response.status_code == 200
-                assert "\"has_profile\": true" in second_response.text
+                assert '"has_profile": true' in second_response.text
                 assert "我先继续帮你整理基础画像" not in second_response.text
                 assert profile_llm.calls == 2
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     profile_row = session.get(UserProfile, user.uid)
                     assert profile_row is not None
                     assert profile_row.profile_data["type"] == "basic_profile"
-                    assert profile_row.profile_data["confirmed_info"]["current_grade"] == "大三"
-                    assert profile_row.profile_data["confirmed_info"]["major"] == "软件工程"
-                    assert profile_row.profile_data["confirmed_info"]["short_term_goal"] == "学习agent开发vibe coding"
-                    assert profile_row.profile_data["confirmed_info"]["learning_stage"] == "项目实践"
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["current_grade"]
+                        == "大三"
+                    )
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["major"]
+                        == "软件工程"
+                    )
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["short_term_goal"]
+                        == "学习agent开发vibe coding"
+                    )
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["learning_stage"]
+                        == "项目实践"
+                    )
 
                     conversation_row = session.get(ConversationSession, session_id)
                     assert conversation_row is not None
@@ -815,9 +866,13 @@ class TestChatEndpoints:
                 assert row.messages[1]["data"]["content"] == "这是回复"
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_rejects_nonexistent_session_id(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_rejects_nonexistent_session_id(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         with chat_app(tmp_path) as client:
-            token = _register_user(client, "missing-session@example.com", "missing123456")
+            token = _register_user(
+                client, "missing-session@example.com", "missing123456"
+            )
 
             response = client.post(
                 "/api/chat/message",
@@ -830,7 +885,9 @@ class TestChatEndpoints:
             mock_stream.assert_not_called()
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_loads_persisted_messages(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_loads_persisted_messages(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         captured_lengths = []
 
         async def mock_events(state):
@@ -859,10 +916,16 @@ class TestChatEndpoints:
             assert captured_lengths == [1, 3]
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_rejects_session_owned_by_another_user(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_rejects_session_owned_by_another_user(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         with chat_app(tmp_path) as client:
-            owner_token = _register_user(client, "session-owner@example.com", "owner123456")
-            other_token = _register_user(client, "session-other@example.com", "other123456")
+            owner_token = _register_user(
+                client, "session-owner@example.com", "owner123456"
+            )
+            other_token = _register_user(
+                client, "session-other@example.com", "other123456"
+            )
 
             start_resp = client.post(
                 "/api/chat/start",
@@ -920,7 +983,9 @@ class TestChatEndpoints:
                 assert row.messages == []
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_does_not_save_failed_assistant_as_success(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_does_not_save_failed_assistant_as_success(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         async def mock_events(state):
             yield {
                 "event": "error",
@@ -959,7 +1024,9 @@ class TestChatEndpoints:
                 assert row.messages[0]["type"] == "human"
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_persists_user_message_when_stream_raises(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_persists_user_message_when_stream_raises(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         async def mock_events(state):
             raise RuntimeError("编排流异常中断")
             if False:
@@ -1014,6 +1081,7 @@ class TestChatEndpoints:
             }
 
         appended_batches: list[list[dict]] = []
+
         def flaky_append_messages(session, session_id, new_messages):
             appended_batches.append(new_messages)
             if len(appended_batches) == 1:
@@ -1056,7 +1124,9 @@ class TestChatEndpoints:
                 assert row.messages[0]["data"]["content"] == "继续生成"
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_returns_existing_outline_without_agent_call(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_returns_existing_outline_without_agent_call(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         mock_stream.side_effect = AssertionError("已有课程大纲应直接从数据库返回")
         identifier = "outline-direct@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
@@ -1083,7 +1153,7 @@ class TestChatEndpoints:
             assert "第一章：需求拆解" in response.text
             assert "course_knowledge_agent" not in response.text
             assert "intent_agent" not in response.text
-            assert "\"has_outline\": true" in response.text
+            assert '"has_outline": true' in response.text
 
             engine = build_engine(database_url)
             with Session(engine) as session:
@@ -1094,10 +1164,16 @@ class TestChatEndpoints:
                 assert "第一章：需求拆解" in row.messages[1]["data"]["content"]
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_regenerates_outline_instead_of_reusing_existing_outline(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_regenerates_outline_instead_of_reusing_existing_outline(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         async def regenerated_events(state):
             assert state["query"] == "重新生成该课程的大纲"
-            yield {"event": "agent_calling", "agent": "course_knowledge_agent", "label": "课程大纲智能体"}
+            yield {
+                "event": "agent_calling",
+                "agent": "course_knowledge_agent",
+                "label": "课程大纲智能体",
+            }
             yield {"event": "message_completed", "full_text": "课程大纲已重新生成。"}
             yield {
                 "event": "session_completed",
@@ -1133,7 +1209,9 @@ class TestChatEndpoints:
             assert "course_knowledge_loaded" not in response.text
             assert mock_stream.called
 
-    def test_send_message_ok_start_generates_current_course_outline_only(self, tmp_path: Path) -> None:
+    def test_send_message_ok_start_generates_current_course_outline_only(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "outline-current-course@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -1144,22 +1222,26 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("开始课程应由规则强制调用 course_knowledge_agent，不应调用 supervisor LLM")
+                raise AssertionError(
+                    "开始课程应由规则强制调用 course_knowledge_agent，不应调用 supervisor LLM"
+                )
 
         class WorkerPlaceholderLlm:
             pass
 
         class CurrentCourseOutlineLlm:
             def with_structured_output(self, *_args, **_kwargs):
-                raise AssertionError("课程大纲模型不支持结构化输出，应通过提示词注入普通 JSON 形状")
+                raise AssertionError(
+                    "课程大纲模型不支持结构化输出，应通过提示词注入普通 JSON 形状"
+                )
 
         class CurrentCourseOutlineChain:
             async def ainvoke(self, payload):
                 captured["queries"].append(payload["query"])
-                outline = _year_course_outline_result(["year_3_course_1"]).model_dump()["course_outlines"][0]
-                return AIMessage(
-                    content=json.dumps(outline, ensure_ascii=False)
-                )
+                outline = _year_course_outline_result(["year_3_course_1"]).model_dump()[
+                    "course_outlines"
+                ][0]
+                return AIMessage(content=json.dumps(outline, ensure_ascii=False))
 
         class CurrentCourseOutlinePrompt:
             def __or__(self, _other):
@@ -1170,16 +1252,32 @@ class TestChatEndpoints:
             def from_messages(_messages):
                 return CurrentCourseOutlinePrompt()
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=CurrentCourseOutlineLlm()), \
-             patch("app.orchestration.agents.course_knowledge.ChatPromptTemplate", PromptFactory):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=CurrentCourseOutlineLlm(),
+            ),
+            patch(
+                "app.orchestration.agents.course_knowledge.ChatPromptTemplate",
+                PromptFactory,
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "outlinecurrent123456")
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     session.add(
                         UserProfile(
                             user_uid=user.uid,
@@ -1213,21 +1311,33 @@ class TestChatEndpoints:
                 assert response.status_code == 200
                 assert "课程大纲已生成：《AI Agent 开发基础能力搭建》" in response.text
                 assert "course_knowledge_agent" in response.text
-                assert "\"has_outline\": true" in response.text
+                assert '"has_outline": true' in response.text
                 assert "请为以下课程生成详细的章节大纲" in captured["queries"][0]
                 assert "当前课程输入" in captured["queries"][0]
-                assert "请一次性为当前年级的全部课程生成详细章节大纲" not in captured["queries"][0]
+                assert (
+                    "请一次性为当前年级的全部课程生成详细章节大纲"
+                    not in captured["queries"][0]
+                )
                 assert "全年课程 JSON 形状" not in captured["queries"][0]
                 assert "JSON Schema" not in captured["queries"][0]
                 assert "course_outlines" not in captured["queries"][0]
 
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
-                    first_row = session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1"))
-                    second_row = session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_2"))
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
+                    first_row = session.get(
+                        UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")
+                    )
+                    second_row = session.get(
+                        UserCourseKnowledgeOutline, (user.uid, "year_3_course_2")
+                    )
                     assert first_row is not None
                     assert second_row is None
-                    assert first_row.outline_data["course_name"] == "AI Agent 开发基础能力搭建"
+                    assert (
+                        first_row.outline_data["course_name"]
+                        == "AI Agent 开发基础能力搭建"
+                    )
                     conversation_row = session.get(ConversationSession, session_id)
                     assert conversation_row is not None
                     assert conversation_row.messages[1]["data"]["content"].startswith(
@@ -1237,7 +1347,9 @@ class TestChatEndpoints:
         graph_module._graph = None
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_returns_detailed_outline_for_section_detail_query(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_returns_detailed_outline_for_section_detail_query(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         mock_stream.side_effect = AssertionError("已有课程大纲细节应直接从数据库返回")
         identifier = "outline-detail@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
@@ -1247,8 +1359,12 @@ class TestChatEndpoints:
             _seed_existing_learning_data(database_url, identifier)
             engine = build_engine(database_url)
             with Session(engine) as session:
-                user = session.exec(select(User).where(User.identifier == identifier)).one()
-                row = session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1"))
+                user = session.exec(
+                    select(User).where(User.identifier == identifier)
+                ).one()
+                row = session.get(
+                    UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")
+                )
                 assert row is not None
                 outline_data = dict(row.outline_data)
                 outline_data["sections"] = [
@@ -1284,7 +1400,10 @@ class TestChatEndpoints:
 
             response = client.post(
                 "/api/chat/message",
-                json={"session_id": session_id, "message": "查看这门课的具体章节大纲细节"},
+                json={
+                    "session_id": session_id,
+                    "message": "查看这门课的具体章节大纲细节",
+                },
                 headers=_auth_header(token),
             )
 
@@ -1295,8 +1414,12 @@ class TestChatEndpoints:
             assert "course_knowledge_agent" not in response.text
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_returns_current_course_next_step_for_now_query(self, mock_stream, tmp_path: Path) -> None:
-        mock_stream.side_effect = AssertionError("已有课程大纲时下一步提示应直接由当前课程状态生成")
+    def test_send_message_returns_current_course_next_step_for_now_query(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
+        mock_stream.side_effect = AssertionError(
+            "已有课程大纲时下一步提示应直接由当前课程状态生成"
+        )
         identifier = "outline-next-step@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
 
@@ -1317,11 +1440,16 @@ class TestChatEndpoints:
             )
 
             assert response.status_code == 200
-            assert "下一步：进入《AI Agent 开发基础能力搭建》的第一章：需求拆解。" in response.text
+            assert (
+                "下一步：进入《AI Agent 开发基础能力搭建》的第一章：需求拆解。"
+                in response.text
+            )
             assert "直接发送：开始学习这门课" in response.text
             assert "course_knowledge_agent" not in response.text
 
-    def test_send_message_generates_section_resources_from_chat(self, tmp_path: Path) -> None:
+    def test_send_message_generates_section_resources_from_chat(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "resource-chat@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
 
@@ -1362,11 +1490,18 @@ class TestChatEndpoints:
                     "generated_at": "2026-06-06T00:00:00Z",
                 }
             }
-            from app.services.course_knowledge_service import upsert_user_course_knowledge_outline
+            from app.services.course_knowledge_service import (
+                upsert_user_course_knowledge_outline,
+            )
 
             with Session(build_engine(database_url)) as session:
-                upsert_user_course_knowledge_outline(session, state["user_id"], course_knowledge)
-            yield {"event": "message_completed", "full_text": "《AI Agent 开发基础能力搭建》的 1.1 教学内容已生成：每个小节都有 Markdown 文档，视频与动画资源已同步保存。"}
+                upsert_user_course_knowledge_outline(
+                    session, state["user_id"], course_knowledge
+                )
+            yield {
+                "event": "message_completed",
+                "full_text": "《AI Agent 开发基础能力搭建》的 1.1 教学内容已生成：每个小节都有 Markdown 文档，视频与动画资源已同步保存。",
+            }
             yield {
                 "event": "session_completed",
                 "session_id": state["session_id"],
@@ -1375,7 +1510,10 @@ class TestChatEndpoints:
                 "has_outline": True,
             }
 
-        with patch("app.api.orchestration.stream_orchestration_events", side_effect=resource_events):
+        with patch(
+            "app.api.orchestration.stream_orchestration_events",
+            side_effect=resource_events,
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "resource123456")
                 _seed_existing_learning_data(database_url, identifier)
@@ -1388,7 +1526,10 @@ class TestChatEndpoints:
 
                 response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "请根据课程大纲生成教学内容"},
+                    json={
+                        "session_id": session_id,
+                        "message": "请根据课程大纲生成教学内容",
+                    },
                     headers=_auth_header(token),
                 )
 
@@ -1412,16 +1553,29 @@ class TestChatEndpoints:
             row = session.exec(select(UserCourseKnowledgeOutline)).one()
 
         assert "1.1" in row.outline_data["section_markdowns"]
-        assert row.outline_data["section_video_links"]["1.1"]["videos"][0]["url"] == "https://example.com/video"
+        assert (
+            row.outline_data["section_video_links"]["1.1"]["videos"][0]["url"]
+            == "https://example.com/video"
+        )
 
-    def test_send_message_streams_leaf_generation_events_from_prompt_block(self, tmp_path: Path) -> None:
+    def test_send_message_streams_leaf_generation_events_from_prompt_block(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "leaf-stream@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         captured = {}
         thinking_worker_llm = object()
         search_llm = object()
 
-        async def leaf_events(state, llm, search_llm_arg, *, course_id, chapter_section_id, regeneration_focus=""):
+        async def leaf_events(
+            state,
+            llm,
+            search_llm_arg,
+            *,
+            course_id,
+            chapter_section_id,
+            regeneration_focus="",
+        ):
             captured["user_id"] = state["user_id"]
             captured["llm"] = llm
             captured["search_llm"] = search_llm_arg
@@ -1446,9 +1600,17 @@ class TestChatEndpoints:
                 "has_outline": True,
             }
 
-        with patch("app.orchestration.llm.get_thinking_worker_llm", return_value=thinking_worker_llm):
-            with patch("app.orchestration.llm.get_search_worker_llm", return_value=search_llm):
-                with patch("app.orchestration.llm.get_worker_llm", return_value=thinking_worker_llm):
+        with patch(
+            "app.orchestration.llm.get_thinking_worker_llm",
+            return_value=thinking_worker_llm,
+        ):
+            with patch(
+                "app.orchestration.llm.get_search_worker_llm", return_value=search_llm
+            ):
+                with patch(
+                    "app.orchestration.llm.get_worker_llm",
+                    return_value=thinking_worker_llm,
+                ):
                     with patch(
                         "app.orchestration.agents.course_resources.stream_chapter_resource_generation",
                         side_effect=leaf_events,
@@ -1465,28 +1627,41 @@ class TestChatEndpoints:
 
                             response = client.post(
                                 "/api/chat/message",
-                                json={"session_id": session_id, "message": _leaf_generation_prompt()},
+                                json={
+                                    "session_id": session_id,
+                                    "message": _leaf_generation_prompt(),
+                                },
                                 headers=_auth_header(token),
                             )
 
         assert response.status_code == 200
-        assert "\"course_id\": \"year_3_course_1\"" in response.text
-        assert "\"chapter_section_id\": \"1\"" in response.text
-        assert "\"section_id\": \"1.1\"" in response.text
-        assert "\"phase\": \"markdown\"" in response.text
-        assert "\"status\": \"running\"" in response.text
-        assert "\"kind\": \"course_resource_section\"" in response.text
+        assert '"course_id": "year_3_course_1"' in response.text
+        assert '"chapter_section_id": "1"' in response.text
+        assert '"section_id": "1.1"' in response.text
+        assert '"phase": "markdown"' in response.text
+        assert '"status": "running"' in response.text
+        assert '"kind": "course_resource_section"' in response.text
         assert captured["llm"] is thinking_worker_llm
         assert captured["search_llm"] is search_llm
         assert captured["course_id"] == "year_3_course_1"
         assert captured["chapter_section_id"] == "1"
         assert captured["regeneration_focus"] == ""
 
-    def test_send_message_leaf_generation_error_has_context_and_does_not_save_success(self, tmp_path: Path) -> None:
+    def test_send_message_leaf_generation_error_has_context_and_does_not_save_success(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "leaf-stream-error@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
 
-        async def leaf_events(_state, _llm, _search_llm, *, course_id, chapter_section_id, regeneration_focus=""):
+        async def leaf_events(
+            _state,
+            _llm,
+            _search_llm,
+            *,
+            course_id,
+            chapter_section_id,
+            regeneration_focus="",
+        ):
             yield {
                 "event": "error",
                 "message": "课程资源生成失败：视频资源未生成，请稍后重试。",
@@ -1495,7 +1670,9 @@ class TestChatEndpoints:
             }
 
         with patch("app.orchestration.llm.get_worker_llm", return_value=object()):
-            with patch("app.orchestration.llm.get_search_worker_llm", return_value=object()):
+            with patch(
+                "app.orchestration.llm.get_search_worker_llm", return_value=object()
+            ):
                 with patch(
                     "app.orchestration.agents.course_resources.stream_chapter_resource_generation",
                     side_effect=leaf_events,
@@ -1512,18 +1689,24 @@ class TestChatEndpoints:
 
                         response = client.post(
                             "/api/chat/message",
-                            json={"session_id": session_id, "message": _leaf_generation_prompt()},
+                            json={
+                                "session_id": session_id,
+                                "message": _leaf_generation_prompt(),
+                            },
                             headers=_auth_header(token),
                         )
 
         assert response.status_code == 200
         assert "event: error" in response.text
-        assert "\"message\": \"课程资源生成失败：视频资源未生成，请稍后重试。\"" in response.text
-        assert "\"course_id\": \"year_3_course_1\"" in response.text
-        assert "\"chapter_section_id\": \"1\"" in response.text
-        assert "\"kind\": \"course_resource_chapter\"" in response.text
-        assert "\"status\": \"error\"" in response.text
-        assert "\"phase\": \"video\"" in response.text
+        assert (
+            '"message": "课程资源生成失败：视频资源未生成，请稍后重试。"'
+            in response.text
+        )
+        assert '"course_id": "year_3_course_1"' in response.text
+        assert '"chapter_section_id": "1"' in response.text
+        assert '"kind": "course_resource_chapter"' in response.text
+        assert '"status": "error"' in response.text
+        assert '"phase": "video"' in response.text
         assert "message_completed" not in response.text
         assert "session_completed" not in response.text
 
@@ -1535,7 +1718,9 @@ class TestChatEndpoints:
             assert row.messages[0]["type"] == "human"
             assert row.messages[0]["data"]["content"] == _leaf_generation_prompt()
 
-    def test_send_message_leaf_generation_rejects_non_current_course(self, tmp_path: Path) -> None:
+    def test_send_message_leaf_generation_rejects_non_current_course(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "leaf-non-current@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
 
@@ -1555,14 +1740,19 @@ class TestChatEndpoints:
 
                 response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": _leaf_generation_prompt("year_3_course_2", "1")},
+                    json={
+                        "session_id": session_id,
+                        "message": _leaf_generation_prompt("year_3_course_2", "1"),
+                    },
                     headers=_auth_header(token),
                 )
 
         assert response.status_code == 200
         assert "只能为当前课程生成教学内容。" in response.text
 
-    def test_send_message_leaf_generation_rejects_non_first_chapter(self, tmp_path: Path) -> None:
+    def test_send_message_leaf_generation_rejects_non_first_chapter(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "leaf-non-first@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
 
@@ -1582,19 +1772,32 @@ class TestChatEndpoints:
 
                 response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": _leaf_generation_prompt("year_3_course_1", "2")},
+                    json={
+                        "session_id": session_id,
+                        "message": _leaf_generation_prompt("year_3_course_1", "2"),
+                    },
                     headers=_auth_header(token),
                 )
 
         assert response.status_code == 200
         assert "通过章节测验后会开放下一章内容生成。" in response.text
 
-    def test_send_message_leaf_generation_allows_next_chapter_after_quiz_pass(self, tmp_path: Path) -> None:
+    def test_send_message_leaf_generation_allows_next_chapter_after_quiz_pass(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "leaf-next-after-quiz@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         captured = {}
 
-        async def leaf_events(state, _llm, _search_llm, *, course_id, chapter_section_id, regeneration_focus=""):
+        async def leaf_events(
+            state,
+            _llm,
+            _search_llm,
+            *,
+            course_id,
+            chapter_section_id,
+            regeneration_focus="",
+        ):
             captured["course_id"] = course_id
             captured["chapter_section_id"] = chapter_section_id
             yield {"event": "message_completed", "full_text": "本章教学内容已生成。"}
@@ -1607,8 +1810,12 @@ class TestChatEndpoints:
             }
 
         with patch("app.orchestration.llm.get_worker_llm", return_value=object()):
-            with patch("app.orchestration.llm.get_thinking_worker_llm", return_value=object()):
-                with patch("app.orchestration.llm.get_search_worker_llm", return_value=object()):
+            with patch(
+                "app.orchestration.llm.get_thinking_worker_llm", return_value=object()
+            ):
+                with patch(
+                    "app.orchestration.llm.get_search_worker_llm", return_value=object()
+                ):
                     with patch(
                         "app.orchestration.agents.course_resources.stream_chapter_resource_generation",
                         side_effect=leaf_events,
@@ -1618,7 +1825,9 @@ class TestChatEndpoints:
                             _seed_existing_learning_data(database_url, identifier)
                             engine = build_engine(database_url)
                             with Session(engine) as session:
-                                user = session.exec(select(User).where(User.identifier == identifier)).one()
+                                user = session.exec(
+                                    select(User).where(User.identifier == identifier)
+                                ).one()
                                 session.add(
                                     ChapterProgress(
                                         user_uid=user.uid,
@@ -1638,7 +1847,12 @@ class TestChatEndpoints:
 
                             response = client.post(
                                 "/api/chat/message",
-                                json={"session_id": session_id, "message": _leaf_generation_prompt("year_3_course_1", "2")},
+                                json={
+                                    "session_id": session_id,
+                                    "message": _leaf_generation_prompt(
+                                        "year_3_course_1", "2"
+                                    ),
+                                },
                                 headers=_auth_header(token),
                             )
 
@@ -1647,12 +1861,22 @@ class TestChatEndpoints:
         assert captured["course_id"] == "year_3_course_1"
         assert captured["chapter_section_id"] == "2"
 
-    def test_send_message_leaf_generation_asks_focus_before_regenerating_existing_content(self, tmp_path: Path) -> None:
+    def test_send_message_leaf_generation_asks_focus_before_regenerating_existing_content(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "leaf-regen@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         captured = {}
 
-        async def leaf_events(state, _llm, _search_llm, *, course_id, chapter_section_id, regeneration_focus=""):
+        async def leaf_events(
+            state,
+            _llm,
+            _search_llm,
+            *,
+            course_id,
+            chapter_section_id,
+            regeneration_focus="",
+        ):
             captured["course_id"] = course_id
             captured["chapter_section_id"] = chapter_section_id
             captured["regeneration_focus"] = regeneration_focus
@@ -1665,8 +1889,12 @@ class TestChatEndpoints:
                 "has_outline": True,
             }
 
-        with patch("app.orchestration.llm.get_thinking_worker_llm", return_value=object()):
-            with patch("app.orchestration.llm.get_search_worker_llm", return_value=object()):
+        with patch(
+            "app.orchestration.llm.get_thinking_worker_llm", return_value=object()
+        ):
+            with patch(
+                "app.orchestration.llm.get_search_worker_llm", return_value=object()
+            ):
                 with patch(
                     "app.orchestration.agents.course_resources.stream_chapter_resource_generation",
                     side_effect=leaf_events,
@@ -1676,8 +1904,13 @@ class TestChatEndpoints:
                         _seed_existing_learning_data(database_url, identifier)
                         engine = build_engine(database_url)
                         with Session(engine) as session:
-                            user = session.exec(select(User).where(User.identifier == identifier)).one()
-                            row = session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1"))
+                            user = session.exec(
+                                select(User).where(User.identifier == identifier)
+                            ).one()
+                            row = session.get(
+                                UserCourseKnowledgeOutline,
+                                (user.uid, "year_3_course_1"),
+                            )
                             assert row is not None
                             outline_data = dict(row.outline_data)
                             outline_data["section_composed_markdowns"] = {
@@ -1686,7 +1919,9 @@ class TestChatEndpoints:
                                     "parent_section_id": "1",
                                     "title": "学习目标",
                                     "markdown": "# 学习目标",
-                                    "blocks": [{"type": "markdown", "markdown": "# 学习目标"}],
+                                    "blocks": [
+                                        {"type": "markdown", "markdown": "# 学习目标"}
+                                    ],
                                     "generated_at": "2026-06-06T00:00:00Z",
                                 }
                             }
@@ -1703,12 +1938,18 @@ class TestChatEndpoints:
 
                         first_response = client.post(
                             "/api/chat/message",
-                            json={"session_id": session_id, "message": _leaf_generation_prompt()},
+                            json={
+                                "session_id": session_id,
+                                "message": _leaf_generation_prompt(),
+                            },
                             headers=_auth_header(token),
                         )
                         second_response = client.post(
                             "/api/chat/message",
-                            json={"session_id": session_id, "message": "请更关注实践任务和检查标准"},
+                            json={
+                                "session_id": session_id,
+                                "message": "请更关注实践任务和检查标准",
+                            },
                             headers=_auth_header(token),
                         )
 
@@ -1733,6 +1974,7 @@ class TestChatEndpoints:
         identifier = "outline-persist@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         appended_batches: list[list[dict]] = []
+
         def flaky_append_messages(session, session_id, new_messages):
             appended_batches.append(new_messages)
             if len(appended_batches) == 1:
@@ -1775,8 +2017,12 @@ class TestChatEndpoints:
                 assert row.messages[0]["data"]["content"] == "给我看看这个课的大纲"
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_start_first_course_reuses_existing_outline_without_agent_call(self, mock_stream, tmp_path: Path) -> None:
-        mock_stream.side_effect = AssertionError("开始第一门课时已有当前课程大纲应直接从数据库返回")
+    def test_send_message_start_first_course_reuses_existing_outline_without_agent_call(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
+        mock_stream.side_effect = AssertionError(
+            "开始第一门课时已有当前课程大纲应直接从数据库返回"
+        )
         identifier = "outline-start-direct@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
 
@@ -1803,7 +2049,7 @@ class TestChatEndpoints:
             assert "第一章：需求拆解" in response.text
             assert "course_knowledge_agent" not in response.text
             assert "intent_agent" not in response.text
-            assert "\"has_outline\": true" in response.text
+            assert '"has_outline": true' in response.text
 
             engine = build_engine(database_url)
             with Session(engine) as session:
@@ -1811,10 +2057,14 @@ class TestChatEndpoints:
                 assert row is not None
                 assert len(row.messages) == 2
                 assert row.messages[1]["type"] == "ai"
-                assert row.messages[1]["data"]["content"].startswith("课程大纲 · year_3")
+                assert row.messages[1]["data"]["content"].startswith(
+                    "课程大纲 · year_3"
+                )
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_returns_existing_learning_path_without_agent_call(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_returns_existing_learning_path_without_agent_call(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         mock_stream.side_effect = AssertionError("已有学习路径应直接从数据库返回")
         identifier = "path-direct@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
@@ -1831,7 +2081,10 @@ class TestChatEndpoints:
 
             response = client.post(
                 "/api/chat/message",
-                json={"session_id": session_id, "message": "我的学习路径里面要学哪些课？"},
+                json={
+                    "session_id": session_id,
+                    "message": "我的学习路径里面要学哪些课？",
+                },
                 headers=_auth_header(token),
             )
 
@@ -1842,10 +2095,12 @@ class TestChatEndpoints:
             assert "learning_path_agent" not in response.text
             assert "course_knowledge_agent" not in response.text
             assert "intent_agent" not in response.text
-            assert "\"has_paths\": true" in response.text
+            assert '"has_paths": true' in response.text
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_returns_existing_learning_path_for_review_shortcut(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_returns_existing_learning_path_for_review_shortcut(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         mock_stream.side_effect = AssertionError("回顾学习路径短语应直接从数据库返回")
         identifier = "path-shortcut@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
@@ -1873,10 +2128,12 @@ class TestChatEndpoints:
             assert "learning_path_agent" not in response.text
             assert "course_knowledge_agent" not in response.text
             assert "intent_agent" not in response.text
-            assert "\"has_paths\": true" in response.text
+            assert '"has_paths": true' in response.text
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_returns_existing_learning_path_for_my_path_question(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_returns_existing_learning_path_for_my_path_question(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         mock_stream.side_effect = AssertionError("我的学习路径应直接从数据库返回")
         identifier = "path-my-question@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
@@ -1904,11 +2161,15 @@ class TestChatEndpoints:
             assert "learning_path_agent" not in response.text
             assert "course_knowledge_agent" not in response.text
             assert "intent_agent" not in response.text
-            assert "\"has_paths\": true" in response.text
+            assert '"has_paths": true' in response.text
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_returns_existing_learning_path_for_current_path_question(self, mock_stream, tmp_path: Path) -> None:
-        mock_stream.side_effect = AssertionError("我现在的学习路径是什么应直接从数据库返回")
+    def test_send_message_returns_existing_learning_path_for_current_path_question(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
+        mock_stream.side_effect = AssertionError(
+            "我现在的学习路径是什么应直接从数据库返回"
+        )
         identifier = "path-current-question@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
 
@@ -1935,10 +2196,12 @@ class TestChatEndpoints:
             assert "learning_path_agent" not in response.text
             assert "course_knowledge_agent" not in response.text
             assert "intent_agent" not in response.text
-            assert "\"has_paths\": true" in response.text
+            assert '"has_paths": true' in response.text
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_review_shortcut_lists_courses_by_grade_for_single_multi_year_path_row(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_review_shortcut_lists_courses_by_grade_for_single_multi_year_path_row(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         mock_stream.side_effect = AssertionError("回顾学习路径短语应直接从数据库返回")
         identifier = "path-multi-year-shortcut@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
@@ -1947,7 +2210,9 @@ class TestChatEndpoints:
             token = _register_user(client, identifier, "path123456")
             engine = build_engine(database_url)
             with Session(engine) as session:
-                user = session.exec(select(User).where(User.identifier == identifier)).one()
+                user = session.exec(
+                    select(User).where(User.identifier == identifier)
+                ).one()
                 session.add(
                     UserProfile(
                         user_uid=user.uid,
@@ -1985,12 +2250,17 @@ class TestChatEndpoints:
             assert "大四（year_4）：1 门课" in response.text
             assert "1. 编程基础：完成编程基础" in response.text
             assert "1. 工程化 Web 开发：完成工程化 Web 开发" in response.text
-            assert "1. AI Agent 开发基础能力搭建：完成AI Agent 开发基础能力搭建" in response.text
+            assert (
+                "1. AI Agent 开发基础能力搭建：完成AI Agent 开发基础能力搭建"
+                in response.text
+            )
             assert "2. AI Agent 项目实战：完成AI Agent 项目实战" in response.text
             assert "1. 毕业项目实战：完成毕业项目实战" in response.text
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_does_not_treat_generic_look_first_phrase_as_learning_path_review(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_does_not_treat_generic_look_first_phrase_as_learning_path_review(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         async def mock_events(_state):
             yield {"event": "message_completed", "full_text": "这是画像建议"}
             yield {
@@ -2017,7 +2287,10 @@ class TestChatEndpoints:
 
             response = client.post(
                 "/api/chat/message",
-                json={"session_id": session_id, "message": "我先看看我的个人画像，你推荐什么？"},
+                json={
+                    "session_id": session_id,
+                    "message": "我先看看我的个人画像，你推荐什么？",
+                },
                 headers=_auth_header(token),
             )
 
@@ -2028,7 +2301,9 @@ class TestChatEndpoints:
             mock_stream.assert_called_once()
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_send_message_review_shortcut_keeps_collecting_profile_incomplete(self, mock_stream, tmp_path: Path) -> None:
+    def test_send_message_review_shortcut_keeps_collecting_profile_incomplete(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         mock_stream.side_effect = AssertionError("回顾学习路径短语应直接从数据库返回")
         identifier = "path-collecting@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
@@ -2038,7 +2313,9 @@ class TestChatEndpoints:
 
             engine = build_engine(database_url)
             with Session(engine) as session:
-                user = session.exec(select(User).where(User.identifier == identifier)).one()
+                user = session.exec(
+                    select(User).where(User.identifier == identifier)
+                ).one()
                 session.add(
                     UserProfile(
                         user_uid=user.uid,
@@ -2097,10 +2374,12 @@ class TestChatEndpoints:
 
             assert response.status_code == 200
             assert "learning_path_loaded" in response.text
-            assert "\"has_profile\": false" in response.text
-            assert "\"has_paths\": true" in response.text
+            assert '"has_profile": false' in response.text
+            assert '"has_paths": true' in response.text
 
-    def test_get_session_state_returns_current_course_outline(self, tmp_path: Path) -> None:
+    def test_get_session_state_returns_current_course_outline(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "session-current-outline@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
 
@@ -2109,8 +2388,12 @@ class TestChatEndpoints:
             _seed_existing_learning_data(database_url, identifier)
             engine = build_engine(database_url)
             with Session(engine) as session:
-                user = session.exec(select(User).where(User.identifier == identifier)).one()
-                current_row = session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1"))
+                user = session.exec(
+                    select(User).where(User.identifier == identifier)
+                ).one()
+                current_row = session.get(
+                    UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")
+                )
                 assert current_row is not None
                 current_row.updated_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
                 other_outline = {
@@ -2145,7 +2428,9 @@ class TestChatEndpoints:
             assert response.status_code == 200
             assert response.json()["course_knowledge"]["course_id"] == "year_3_course_1"
 
-    def test_get_session_state_does_not_fallback_to_latest_outline_from_other_course(self, tmp_path: Path) -> None:
+    def test_get_session_state_does_not_fallback_to_latest_outline_from_other_course(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "session-no-outline-fallback@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
 
@@ -2154,8 +2439,12 @@ class TestChatEndpoints:
             _seed_existing_learning_data(database_url, identifier)
             engine = build_engine(database_url)
             with Session(engine) as session:
-                user = session.exec(select(User).where(User.identifier == identifier)).one()
-                current_row = session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1"))
+                user = session.exec(
+                    select(User).where(User.identifier == identifier)
+                ).one()
+                current_row = session.get(
+                    UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")
+                )
                 assert current_row is not None
                 session.delete(current_row)
                 other_outline = {
@@ -2191,14 +2480,18 @@ class TestChatEndpoints:
             assert response.json()["course_knowledge"] is None
 
     @patch("app.api.orchestration.stream_orchestration_events")
-    def test_get_session_state_returns_persisted_messages(self, mock_stream, tmp_path: Path) -> None:
+    def test_get_session_state_returns_persisted_messages(
+        self, mock_stream, tmp_path: Path
+    ) -> None:
         async def mock_events(state):
             yield {"event": "message_completed", "full_text": "这是恢复后的回复"}
 
         mock_stream.side_effect = mock_events
 
         with chat_app(tmp_path) as client:
-            token = _register_user(client, "session-messages@example.com", "session123456")
+            token = _register_user(
+                client, "session-messages@example.com", "session123456"
+            )
             start_resp = client.post(
                 "/api/chat/start",
                 json={"query": "开始"},
@@ -2227,7 +2520,9 @@ class TestChatEndpoints:
             assert messages[1]["type"] == "ai"
             assert messages[1]["data"]["content"] == "这是恢复后的回复"
 
-    def test_get_session_state_prefers_latest_updated_path_outline_when_multiple_years_exist(self, tmp_path: Path) -> None:
+    def test_get_session_state_prefers_latest_updated_path_outline_when_multiple_years_exist(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "session-latest-path@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
 
@@ -2236,7 +2531,9 @@ class TestChatEndpoints:
 
             engine = build_engine(database_url)
             with Session(engine) as session:
-                user = session.exec(select(User).where(User.identifier == identifier)).one()
+                user = session.exec(
+                    select(User).where(User.identifier == identifier)
+                ).one()
                 session.add(
                     UserProfile(
                         user_uid=user.uid,
@@ -2334,7 +2631,9 @@ class TestChatEndpoints:
             assert response.json()["latest_grade_year"] == "year_4"
             assert response.json()["course_knowledge"]["course_id"] == "year_4_course_1"
 
-    def test_send_message_returns_completion_reply_when_course_change_has_no_next_course(self, tmp_path: Path) -> None:
+    def test_send_message_returns_completion_reply_when_course_change_has_no_next_course(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "completed-course@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -2344,27 +2643,44 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("最后一门课程换新课应走 force_call 收口，不应调用 LLM")
+                raise AssertionError(
+                    "最后一门课程换新课应走 force_call 收口，不应调用 LLM"
+                )
 
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "completed123456")
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     year_path = _year_3_path()
                     year_path["current_learning_course"] = {
                         "grade_id": "year_3",
                         "course_node_id": "year_3_course_2",
                         "course_or_chapter_theme": "AI Agent 项目实战",
                         "course_goal": "完成AI Agent 项目实战",
-                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "time_arrangement": year_path["grade_plans"]["year_3"][
+                            "course_nodes"
+                        ][1]["time_arrangement"],
                         "current_focus": "正在学习 AI Agent 项目实战",
                         "progress_state": "completed",
                         "next_action": "当前阶段课程已全部完成",
@@ -2395,7 +2711,10 @@ class TestChatEndpoints:
 
                 response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    json={
+                        "session_id": session_id,
+                        "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课",
+                    },
                     headers=_auth_header(token),
                 )
 
@@ -2409,11 +2728,15 @@ class TestChatEndpoints:
                     assert row is not None
                     assert len(row.messages) == 2
                     assert row.messages[1]["type"] == "ai"
-                    assert row.messages[1]["data"]["content"].startswith("当前所有任务已经完成。")
+                    assert row.messages[1]["data"]["content"].startswith(
+                        "当前所有任务已经完成。"
+                    )
 
         graph_module._graph = None
 
-    def test_send_message_prompts_for_profile_details_on_generic_profile_update(self, tmp_path: Path) -> None:
+    def test_send_message_prompts_for_profile_details_on_generic_profile_update(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "profile-update-direct@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -2423,14 +2746,27 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("泛化画像更新提示应走 force_call 收口，不应调用 LLM")
+                raise AssertionError(
+                    "泛化画像更新提示应走 force_call 收口，不应调用 LLM"
+                )
 
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "profile123456")
                 _seed_existing_learning_data(database_url, identifier)
@@ -2449,7 +2785,10 @@ class TestChatEndpoints:
                 )
 
                 assert response.status_code == 200
-                assert "可以。更新个人画像前，我需要先确认这次是否值得更新。" in response.text
+                assert (
+                    "可以。更新个人画像前，我需要先确认这次是否值得更新。"
+                    in response.text
+                )
                 assert "发生了什么具体变化" in response.text
                 assert "不会改画像" in response.text
                 assert "session_completed" in response.text
@@ -2461,11 +2800,15 @@ class TestChatEndpoints:
                     assert row is not None
                     assert len(row.messages) == 2
                     assert row.messages[1]["type"] == "ai"
-                    assert row.messages[1]["data"]["content"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+                    assert row.messages[1]["data"]["content"].startswith(
+                        "可以。更新个人画像前，我需要先确认这次是否值得更新。"
+                    )
 
         graph_module._graph = None
 
-    def test_send_message_prompts_for_profile_details_on_punctuated_generic_profile_update(self, tmp_path: Path) -> None:
+    def test_send_message_prompts_for_profile_details_on_punctuated_generic_profile_update(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "profile-update-direct-punctuated@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -2475,14 +2818,27 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("带标点的泛化画像更新提示也应走 force_call 收口，不应调用 LLM")
+                raise AssertionError(
+                    "带标点的泛化画像更新提示也应走 force_call 收口，不应调用 LLM"
+                )
 
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "profile123456")
                 _seed_existing_learning_data(database_url, identifier)
@@ -2501,7 +2857,10 @@ class TestChatEndpoints:
                 )
 
                 assert response.status_code == 200
-                assert "可以。更新个人画像前，我需要先确认这次是否值得更新。" in response.text
+                assert (
+                    "可以。更新个人画像前，我需要先确认这次是否值得更新。"
+                    in response.text
+                )
                 assert "发生了什么具体变化" in response.text
                 assert "不会改画像" in response.text
                 assert "session_completed" in response.text
@@ -2513,11 +2872,15 @@ class TestChatEndpoints:
                     assert row is not None
                     assert len(row.messages) == 2
                     assert row.messages[1]["type"] == "ai"
-                    assert row.messages[1]["data"]["content"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+                    assert row.messages[1]["data"]["content"].startswith(
+                        "可以。更新个人画像前，我需要先确认这次是否值得更新。"
+                    )
 
         graph_module._graph = None
 
-    def test_send_message_prompts_for_profile_details_on_profile_completion_query(self, tmp_path: Path) -> None:
+    def test_send_message_prompts_for_profile_details_on_profile_completion_query(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "profile-completion-direct@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -2532,9 +2895,20 @@ class TestChatEndpoints:
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "profile123456")
                 _seed_existing_learning_data(database_url, identifier)
@@ -2553,7 +2927,10 @@ class TestChatEndpoints:
                 )
 
                 assert response.status_code == 200
-                assert "可以。更新个人画像前，我需要先确认这次是否值得更新。" in response.text
+                assert (
+                    "可以。更新个人画像前，我需要先确认这次是否值得更新。"
+                    in response.text
+                )
                 assert "发生了什么具体变化" in response.text
                 assert "不会改画像" in response.text
                 assert "session_completed" in response.text
@@ -2562,7 +2939,9 @@ class TestChatEndpoints:
 
         graph_module._graph = None
 
-    def test_send_message_prompts_for_profile_details_on_question_alignment_query(self, tmp_path: Path) -> None:
+    def test_send_message_prompts_for_profile_details_on_question_alignment_query(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "profile-question-alignment-direct@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -2572,14 +2951,27 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("进入画像提问环节应走 force_call 提问收口，不应调用 LLM")
+                raise AssertionError(
+                    "进入画像提问环节应走 force_call 提问收口，不应调用 LLM"
+                )
 
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "profile123456")
                 _seed_existing_learning_data(database_url, identifier)
@@ -2593,12 +2985,18 @@ class TestChatEndpoints:
 
                 response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "我现在想更新一下我的个人画像，进入提问环节"},
+                    json={
+                        "session_id": session_id,
+                        "message": "我现在想更新一下我的个人画像，进入提问环节",
+                    },
                     headers=_auth_header(token),
                 )
 
                 assert response.status_code == 200
-                assert "可以。更新个人画像前，我需要先确认这次是否值得更新。" in response.text
+                assert (
+                    "可以。更新个人画像前，我需要先确认这次是否值得更新。"
+                    in response.text
+                )
                 assert "发生了什么具体变化" in response.text
                 assert "不会改画像" in response.text
                 assert "session_completed" in response.text
@@ -2607,7 +3005,9 @@ class TestChatEndpoints:
 
         graph_module._graph = None
 
-    def test_send_message_does_not_update_profile_when_followup_has_no_change(self, tmp_path: Path) -> None:
+    def test_send_message_does_not_update_profile_when_followup_has_no_change(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "profile-update-no-change-followup@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -2622,9 +3022,20 @@ class TestChatEndpoints:
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "profile123456")
                 _seed_existing_learning_data(database_url, identifier)
@@ -2647,7 +3058,10 @@ class TestChatEndpoints:
 
                 no_change_response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "没有具体变化，只是看看"},
+                    json={
+                        "session_id": session_id,
+                        "message": "没有具体变化，只是看看",
+                    },
                     headers=_auth_header(token),
                 )
 
@@ -2658,15 +3072,25 @@ class TestChatEndpoints:
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     profile_row = session.get(UserProfile, user.uid)
                     assert profile_row is not None
-                    assert profile_row.profile_data["confirmed_info"]["major"] == "软件工程"
-                    assert profile_row.profile_data["summary_text"] == "大三软件工程学生，目标是完成 AI 应用开发项目。"
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["major"]
+                        == "软件工程"
+                    )
+                    assert (
+                        profile_row.profile_data["summary_text"]
+                        == "大三软件工程学生，目标是完成 AI 应用开发项目。"
+                    )
 
         graph_module._graph = None
 
-    def test_send_message_collects_profile_again_for_unsupported_postgraduate_grade(self, tmp_path: Path) -> None:
+    def test_send_message_collects_profile_again_for_unsupported_postgraduate_grade(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "unsupported-postgraduate-grade@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -2676,14 +3100,27 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("不支持的研究生年级应走 force_call + 本地画像收集，不应调用 LLM")
+                raise AssertionError(
+                    "不支持的研究生年级应走 force_call + 本地画像收集，不应调用 LLM"
+                )
 
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "unsupported123456")
 
@@ -2696,26 +3133,39 @@ class TestChatEndpoints:
 
                 response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "研一，软件工程，AI，周末集中"},
+                    json={
+                        "session_id": session_id,
+                        "message": "研一，软件工程，AI，周末集中",
+                    },
                     headers=_auth_header(token),
                 )
 
                 assert response.status_code == 200
-                assert "当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。" in response.text
-                assert "\"has_profile\": false" in response.text
+                assert (
+                    "当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。"
+                    in response.text
+                )
+                assert '"has_profile": false' in response.text
                 assert "profile_agent" in response.text
                 assert "learning_path_agent" not in response.text
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     profile_row = session.get(UserProfile, user.uid)
                     assert profile_row is not None
                     assert profile_row.profile_data["type"] == "collecting"
-                    assert profile_row.profile_data["confirmed_info"]["current_grade"] == "研一"
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["current_grade"]
+                        == "研一"
+                    )
 
                     year_paths = session.exec(
-                        select(UserYearLearningPath).where(UserYearLearningPath.user_uid == user.uid)
+                        select(UserYearLearningPath).where(
+                            UserYearLearningPath.user_uid == user.uid
+                        )
                     ).all()
                     assert year_paths == []
 
@@ -2723,11 +3173,15 @@ class TestChatEndpoints:
                     assert conversation_row is not None
                     assert len(conversation_row.messages) == 2
                     assert conversation_row.messages[1]["type"] == "ai"
-                    assert conversation_row.messages[1]["data"]["content"].startswith("当前学习路径只支持大一到大四。")
+                    assert conversation_row.messages[1]["data"]["content"].startswith(
+                        "当前学习路径只支持大一到大四。"
+                    )
 
         graph_module._graph = None
 
-    def test_send_message_updates_existing_profile_without_reusing_stale_course_outline(self, tmp_path: Path) -> None:
+    def test_send_message_updates_existing_profile_without_reusing_stale_course_outline(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "profile-update-existing-path@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -2737,14 +3191,27 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("已有画像时的显式字段更新应走 force_call，不应调用 LLM")
+                raise AssertionError(
+                    "已有画像时的显式字段更新应走 force_call，不应调用 LLM"
+                )
 
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "profileupdate123456")
                 _seed_existing_learning_data(database_url, identifier)
@@ -2758,37 +3225,60 @@ class TestChatEndpoints:
 
                 response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "专业改成计算机科学，当前限制改成周末集中"},
+                    json={
+                        "session_id": session_id,
+                        "message": "专业改成计算机科学，当前限制改成周末集中",
+                    },
                     headers=_auth_header(token),
                 )
 
                 assert response.status_code == 200
                 assert "profile_agent" in response.text
                 assert "learning_path_agent" not in response.text
-                assert "课程大纲已生成：《AI Agent 开发基础能力搭建》" not in response.text
+                assert (
+                    "课程大纲已生成：《AI Agent 开发基础能力搭建》" not in response.text
+                )
                 assert "【基础学习画像总结】大三计算机科学" in response.text
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     profile_row = session.get(UserProfile, user.uid)
                     assert profile_row is not None
-                    assert profile_row.profile_data["confirmed_info"]["major"] == "计算机科学"
-                    assert profile_row.profile_data["confirmed_info"]["constraints"] == "周末集中"
-                    assert session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")) is None
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["major"]
+                        == "计算机科学"
+                    )
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["constraints"]
+                        == "周末集中"
+                    )
+                    assert (
+                        session.get(
+                            UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")
+                        )
+                        is None
+                    )
 
                     conversation_row = session.get(ConversationSession, session_id)
                     assert conversation_row is not None
                     assert len(conversation_row.messages) == 2
                     assert conversation_row.messages[1]["type"] == "ai"
-                    assert conversation_row.messages[1]["data"]["content"].startswith("【基础学习画像总结】大三计算机科学")
+                    assert conversation_row.messages[1]["data"]["content"].startswith(
+                        "【基础学习画像总结】大三计算机科学"
+                    )
 
                 dashboard_response = client.get(
                     "/api/profile/dashboard",
                     headers=_auth_header(token),
                 )
                 assert dashboard_response.status_code == 200
-                assert dashboard_response.json()["todayLearning"]["currentCourseOutline"] is None
+                assert (
+                    dashboard_response.json()["todayLearning"]["currentCourseOutline"]
+                    is None
+                )
 
                 branch_response = client.get(
                     "/api/branch/overview",
@@ -2801,7 +3291,9 @@ class TestChatEndpoints:
 
         graph_module._graph = None
 
-    def test_send_message_updates_single_explicit_profile_field_with_existing_path_without_calling_llm(self, tmp_path: Path) -> None:
+    def test_send_message_updates_single_explicit_profile_field_with_existing_path_without_calling_llm(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "profile-update-single-field@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -2811,14 +3303,27 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("已有画像时的单字段显式更新应走 force_call，不应调用 LLM")
+                raise AssertionError(
+                    "已有画像时的单字段显式更新应走 force_call，不应调用 LLM"
+                )
 
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "profileupdate123456")
                 _seed_existing_learning_data(database_url, identifier)
@@ -2839,29 +3344,46 @@ class TestChatEndpoints:
                 assert response.status_code == 200
                 assert "profile_agent" in response.text
                 assert "learning_path_agent" not in response.text
-                assert "课程大纲已生成：《AI Agent 开发基础能力搭建》" not in response.text
+                assert (
+                    "课程大纲已生成：《AI Agent 开发基础能力搭建》" not in response.text
+                )
                 assert "【基础学习画像总结】大三计算机科学" in response.text
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     profile_row = session.get(UserProfile, user.uid)
                     assert profile_row is not None
-                    assert profile_row.profile_data["confirmed_info"]["major"] == "计算机科学"
-                    assert session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")) is None
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["major"]
+                        == "计算机科学"
+                    )
+                    assert (
+                        session.get(
+                            UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")
+                        )
+                        is None
+                    )
 
                     conversation_row = session.get(ConversationSession, session_id)
                     assert conversation_row is not None
                     assert len(conversation_row.messages) == 2
                     assert conversation_row.messages[1]["type"] == "ai"
-                    assert conversation_row.messages[1]["data"]["content"].startswith("【基础学习画像总结】大三计算机科学")
+                    assert conversation_row.messages[1]["data"]["content"].startswith(
+                        "【基础学习画像总结】大三计算机科学"
+                    )
 
                 dashboard_response = client.get(
                     "/api/profile/dashboard",
                     headers=_auth_header(token),
                 )
                 assert dashboard_response.status_code == 200
-                assert dashboard_response.json()["todayLearning"]["currentCourseOutline"] is None
+                assert (
+                    dashboard_response.json()["todayLearning"]["currentCourseOutline"]
+                    is None
+                )
 
                 branch_response = client.get(
                     "/api/branch/overview",
@@ -2874,7 +3396,9 @@ class TestChatEndpoints:
 
         graph_module._graph = None
 
-    def test_send_message_updates_profile_and_refreshes_learning_path_after_completed_tasks(self, tmp_path: Path) -> None:
+    def test_send_message_updates_profile_and_refreshes_learning_path_after_completed_tasks(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "completed-followup@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -2884,7 +3408,9 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("完成任务后的画像更新与路径刷新应走 force_call，不应调用 LLM")
+                raise AssertionError(
+                    "完成任务后的画像更新与路径刷新应走 force_call，不应调用 LLM"
+                )
 
         class GeneratedLearningPathLlm:
             def with_structured_output(self, *_args, **_kwargs):
@@ -2919,29 +3445,49 @@ class TestChatEndpoints:
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=GeneratedLearningPathLlm()), \
-             patch("app.orchestration.agents.learning_path.ChatPromptTemplate", PromptFactory):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=GeneratedLearningPathLlm(),
+            ),
+            patch(
+                "app.orchestration.agents.learning_path.ChatPromptTemplate",
+                PromptFactory,
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "followup123456")
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     year_path = _year_3_path()
                     year_path["current_learning_course"] = {
                         "grade_id": "year_3",
                         "course_node_id": "year_3_course_2",
                         "course_or_chapter_theme": "AI Agent 项目实战",
                         "course_goal": "完成AI Agent 项目实战",
-                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "time_arrangement": year_path["grade_plans"]["year_3"][
+                            "course_nodes"
+                        ][1]["time_arrangement"],
                         "current_focus": "当前阶段课程已全部完成",
                         "progress_state": "completed",
                         "next_action": "当前阶段课程已全部完成",
                     }
                     profile_data = _basic_profile()
-                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    profile_data["confirmed_info"]["knowledge_foundation"] = (
+                        "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    )
                     session.add(
                         UserProfile(
                             user_uid=user.uid,
@@ -2980,7 +3526,10 @@ class TestChatEndpoints:
 
                 completed_response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    json={
+                        "session_id": session_id,
+                        "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课",
+                    },
                     headers=_auth_header(token),
                 )
 
@@ -2989,7 +3538,10 @@ class TestChatEndpoints:
 
                 refresh_response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "大四，计算机科学，AI，周末集中"},
+                    json={
+                        "session_id": session_id,
+                        "message": "大四，计算机科学，AI，周末集中",
+                    },
                     headers=_auth_header(token),
                 )
 
@@ -3012,11 +3564,19 @@ class TestChatEndpoints:
                 assert "session_completed" in confirm_response.text
 
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     profile_row = session.get(UserProfile, user.uid)
                     assert profile_row is not None
-                    assert profile_row.profile_data["confirmed_info"]["current_grade"] == "大四"
-                    assert profile_row.profile_data["confirmed_info"]["major"] == "计算机科学"
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["current_grade"]
+                        == "大四"
+                    )
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["major"]
+                        == "计算机科学"
+                    )
 
                     year_4_path = session.exec(
                         select(UserYearLearningPath).where(
@@ -3024,17 +3584,27 @@ class TestChatEndpoints:
                             UserYearLearningPath.grade_year == "year_4",
                         )
                     ).one()
-                    assert year_4_path.path_data["current_learning_course"]["course_node_id"] == "year_4_course_1"
+                    assert (
+                        year_4_path.path_data["current_learning_course"][
+                            "course_node_id"
+                        ]
+                        == "year_4_course_1"
+                    )
 
                     conversation_row = session.get(ConversationSession, session_id)
                     assert conversation_row is not None
                     assert len(conversation_row.messages) == 7
                     assert conversation_row.messages[6]["type"] == "ai"
-                    assert "学习路径已生成" in conversation_row.messages[6]["data"]["content"]
+                    assert (
+                        "学习路径已生成"
+                        in conversation_row.messages[6]["data"]["content"]
+                    )
 
         graph_module._graph = None
 
-    def test_send_message_collects_profile_without_refreshing_path_when_followup_grade_is_unsupported(self, tmp_path: Path) -> None:
+    def test_send_message_collects_profile_without_refreshing_path_when_followup_grade_is_unsupported(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "completed-unsupported-followup@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -3044,33 +3614,52 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("完成任务后的不支持年级跟进应走 force_call，不应调用 LLM")
+                raise AssertionError(
+                    "完成任务后的不支持年级跟进应走 force_call，不应调用 LLM"
+                )
 
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "followup123456")
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     year_path = _year_3_path()
                     year_path["current_learning_course"] = {
                         "grade_id": "year_3",
                         "course_node_id": "year_3_course_2",
                         "course_or_chapter_theme": "AI Agent 项目实战",
                         "course_goal": "完成AI Agent 项目实战",
-                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "time_arrangement": year_path["grade_plans"]["year_3"][
+                            "course_nodes"
+                        ][1]["time_arrangement"],
                         "current_focus": "当前阶段课程已全部完成",
                         "progress_state": "completed",
                         "next_action": "当前阶段课程已全部完成",
                     }
                     profile_data = _basic_profile()
-                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    profile_data["confirmed_info"]["knowledge_foundation"] = (
+                        "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    )
                     session.add(
                         UserProfile(
                             user_uid=user.uid,
@@ -3106,7 +3695,10 @@ class TestChatEndpoints:
 
                 completed_response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    json={
+                        "session_id": session_id,
+                        "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课",
+                    },
                     headers=_auth_header(token),
                 )
 
@@ -3115,35 +3707,55 @@ class TestChatEndpoints:
 
                 followup_response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "研一，软件工程，AI，周末集中"},
+                    json={
+                        "session_id": session_id,
+                        "message": "研一，软件工程，AI，周末集中",
+                    },
                     headers=_auth_header(token),
                 )
 
                 assert followup_response.status_code == 200
-                assert "当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。" in followup_response.text
-                assert "\"has_profile\": false" in followup_response.text
+                assert (
+                    "当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。"
+                    in followup_response.text
+                )
+                assert '"has_profile": false' in followup_response.text
                 assert "profile_agent" in followup_response.text
                 assert "learning_path_agent" not in followup_response.text
 
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     profile_row = session.get(UserProfile, user.uid)
                     assert profile_row is not None
                     assert profile_row.profile_data["type"] == "collecting"
-                    assert profile_row.profile_data["confirmed_info"]["current_grade"] == "研一"
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["current_grade"]
+                        == "研一"
+                    )
 
                     year_paths = session.exec(
-                        select(UserYearLearningPath).where(UserYearLearningPath.user_uid == user.uid)
+                        select(UserYearLearningPath).where(
+                            UserYearLearningPath.user_uid == user.uid
+                        )
                     ).all()
                     assert len(year_paths) == 1
                     assert year_paths[0].grade_year == "year_3"
-                    assert session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")) is None
+                    assert (
+                        session.get(
+                            UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")
+                        )
+                        is None
+                    )
 
                     conversation_row = session.get(ConversationSession, session_id)
                     assert conversation_row is not None
                     assert len(conversation_row.messages) == 4
                     assert conversation_row.messages[3]["type"] == "ai"
-                    assert conversation_row.messages[3]["data"]["content"].startswith("当前学习路径只支持大一到大四。")
+                    assert conversation_row.messages[3]["data"]["content"].startswith(
+                        "当前学习路径只支持大一到大四。"
+                    )
 
                 dashboard_response = client.get(
                     "/api/profile/dashboard",
@@ -3151,7 +3763,12 @@ class TestChatEndpoints:
                 )
                 assert dashboard_response.status_code == 200
                 dashboard_body = dashboard_response.json()
-                assert dashboard_body["todayLearning"]["currentLearningCourse"]["course_node_id"] == "year_3_course_2"
+                assert (
+                    dashboard_body["todayLearning"]["currentLearningCourse"][
+                        "course_node_id"
+                    ]
+                    == "year_3_course_2"
+                )
                 assert dashboard_body["todayLearning"]["currentCourseOutline"] is None
 
                 branch_response = client.get(
@@ -3165,7 +3782,9 @@ class TestChatEndpoints:
 
         graph_module._graph = None
 
-    def test_send_message_prompts_for_profile_details_when_user_only_says_next_step_after_completed_tasks(self, tmp_path: Path) -> None:
+    def test_send_message_prompts_for_profile_details_when_user_only_says_next_step_after_completed_tasks(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "completed-next-step@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -3175,33 +3794,52 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("完成任务后的下一步提示应走 force_call 收口，不应调用 LLM")
+                raise AssertionError(
+                    "完成任务后的下一步提示应走 force_call 收口，不应调用 LLM"
+                )
 
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "nextstep123456")
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     year_path = _year_3_path()
                     year_path["current_learning_course"] = {
                         "grade_id": "year_3",
                         "course_node_id": "year_3_course_2",
                         "course_or_chapter_theme": "AI Agent 项目实战",
                         "course_goal": "完成AI Agent 项目实战",
-                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "time_arrangement": year_path["grade_plans"]["year_3"][
+                            "course_nodes"
+                        ][1]["time_arrangement"],
                         "current_focus": "当前阶段课程已全部完成",
                         "progress_state": "completed",
                         "next_action": "当前阶段课程已全部完成",
                     }
                     profile_data = _basic_profile()
-                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    profile_data["confirmed_info"]["knowledge_foundation"] = (
+                        "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    )
                     session.add(
                         UserProfile(
                             user_uid=user.uid,
@@ -3228,7 +3866,10 @@ class TestChatEndpoints:
 
                 completed_response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    json={
+                        "session_id": session_id,
+                        "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课",
+                    },
                     headers=_auth_header(token),
                 )
 
@@ -3242,13 +3883,18 @@ class TestChatEndpoints:
                 )
 
                 assert followup_response.status_code == 200
-                assert "为了继续更新个人画像" in followup_response.text or "确认这次是否值得更新" in followup_response.text
+                assert (
+                    "为了继续更新个人画像" in followup_response.text
+                    or "确认这次是否值得更新" in followup_response.text
+                )
                 assert "profile_agent" not in followup_response.text
                 assert "course_knowledge_agent" not in followup_response.text
 
         graph_module._graph = None
 
-    def test_send_message_updates_explicit_major_and_refreshes_learning_path_after_completed_tasks(self, tmp_path: Path) -> None:
+    def test_send_message_updates_explicit_major_and_refreshes_learning_path_after_completed_tasks(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "completed-major-followup@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -3258,7 +3904,9 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("完成任务后的画像更新与路径刷新应走 force_call，不应调用 LLM")
+                raise AssertionError(
+                    "完成任务后的画像更新与路径刷新应走 force_call，不应调用 LLM"
+                )
 
         class GeneratedLearningPathLlm:
             def with_structured_output(self, *_args, **_kwargs):
@@ -3278,7 +3926,9 @@ class TestChatEndpoints:
                     ],
                     current_index=2,
                 )
-                major = payload.get("profile", {}).get("confirmed_info", {}).get("major")
+                major = (
+                    payload.get("profile", {}).get("confirmed_info", {}).get("major")
+                )
                 if "计算机科学" in payload.get("query", "") or major == "计算机科学":
                     path["learner_baseline"]["major"] = "计算机科学"
                 return SimpleNamespace(model_dump=lambda: path)
@@ -3295,29 +3945,49 @@ class TestChatEndpoints:
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=GeneratedLearningPathLlm()), \
-             patch("app.orchestration.agents.learning_path.ChatPromptTemplate", PromptFactory):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=GeneratedLearningPathLlm(),
+            ),
+            patch(
+                "app.orchestration.agents.learning_path.ChatPromptTemplate",
+                PromptFactory,
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "majorfollow123456")
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     year_path = _year_3_path()
                     year_path["current_learning_course"] = {
                         "grade_id": "year_3",
                         "course_node_id": "year_3_course_2",
                         "course_or_chapter_theme": "AI Agent 项目实战",
                         "course_goal": "完成AI Agent 项目实战",
-                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "time_arrangement": year_path["grade_plans"]["year_3"][
+                            "course_nodes"
+                        ][1]["time_arrangement"],
                         "current_focus": "当前阶段课程已全部完成",
                         "progress_state": "completed",
                         "next_action": "当前阶段课程已全部完成",
                     }
                     profile_data = _basic_profile()
-                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    profile_data["confirmed_info"]["knowledge_foundation"] = (
+                        "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    )
                     session.add(
                         UserProfile(
                             user_uid=user.uid,
@@ -3356,7 +4026,10 @@ class TestChatEndpoints:
 
                 completed_response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    json={
+                        "session_id": session_id,
+                        "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课",
+                    },
                     headers=_auth_header(token),
                 )
 
@@ -3387,11 +4060,19 @@ class TestChatEndpoints:
                 assert "learning_path_agent" in confirm_response.text
 
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     profile_row = session.get(UserProfile, user.uid)
                     assert profile_row is not None
-                    assert profile_row.profile_data["confirmed_info"]["current_grade"] == "大三"
-                    assert profile_row.profile_data["confirmed_info"]["major"] == "计算机科学"
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["current_grade"]
+                        == "大三"
+                    )
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["major"]
+                        == "计算机科学"
+                    )
 
                     year_3_path = session.exec(
                         select(UserYearLearningPath).where(
@@ -3399,12 +4080,22 @@ class TestChatEndpoints:
                             UserYearLearningPath.grade_year == "year_3",
                         )
                     ).one()
-                    assert year_3_path.path_data["learner_baseline"]["major"] == "计算机科学"
-                    assert year_3_path.path_data["current_learning_course"]["course_node_id"] == "year_3_course_3"
+                    assert (
+                        year_3_path.path_data["learner_baseline"]["major"]
+                        == "计算机科学"
+                    )
+                    assert (
+                        year_3_path.path_data["current_learning_course"][
+                            "course_node_id"
+                        ]
+                        == "year_3_course_3"
+                    )
 
         graph_module._graph = None
 
-    def test_send_message_prompts_for_profile_details_on_generic_path_refresh_after_completed_tasks(self, tmp_path: Path) -> None:
+    def test_send_message_prompts_for_profile_details_on_generic_path_refresh_after_completed_tasks(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "completed-generic-path-followup@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -3414,33 +4105,52 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("完成任务后的泛化路径刷新应走 force_call 追问，不应调用 LLM")
+                raise AssertionError(
+                    "完成任务后的泛化路径刷新应走 force_call 追问，不应调用 LLM"
+                )
 
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "genericpath123456")
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     year_path = _year_3_path()
                     year_path["current_learning_course"] = {
                         "grade_id": "year_3",
                         "course_node_id": "year_3_course_2",
                         "course_or_chapter_theme": "AI Agent 项目实战",
                         "course_goal": "完成AI Agent 项目实战",
-                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "time_arrangement": year_path["grade_plans"]["year_3"][
+                            "course_nodes"
+                        ][1]["time_arrangement"],
                         "current_focus": "当前阶段课程已全部完成",
                         "progress_state": "completed",
                         "next_action": "当前阶段课程已全部完成",
                     }
                     profile_data = _basic_profile()
-                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    profile_data["confirmed_info"]["knowledge_foundation"] = (
+                        "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    )
                     session.add(
                         UserProfile(
                             user_uid=user.uid,
@@ -3479,7 +4189,10 @@ class TestChatEndpoints:
 
                 completed_response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    json={
+                        "session_id": session_id,
+                        "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课",
+                    },
                     headers=_auth_header(token),
                 )
 
@@ -3499,7 +4212,9 @@ class TestChatEndpoints:
 
         graph_module._graph = None
 
-    def test_send_message_prompts_for_profile_details_on_punctuated_generic_path_refresh_after_completed_tasks(self, tmp_path: Path) -> None:
+    def test_send_message_prompts_for_profile_details_on_punctuated_generic_path_refresh_after_completed_tasks(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "completed-generic-path-followup-punctuated@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -3509,33 +4224,52 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("带标点的完成任务后泛化路径刷新应走 force_call 追问，不应调用 LLM")
+                raise AssertionError(
+                    "带标点的完成任务后泛化路径刷新应走 force_call 追问，不应调用 LLM"
+                )
 
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "genericpath123456")
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     year_path = _year_3_path()
                     year_path["current_learning_course"] = {
                         "grade_id": "year_3",
                         "course_node_id": "year_3_course_2",
                         "course_or_chapter_theme": "AI Agent 项目实战",
                         "course_goal": "完成AI Agent 项目实战",
-                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "time_arrangement": year_path["grade_plans"]["year_3"][
+                            "course_nodes"
+                        ][1]["time_arrangement"],
                         "current_focus": "当前阶段课程已全部完成",
                         "progress_state": "completed",
                         "next_action": "当前阶段课程已全部完成",
                     }
                     profile_data = _basic_profile()
-                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    profile_data["confirmed_info"]["knowledge_foundation"] = (
+                        "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    )
                     session.add(
                         UserProfile(
                             user_uid=user.uid,
@@ -3574,7 +4308,10 @@ class TestChatEndpoints:
 
                 completed_response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    json={
+                        "session_id": session_id,
+                        "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课",
+                    },
                     headers=_auth_header(token),
                 )
 
@@ -3594,7 +4331,9 @@ class TestChatEndpoints:
 
         graph_module._graph = None
 
-    def test_send_message_pauses_followup_when_user_says_no_need_after_completed_tasks(self, tmp_path: Path) -> None:
+    def test_send_message_pauses_followup_when_user_says_no_need_after_completed_tasks(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "completed-pause-followup@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -3609,22 +4348,37 @@ class TestChatEndpoints:
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=WorkerPlaceholderLlm()):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "pausefollow123456")
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     year_path = _year_3_path()
                     year_path["current_learning_course"] = {
                         "grade_id": "year_3",
                         "course_node_id": "year_3_course_2",
                         "course_or_chapter_theme": "AI Agent 项目实战",
                         "course_goal": "完成AI Agent 项目实战",
-                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "time_arrangement": year_path["grade_plans"]["year_3"][
+                            "course_nodes"
+                        ][1]["time_arrangement"],
                         "current_focus": "当前阶段课程已全部完成",
                         "progress_state": "completed",
                         "next_action": "当前阶段课程已全部完成",
@@ -3655,7 +4409,10 @@ class TestChatEndpoints:
 
                 completed_response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    json={
+                        "session_id": session_id,
+                        "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课",
+                    },
                     headers=_auth_header(token),
                 )
 
@@ -3675,7 +4432,9 @@ class TestChatEndpoints:
 
         graph_module._graph = None
 
-    def test_send_message_updates_multiple_explicit_profile_fields_and_refreshes_learning_path(self, tmp_path: Path) -> None:
+    def test_send_message_updates_multiple_explicit_profile_fields_and_refreshes_learning_path(
+        self, tmp_path: Path
+    ) -> None:
         identifier = "completed-multi-field-followup@example.com"
         database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
         graph_module._graph = None
@@ -3685,7 +4444,9 @@ class TestChatEndpoints:
                 return self
 
             async def ainvoke(self, _messages):
-                raise AssertionError("完成任务后的画像更新与路径刷新应走 force_call，不应调用 LLM")
+                raise AssertionError(
+                    "完成任务后的画像更新与路径刷新应走 force_call，不应调用 LLM"
+                )
 
         class GeneratedLearningPathLlm:
             def with_structured_output(self, *_args, **_kwargs):
@@ -3705,10 +4466,16 @@ class TestChatEndpoints:
                     ],
                     current_index=2,
                 )
-                major = payload.get("profile", {}).get("confirmed_info", {}).get("major")
+                major = (
+                    payload.get("profile", {}).get("confirmed_info", {}).get("major")
+                )
                 if "计算机科学" in payload.get("query", "") or major == "计算机科学":
                     path["learner_baseline"]["major"] = "计算机科学"
-                constraints = payload.get("profile", {}).get("confirmed_info", {}).get("constraints")
+                constraints = (
+                    payload.get("profile", {})
+                    .get("confirmed_info", {})
+                    .get("constraints")
+                )
                 if "周末集中" in payload.get("query", "") or constraints == "周末集中":
                     path["learner_baseline"]["constraints"] = ["周末集中"]
                 return SimpleNamespace(model_dump=lambda: path)
@@ -3725,29 +4492,49 @@ class TestChatEndpoints:
         class WorkerPlaceholderLlm:
             pass
 
-        with patch("app.orchestration.graph.get_supervisor_llm", return_value=GuardSupervisorLlm()), \
-             patch("app.orchestration.graph.get_worker_llm", return_value=WorkerPlaceholderLlm()), \
-             patch("app.orchestration.graph.get_thinking_worker_llm", return_value=GeneratedLearningPathLlm()), \
-             patch("app.orchestration.agents.learning_path.ChatPromptTemplate", PromptFactory):
+        with (
+            patch(
+                "app.orchestration.graph.get_supervisor_llm",
+                return_value=GuardSupervisorLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_worker_llm",
+                return_value=WorkerPlaceholderLlm(),
+            ),
+            patch(
+                "app.orchestration.graph.get_thinking_worker_llm",
+                return_value=GeneratedLearningPathLlm(),
+            ),
+            patch(
+                "app.orchestration.agents.learning_path.ChatPromptTemplate",
+                PromptFactory,
+            ),
+        ):
             with chat_app(tmp_path) as client:
                 token = _register_user(client, identifier, "multifield123456")
 
                 engine = build_engine(database_url)
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     year_path = _year_3_path()
                     year_path["current_learning_course"] = {
                         "grade_id": "year_3",
                         "course_node_id": "year_3_course_2",
                         "course_or_chapter_theme": "AI Agent 项目实战",
                         "course_goal": "完成AI Agent 项目实战",
-                        "time_arrangement": year_path["grade_plans"]["year_3"]["course_nodes"][1]["time_arrangement"],
+                        "time_arrangement": year_path["grade_plans"]["year_3"][
+                            "course_nodes"
+                        ][1]["time_arrangement"],
                         "current_focus": "当前阶段课程已全部完成",
                         "progress_state": "completed",
                         "next_action": "当前阶段课程已全部完成",
                     }
                     profile_data = _basic_profile()
-                    profile_data["confirmed_info"]["knowledge_foundation"] = "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    profile_data["confirmed_info"]["knowledge_foundation"] = (
+                        "已具备软件工程基础，AI 应用开发方向可从入门到基础逐步补全"
+                    )
                     session.add(
                         UserProfile(
                             user_uid=user.uid,
@@ -3786,7 +4573,10 @@ class TestChatEndpoints:
 
                 completed_response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课"},
+                    json={
+                        "session_id": session_id,
+                        "message": "我不想要《AI Agent 项目实战》了，现在帮我生成一门新课",
+                    },
                     headers=_auth_header(token),
                 )
 
@@ -3795,7 +4585,10 @@ class TestChatEndpoints:
 
                 refresh_response = client.post(
                     "/api/chat/message",
-                    json={"session_id": session_id, "message": "专业改成计算机科学，当前限制改成周末集中"},
+                    json={
+                        "session_id": session_id,
+                        "message": "专业改成计算机科学，当前限制改成周末集中",
+                    },
                     headers=_auth_header(token),
                 )
 
@@ -3817,17 +4610,35 @@ class TestChatEndpoints:
                 assert "learning_path_agent" in confirm_response.text
 
                 with Session(engine) as session:
-                    user = session.exec(select(User).where(User.identifier == identifier)).one()
+                    user = session.exec(
+                        select(User).where(User.identifier == identifier)
+                    ).one()
                     profile_row = session.get(UserProfile, user.uid)
                     assert profile_row is not None
-                    assert profile_row.profile_data["confirmed_info"]["current_grade"] == "大三"
-                    assert profile_row.profile_data["confirmed_info"]["major"] == "计算机科学"
                     assert (
-                        profile_row.profile_data["confirmed_info"]["knowledge_foundation"]
+                        profile_row.profile_data["confirmed_info"]["current_grade"]
+                        == "大三"
+                    )
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["major"]
+                        == "计算机科学"
+                    )
+                    assert (
+                        profile_row.profile_data["confirmed_info"][
+                            "knowledge_foundation"
+                        ]
                         == "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
                     )
-                    assert profile_row.profile_data["confirmed_info"]["constraints"] == "周末集中"
-                    assert session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")) is None
+                    assert (
+                        profile_row.profile_data["confirmed_info"]["constraints"]
+                        == "周末集中"
+                    )
+                    assert (
+                        session.get(
+                            UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")
+                        )
+                        is None
+                    )
 
                     year_3_path = session.exec(
                         select(UserYearLearningPath).where(
@@ -3835,9 +4646,19 @@ class TestChatEndpoints:
                             UserYearLearningPath.grade_year == "year_3",
                         )
                     ).one()
-                    assert year_3_path.path_data["learner_baseline"]["major"] == "计算机科学"
-                    assert year_3_path.path_data["learner_baseline"]["constraints"] == ["周末集中"]
-                    assert year_3_path.path_data["current_learning_course"]["course_node_id"] == "year_3_course_3"
+                    assert (
+                        year_3_path.path_data["learner_baseline"]["major"]
+                        == "计算机科学"
+                    )
+                    assert year_3_path.path_data["learner_baseline"]["constraints"] == [
+                        "周末集中"
+                    ]
+                    assert (
+                        year_3_path.path_data["current_learning_course"][
+                            "course_node_id"
+                        ]
+                        == "year_3_course_3"
+                    )
 
                 dashboard_response = client.get(
                     "/api/profile/dashboard",
@@ -3845,7 +4666,10 @@ class TestChatEndpoints:
                 )
                 assert dashboard_response.status_code == 200
                 dashboard_body = dashboard_response.json()
-                assert dashboard_body["profile"]["knowledgeFoundation"] == "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
+                assert (
+                    dashboard_body["profile"]["knowledgeFoundation"]
+                    == "已具备计算机科学基础，AI 应用开发方向可从入门到基础逐步补全"
+                )
                 assert dashboard_body["todayLearning"]["currentCourseOutline"] is None
 
                 branch_response = client.get(
@@ -3861,12 +4685,13 @@ class TestChatEndpoints:
 
 
 def test_stream_chat_events_injects_weaknesses(tmp_path: Path) -> None:
-    from app.models import ChapterWeakness
-    from app.api.orchestration import _stream_chat_events
-    from sqlmodel import SQLModel
-    from uuid import uuid4
-    import pytest
     import asyncio
+    from uuid import uuid4
+
+    from sqlmodel import SQLModel
+
+    from app.api.orchestration import _stream_chat_events
+    from app.models import ChapterWeakness
 
     database_url = f"sqlite:///{tmp_path / 'weakness-inject-test.db'}"
     engine = build_engine(database_url)
@@ -3902,11 +4727,7 @@ def test_stream_chat_events_injects_weaknesses(tmp_path: Path) -> None:
                 "learner_baseline": {"major": "软件工程"},
                 "current_learning_course": {"course_node_id": "year_3_course_1"},
                 "grade_plans": {
-                    "year_3": {
-                        "course_nodes": [
-                            {"course_node_id": "year_3_course_1"}
-                        ]
-                    }
+                    "year_3": {"course_nodes": [{"course_node_id": "year_3_course_1"}]}
                 },
             },
         )
@@ -3966,11 +4787,15 @@ def test_stream_chat_events_injects_weaknesses(tmp_path: Path) -> None:
         session.commit()
 
         captured_state = {}
+
         async def mock_stream_events(state):
             captured_state.update(state)
             yield {"event": "message_completed", "full_text": "done"}
 
-        with patch("app.api.orchestration.stream_orchestration_events", mock_stream_events):
+        with patch(
+            "app.api.orchestration.stream_orchestration_events", mock_stream_events
+        ):
+
             async def run():
                 gen = _stream_chat_events(
                     session_id="session_123",
@@ -3986,16 +4811,21 @@ def test_stream_chat_events_injects_weaknesses(tmp_path: Path) -> None:
         injected_profile = captured_state.get("profile")
         assert injected_profile is not None
         weaknesses_str = injected_profile.get("weaknesses", "")
-        assert "[Adaptive Weaknesses] Recently struggled with: 提示工程, 链式调用" in weaknesses_str
+        assert (
+            "[Adaptive Weaknesses] Recently struggled with: 提示工程, 链式调用"
+            in weaknesses_str
+        )
         assert "向量数据库" not in weaknesses_str
         assert "微调" not in weaknesses_str
 
 
 def test_persist_outline_consumes_weaknesses(tmp_path: Path) -> None:
+    from uuid import uuid4
+
+    from sqlmodel import SQLModel
+
     from app.models import ChapterWeakness
     from app.orchestration.agents.course_resources import _persist_outline
-    from sqlmodel import SQLModel, select
-    from uuid import uuid4
 
     database_url = f"sqlite:///{tmp_path / 'weakness-consume-test.db'}"
     engine = build_engine(database_url)
@@ -4048,7 +4878,9 @@ def test_persist_outline_consumes_weaknesses(tmp_path: Path) -> None:
         session.add(w3)
         session.commit()
 
-    with patch("app.orchestration.agents.course_resources.get_engine", return_value=engine):
+    with patch(
+        "app.orchestration.agents.course_resources.get_engine", return_value=engine
+    ):
         outline_data = {
             "course_id": "year_3_course_1",
             "sections": [],

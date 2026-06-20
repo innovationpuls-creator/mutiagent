@@ -7,8 +7,19 @@ from sqlmodel import Session
 
 from app.core.security import create_get_current_user
 from app.models import User
-from app.schemas import AuthResponse, LoginRequest, OAuthRequest, RegisterRequest, UserRead
-from app.services.auth_service import login_user, login_with_oauth, register_user, to_user_read
+from app.schemas import (
+    AuthResponse,
+    LoginRequest,
+    OAuthRequest,
+    RegisterRequest,
+    UserRead,
+)
+from app.services.auth_service import (
+    login_user,
+    login_with_oauth,
+    register_user,
+    to_user_read,
+)
 
 SessionDependency = Callable[[], Generator[Session, None, None]]
 
@@ -22,15 +33,21 @@ def create_auth_router(session_dependency: SessionDependency) -> APIRouter:
         response_model=AuthResponse,
         status_code=status.HTTP_201_CREATED,
     )
-    def register(payload: RegisterRequest, session: Session = Depends(session_dependency)) -> AuthResponse:
+    def register(
+        payload: RegisterRequest, session: Session = Depends(session_dependency)
+    ) -> AuthResponse:
         return register_user(session, payload)
 
     @router.post("/login", response_model=AuthResponse)
-    def login(payload: LoginRequest, session: Session = Depends(session_dependency)) -> AuthResponse:
+    def login(
+        payload: LoginRequest, session: Session = Depends(session_dependency)
+    ) -> AuthResponse:
         return login_user(session, payload)
 
     @router.post("/oauth/mock", response_model=AuthResponse)
-    def oauth(payload: OAuthRequest, session: Session = Depends(session_dependency)) -> AuthResponse:
+    def oauth(
+        payload: OAuthRequest, session: Session = Depends(session_dependency)
+    ) -> AuthResponse:
         return login_with_oauth(session, payload)
 
     @router.get("/me", response_model=UserRead)

@@ -13,7 +13,9 @@ from app.schema_upgrades import migrate_removed_learning_path_table, run_schema_
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://mutiagent:mutiagent@localhost:5432/mutiagent")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://mutiagent:mutiagent@localhost:5432/mutiagent"
+)
 
 
 _engine: Engine | None = None
@@ -45,7 +47,9 @@ def set_engine(engine: Engine) -> None:
     _engine = engine
 
 
-def create_session_dependency(engine: Engine) -> Callable[[], Generator[Session, None, None]]:
+def create_session_dependency(
+    engine: Engine,
+) -> Callable[[], Generator[Session, None, None]]:
     def get_session() -> Generator[Session, None, None]:
         with Session(engine) as session:
             yield session

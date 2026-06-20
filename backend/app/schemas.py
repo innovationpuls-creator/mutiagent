@@ -6,7 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-
 OAuthProvider = Literal["qq", "xuexitong"]
 AuthType = Literal["password", "oauth"]
 UserRole = Literal["student", "teacher", "admin"]
@@ -32,6 +31,7 @@ def _validate_required_text(value: str) -> str:
 
 
 # ── Auth ──
+
 
 class LoginRequest(BaseModel):
     account: str = Field(min_length=3, max_length=128)
@@ -227,6 +227,7 @@ class HealthResponse(BaseModel):
 
 # ── Chat ──
 
+
 class ChatStartRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
 
@@ -234,7 +235,9 @@ class ChatStartRequest(BaseModel):
 class ChatMessageRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=80)
     message: str = Field(min_length=1, max_length=4000)
-    image_attachment: str | None = Field(default=None, description="Base64 encoded image attachment")
+    image_attachment: str | None = Field(
+        default=None, description="Base64 encoded image attachment"
+    )
 
 
 class ChatResponse(BaseModel):
@@ -257,6 +260,7 @@ class SessionStateResponse(BaseModel):
 
 
 # ── Learning Path ──
+
 
 class YearLearningPathsReadResponse(BaseModel):
     year_learning_paths: dict[str, dict]
@@ -438,5 +442,6 @@ class ForestAiStreamRequest(BaseModel):
     question_id: str | None = None
     message: str = Field(min_length=1, max_length=4000)
     active_question_context: ForestAiContext
-    image_attachment: str | None = Field(default=None, description="Base64 encoded image attachment")
-
+    image_attachment: str | None = Field(
+        default=None, description="Base64 encoded image attachment"
+    )

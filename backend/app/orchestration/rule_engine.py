@@ -14,12 +14,16 @@ import re
 from dataclasses import dataclass, field
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
 from app.orchestration.agents.learning_path_intake import (
     is_intake_confirmation_query,
     is_intake_modification_query,
     latest_intake_from_state,
 )
-from app.orchestration.agents.profile import EXPLICIT_PROFILE_FIELD_PREFIXES, is_complete_profile_data
+from app.orchestration.agents.profile import (
+    EXPLICIT_PROFILE_FIELD_PREFIXES,
+    is_complete_profile_data,
+)
 from app.orchestration.default_fill import allows_default_profile_fill
 
 # ── Agent keys ───────────────────────────────────────────────────────────
@@ -43,10 +47,23 @@ ALL_WORKER_AGENTS = {
 
 # Keywords for intent detection
 _NAVIGATION_QUERIES = {
-    "下一步", "然后", "接下来", "继续", "好的", "ok", "好", "嗯", "哦", "好了",
+    "下一步",
+    "然后",
+    "接下来",
+    "继续",
+    "好的",
+    "ok",
+    "好",
+    "嗯",
+    "哦",
+    "好了",
 }
 _COURSE_START_KEYWORDS = {
-    "start_first_course", "开始第一门课", "开始课程", "开始学习", "生成课程",
+    "start_first_course",
+    "开始第一门课",
+    "开始课程",
+    "开始学习",
+    "生成课程",
 }
 _COURSE_OUTLINE_REGENERATION_KEYWORDS = {
     "重新生成该课程的大纲",
@@ -63,7 +80,9 @@ _COURSE_RESOURCE_GENERATION_KEYWORDS = {
     "根据课程大纲生成教学内容",
 }
 _COURSE_CHANGE_KEYWORDS = {
-    "换一门课", "生成一门新课", "新课",
+    "换一门课",
+    "生成一门新课",
+    "新课",
 }
 _REVIEW_PLAN_KEYWORDS = {
     "review_plan",
@@ -101,24 +120,26 @@ _PROFILE_UPDATE_NO_CHANGE_KEYWORDS = {
 _COMPLETED_REPLAN_RESPONSE_PREFIX = "当前所有任务已经完成。"
 _PROFILE_UPDATE_PROMPT_PREFIX = "可以。更新个人画像前，我需要先确认这次是否值得更新。"
 _GRADE_PATTERN = re.compile(r"(大[一二三四]|大[1234]|[一二三四]年级|研[一二三])")
-_REQUIRED_CONFIRMED_INFO_KEYS = frozenset({
-    "current_grade",
-    "major",
-    "learning_stage",
-    "has_clear_goal",
-    "learning_method_preference",
-    "learning_pace_preference",
-    "content_preference",
-    "need_guidance",
-    "knowledge_foundation",
-    "strengths",
-    "weaknesses",
-    "experience",
-    "short_term_goal",
-    "long_term_goal",
-    "weekly_available_time",
-    "constraints",
-})
+_REQUIRED_CONFIRMED_INFO_KEYS = frozenset(
+    {
+        "current_grade",
+        "major",
+        "learning_stage",
+        "has_clear_goal",
+        "learning_method_preference",
+        "learning_pace_preference",
+        "content_preference",
+        "need_guidance",
+        "knowledge_foundation",
+        "strengths",
+        "weaknesses",
+        "experience",
+        "short_term_goal",
+        "long_term_goal",
+        "weekly_available_time",
+        "constraints",
+    }
+)
 _LEAF_RESOURCE_BLOCK_PATTERN = re.compile(
     r"\[LEAF_RESOURCE_GENERATION\](?P<body>.*?)\[/LEAF_RESOURCE_GENERATION\]",
     re.DOTALL,
@@ -140,6 +161,7 @@ class RuleResult:
 
 # ── Intent helpers ───────────────────────────────────────────────────────
 
+
 def is_navigation_query(query: str) -> bool:
     q = query.strip().lower()
     if not q:
@@ -157,6 +179,7 @@ def is_navigation_query(query: str) -> bool:
         "接下来我该做什么",
     }
 
+
 def is_course_start_query(query: str) -> bool:
     q = query.strip().lower()
     normalized = re.sub(r"[。！？!?,，、；：\s]+", "", q)
@@ -172,7 +195,17 @@ def is_course_outline_regeneration_query(query: str) -> bool:
     if not q:
         return False
     if "生成" in q and "大纲" in q:
-        if not any(keyword in q for keyword in ("教学内容", "课程内容", "章节内容", "markdown", "视频", "动画")):
+        if not any(
+            keyword in q
+            for keyword in (
+                "教学内容",
+                "课程内容",
+                "章节内容",
+                "markdown",
+                "视频",
+                "动画",
+            )
+        ):
             return True
     if "重新生成" in q and "章节大纲" in q:
         return True
@@ -186,47 +219,57 @@ def is_course_resource_generation_query(query: str) -> bool:
     if any(keyword in q for keyword in _COURSE_RESOURCE_GENERATION_KEYWORDS):
         return True
 
-    has_generate_signal = any(keyword in q for keyword in (
-        "生成",
-        "重新生成",
-        "generate",
-        "regenerate",
-        "create",
-    ))
+    has_generate_signal = any(
+        keyword in q
+        for keyword in (
+            "生成",
+            "重新生成",
+            "generate",
+            "regenerate",
+            "create",
+        )
+    )
     if not has_generate_signal:
         return False
 
-    has_resource_signal = any(keyword in q for keyword in (
-        "教学内容",
-        "课程内容",
-        "章节内容",
-        "详细内容",
-        "内容详情",
-        "markdown",
-        "video",
-        "html animation",
-        "html animations",
-        "动画",
-        "teaching content",
-        "lesson content",
-    ))
+    has_resource_signal = any(
+        keyword in q
+        for keyword in (
+            "教学内容",
+            "课程内容",
+            "章节内容",
+            "详细内容",
+            "内容详情",
+            "markdown",
+            "video",
+            "html animation",
+            "html animations",
+            "动画",
+            "teaching content",
+            "lesson content",
+        )
+    )
     if not has_resource_signal:
         return False
 
-    return any(keyword in q for keyword in (
-        "当前课程",
-        "课程",
-        "章节",
-        "小节",
-        "chapter",
-        "section",
-        "course",
-        "系统",
-        "构建",
-        "知识库",
-        "这门课",
-        "这门",
-    ))
+    return any(
+        keyword in q
+        for keyword in (
+            "当前课程",
+            "课程",
+            "章节",
+            "小节",
+            "chapter",
+            "section",
+            "course",
+            "系统",
+            "构建",
+            "知识库",
+            "这门课",
+            "这门",
+        )
+    )
+
 
 def is_course_change_query(query: str) -> bool:
     q = query.strip().lower()
@@ -234,6 +277,7 @@ def is_course_change_query(query: str) -> bool:
         return False
     has_change_signal = "不想要" in q or any(kw in q for kw in _COURSE_CHANGE_KEYWORDS)
     return has_change_signal
+
 
 def is_review_plan_query(query: str) -> bool:
     q = query.strip().lower()
@@ -253,7 +297,9 @@ def is_learning_path_refresh_query(query: str) -> bool:
         return True
     if "学习路径" not in q:
         return False
-    return any(keyword in q for keyword in ("继续生成", "重新生成", "更新", "刷新", "生成"))
+    return any(
+        keyword in q for keyword in ("继续生成", "重新生成", "更新", "刷新", "生成")
+    )
 
 
 def is_profile_update_query(query: str) -> bool:
@@ -272,7 +318,9 @@ def is_default_profile_query(query: str) -> bool:
 
 def _parse_key_value_block(body: str, allowed_keys: set[str]) -> dict[str, str]:
     result: dict[str, str] = {}
-    key_pattern = "|".join(re.escape(key) for key in sorted(allowed_keys, key=len, reverse=True))
+    key_pattern = "|".join(
+        re.escape(key) for key in sorted(allowed_keys, key=len, reverse=True)
+    )
     inline_pattern = re.compile(
         rf"(?P<key>{key_pattern})\s*:\s*(?P<value>.*?)(?=\s+(?:{key_pattern})\s*:|$)",
         re.DOTALL,
@@ -326,13 +374,15 @@ def parse_leaf_regeneration_pending_marker(text: str) -> dict[str, str] | None:
 
 
 def _has_explicit_profile_field_update(query: str) -> bool:
-    clauses = [clause.strip() for clause in re.split(r"[，,、；;]+", query) if clause.strip()]
+    clauses = [
+        clause.strip() for clause in re.split(r"[，,、；;]+", query) if clause.strip()
+    ]
     for clause in clauses:
         for prefixes in EXPLICIT_PROFILE_FIELD_PREFIXES.values():
             for prefix in prefixes:
                 if not clause.startswith(prefix):
                     continue
-                value = clause[len(prefix):].strip("：:，,。！？!?；; ")
+                value = clause[len(prefix) :].strip("：:，,。！？!?；; ")
                 if value:
                     return True
     return False
@@ -348,12 +398,15 @@ def is_profile_refinement_query(query: str) -> bool:
         return True
     has_grade = bool(_GRADE_PATTERN.search(q))
     has_major_or_topic = "专业" in q or "ai" in q.lower() or "前端" in q or "后端" in q
-    has_pace = "平时学习" in q or "周末集中" in q or "每天少量" in q or "高强度冲刺" in q
+    has_pace = (
+        "平时学习" in q or "周末集中" in q or "每天少量" in q or "高强度冲刺" in q
+    )
     has_separators = any(mark in q for mark in ("，", ",", "、", ";", "；"))
     return has_separators and (has_grade or has_major_or_topic or has_pace)
 
 
 # ── Error extraction ─────────────────────────────────────────────────────
+
 
 def _extract_last_error(state: dict) -> str:
     messages = state.get("messages", [])
@@ -415,9 +468,9 @@ def has_pending_profile_update_followup(state: dict) -> bool:
     latest_ai_text = _latest_ai_text(state)
     if not latest_ai_text:
         return False
-    return latest_ai_text.startswith(_COMPLETED_REPLAN_RESPONSE_PREFIX) or latest_ai_text.startswith(
-        _PROFILE_UPDATE_PROMPT_PREFIX
-    )
+    return latest_ai_text.startswith(
+        _COMPLETED_REPLAN_RESPONSE_PREFIX
+    ) or latest_ai_text.startswith(_PROFILE_UPDATE_PROMPT_PREFIX)
 
 
 def should_auto_continue_learning_path_after_profile(state: dict) -> bool:
@@ -430,6 +483,7 @@ def should_auto_continue_learning_path_after_profile(state: dict) -> bool:
 
 
 # ── Hard rule functions ──────────────────────────────────────────────────
+
 
 def _is_complete_profile(profile: dict) -> bool:
     return is_complete_profile_data(profile)
@@ -459,7 +513,10 @@ def _has_confirmed_intake(state: dict) -> bool:
 
 def _has_unconfirmed_intake(state: dict) -> bool:
     intake = _latest_intake(state)
-    return isinstance(intake, dict) and intake.get("status") in {"draft", "risk_pending"}
+    return isinstance(intake, dict) and intake.get("status") in {
+        "draft",
+        "risk_pending",
+    }
 
 
 def _rule_no_profile(state: dict, profile: dict) -> RuleResult:
@@ -491,7 +548,9 @@ def _rule_no_profile(state: dict, profile: dict) -> RuleResult:
         result.force_call = AGENT_PROFILE
 
     last_error = _extract_last_error(state)
-    if last_error and any(kw in last_error for kw in ("profile", "画像", "生成失败", "无法被解析")):
+    if last_error and any(
+        kw in last_error for kw in ("profile", "画像", "生成失败", "无法被解析")
+    ):
         result.system_hints.append(
             "[系统级强制指令] profile_agent 上一次执行失败。不要再次调用 profile_agent。"
             "请直接告诉用户画像生成遇到了问题，建议用户尝试说「直接帮我生成默认的」来使用快速通道。"
@@ -626,7 +685,11 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
         return result
 
     if last_tool_agent == AGENT_LEARNING_PATH:
-        result.blocked_agents = {AGENT_PROFILE, AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
+        result.blocked_agents = {
+            AGENT_PROFILE,
+            AGENT_LEARNING_PATH,
+            AGENT_COURSE_KNOWLEDGE,
+        }
         result.allowed_agents = set()
         result.system_hints.append(
             "[系统级强制指令] learning_path_agent 刚在本轮生成完学习路径。"
@@ -635,7 +698,11 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
         )
         return result
 
-    if last_tool_agent == AGENT_COURSE_KNOWLEDGE and is_course_resource_generation_query(query) and _has_course_knowledge(state):
+    if (
+        last_tool_agent == AGENT_COURSE_KNOWLEDGE
+        and is_course_resource_generation_query(query)
+        and _has_course_knowledge(state)
+    ):
         result.force_call = AGENT_SECTION_MARKDOWN
         result.system_hints.append(
             "[系统级强制指令] course_knowledge_agent 已为本轮资源请求生成课程大纲。"
@@ -645,7 +712,11 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
         return result
 
     if last_tool_agent == AGENT_COURSE_KNOWLEDGE:
-        result.blocked_agents = {AGENT_PROFILE, AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
+        result.blocked_agents = {
+            AGENT_PROFILE,
+            AGENT_LEARNING_PATH,
+            AGENT_COURSE_KNOWLEDGE,
+        }
         result.allowed_agents = set()
         result.system_hints.append(
             "[系统级强制指令] course_knowledge_agent 刚在本轮生成完课程大纲。"
@@ -722,7 +793,11 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
             "不要直接调用 learning_path_agent。"
         )
     elif is_review_plan_query(query):
-        result.blocked_agents = {AGENT_PROFILE, AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
+        result.blocked_agents = {
+            AGENT_PROFILE,
+            AGENT_LEARNING_PATH,
+            AGENT_COURSE_KNOWLEDGE,
+        }
         result.allowed_agents = set()
         result.system_hints.append(
             "[系统级强制指令] 用户想回顾学习路径，直接回复概览信息即可，不要调用任何 agent。"
@@ -740,6 +815,7 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
 
 # ── Main evaluation ──────────────────────────────────────────────────────
 
+
 def evaluate(state: dict) -> RuleResult:
     """Evaluate all hard rules against the current state."""
     profile = state.get("profile", {})
@@ -756,9 +832,7 @@ def evaluate(state: dict) -> RuleResult:
     if has_completed_profile and has_year_learning_paths:
         return _rule_has_profile_and_path(state, profile)
 
-    return RuleResult(
-        system_hints=["[系统指令] 当前状态未知，尽你所能帮助用户。"]
-    )
+    return RuleResult(system_hints=["[系统指令] 当前状态未知，尽你所能帮助用户。"])
 
 
 def build_blocked_agents_hint(blocked: set[str]) -> str:
@@ -766,4 +840,6 @@ def build_blocked_agents_hint(blocked: set[str]) -> str:
     if not blocked:
         return ""
     names = sorted(blocked)
-    return f"[系统级强制指令] 以下工具当前不可调用：{', '.join(f'`{n}`' for n in names)}。"
+    return (
+        f"[系统级强制指令] 以下工具当前不可调用：{', '.join(f'`{n}`' for n in names)}。"
+    )

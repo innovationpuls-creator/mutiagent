@@ -39,7 +39,9 @@ def _score_outline_completeness(outline_data: dict) -> tuple[int, list[str]]:
     return score, suggestions
 
 
-def _score_difficulty_fit(outline_data: dict, profile_data: dict | None) -> tuple[int, list[str]]:
+def _score_difficulty_fit(
+    outline_data: dict, profile_data: dict | None
+) -> tuple[int, list[str]]:
     """Score based on difficulty match with user profile."""
     suggestions: list[str] = []
 
@@ -53,10 +55,13 @@ def _score_difficulty_fit(outline_data: dict, profile_data: dict | None) -> tupl
     if not isinstance(sections, list):
         return 50, ["大纲结构异常"]
 
-    total_sections = len([
-        s for s in sections
-        if isinstance(s, dict) and s.get("parent_section_id") is None
-    ])
+    total_sections = len(
+        [
+            s
+            for s in sections
+            if isinstance(s, dict) and s.get("parent_section_id") is None
+        ]
+    )
 
     base_score = 70
     if isinstance(stage, str):
@@ -84,16 +89,15 @@ def _score_accuracy(outline_data: dict) -> tuple[int, list[str]]:
         return 0, ["大纲结构异常"]
 
     top_level = [
-        s for s in sections
+        s
+        for s in sections
         if isinstance(s, dict) and s.get("parent_section_id") is None
     ]
     if not top_level:
         return 0, ["未找到章节"]
 
     has_subsections = any(
-        s.get("parent_section_id") is not None
-        for s in sections
-        if isinstance(s, dict)
+        s.get("parent_section_id") is not None for s in sections if isinstance(s, dict)
     )
 
     score = 60
@@ -138,16 +142,18 @@ def score_course_resources(
         existing.scored_at = now
         existing.updated_at = now
     else:
-        session.add(CourseResourceQuality(
-            user_uid=user_uid,
-            course_node_id=course_node_id,
-            accuracy_score=accuracy,
-            difficulty_fit_score=difficulty_fit,
-            completeness_score=completeness,
-            overall_score=overall,
-            suggestions=all_suggestions,
-            scored_at=now,
-        ))
+        session.add(
+            CourseResourceQuality(
+                user_uid=user_uid,
+                course_node_id=course_node_id,
+                accuracy_score=accuracy,
+                difficulty_fit_score=difficulty_fit,
+                completeness_score=completeness,
+                overall_score=overall,
+                suggestions=all_suggestions,
+                scored_at=now,
+            )
+        )
 
     session.commit()
 
@@ -167,7 +173,9 @@ def get_quality_scores_for_user(
     """Return quality scores for all courses of a user, keyed by course_node_id."""
     rows = list(
         session.exec(
-            select(CourseResourceQuality).where(CourseResourceQuality.user_uid == user_uid)
+            select(CourseResourceQuality).where(
+                CourseResourceQuality.user_uid == user_uid
+            )
         ).all()
     )
     result: dict[str, dict] = {}

@@ -29,7 +29,10 @@ def test_schema_upgrades_rebuild_legacy_tables(tmp_path: Path) -> None:
                         "course_node_id": "year_2_course_1",
                         "grade_id": "year_2",
                         "course_or_chapter_theme": "数据结构基础",
-                        "time_arrangement": {"semester_scope": "上学期", "duration": "8 周"},
+                        "time_arrangement": {
+                            "semester_scope": "上学期",
+                            "duration": "8 周",
+                        },
                         "course_goal": "掌握线性表、树和图",
                         "prerequisite_node_ids": ["year_1_course_1"],
                         "key_points": ["线性表", "树", "图"],
@@ -84,7 +87,9 @@ def test_schema_upgrades_rebuild_legacy_tables(tmp_path: Path) -> None:
         )
 
     with Session(engine) as session:
-        session.add(User(uid="user-1", username="升级用户", identifier="upgrade@example.com"))
+        session.add(
+            User(uid="user-1", username="升级用户", identifier="upgrade@example.com")
+        )
         session.commit()
 
     with engine.begin() as connection:
@@ -129,8 +134,16 @@ def test_schema_upgrades_rebuild_legacy_tables(tmp_path: Path) -> None:
     assert not inspector.has_table("useragentconversation")
     assert not inspector.has_table("userlearningpath")
 
-    outline_columns = {column["name"] for column in inspector.get_columns("usercourseknowledgeoutline")}
-    assert {"user_uid", "course_id", "grade_year", "course_name", "outline_data"}.issubset(outline_columns)
+    outline_columns = {
+        column["name"] for column in inspector.get_columns("usercourseknowledgeoutline")
+    }
+    assert {
+        "user_uid",
+        "course_id",
+        "grade_year",
+        "course_name",
+        "outline_data",
+    }.issubset(outline_columns)
     assert "course_node_id" not in outline_columns
     assert "grade_id" not in outline_columns
 

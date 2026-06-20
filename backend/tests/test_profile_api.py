@@ -28,18 +28,26 @@ def _register(client: TestClient) -> tuple[str, str]:
 
 
 def test_profile_dashboard_requires_auth(tmp_path: Path) -> None:
-    client = TestClient(create_app(database_url=f"sqlite:///{tmp_path / 'profile-auth.db'}"))
+    client = TestClient(
+        create_app(database_url=f"sqlite:///{tmp_path / 'profile-auth.db'}")
+    )
 
     response = client.get("/api/profile/dashboard")
 
     assert response.status_code == 401
 
 
-def test_profile_dashboard_returns_empty_state_before_profile_generated(tmp_path: Path) -> None:
-    client = TestClient(create_app(database_url=f"sqlite:///{tmp_path / 'profile-empty.db'}"))
+def test_profile_dashboard_returns_empty_state_before_profile_generated(
+    tmp_path: Path,
+) -> None:
+    client = TestClient(
+        create_app(database_url=f"sqlite:///{tmp_path / 'profile-empty.db'}")
+    )
     token, _ = _register(client)
 
-    response = client.get("/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -49,7 +57,9 @@ def test_profile_dashboard_returns_empty_state_before_profile_generated(tmp_path
     assert body["recommendations"] == []
 
 
-def test_profile_dashboard_treats_empty_profile_row_as_not_generated(tmp_path: Path) -> None:
+def test_profile_dashboard_treats_empty_profile_row_as_not_generated(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'profile-empty-row.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
@@ -65,7 +75,9 @@ def test_profile_dashboard_treats_empty_profile_row_as_not_generated(tmp_path: P
         )
         session.commit()
 
-    response = client.get("/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -104,7 +116,9 @@ def test_profile_dashboard_reads_saved_profile(tmp_path: Path) -> None:
         )
         session.commit()
 
-    response = client.get("/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -115,7 +129,9 @@ def test_profile_dashboard_reads_saved_profile(tmp_path: Path) -> None:
     assert body["todayLearning"]["source"] == "基础画像 Agent"
 
 
-def test_profile_dashboard_marks_unsupported_postgraduate_grade_as_needing_revision(tmp_path: Path) -> None:
+def test_profile_dashboard_marks_unsupported_postgraduate_grade_as_needing_revision(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'profile-unsupported-grade.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
@@ -153,7 +169,9 @@ def test_profile_dashboard_marks_unsupported_postgraduate_grade_as_needing_revis
         )
         session.commit()
 
-    response = client.get("/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -164,7 +182,9 @@ def test_profile_dashboard_marks_unsupported_postgraduate_grade_as_needing_revis
     assert body["recommendations"] == []
 
 
-def test_profile_dashboard_treats_collecting_profile_as_incomplete(tmp_path: Path) -> None:
+def test_profile_dashboard_treats_collecting_profile_as_incomplete(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'profile-collecting.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
@@ -206,7 +226,9 @@ def test_profile_dashboard_treats_collecting_profile_as_incomplete(tmp_path: Pat
         )
         session.commit()
 
-    response = client.get("/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -217,7 +239,9 @@ def test_profile_dashboard_treats_collecting_profile_as_incomplete(tmp_path: Pat
     assert body["recommendations"] == []
 
 
-def test_profile_dashboard_prefers_current_learning_course_from_path(tmp_path: Path) -> None:
+def test_profile_dashboard_prefers_current_learning_course_from_path(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'profile-path.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
@@ -341,22 +365,39 @@ def test_profile_dashboard_prefers_current_learning_course_from_path(tmp_path: P
         )
         session.commit()
 
-    response = client.get("/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
     assert body["todayLearning"]["source"] == "学习路径智能体"
-    assert body["todayLearning"]["currentLearningCourse"]["course_node_id"] == "year_3_course_1"
-    assert body["todayLearning"]["currentCourseDetail"]["course_node_id"] == "year_3_course_1"
-    assert body["todayLearning"]["currentCourseOutline"]["course_id"] == "year_3_course_1"
-    assert [course["course_node_id"] for course in body["todayLearning"]["gradeCourses"]] == [
+    assert (
+        body["todayLearning"]["currentLearningCourse"]["course_node_id"]
+        == "year_3_course_1"
+    )
+    assert (
+        body["todayLearning"]["currentCourseDetail"]["course_node_id"]
+        == "year_3_course_1"
+    )
+    assert (
+        body["todayLearning"]["currentCourseOutline"]["course_id"] == "year_3_course_1"
+    )
+    assert [
+        course["course_node_id"] for course in body["todayLearning"]["gradeCourses"]
+    ] == [
         "year_3_course_1",
         "year_3_course_2",
     ]
-    assert body["todayLearning"]["followingCourses"][0]["course_node_id"] == "year_3_course_2"
+    assert (
+        body["todayLearning"]["followingCourses"][0]["course_node_id"]
+        == "year_3_course_2"
+    )
 
 
-def test_profile_dashboard_keeps_learning_path_visible_when_profile_is_collecting(tmp_path: Path) -> None:
+def test_profile_dashboard_keeps_learning_path_visible_when_profile_is_collecting(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'profile-collecting-path.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
@@ -451,17 +492,24 @@ def test_profile_dashboard_keeps_learning_path_visible_when_profile_is_collectin
         )
         session.commit()
 
-    response = client.get("/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
     assert body["profileCompleteness"] == 6
     assert body["todayLearning"]["source"] == "学习路径智能体"
-    assert body["todayLearning"]["currentLearningCourse"]["course_node_id"] == "year_3_course_1"
+    assert (
+        body["todayLearning"]["currentLearningCourse"]["course_node_id"]
+        == "year_3_course_1"
+    )
     assert body["recommendations"] == []
 
 
-def test_profile_dashboard_prefers_latest_updated_learning_path_when_multiple_years_exist(tmp_path: Path) -> None:
+def test_profile_dashboard_prefers_latest_updated_learning_path_when_multiple_years_exist(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'profile-latest-path.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
@@ -593,16 +641,26 @@ def test_profile_dashboard_prefers_latest_updated_learning_path_when_multiple_ye
         )
         session.commit()
 
-    response = client.get("/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["todayLearning"]["currentLearningCourse"]["course_node_id"] == "year_4_course_1"
-    assert body["todayLearning"]["currentCourseDetail"]["course_node_id"] == "year_4_course_1"
+    assert (
+        body["todayLearning"]["currentLearningCourse"]["course_node_id"]
+        == "year_4_course_1"
+    )
+    assert (
+        body["todayLearning"]["currentCourseDetail"]["course_node_id"]
+        == "year_4_course_1"
+    )
     assert body["todayLearning"]["title"] == "最新路径课程"
 
 
-def test_profile_dashboard_falls_back_to_next_valid_path_when_latest_path_is_invalid(tmp_path: Path) -> None:
+def test_profile_dashboard_falls_back_to_next_valid_path_when_latest_path_is_invalid(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'profile-fallback-valid-path.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
@@ -713,10 +771,18 @@ def test_profile_dashboard_falls_back_to_next_valid_path_when_latest_path_is_inv
         )
         session.commit()
 
-    response = client.get("/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/profile/dashboard", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["todayLearning"]["currentLearningCourse"]["course_node_id"] == "year_3_course_1"
-    assert body["todayLearning"]["currentCourseDetail"]["course_node_id"] == "year_3_course_1"
+    assert (
+        body["todayLearning"]["currentLearningCourse"]["course_node_id"]
+        == "year_3_course_1"
+    )
+    assert (
+        body["todayLearning"]["currentCourseDetail"]["course_node_id"]
+        == "year_3_course_1"
+    )
     assert body["todayLearning"]["title"] == "有效路径课程"

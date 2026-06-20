@@ -8,8 +8,7 @@ import re
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import quote
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 from langchain_core.language_models import BaseChatModel
@@ -25,9 +24,11 @@ from app.orchestration.agents.models import (
 )
 from app.orchestration.agents.prompts import (
     SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT,
-    SECTION_VIDEO_SEARCH_AGENT_SYSTEM_PROMPT,
 )
-from app.orchestration.agents.utils import extract_last_tool_call_args, extract_last_tool_call_id
+from app.orchestration.agents.utils import (
+    extract_last_tool_call_args,
+    extract_last_tool_call_id,
+)
 from app.orchestration.state import OrchestrationState
 from app.services.course_knowledge_service import upsert_user_course_knowledge_outline
 
@@ -150,8 +151,12 @@ def _chapter_resource_error_event(
 _RESOURCE_PLACEHOLDER_PATTERN = re.compile(
     r"<!--\s*(?P<kind>video|animation):id=(?P<id>[A-Za-z0-9_.:-]+)\s*-->"
 )
-_JSON_CODE_BLOCK_PATTERN = re.compile(r"^```(?:json)?\s*(?P<body>.*?)```\s*$", re.DOTALL | re.IGNORECASE)
-_MARKDOWN_CODE_BLOCK_PATTERN = re.compile(r"^```(?:markdown|md)?\s*(?P<body>.*?)```\s*$", re.DOTALL | re.IGNORECASE)
+_JSON_CODE_BLOCK_PATTERN = re.compile(
+    r"^```(?:json)?\s*(?P<body>.*?)```\s*$", re.DOTALL | re.IGNORECASE
+)
+_MARKDOWN_CODE_BLOCK_PATTERN = re.compile(
+    r"^```(?:markdown|md)?\s*(?P<body>.*?)```\s*$", re.DOTALL | re.IGNORECASE
+)
 
 
 def _extract_brief_ids_from_markdown(markdown: str, kind: str) -> list[str]:
@@ -174,7 +179,7 @@ def _extract_recommendation_reason(markdown: str) -> tuple[str, str]:
     if not match:
         return markdown, ""
     reason = match.group("reason").strip()
-    cleaned = markdown[:match.start()].rstrip() + markdown[match.end():]
+    cleaned = markdown[: match.start()].rstrip() + markdown[match.end() :]
     return cleaned.strip(), reason
 
 
@@ -246,7 +251,9 @@ def _extract_json_object_text(text: str) -> str:
     clean_text = text.strip()
     if not clean_text:
         return ""
-    code_block_match = re.search(r"```json\s*(?P<body>.*?)```", clean_text, re.DOTALL | re.IGNORECASE)
+    code_block_match = re.search(
+        r"```json\s*(?P<body>.*?)```", clean_text, re.DOTALL | re.IGNORECASE
+    )
     if code_block_match:
         body = code_block_match.group("body").strip()
         if body.startswith("{") and body.endswith("}"):
@@ -254,9 +261,9 @@ def _extract_json_object_text(text: str) -> str:
     start = clean_text.find("{")
     end = clean_text.rfind("}")
     if start == 0 and end > start:
-        return clean_text[start:end + 1]
+        return clean_text[start : end + 1]
     if start > 0 and end > start and "<" not in clean_text[:start]:
-        return clean_text[start:end + 1]
+        return clean_text[start : end + 1]
     return ""
 
 
@@ -278,7 +285,7 @@ def _plain_markdown_text(text: str) -> str:
         return code_block_match.group("body").strip()
     heading_match = re.search(r"(?m)^#\s+", clean_text)
     if heading_match:
-        return clean_text[heading_match.start():].strip()
+        return clean_text[heading_match.start() :].strip()
     return clean_text
 
 
@@ -357,17 +364,26 @@ def _normalize_section_markdown_output(output: object, query: str) -> dict:
     parent_section_id = output.get("parent_section_id")
     plain_data.update(
         {
-            "section_id": _clean_text(output.get("section_id")) or plain_data["section_id"],
-            "parent_section_id": parent_section_id if isinstance(parent_section_id, str) else plain_data["parent_section_id"],
-            "title": _clean_text(output.get("title")) or _clean_text(section_data.get("title")) or plain_data["title"],
+            "section_id": _clean_text(output.get("section_id"))
+            or plain_data["section_id"],
+            "parent_section_id": parent_section_id
+            if isinstance(parent_section_id, str)
+            else plain_data["parent_section_id"],
+            "title": _clean_text(output.get("title"))
+            or _clean_text(section_data.get("title"))
+            or plain_data["title"],
             "markdown": markdown,
         }
     )
 
-    video_briefs = _normalize_markdown_video_briefs(section_data, output.get("video_briefs"))
+    video_briefs = _normalize_markdown_video_briefs(
+        section_data, output.get("video_briefs")
+    )
     if video_briefs:
         plain_data["video_briefs"] = video_briefs
-    animation_briefs = _normalize_markdown_animation_briefs(section_data, output.get("animation_briefs"))
+    animation_briefs = _normalize_markdown_animation_briefs(
+        section_data, output.get("animation_briefs")
+    )
     if animation_briefs:
         plain_data["animation_briefs"] = animation_briefs
     return plain_data
@@ -414,9 +430,12 @@ def _normalize_section_video_output(output: object, query: str) -> dict:
     section = payload.get("target_section")
     section_data = section if isinstance(section, dict) else {}
     return {
-        "section_id": _clean_text(output.get("section_id")) or _clean_text(section_data.get("section_id")),
+        "section_id": _clean_text(output.get("section_id"))
+        or _clean_text(section_data.get("section_id")),
         "query": _clean_text(output.get("query")),
-        "videos": output.get("videos") if isinstance(output.get("videos"), list) else [],
+        "videos": output.get("videos")
+        if isinstance(output.get("videos"), list)
+        else [],
     }
 
 
@@ -435,12 +454,15 @@ def _normalize_section_animation_output(output: object, query: str) -> dict:
             return _section_animation_data_from_plain_text(html_value, query)
         animations = []
     return {
-        "section_id": _clean_text(output.get("section_id")) or _clean_text(section_data.get("section_id")),
+        "section_id": _clean_text(output.get("section_id"))
+        or _clean_text(section_data.get("section_id")),
         "animations": animations,
     }
 
 
-def _normalize_resource_chain_output(output: object, output_schema: Any, query: str) -> dict:
+def _normalize_resource_chain_output(
+    output: object, output_schema: Any, query: str
+) -> dict:
     if output_schema is SectionMarkdownOutput:
         return _normalize_section_markdown_output(output, query)
     if output_schema is SectionVideoSearchOutput:
@@ -473,7 +495,9 @@ def _video_by_brief_id(video_links: dict) -> dict[str, dict]:
     for video in videos:
         if not isinstance(video, dict):
             continue
-        brief_id = _clean_text(video.get("brief_id")) or _clean_text(video.get("video_id"))
+        brief_id = _clean_text(video.get("brief_id")) or _clean_text(
+            video.get("video_id")
+        )
         title = _clean_text(video.get("title"))
         if brief_id and title:
             result[brief_id] = video
@@ -488,7 +512,9 @@ def _animation_by_brief_id(animation_data: dict) -> dict[str, dict]:
     for animation in animations:
         if not isinstance(animation, dict):
             continue
-        brief_id = _clean_text(animation.get("brief_id")) or _clean_text(animation.get("animation_id"))
+        brief_id = _clean_text(animation.get("brief_id")) or _clean_text(
+            animation.get("animation_id")
+        )
         html = _clean_text(animation.get("html"))
         if brief_id and html:
             result[brief_id] = animation
@@ -514,13 +540,17 @@ def _video_block(brief_id: str, brief: dict, video: dict | None) -> dict:
 
 
 def _animation_block(brief_id: str, brief: dict, animation: dict | None) -> dict:
-    animation_title = _clean_text(animation.get("title")) if isinstance(animation, dict) else ""
+    animation_title = (
+        _clean_text(animation.get("title")) if isinstance(animation, dict) else ""
+    )
     return {
         "type": "animation",
         "brief_id": brief_id,
         "title": _clean_text(brief.get("title")) or animation_title,
         "status": "available" if isinstance(animation, dict) else "unavailable",
-        "html": _clean_text(animation.get("html")) if isinstance(animation, dict) else "",
+        "html": _clean_text(animation.get("html"))
+        if isinstance(animation, dict)
+        else "",
     }
 
 
@@ -531,19 +561,31 @@ def _compose_section_content(
 ) -> dict:
     markdown = _clean_text(section_markdown.get("markdown"))
     video_briefs = _brief_by_id(section_markdown.get("video_briefs"), "video_id")
-    animation_briefs = _brief_by_id(section_markdown.get("animation_briefs"), "animation_id")
+    animation_briefs = _brief_by_id(
+        section_markdown.get("animation_briefs"), "animation_id"
+    )
     videos = _video_by_brief_id(video_links)
     animations = _animation_by_brief_id(animation_data)
 
     blocks: list[dict] = []
     cursor = 0
     for match in _RESOURCE_PLACEHOLDER_PATTERN.finditer(markdown):
-        _append_markdown_block(blocks, markdown[cursor:match.start()])
+        _append_markdown_block(blocks, markdown[cursor : match.start()])
         brief_id = match.group("id")
         if match.group("kind") == "video":
-            blocks.append(_video_block(brief_id, video_briefs.get(brief_id, {}), videos.get(brief_id)))
+            blocks.append(
+                _video_block(
+                    brief_id, video_briefs.get(brief_id, {}), videos.get(brief_id)
+                )
+            )
         else:
-            blocks.append(_animation_block(brief_id, animation_briefs.get(brief_id, {}), animations.get(brief_id)))
+            blocks.append(
+                _animation_block(
+                    brief_id,
+                    animation_briefs.get(brief_id, {}),
+                    animations.get(brief_id),
+                )
+            )
         cursor = match.end()
     _append_markdown_block(blocks, markdown[cursor:])
 
@@ -589,7 +631,11 @@ _ENGLISH_CHAPTER_PATTERN = re.compile(r"\bchapter\s*(\d+)\b", re.IGNORECASE)
 
 def _root_sections(outline: dict) -> list[dict]:
     return sorted(
-        [section for section in _sections(outline) if int(section.get("depth", 1)) == 1],
+        [
+            section
+            for section in _sections(outline)
+            if int(section.get("depth", 1)) == 1
+        ],
         key=lambda item: int(item.get("order_index", 0)),
     )
 
@@ -647,8 +693,12 @@ def _resolve_root_section_for_reference(outline: dict, reference: str) -> dict |
     return None
 
 
-def _target_sections_for_scope(outline: dict, section_id: str, scope: str) -> list[dict]:
-    sections = sorted(_sections(outline), key=lambda item: int(item.get("order_index", 0)))
+def _target_sections_for_scope(
+    outline: dict, section_id: str, scope: str
+) -> list[dict]:
+    sections = sorted(
+        _sections(outline), key=lambda item: int(item.get("order_index", 0))
+    )
     if scope == "single_section":
         section = _section_by_id(outline, section_id)
         if not section or int(section.get("depth", 1)) <= 1:
@@ -660,19 +710,25 @@ def _target_sections_for_scope(outline: dict, section_id: str, scope: str) -> li
             raise ValueError("指定章节无法定位。")
         parent_id = _clean_text(parent.get("section_id"))
         return [
-            section for section in sections
-            if section.get("parent_section_id") == parent_id and int(section.get("depth", 1)) > 1
+            section
+            for section in sections
+            if section.get("parent_section_id") == parent_id
+            and int(section.get("depth", 1)) > 1
         ]
     if scope == "course_sections":
         raise ValueError("系统一次只能生成一章的具体内容。")
 
-    root_sections = [section for section in sections if int(section.get("depth", 1)) == 1]
+    root_sections = [
+        section for section in sections if int(section.get("depth", 1)) == 1
+    ]
     if not root_sections:
         raise ValueError("课程大纲缺少一级章节。")
     first_root_id = _clean_text(root_sections[0].get("section_id"))
     return [
-        section for section in sections
-        if section.get("parent_section_id") == first_root_id and int(section.get("depth", 1)) > 1
+        section
+        for section in sections
+        if section.get("parent_section_id") == first_root_id
+        and int(section.get("depth", 1)) > 1
     ]
 
 
@@ -683,7 +739,9 @@ def _parent_section(outline: dict, section: dict) -> dict | None:
     return _section_by_id(outline, parent_id)
 
 
-def _merge_course_resource_data(outline: dict, field_name: str, values: dict[str, dict]) -> dict:
+def _merge_course_resource_data(
+    outline: dict, field_name: str, values: dict[str, dict]
+) -> dict:
     merged = {**outline}
     existing = dict(merged.get(field_name) or {})
     existing.update(values)
@@ -702,7 +760,9 @@ def _fallback_cover_data_url(title: str) -> str:
         "</svg>"
     )
     encoded_svg = quote(svg, safe="/:=;,%#?&'() ")
-    return "data:image/svg+xml;utf8," + encoded_svg.replace(quote(safe_title), safe_title)
+    return "data:image/svg+xml;utf8," + encoded_svg.replace(
+        quote(safe_title), safe_title
+    )
 
 
 def _fallback_video_search_url(query: str) -> str:
@@ -780,7 +840,9 @@ def _chapter_sections_for_section(outline: dict, section: dict) -> list[dict]:
     root_id = _root_section_id_for_section(outline, section)
     if not root_id:
         return [section]
-    sections = sorted(_sections(outline), key=lambda item: int(item.get("order_index", 0)))
+    sections = sorted(
+        _sections(outline), key=lambda item: int(item.get("order_index", 0))
+    )
     included_ids = {root_id}
     changed = True
     while changed:
@@ -793,7 +855,9 @@ def _chapter_sections_for_section(outline: dict, section: dict) -> list[dict]:
             if parent_id in included_ids and section_id not in included_ids:
                 included_ids.add(section_id)
                 changed = True
-    return [item for item in sections if _clean_text(item.get("section_id")) in included_ids]
+    return [
+        item for item in sections if _clean_text(item.get("section_id")) in included_ids
+    ]
 
 
 def _chapter_learning_sequence(outline: dict, root_section: dict | None) -> list[str]:
@@ -813,30 +877,41 @@ def _chapter_course_knowledge_context(outline: dict, section: dict) -> dict:
     chapter_sections = _chapter_sections_for_section(outline, section)
     chapter_ids = {
         section_id
-        for section_id in (_clean_text(item.get("section_id")) for item in chapter_sections)
+        for section_id in (
+            _clean_text(item.get("section_id")) for item in chapter_sections
+        )
         if section_id
     }
     root_section = next(
         (
-            item for item in chapter_sections
+            item
+            for item in chapter_sections
             if isinstance(item, dict) and item.get("parent_section_id") is None
         ),
         chapter_sections[0] if chapter_sections else None,
     )
-    root_title = _clean_text(root_section.get("title")) if isinstance(root_section, dict) else ""
-    root_description = _clean_text(root_section.get("description")) if isinstance(root_section, dict) else ""
+    root_title = (
+        _clean_text(root_section.get("title")) if isinstance(root_section, dict) else ""
+    )
+    root_description = (
+        _clean_text(root_section.get("description"))
+        if isinstance(root_section, dict)
+        else ""
+    )
     target_id = _clean_text(section.get("section_id"))
     slim_sections = []
     for s in chapter_sections:
         sid = _clean_text(s.get("section_id"))
         if sid == target_id:
             continue
-        slim_sections.append({
-            "section_id": sid,
-            "title": s.get("title"),
-            "depth": s.get("depth"),
-            "parent_section_id": s.get("parent_section_id"),
-        })
+        slim_sections.append(
+            {
+                "section_id": sid,
+                "title": s.get("title"),
+                "depth": s.get("depth"),
+                "parent_section_id": s.get("parent_section_id"),
+            }
+        )
     context: dict = {
         "course_name": outline.get("course_name", ""),
         "personalization_summary": (
@@ -862,7 +937,9 @@ def _chapter_course_knowledge_context(outline: dict, section: dict) -> dict:
     return context
 
 
-def _year_learning_paths_context(state: OrchestrationState, outline: dict, section: dict) -> dict:
+def _year_learning_paths_context(
+    state: OrchestrationState, outline: dict, section: dict
+) -> dict:
     year_learning_paths = state.get("year_learning_paths")
     if not isinstance(year_learning_paths, dict):
         return {}
@@ -876,7 +953,9 @@ def _year_learning_paths_context(state: OrchestrationState, outline: dict, secti
     current_course: dict = {}
     if isinstance(current, dict) and current.get("course_node_id") == course_id:
         current_course = {
-            "course_or_chapter_theme": current.get("course_or_chapter_theme", outline.get("course_name", "")),
+            "course_or_chapter_theme": current.get(
+                "course_or_chapter_theme", outline.get("course_name", "")
+            ),
             "course_goal": current.get("course_goal", ""),
             "current_focus": "",
             "next_action": "",
@@ -884,11 +963,23 @@ def _year_learning_paths_context(state: OrchestrationState, outline: dict, secti
 
     root_id = _root_section_id_for_section(outline, section)
     root_section = _section_by_id(outline, root_id) if root_id else None
-    root_title = _clean_text(root_section.get("title")) if isinstance(root_section, dict) else ""
-    root_description = _clean_text(root_section.get("description")) if isinstance(root_section, dict) else ""
+    root_title = (
+        _clean_text(root_section.get("title")) if isinstance(root_section, dict) else ""
+    )
+    root_description = (
+        _clean_text(root_section.get("description"))
+        if isinstance(root_section, dict)
+        else ""
+    )
     if current_course:
-        current_course["current_focus"] = root_description or f"围绕「{root_title}」完成当前章内容。"
-        current_course["next_action"] = f"生成并验收「{root_title}」这一章的叶子小节教学内容。" if root_title else "生成并验收当前章叶子小节教学内容。"
+        current_course["current_focus"] = (
+            root_description or f"围绕「{root_title}」完成当前章内容。"
+        )
+        current_course["next_action"] = (
+            f"生成并验收「{root_title}」这一章的叶子小节教学内容。"
+            if root_title
+            else "生成并验收当前章叶子小节教学内容。"
+        )
 
     resource_contract = {}
     contract = path.get("resource_generation_contract")
@@ -1043,11 +1134,15 @@ def _ensure_resource_placeholder(markdown: str, kind: str, brief_id: str) -> str
         return markdown
     exercise_heading = "## 练习任务"
     if exercise_heading in markdown:
-        return markdown.replace(exercise_heading, f"{placeholder}\n\n{exercise_heading}", 1)
+        return markdown.replace(
+            exercise_heading, f"{placeholder}\n\n{exercise_heading}", 1
+        )
     return f"{markdown.rstrip()}\n\n{placeholder}"
 
 
-def _rewrite_resource_placeholders(markdown: str, kind: str, brief_ids: list[str]) -> str:
+def _rewrite_resource_placeholders(
+    markdown: str, kind: str, brief_ids: list[str]
+) -> str:
     if not brief_ids:
         return markdown
 
@@ -1069,7 +1164,13 @@ def _rewrite_resource_placeholders(markdown: str, kind: str, brief_ids: list[str
     return rewritten
 
 
-_REQUIRED_MARKDOWN_HEADING_TITLES = ("学习目标", "核心概念", "步骤讲解", "练习任务", "检查标准")
+_REQUIRED_MARKDOWN_HEADING_TITLES = (
+    "学习目标",
+    "核心概念",
+    "步骤讲解",
+    "练习任务",
+    "检查标准",
+)
 _MARKDOWN_HEADING_ALIASES = {
     "学习目标": ("学习目标", "本节目标"),
     "核心概念": ("核心概念",),
@@ -1147,7 +1248,9 @@ def _normalize_markdown_heading_variants(markdown: str) -> str:
         replacement = ""
         is_heading = bool(re.match(r"^#{2,6}\s+", stripped))
         is_bold_title = bool(re.match(r"^\*\*.+\*\*\s*(?:[：:].*)?$", stripped))
-        is_plain_required_title = any(stripped.startswith(title) for title in _REQUIRED_MARKDOWN_HEADING_TITLES)
+        is_plain_required_title = any(
+            stripped.startswith(title) for title in _REQUIRED_MARKDOWN_HEADING_TITLES
+        )
         if is_heading or is_bold_title or is_plain_required_title:
             replacement = _normalize_markdown_heading_line(stripped)
         normalized_lines.append(replacement or line)
@@ -1178,7 +1281,11 @@ def _normalize_markdown_step_blocks(markdown: str) -> str:
             # 如果已经存在步骤标记，应用清除标题标记后的内容并返回
             return f"{markdown[:start]}{cleaned_body}\n\n{markdown[end:].lstrip()}"
 
-        blocks = [block.strip() for block in re.split(r"\n\s*\n", cleaned_body) if block.strip()]
+        blocks = [
+            block.strip()
+            for block in re.split(r"\n\s*\n", cleaned_body)
+            if block.strip()
+        ]
         if not blocks:
             return markdown
 
@@ -1195,7 +1302,9 @@ def _normalize_markdown_step_blocks(markdown: str) -> str:
                 continue
             # 去除可能存在的标题前缀
             cleaned_block = re.sub(r"^#{1,6}\s*", "", block).strip()
-            normalized_blocks.append(f"{_chinese_step_label(step_index)}：{cleaned_block}")
+            normalized_blocks.append(
+                f"{_chinese_step_label(step_index)}：{cleaned_block}"
+            )
             step_index += 1
 
         normalized_body = "\n\n".join(normalized_blocks)
@@ -1217,7 +1326,9 @@ def _normalize_markdown_video_briefs(section: dict, video_briefs: object) -> lis
             title = _clean_text(brief_data.get("title"))
             purpose = _clean_text(brief_data.get("purpose"))
             if video_id and title and purpose:
-                normalized.append({"video_id": video_id, "title": title, "purpose": purpose})
+                normalized.append(
+                    {"video_id": video_id, "title": title, "purpose": purpose}
+                )
 
     if normalized:
         return normalized
@@ -1225,7 +1336,9 @@ def _normalize_markdown_video_briefs(section: dict, video_briefs: object) -> lis
     return []
 
 
-def _normalize_markdown_animation_briefs(section: dict, animation_briefs: object) -> list[dict]:
+def _normalize_markdown_animation_briefs(
+    section: dict, animation_briefs: object
+) -> list[dict]:
     normalized: list[dict] = []
     if isinstance(animation_briefs, list):
         for brief in animation_briefs:
@@ -1260,7 +1373,11 @@ def _normalize_markdown_animation_briefs(section: dict, animation_briefs: object
 
 
 def _generated_markdown_video_briefs(section: dict) -> list[dict]:
-    title = _clean_text(section.get("title")) or _clean_text(section.get("section_id")) or "本节"
+    title = (
+        _clean_text(section.get("title"))
+        or _clean_text(section.get("section_id"))
+        or "本节"
+    )
     knowledge_points = _text_items(section.get("key_knowledge_points"))
     focus = "、".join(knowledge_points[:2]) or title
     return [
@@ -1273,7 +1390,11 @@ def _generated_markdown_video_briefs(section: dict) -> list[dict]:
 
 
 def _generated_markdown_animation_briefs(section: dict) -> list[dict]:
-    title = _clean_text(section.get("title")) or _clean_text(section.get("section_id")) or "本节"
+    title = (
+        _clean_text(section.get("title"))
+        or _clean_text(section.get("section_id"))
+        or "本节"
+    )
     knowledge_points = _text_items(section.get("key_knowledge_points"))
     visual_elements = knowledge_points[:3] or [title, "输入材料", "验收证据"]
     return [
@@ -1308,8 +1429,12 @@ def _normalize_markdown_resources(markdown_data: dict, section: dict) -> dict:
     if not markdown:
         return normalized
 
-    video_briefs = _normalize_markdown_video_briefs(section, normalized.get("video_briefs"))
-    animation_briefs = _normalize_markdown_animation_briefs(section, normalized.get("animation_briefs"))
+    video_briefs = _normalize_markdown_video_briefs(
+        section, normalized.get("video_briefs")
+    )
+    animation_briefs = _normalize_markdown_animation_briefs(
+        section, normalized.get("animation_briefs")
+    )
     markdown = _normalize_markdown_heading_variants(markdown)
     markdown = _normalize_markdown_step_blocks(markdown)
     markdown = _rewrite_resource_placeholders(
@@ -1333,21 +1458,21 @@ def _profile_learning_context_text(state: OrchestrationState) -> str:
     profile = state.get("profile")
     if not isinstance(profile, dict):
         return "本节采用项目实践驱动的教学设计，侧重动手实践与运行结果校验，以帮助学习者快速上手。"
-    
+
     confirmed = profile.get("confirmed_info")
     confirmed_info = confirmed if isinstance(confirmed, dict) else {}
-    
+
     grade = _clean_text(confirmed_info.get("current_grade"))
     major = _clean_text(confirmed_info.get("major"))
     preference = _clean_text(confirmed_info.get("learning_method_preference"))
-    
+
     if grade in ("未知", "无", "暂无", "none", "null"):
         grade = ""
     if major in ("未知", "无", "暂无", "none", "null"):
         major = ""
     if preference in ("未知", "无", "暂无", "没有", "无偏好", "none", "null"):
         preference = ""
-        
+
     background = ""
     if grade and major:
         background = f"{grade}{major}专业"
@@ -1368,8 +1493,6 @@ def _profile_learning_context_text(state: OrchestrationState) -> str:
             return "本节采用项目实践驱动的教学设计，侧重动手实践与运行结果校验，以便快速掌握核心技能。"
 
 
-
-
 def _deterministic_animation_html(
     animation_id: str,
     title: str,
@@ -1381,26 +1504,29 @@ def _deterministic_animation_html(
     elements = [_clean_text(item) for item in visual_elements if _clean_text(item)]
     if not elements:
         elements = [clean_title, "处理步骤", "验收证据"]
-        
+
     nodes = "\n".join(
         (
             f'<div class="node" data-step="{index}">'
             f'<span class="step-label">第 {index} 步</span>'
-            f'<strong>{html.escape(element)}</strong>'
+            f"<strong>{html.escape(element)}</strong>"
             "</div>"
             f'<div class="connector" data-conn="{index}" aria-hidden="true"></div>'
         )
         for index, element in enumerate(elements, start=1)
     )
-    
-    details_json = json.dumps({
-        str(i): {
-            "title": elem,
-            "desc": f"这里是「{elem}」的实战说明。在{clean_title}中，我们需要输入前置产出，进行处理 and 边界验证，最终生成验收证据。",
-            "io": f"输入：上游产出 | 输出：{elem} 验证记录"
-        }
-        for i, elem in enumerate(elements, start=1)
-    }, ensure_ascii=False)
+
+    details_json = json.dumps(
+        {
+            str(i): {
+                "title": elem,
+                "desc": f"这里是「{elem}」的实战说明。在{clean_title}中，我们需要输入前置产出，进行处理 and 边界验证，最终生成验收证据。",
+                "io": f"输入：上游产出 | 输出：{elem} 验证记录",
+            }
+            for i, elem in enumerate(elements, start=1)
+        },
+        ensure_ascii=False,
+    )
 
     return (
         '<!doctype html><html><head><meta charset="utf-8"></head><body>'
@@ -1453,40 +1579,42 @@ def _deterministic_animation_html(
         f'<div class="detail-title" id="detailTitle-{html.escape(animation_id)}">点击节点查看详情</div>'
         f'<div class="detail-desc" id="detailDesc-{html.escape(animation_id)}">请选择上方的步骤，查看其在流水线中的具体作用与输入输出定义。</div>'
         f'<div class="detail-io" id="detailIo-{html.escape(animation_id)}"></div>'
-        f'</div>'
-        f'<script>'
-        f'(function() {{'
-        f'  const details = {details_json};'
+        f"</div>"
+        f"<script>"
+        f"(function() {{"
+        f"  const details = {details_json};"
         f'  const animId = "{html.escape(animation_id)}";'
         f'  const stage = document.querySelector(`.stage[data-animation-id="${{animId}}"]`);'
-        f'  function selectStep(stepIndex) {{'
-        f'    stage.querySelectorAll(`.node`).forEach(node => {{'
+        f"  function selectStep(stepIndex) {{"
+        f"    stage.querySelectorAll(`.node`).forEach(node => {{"
         f'      node.classList.toggle("active", parseInt(node.getAttribute("data-step")) === stepIndex);'
-        f'    }});'
-        f'    stage.querySelectorAll(`.connector`).forEach(conn => {{'
+        f"    }});"
+        f"    stage.querySelectorAll(`.connector`).forEach(conn => {{"
         f'      conn.classList.toggle("active", parseInt(conn.getAttribute("data-conn")) < stepIndex);'
-        f'    }});'
-        f'    const detail = details[stepIndex];'
-        f'    if (detail) {{'
-        f'      document.getElementById(`detailTitle-${{animId}}`).innerText = detail.title;'
-        f'      document.getElementById(`detailDesc-${{animId}}`).innerText = detail.desc;'
-        f'      document.getElementById(`detailIo-${{animId}}`).innerText = detail.io;'
-        f'    }}'
-        f'  }}'
-        f'  stage.querySelectorAll(`.node`).forEach(node => {{'
+        f"    }});"
+        f"    const detail = details[stepIndex];"
+        f"    if (detail) {{"
+        f"      document.getElementById(`detailTitle-${{animId}}`).innerText = detail.title;"
+        f"      document.getElementById(`detailDesc-${{animId}}`).innerText = detail.desc;"
+        f"      document.getElementById(`detailIo-${{animId}}`).innerText = detail.io;"
+        f"    }}"
+        f"  }}"
+        f"  stage.querySelectorAll(`.node`).forEach(node => {{"
         f'    node.addEventListener("click", () => {{'
         f'      const stepIndex = parseInt(node.getAttribute("data-step"));'
-        f'      selectStep(stepIndex);'
-        f'    }});'
-        f'  }});'
-        f'  selectStep(1);'
-        f'}})();'
-        f'</script>'
+        f"      selectStep(stepIndex);"
+        f"    }});"
+        f"  }});"
+        f"  selectStep(1);"
+        f"}})();"
+        f"</script>"
         "</section></body></html>"
     )
 
 
-def _deterministic_animation_data(animation_briefs: object, section: dict) -> list[dict]:
+def _deterministic_animation_data(
+    animation_briefs: object, section: dict
+) -> list[dict]:
     if not isinstance(animation_briefs, list):
         return []
     animations: list[dict] = []
@@ -1496,14 +1624,20 @@ def _deterministic_animation_data(animation_briefs: object, section: dict) -> li
         animation_id = _clean_text(brief.get("animation_id"))
         if not animation_id:
             continue
-        title = _clean_text(brief.get("title")) or _clean_text(section.get("title")) or "流程动画"
+        title = (
+            _clean_text(brief.get("title"))
+            or _clean_text(section.get("title"))
+            or "流程动画"
+        )
         concept = _clean_text(brief.get("concept")) or f"展示{title}的关键步骤。"
         visual_elements = _text_items(brief.get("visual_elements"))
         animations.append(
             {
                 "animation_id": animation_id,
                 "title": title,
-                "html": _deterministic_animation_html(animation_id, title, concept, visual_elements),
+                "html": _deterministic_animation_html(
+                    animation_id, title, concept, visual_elements
+                ),
             }
         )
     return animations
@@ -1521,7 +1655,9 @@ _DISALLOWED_ANIMATION_COLOR_PATTERN = re.compile(
     r"(#[0-9A-Fa-f]{3,8}\b|\brgba?\s*\(|\bhsla?\s*\()"
 )
 _MARKDOWN_HEADING_PATTERN = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
-_ENGLISH_KNOWLEDGE_POINT_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+(?:[./_-][A-Za-z0-9]+)*")
+_ENGLISH_KNOWLEDGE_POINT_TOKEN_PATTERN = re.compile(
+    r"[A-Za-z0-9]+(?:[./_-][A-Za-z0-9]+)*"
+)
 _ENGLISH_KNOWLEDGE_POINT_STOPWORDS = {
     "a",
     "an",
@@ -1605,11 +1741,16 @@ def _knowledge_point_covered_in_markdown(concept_body: str, point: str) -> bool:
     if not anchors:
         return False
 
-    normalized_body = _normalized_english_knowledge_anchor(_strip_html_tags(concept_body))
+    normalized_body = _normalized_english_knowledge_anchor(
+        _strip_html_tags(concept_body)
+    )
     matched_anchors = [
         anchor
         for anchor in anchors
-        if any(variant in normalized_body for variant in _english_knowledge_anchor_variants(anchor))
+        if any(
+            variant in normalized_body
+            for variant in _english_knowledge_anchor_variants(anchor)
+        )
     ]
     required_matches = max(2, min(4, (len(anchors) + 1) // 2))
     has_strong_anchor = any(
@@ -1624,7 +1765,11 @@ def _markdown_section_body(markdown: str, heading: str) -> str:
     for index, match in enumerate(matches):
         if match.group(1).strip().startswith(heading):
             start = match.end()
-            end = matches[index + 1].start() if index + 1 < len(matches) else len(markdown)
+            end = (
+                matches[index + 1].start()
+                if index + 1 < len(matches)
+                else len(markdown)
+            )
             body = markdown[start:end].strip()
             # 剥离内容开头可能与当前小节标题同名的冗余行
             while True:
@@ -1633,9 +1778,13 @@ def _markdown_section_body(markdown: str, heading: str) -> str:
                     break
                 first_line = lines[0].strip()
                 # 去除 #、*、_、空格等标记符号
-                cleaned_line = re.sub(r"^(?:#{1,6}\s+|\*+|_+)\s*", "", first_line).strip()
+                cleaned_line = re.sub(
+                    r"^(?:#{1,6}\s+|\*+|_+)\s*", "", first_line
+                ).strip()
                 # 去除尾部可能存在的 :、：、*、_ 等
-                cleaned_line = re.sub(r"\s*(?:\*+|_+|：|:).*$", "", cleaned_line).strip()
+                cleaned_line = re.sub(
+                    r"\s*(?:\*+|_+|：|:).*$", "", cleaned_line
+                ).strip()
                 if cleaned_line == heading:
                     body = "\n".join(lines[1:]).strip()
                 else:
@@ -1667,7 +1816,9 @@ def _markdown_expansion_sections_for_issue(markdown: str, issue: str) -> list[st
         body = _markdown_section_body(markdown, heading)
         if heading == "核心概念" and len(body) < 420:
             sections.append(heading)
-        elif heading == "步骤讲解" and (len(body) < 520 or "|" not in body and "```" not in body):
+        elif heading == "步骤讲解" and (
+            len(body) < 520 or "|" not in body and "```" not in body
+        ):
             sections.append(heading)
         elif heading == "检查标准" and len(body) < 220:
             sections.append(heading)
@@ -1680,7 +1831,9 @@ def _insert_markdown_expansion(markdown: str, heading: str, expansion: str) -> s
     expansion_text = _clean_text(_plain_markdown_text(expansion))
     if not expansion_text:
         return markdown
-    expansion_text = re.sub(rf"^##\s+{re.escape(heading)}\s*", "", expansion_text).strip()
+    expansion_text = re.sub(
+        rf"^##\s+{re.escape(heading)}\s*", "", expansion_text
+    ).strip()
     if not expansion_text:
         return markdown
 
@@ -1730,8 +1883,12 @@ def _compose_llm_section_markdown(
     section_bodies: dict[str, str],
 ) -> dict:
     normalized = dict(markdown_data)
-    video_briefs = _normalize_markdown_video_briefs(section, normalized.get("video_briefs"))
-    animation_briefs = _normalize_markdown_animation_briefs(section, normalized.get("animation_briefs"))
+    video_briefs = _normalize_markdown_video_briefs(
+        section, normalized.get("video_briefs")
+    )
+    animation_briefs = _normalize_markdown_animation_briefs(
+        section, normalized.get("animation_briefs")
+    )
     if not video_briefs or not animation_briefs:
         return normalized
 
@@ -1745,7 +1902,9 @@ def _compose_llm_section_markdown(
     blocks.append(f"## 练习任务\n{_clean_text(section_bodies.get('练习任务'))}")
     for brief in animation_briefs:
         blocks.append(f"<!-- animation:id={brief['animation_id']} -->")
-    blocks.append(f"## 检查标准\n{_normalize_checklist_body(section_bodies.get('检查标准'))}")
+    blocks.append(
+        f"## 检查标准\n{_normalize_checklist_body(section_bodies.get('检查标准'))}"
+    )
 
     normalized.update(
         {
@@ -1780,7 +1939,9 @@ def _normalize_checklist_body(body: object) -> str:
         ]
     cleaned_items: list[str] = []
     for line in lines:
-        item = re.sub(r"^\s*(?:[-*+]\s+|\d+[.、]\s*|[（(]?\d+[）)]\s*)", "", line).strip()
+        item = re.sub(
+            r"^\s*(?:[-*+]\s+|\d+[.、]\s*|[（(]?\d+[）)]\s*)", "", line
+        ).strip()
         item = re.sub(r"^\[\s*[ xX]?\]\s*", "", item).strip()
         if item:
             cleaned_items.append(item)
@@ -1788,7 +1949,9 @@ def _normalize_checklist_body(body: object) -> str:
 
 
 def _markdown_section_body_issue(heading: str, body: str) -> str | None:
-    text = _normalize_checklist_body(body) if heading == "检查标准" else _clean_text(body)
+    text = (
+        _normalize_checklist_body(body) if heading == "检查标准" else _clean_text(body)
+    )
     if not text:
         return f"{heading}正文为空。"
     if heading == "步骤讲解":
@@ -1820,17 +1983,46 @@ def _scaffolded_markdown_section_body(section: dict, heading: str, body: str) ->
         if has_table or has_code_block:
             return text
         rows = [
-            ("定位目标", f"{title}、{description}", f"圈出本节要解决的知识点：{knowledge_text}", "目标说明", "能用一句话说清本节要学会什么"),
-            ("建立结构", f"{title} 的示例材料", "把概念拆成关键对象、状态变化、边界条件和操作结果", "结构拆解表", "每个字段都有明确含义"),
-            ("执行操作", f"{knowledge_text} 的练习输入", "按步骤记录关键对象、当前状态和结果变化", "操作过程记录", "每一步都能还原学习过程"),
-            ("完成验收", "操作过程记录", "核对输出、边界情况和口头解释是否一致", "自查清单", "能指出错误发生在哪一步"),
+            (
+                "定位目标",
+                f"{title}、{description}",
+                f"圈出本节要解决的知识点：{knowledge_text}",
+                "目标说明",
+                "能用一句话说清本节要学会什么",
+            ),
+            (
+                "建立结构",
+                f"{title} 的示例材料",
+                "把概念拆成关键对象、状态变化、边界条件和操作结果",
+                "结构拆解表",
+                "每个字段都有明确含义",
+            ),
+            (
+                "执行操作",
+                f"{knowledge_text} 的练习输入",
+                "按步骤记录关键对象、当前状态和结果变化",
+                "操作过程记录",
+                "每一步都能还原学习过程",
+            ),
+            (
+                "完成验收",
+                "操作过程记录",
+                "核对输出、边界情况和口头解释是否一致",
+                "自查清单",
+                "能指出错误发生在哪一步",
+            ),
         ]
         table_lines = [
             "| 步骤 | 输入材料 | 具体动作 | 产出物 | 验收方式 |",
             "| --- | --- | --- | --- | --- |",
-            *[f"| {step} | {source} | {action} | {output} | {check} |" for step, source, action, output, check in rows],
+            *[
+                f"| {step} | {source} | {action} | {output} | {check} |"
+                for step, source, action, output, check in rows
+            ],
         ]
-        return f"{text}\n\n" + "\n".join(table_lines) if text else "\n".join(table_lines)
+        return (
+            f"{text}\n\n" + "\n".join(table_lines) if text else "\n".join(table_lines)
+        )
 
     if heading == "练习任务":
         if text:
@@ -1838,7 +2030,7 @@ def _scaffolded_markdown_section_body(section: dict, heading: str, body: str) ->
         return "\n".join(
             [
                 f"任务卡：围绕「{title}」完成一次可复查的小练习。",
-                f"预计耗时：20 到 30 分钟。",
+                "预计耗时：20 到 30 分钟。",
                 f"输入：本小节说明「{description}」以及关键知识点「{knowledge_text}」。",
                 "操作步骤：先写出你最容易混淆的点，再按步骤讲解表复盘一次完整过程，随后补充一个边界情况，最后用检查标准逐条自查。",
                 "输出：一份 Markdown 练习记录，包含输入材料、过程表、边界情况说明和最终结论。",
@@ -1861,7 +2053,10 @@ def _scaffolded_markdown_section_body(section: dict, heading: str, body: str) ->
     existing_text = checklist_body
     lines = [line for line in checklist_body.splitlines() if line.strip()]
     for item in supplements:
-        if len(re.findall(r"^\s*-\s+\[\s*[ xX]?\s*\]", "\n".join(lines), re.MULTILINE)) >= 4:
+        if (
+            len(re.findall(r"^\s*-\s+\[\s*[ xX]?\s*\]", "\n".join(lines), re.MULTILINE))
+            >= 4
+        ):
             break
         if item not in existing_text:
             lines.append(f"- [ ] {item}")
@@ -1872,7 +2067,9 @@ def _markdown_teaching_depth_issue(markdown: str, section: dict) -> str | None:
     steps_body = _markdown_section_body(markdown, "步骤讲解")
     check_body = _markdown_section_body(markdown, "检查标准")
 
-    has_table = "|" in steps_body and re.search(r"^\s*\|.*\|\s*$", steps_body, re.MULTILINE)
+    has_table = "|" in steps_body and re.search(
+        r"^\s*\|.*\|\s*$", steps_body, re.MULTILINE
+    )
     has_code_block = "```" in steps_body
     if not has_table and not has_code_block:
         return "Markdown 教学支架不足：步骤讲解缺少表格、伪代码或代码块。"
@@ -1880,7 +2077,6 @@ def _markdown_teaching_depth_issue(markdown: str, section: dict) -> str | None:
     if len(check_items) < 4:
         return "Markdown 教学深度不足：检查标准少于 4 条。"
     return None
-
 
 
 def _markdown_quality_issue(
@@ -1892,7 +2088,13 @@ def _markdown_quality_issue(
     text = _clean_text(markdown)
     if any(marker in text for marker in _LOW_QUALITY_MARKERS):
         return "Markdown 含旧兜底内容。"
-    required_headings = ("## 学习目标", "## 核心概念", "## 步骤讲解", "## 练习任务", "## 检查标准")
+    required_headings = (
+        "## 学习目标",
+        "## 核心概念",
+        "## 步骤讲解",
+        "## 练习任务",
+        "## 检查标准",
+    )
     missing_headings = [heading for heading in required_headings if heading not in text]
     if missing_headings:
         return f"Markdown 缺少必备章节：{', '.join(missing_headings)}。"
@@ -1925,7 +2127,9 @@ def _markdown_quality_issue(
     return None
 
 
-def _video_topic_terms(video_briefs: object, section: dict, outline: dict | None = None) -> list[str]:
+def _video_topic_terms(
+    video_briefs: object, section: dict, outline: dict | None = None
+) -> list[str]:
     terms = [_clean_text(section.get("title"))]
     if isinstance(outline, dict):
         terms.append(_clean_text(outline.get("course_name")))
@@ -1997,7 +2201,14 @@ _VIDEO_TOPIC_SYNONYMS = {
     "阻塞事件循环": ["event loop", "asyncio"],
     "异步调用至关重要": ["asyncio", "event loop"],
     "文本分块": ["chunk", "chunking", "chunk_size", "chunk_overlap", "overlap", "切分"],
-    "分块策略": ["文本分块", "chunk", "chunking", "chunk_size", "chunk_overlap", "overlap"],
+    "分块策略": [
+        "文本分块",
+        "chunk",
+        "chunking",
+        "chunk_size",
+        "chunk_overlap",
+        "overlap",
+    ],
     "Embedding": ["向量化", "文本到向量", "向量", "嵌入"],
     "文本到向量": ["Embedding", "向量化", "向量"],
     "维度映射": ["向量维度", "向量空间"],
@@ -2246,7 +2457,9 @@ def _video_specific_brief_terms(
             return
         if lowered in domain_terms and not allow_domain_overlap:
             return
-        has_enough_length = len(clean_term) >= 4 or bool(re.fullmatch(r"[A-Za-z]{3,}", clean_term))
+        has_enough_length = len(clean_term) >= 4 or bool(
+            re.fullmatch(r"[A-Za-z]{3,}", clean_term)
+        )
         if not has_enough_length:
             return
         specific_terms.append(clean_term)
@@ -2264,8 +2477,12 @@ def _video_specific_brief_terms(
             add(fragment)
         for fragment in _video_term_fragments(stripped_purpose):
             add(fragment)
-        for token in re.findall(r"[A-Za-z][A-Za-z0-9.+_-]*", " ".join([title, purpose])):
-            allow_domain_overlap = any(marker in token.lower() for marker in _VIDEO_SPECIFIC_TERM_MARKERS)
+        for token in re.findall(
+            r"[A-Za-z][A-Za-z0-9.+_-]*", " ".join([title, purpose])
+        ):
+            allow_domain_overlap = any(
+                marker in token.lower() for marker in _VIDEO_SPECIFIC_TERM_MARKERS
+            )
             add(token, allow_domain_overlap=allow_domain_overlap)
     return specific_terms
 
@@ -2287,7 +2504,9 @@ def _requires_specific_video_brief_match(
     section: dict,
     outline: dict | None = None,
 ) -> bool:
-    technical_tokens = _video_specific_brief_technical_tokens(video_briefs, section, outline)
+    technical_tokens = _video_specific_brief_technical_tokens(
+        video_briefs, section, outline
+    )
     if len(technical_tokens) >= 2:
         return True
     specific_terms = _video_specific_brief_terms(video_briefs, section, outline)
@@ -2342,9 +2561,13 @@ def _has_related_video_topic(
     section: dict,
     outline: dict | None = None,
 ) -> bool:
-    domain_keywords = _video_quality_keywords(_video_domain_anchor_terms(section, outline))
+    domain_keywords = _video_quality_keywords(
+        _video_domain_anchor_terms(section, outline)
+    )
     brief_keywords = _video_quality_keywords(_video_brief_anchor_terms(video_briefs))
-    topic_keywords = _video_quality_keywords(_video_topic_keywords(_video_topic_terms(video_briefs, section, outline)))
+    topic_keywords = _video_quality_keywords(
+        _video_topic_keywords(_video_topic_terms(video_briefs, section, outline))
+    )
     matched_domain = _matched_video_keywords(text, domain_keywords)
     matched_brief = _matched_video_keywords(text, brief_keywords)
     matched_topic = _matched_video_keywords(text, topic_keywords)
@@ -2355,7 +2578,10 @@ def _has_related_video_topic(
     return (
         len(matched_domain) >= 2
         or len(matched_topic) >= 3
-        or (bool(matched_focus) and (bool(matched_domain) or bool(matched_brief) or len(matched_topic) >= 2))
+        or (
+            bool(matched_focus)
+            and (bool(matched_domain) or bool(matched_brief) or len(matched_topic) >= 2)
+        )
     )
 
 
@@ -2364,9 +2590,16 @@ def _matches_video_domain_or_section_topic(
     section: dict,
     outline: dict | None = None,
 ) -> bool:
-    domain_anchor_terms = _video_quality_keywords(_video_domain_anchor_terms(section, outline))
+    domain_anchor_terms = _video_quality_keywords(
+        _video_domain_anchor_terms(section, outline)
+    )
     section_terms = _video_quality_keywords(
-        _video_topic_keywords([_clean_text(section.get("title")), *_text_items(section.get("key_knowledge_points"))])
+        _video_topic_keywords(
+            [
+                _clean_text(section.get("title")),
+                *_text_items(section.get("key_knowledge_points")),
+            ]
+        )
     )
     matched_domain = _matched_video_keywords(text, domain_anchor_terms)
     matched_section = _matched_video_keywords(text, section_terms)
@@ -2419,7 +2652,9 @@ async def _verify_bilibili_video_metadata(url: str) -> dict:
     }
     api_url = "https://api.bilibili.com/x/web-interface/view"
     try:
-        async with httpx.AsyncClient(timeout=_VIDEO_METADATA_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=_VIDEO_METADATA_TIMEOUT_SECONDS, follow_redirects=True
+        ) as client:
             response = await client.get(api_url, params={"bvid": bvid}, headers=headers)
             response.raise_for_status()
             payload = response.json()
@@ -2437,16 +2672,28 @@ async def _verify_bilibili_video_metadata(url: str) -> dict:
             _clean_text(data.get("title")),
             _clean_text(data.get("desc")),
             _clean_text(data.get("tname")),
-            _clean_text((data.get("owner") or {}).get("name") if isinstance(data.get("owner"), dict) else ""),
+            _clean_text(
+                (data.get("owner") or {}).get("name")
+                if isinstance(data.get("owner"), dict)
+                else ""
+            ),
         ]
         if item
     )
-    return {"status": "ok", "text": metadata_text, "title": _clean_text(data.get("title"))}
+    return {
+        "status": "ok",
+        "text": metadata_text,
+        "title": _clean_text(data.get("title")),
+    }
 
 
-async def _verify_bilibili_video_page(url: str, bvid: str, headers: dict[str, str]) -> dict:
+async def _verify_bilibili_video_page(
+    url: str, bvid: str, headers: dict[str, str]
+) -> dict:
     try:
-        async with httpx.AsyncClient(timeout=_VIDEO_METADATA_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=_VIDEO_METADATA_TIMEOUT_SECONDS, follow_redirects=True
+        ) as client:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
             page_text = response.text
@@ -2454,7 +2701,11 @@ async def _verify_bilibili_video_page(url: str, bvid: str, headers: dict[str, st
         logger.warning("Bilibili page validation failed for %s: %s", url, exc)
         return {"status": "error", "reason": "视频平台页面校验失败。"}
 
-    if "啊叻？视频不见了？" in page_text or "稿件不可见" in page_text or "视频去哪了呢？" in page_text:
+    if (
+        "啊叻？视频不见了？" in page_text
+        or "稿件不可见" in page_text
+        or "视频去哪了呢？" in page_text
+    ):
         return {"status": "invalid", "reason": "Bilibili 视频不可见。"}
     if bvid and bvid not in page_text:
         return {"status": "invalid", "reason": "Bilibili 页面未匹配目标稿件。"}
@@ -2462,7 +2713,9 @@ async def _verify_bilibili_video_page(url: str, bvid: str, headers: dict[str, st
     title_match = re.search(r"<title[^>]*>(.*?)</title>", page_text, re.S | re.I)
     state_title_match = re.search(r'"title":"([^"]+)"', page_text)
     title = _clean_text(state_title_match.group(1) if state_title_match else "")
-    page_title = _clean_text(re.sub(r"\s+", " ", title_match.group(1)) if title_match else "")
+    page_title = _clean_text(
+        re.sub(r"\s+", " ", title_match.group(1)) if title_match else ""
+    )
     metadata_text = " ".join(item for item in [title, page_title] if item)
     if not metadata_text:
         return {"status": "error", "reason": "视频平台页面缺少可校验标题。"}
@@ -2477,8 +2730,12 @@ def _video_metadata_topic_issue(
     outline: dict | None = None,
 ) -> str | None:
     specific_brief_terms = _video_specific_brief_terms(video_briefs, section, outline)
-    if specific_brief_terms and _requires_specific_video_brief_match(video_briefs, section, outline):
-        if not _has_strong_video_brief_match(metadata_text, video_briefs, section, outline):
+    if specific_brief_terms and _requires_specific_video_brief_match(
+        video_briefs, section, outline
+    ):
+        if not _has_strong_video_brief_match(
+            metadata_text, video_briefs, section, outline
+        ):
             if _has_related_video_topic(metadata_text, video_briefs, section, outline):
                 return None
             return "视频平台真实标题或简介未体现小节主题。"
@@ -2487,10 +2744,14 @@ def _video_metadata_topic_issue(
     if domain_issue:
         return domain_issue
     domain_anchor_terms = _video_domain_anchor_terms(section, outline)
-    if domain_anchor_terms and not _contains_any_video_keyword(metadata_text, domain_anchor_terms):
+    if domain_anchor_terms and not _contains_any_video_keyword(
+        metadata_text, domain_anchor_terms
+    ):
         return "视频平台真实标题或简介未体现当前课程主题。"
     brief_anchor_terms = _video_brief_anchor_terms(video_briefs)
-    if brief_anchor_terms and not _contains_any_video_keyword(metadata_text, brief_anchor_terms):
+    if brief_anchor_terms and not _contains_any_video_keyword(
+        metadata_text, brief_anchor_terms
+    ):
         return "视频平台真实标题或简介未体现小节主题。"
     topic_keywords = _video_topic_keywords(topic_terms)
     if not topic_keywords:
@@ -2513,7 +2774,11 @@ def _normalized_video_quality_issue(
         for brief in video_briefs
         if isinstance(brief, dict) and _clean_text(brief.get("video_id"))
     }
-    video_ids = {_clean_text(video.get("brief_id")) for video in videos if _clean_text(video.get("brief_id"))}
+    video_ids = {
+        _clean_text(video.get("brief_id"))
+        for video in videos
+        if _clean_text(video.get("brief_id"))
+    }
     if expected_ids and video_ids != expected_ids:
         return "视频资源未完整绑定 brief。"
     topic_terms = _video_topic_terms(video_briefs, section, outline)
@@ -2524,25 +2789,45 @@ def _normalized_video_quality_issue(
             return "视频 URL 必须是可直接打开的 HTTP(S) 地址。"
         bilibili_bvid = _bilibili_bvid_from_url(url)
         title = _clean_text(video.get("title"))
-        specific_brief_terms = _video_specific_brief_terms(video_briefs, section, outline)
+        specific_brief_terms = _video_specific_brief_terms(
+            video_briefs, section, outline
+        )
         if not bilibili_bvid:
-            title_source = f"{_clean_text(video.get('title'))} {_clean_text(video.get('source'))}"
-            if specific_brief_terms and _requires_specific_video_brief_match(video_briefs, section, outline):
-                if not _has_strong_video_brief_match(title_source, video_briefs, section, outline):
-                    if _has_related_video_topic(title_source, video_briefs, section, outline):
+            title_source = (
+                f"{_clean_text(video.get('title'))} {_clean_text(video.get('source'))}"
+            )
+            if specific_brief_terms and _requires_specific_video_brief_match(
+                video_briefs, section, outline
+            ):
+                if not _has_strong_video_brief_match(
+                    title_source, video_briefs, section, outline
+                ):
+                    if _has_related_video_topic(
+                        title_source, video_briefs, section, outline
+                    ):
                         continue
                     return "视频标题未体现小节主题或 brief 目的。"
                 continue
-            title_source = f"{_clean_text(video.get('title'))} {_clean_text(video.get('source'))}"
+            title_source = (
+                f"{_clean_text(video.get('title'))} {_clean_text(video.get('source'))}"
+            )
             title_keywords = _video_quality_keywords(_video_topic_keywords(topic_terms))
-            if title_keywords and not _contains_any_video_keyword(title_source, title_keywords):
+            if title_keywords and not _contains_any_video_keyword(
+                title_source, title_keywords
+            ):
                 return "视频标题未体现小节主题或 brief 目的。"
         if bilibili_bvid and _is_bilibili_search_placeholder_title(title):
             continue
         title_source = f"{title} {_clean_text(video.get('source'))}"
-        if specific_brief_terms and _requires_specific_video_brief_match(video_briefs, section, outline):
-            if not _has_strong_video_brief_match(title_source, video_briefs, section, outline):
-                if _has_related_video_topic(title_source, video_briefs, section, outline):
+        if specific_brief_terms and _requires_specific_video_brief_match(
+            video_briefs, section, outline
+        ):
+            if not _has_strong_video_brief_match(
+                title_source, video_briefs, section, outline
+            ):
+                if _has_related_video_topic(
+                    title_source, video_briefs, section, outline
+                ):
                     continue
                 return "视频标题未体现小节主题或 brief 目的。"
             continue
@@ -2627,17 +2912,25 @@ def _english_video_focus_queries(
         if clean_query and clean_query not in queries:
             queries.append(clean_query)
 
-    if any(term in lowered_terms for term in ("dimension", "mismatch", "valueerror", "shape")):
+    if any(
+        term in lowered_terms
+        for term in ("dimension", "mismatch", "valueerror", "shape")
+    ):
         add("RAG embedding dimension mismatch error tutorial")
         add("vector dimension mismatch embedding error")
         add("query document embedding mismatch debug")
-    if any(term in lowered_terms for term in ("query", "question", "chunks", "top-3", "top3", "retrieval")):
+    if any(
+        term in lowered_terms
+        for term in ("query", "question", "chunks", "top-3", "top3", "retrieval")
+    ):
         add("RAG query function retrieval tutorial")
         add("RAG top k chunks retrieval tutorial")
     if any("chunk" in term for term in lowered_terms):
         add("RAG chunking strategy tutorial")
         add("RAG preprocessing chunking embeddings vector databases")
-    if any(term in lowered_terms for term in ("pdf", "loader", "splitter", "embedder")) or {
+    if any(
+        term in lowered_terms for term in ("pdf", "loader", "splitter", "embedder")
+    ) or {
         "vector",
         "store",
     }.issubset(lowered_terms):
@@ -2695,7 +2988,9 @@ def _prioritize_video_query_terms(terms: list[str]) -> list[str]:
 
     def score(term: str) -> tuple[int, int, int]:
         lowered = term.lower()
-        marker_score = 1 if any(marker in lowered for marker in _VIDEO_QUERY_TERM_MARKERS) else 0
+        marker_score = (
+            1 if any(marker in lowered for marker in _VIDEO_QUERY_TERM_MARKERS) else 0
+        )
         sentence_penalty = -1 if any(punct in term for punct in "，。；！？,.!?") else 0
         length_score = 0
         if len(term) <= 12:
@@ -2707,7 +3002,9 @@ def _prioritize_video_query_terms(terms: list[str]) -> list[str]:
     return sorted(unique_terms, key=score, reverse=True)
 
 
-def _video_search_queries(video_briefs: object, section: dict, outline: dict | None = None) -> list[str]:
+def _video_search_queries(
+    video_briefs: object, section: dict, outline: dict | None = None
+) -> list[str]:
     title = _clean_text(section.get("title"))
     knowledge_points = _text_items(section.get("key_knowledge_points"))
     topic_terms = _video_topic_terms(video_briefs, section, outline)
@@ -2719,31 +3016,61 @@ def _video_search_queries(video_briefs: object, section: dict, outline: dict | N
     domain_keywords = _video_domain_anchor_terms(section, outline)
     focus_terms = _video_focus_query_terms([*brief_keywords, *domain_keywords])
     section_keywords = _video_topic_keywords([title, *knowledge_points])
-    domain_query_terms = domain_keywords[:3] or section_keywords[:3] or topic_keywords[:3]
+    domain_query_terms = (
+        domain_keywords[:3] or section_keywords[:3] or topic_keywords[:3]
+    )
     queries = [
-        *_english_video_focus_queries([*prioritized_specific_terms, *knowledge_keywords], focus_terms),
-        _compact_video_query_parts([*prioritized_specific_terms[:2], *focus_terms[:2], "教程"]),
+        *_english_video_focus_queries(
+            [*prioritized_specific_terms, *knowledge_keywords], focus_terms
+        ),
+        _compact_video_query_parts(
+            [*prioritized_specific_terms[:2], *focus_terms[:2], "教程"]
+        ),
         _compact_video_query_parts([*knowledge_keywords[:4], *focus_terms[:2], "教程"]),
-        _compact_video_query_parts([*prioritized_specific_terms[:2], *domain_query_terms[:2], "教程"]),
+        _compact_video_query_parts(
+            [*prioritized_specific_terms[:2], *domain_query_terms[:2], "教程"]
+        ),
         _compact_video_query_parts([*brief_keywords[:3], *focus_terms[:2], "教程"]),
         _compact_video_query_parts([*section_keywords[:4], *focus_terms[:2], "教程"]),
-        _compact_video_query_parts([*domain_query_terms[:3], *section_keywords[:2], "教程"]),
+        _compact_video_query_parts(
+            [*domain_query_terms[:3], *section_keywords[:2], "教程"]
+        ),
         _compact_video_query_parts([*topic_keywords[:4], *focus_terms[:2], "教程"]),
-        _compact_video_query_parts([*prioritized_specific_terms[:2], *section_keywords[:2], "视频"]),
+        _compact_video_query_parts(
+            [*prioritized_specific_terms[:2], *section_keywords[:2], "视频"]
+        ),
         _compact_video_query_parts([*domain_query_terms[:2], "实战", "教程"]),
         _compact_video_query_parts([*domain_query_terms[:2], "原理", "讲解"]),
     ]
     joined_specific_terms = " ".join(prioritized_specific_terms).lower()
-    if any(marker in joined_specific_terms for marker in ("环境变量", "初始化", "sdk", "api key", "apikey")):
-        queries.extend([
-            _compact_video_query_parts(["Python", "OpenAI", "环境变量配置", "SDK初始化", "教程"]),
-            _compact_video_query_parts(["Python", "OpenAI", "API", "环境变量", "初始化", "教程"]),
-        ])
-    if any(marker in joined_specific_terms for marker in ("asyncio", "异步", "阻塞事件循环", "阻塞")):
-        queries.extend([
-            _compact_video_query_parts(["Python", "asyncio", "阻塞事件循环", "最佳实践", "教程"]),
-            _compact_video_query_parts(["Python", "异步编程", "阻塞事件循环", "稳定性", "教程"]),
-        ])
+    if any(
+        marker in joined_specific_terms
+        for marker in ("环境变量", "初始化", "sdk", "api key", "apikey")
+    ):
+        queries.extend(
+            [
+                _compact_video_query_parts(
+                    ["Python", "OpenAI", "环境变量配置", "SDK初始化", "教程"]
+                ),
+                _compact_video_query_parts(
+                    ["Python", "OpenAI", "API", "环境变量", "初始化", "教程"]
+                ),
+            ]
+        )
+    if any(
+        marker in joined_specific_terms
+        for marker in ("asyncio", "异步", "阻塞事件循环", "阻塞")
+    ):
+        queries.extend(
+            [
+                _compact_video_query_parts(
+                    ["Python", "asyncio", "阻塞事件循环", "最佳实践", "教程"]
+                ),
+                _compact_video_query_parts(
+                    ["Python", "异步编程", "阻塞事件循环", "稳定性", "教程"]
+                ),
+            ]
+        )
     if "Embedding" in focus_terms:
         queries.append("Embedding 原理 文本到向量 教程")
     if "文本分块" in focus_terms:
@@ -2752,21 +3079,65 @@ def _video_search_queries(video_briefs: object, section: dict, outline: dict | N
         queries.append("RAG 架构 Embedding 教程")
     joined_keywords = " ".join([title, *knowledge_points])
     if any(term in joined_keywords for term in ("检查", "验收", "质量", "运行证据")):
-        queries.extend([
-            _compact_video_query_parts([*prioritized_specific_terms[:2], *section_keywords[:2], "测试", "验收标准"]),
-            _compact_video_query_parts([*domain_query_terms[:2], *section_keywords[:2], "质量检查"]),
-            _compact_video_query_parts([*domain_query_terms[:2], *prioritized_specific_terms[:2], "评测"]),
-        ])
+        queries.extend(
+            [
+                _compact_video_query_parts(
+                    [
+                        *prioritized_specific_terms[:2],
+                        *section_keywords[:2],
+                        "测试",
+                        "验收标准",
+                    ]
+                ),
+                _compact_video_query_parts(
+                    [*domain_query_terms[:2], *section_keywords[:2], "质量检查"]
+                ),
+                _compact_video_query_parts(
+                    [*domain_query_terms[:2], *prioritized_specific_terms[:2], "评测"]
+                ),
+            ]
+        )
     if any(term in joined_keywords for term in ("任务", "拆解", "需求", "接口契约")):
-        queries.extend([
-            _compact_video_query_parts([*prioritized_specific_terms[:2], *domain_query_terms[:2], "任务拆解"]),
-            _compact_video_query_parts([*prioritized_specific_terms[:2], *domain_query_terms[:2], "需求拆解"]),
-        ])
+        queries.extend(
+            [
+                _compact_video_query_parts(
+                    [
+                        *prioritized_specific_terms[:2],
+                        *domain_query_terms[:2],
+                        "任务拆解",
+                    ]
+                ),
+                _compact_video_query_parts(
+                    [
+                        *prioritized_specific_terms[:2],
+                        *domain_query_terms[:2],
+                        "需求拆解",
+                    ]
+                ),
+            ]
+        )
     if any(term in joined_keywords for term in ("OpenAI", "API", "功能边界")):
-        queries.extend([
-            _compact_video_query_parts([*prioritized_specific_terms[:2], *domain_query_terms[:2], "API", "调用", "教程"]),
-            _compact_video_query_parts([*prioritized_specific_terms[:2], *domain_query_terms[:2], "API", "接入"]),
-        ])
+        queries.extend(
+            [
+                _compact_video_query_parts(
+                    [
+                        *prioritized_specific_terms[:2],
+                        *domain_query_terms[:2],
+                        "API",
+                        "调用",
+                        "教程",
+                    ]
+                ),
+                _compact_video_query_parts(
+                    [
+                        *prioritized_specific_terms[:2],
+                        *domain_query_terms[:2],
+                        "API",
+                        "接入",
+                    ]
+                ),
+            ]
+        )
     seen: set[str] = set()
     unique_queries: list[str] = []
     for query in queries:
@@ -2789,9 +3160,13 @@ async def _search_bilibili_video_results(query: str) -> list[dict]:
     return await _search_bilibili_video_page_results(query, headers)
 
 
-async def _search_bilibili_video_page_results(query: str, headers: dict[str, str]) -> list[dict]:
+async def _search_bilibili_video_page_results(
+    query: str, headers: dict[str, str]
+) -> list[dict]:
     try:
-        async with httpx.AsyncClient(timeout=_VIDEO_METADATA_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=_VIDEO_METADATA_TIMEOUT_SECONDS, follow_redirects=True
+        ) as client:
             response = await client.get(
                 "https://search.bilibili.com/video",
                 params={"keyword": query},
@@ -2829,7 +3204,9 @@ async def _search_youtube_video_results(query: str) -> list[dict]:
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
     }
     try:
-        async with httpx.AsyncClient(timeout=_VIDEO_METADATA_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=_VIDEO_METADATA_TIMEOUT_SECONDS, follow_redirects=True
+        ) as client:
             response = await client.get(
                 "https://www.youtube.com/results",
                 params={"search_query": query},
@@ -2841,7 +3218,9 @@ async def _search_youtube_video_results(query: str) -> list[dict]:
         logger.warning("YouTube search failed for query %s: %s", query, exc)
         return []
 
-    initial_data_match = re.search(r"var ytInitialData = (\{.*?\});</script>", page_text, re.S)
+    initial_data_match = re.search(
+        r"var ytInitialData = (\{.*?\});</script>", page_text, re.S
+    )
     if not initial_data_match:
         return []
     try:
@@ -2862,7 +3241,11 @@ async def _search_youtube_video_results(query: str) -> list[dict]:
                 title_runs = (video_renderer.get("title") or {}).get("runs")
                 title = ""
                 if isinstance(title_runs, list):
-                    title = "".join(_clean_text(run.get("text")) for run in title_runs if isinstance(run, dict))
+                    title = "".join(
+                        _clean_text(run.get("text"))
+                        for run in title_runs
+                        if isinstance(run, dict)
+                    )
                 if video_id and title:
                     search_results.append(
                         {
@@ -2901,7 +3284,9 @@ async def _find_verified_video_from_search(
         best_video: dict | None = None
         best_score = -1
         seen_urls: set[str] = set()
-        for query in _video_search_queries([brief], section, outline)[:_VIDEO_VERIFIED_QUERY_LIMIT]:
+        for query in _video_search_queries([brief], section, outline)[
+            :_VIDEO_VERIFIED_QUERY_LIMIT
+        ]:
             bilibili_results, youtube_results = await asyncio.gather(
                 _search_bilibili_video_results(query),
                 _search_youtube_video_results(query),
@@ -2913,12 +3298,19 @@ async def _find_verified_video_from_search(
                     continue
                 seen_urls.add(url)
                 video = {"brief_id": brief_id, **search_result}
-                if await _normalized_video_quality_issue_async([video], [brief], section, outline) is None:
+                if (
+                    await _normalized_video_quality_issue_async(
+                        [video], [brief], section, outline
+                    )
+                    is None
+                ):
                     score = _video_candidate_score(
-                        " ".join([
-                            _clean_text(video.get("title")),
-                            _clean_text(video.get("source")),
-                        ]),
+                        " ".join(
+                            [
+                                _clean_text(video.get("title")),
+                                _clean_text(video.get("source")),
+                            ]
+                        ),
                         section,
                         [brief],
                         outline,
@@ -2926,13 +3318,19 @@ async def _find_verified_video_from_search(
                     if score > best_score:
                         best_score = score
                         best_video = video
-                        if score >= 40 and _is_high_confidence_video_candidate(video, brief, section, outline):
+                        if score >= 40 and _is_high_confidence_video_candidate(
+                            video, brief, section, outline
+                        ):
                             verified.append(best_video)
                             break
-            if best_video is not None and brief_id in {_clean_text(video.get("brief_id")) for video in verified}:
+            if best_video is not None and brief_id in {
+                _clean_text(video.get("brief_id")) for video in verified
+            }:
                 break
         if best_video is not None:
-            if brief_id not in {_clean_text(video.get("brief_id")) for video in verified}:
+            if brief_id not in {
+                _clean_text(video.get("brief_id")) for video in verified
+            }:
                 verified.append(best_video)
     return verified
 
@@ -2961,9 +3359,13 @@ def _video_candidate_score(
     video_briefs: object,
     outline: dict | None = None,
 ) -> int:
-    topic_score = _video_relevance_score(text, _video_topic_terms(video_briefs, section, outline))
+    topic_score = _video_relevance_score(
+        text, _video_topic_terms(video_briefs, section, outline)
+    )
     brief_score = _video_relevance_score(text, _video_brief_anchor_terms(video_briefs))
-    domain_score = _video_relevance_score(text, _video_domain_anchor_terms(section, outline))
+    domain_score = _video_relevance_score(
+        text, _video_domain_anchor_terms(section, outline)
+    )
     focus_terms = _video_focus_query_terms(_video_brief_anchor_terms(video_briefs))
     focus_score = _video_relevance_score(text, focus_terms)
     focus_match_count = sum(
@@ -2975,7 +3377,9 @@ def _video_candidate_score(
     focus_bonus = focus_match_count * 5
     if focus_match_count >= 2:
         focus_bonus += 5
-    return topic_score + (brief_score * 2) + domain_score + (focus_score * 2) + focus_bonus
+    return (
+        topic_score + (brief_score * 2) + domain_score + (focus_score * 2) + focus_bonus
+    )
 
 
 def _normalized_animation_quality_issue(
@@ -2991,9 +3395,11 @@ def _normalized_animation_quality_issue(
         if isinstance(brief, dict) and _clean_text(brief.get("animation_id"))
     }
     animation_ids = {
-        _clean_text(animation.get("animation_id")) or _clean_text(animation.get("brief_id"))
+        _clean_text(animation.get("animation_id"))
+        or _clean_text(animation.get("brief_id"))
         for animation in animations
-        if _clean_text(animation.get("animation_id")) or _clean_text(animation.get("brief_id"))
+        if _clean_text(animation.get("animation_id"))
+        or _clean_text(animation.get("brief_id"))
     }
     if expected_ids and animation_ids != expected_ids:
         return "动画资源未完整绑定 brief。"
@@ -3009,13 +3415,16 @@ def _normalized_animation_quality_issue(
     brief_terms = [term for term in brief_terms if term]
     for animation in animations:
         html_text = _clean_text(animation.get("html"))
-        if "<meta charset=\"utf-8\"" not in html_text.lower():
+        if '<meta charset="utf-8"' not in html_text.lower():
             return "动画 HTML 缺少 UTF-8 声明。"
         if "section-animation" not in html_text:
             return "动画 HTML 缺少 section-animation 根节点。"
         if "animation-context" not in html_text or not _contains_chinese(html_text):
             return "动画 HTML 缺少中文上下文。"
-        if "opacity: 1 !important" not in html_text or "transform: none !important" not in html_text:
+        if (
+            "opacity: 1 !important" not in html_text
+            or "transform: none !important" not in html_text
+        ):
             return "动画 HTML 缺少可见兜底样式。"
         if _DISALLOWED_ANIMATION_COLOR_PATTERN.search(html_text):
             return "动画 HTML 使用了 HEX/RGB/HSL 硬编码颜色。"
@@ -3117,7 +3526,9 @@ def _normalize_videos(videos: object, video_briefs: object) -> list[dict]:
         url = _clean_text(video_data.get("url"))
         if not title or not url:
             continue
-        brief_id = _clean_text(video_data.get("brief_id")) or _clean_text(video_data.get("video_id"))
+        brief_id = _clean_text(video_data.get("brief_id")) or _clean_text(
+            video_data.get("video_id")
+        )
         if not brief_id or brief_id not in brief_ids:
             continue
 
@@ -3155,7 +3566,9 @@ def _animation_input(state: OrchestrationState, outline: dict, section: dict) ->
         "parent_section": _parent_section(outline, section),
         "target_section": section,
         "section_markdown": section_markdown,
-        "animation_briefs": animation_briefs if isinstance(animation_briefs, list) else [],
+        "animation_briefs": animation_briefs
+        if isinstance(animation_briefs, list)
+        else [],
     }
     return (
         "请为输入小节的 animation_briefs 生成可嵌入 HTML 动画片段。\n\n"
@@ -3185,13 +3598,15 @@ def _animation_repair_input(
         "parent_section": _parent_section(outline, section),
         "target_section": section,
         "section_markdown": section_markdown,
-        "animation_briefs": animation_briefs if isinstance(animation_briefs, list) else [],
+        "animation_briefs": animation_briefs
+        if isinstance(animation_briefs, list)
+        else [],
         "animation_quality_issue": quality_issue,
         "previous_html": previous_html[:2500],
     }
     return (
         "上一版 HTML 动画未通过质量检查。请只基于同一个小节和 animation_briefs 重新生成 HTML 动画。\n\n"
-        "硬性要求：根节点必须包含 class=\"section-animation\"；必须包含 <meta charset=\"utf-8\">；"
+        '硬性要求：根节点必须包含 class="section-animation"；必须包含 <meta charset="utf-8">；'
         "必须包含中文 animation-context；颜色只能使用 OKLCH 或 CSS 变量，禁止 HEX/RGB/HSL；"
         "可见性兜底必须包含 opacity: 1 !important 和 transform: none !important；"
         "动效只能改变 transform 与 opacity，并提供 prefers-reduced-motion 降级。\n\n"
@@ -3208,10 +3623,10 @@ def _animation_context_html(brief: dict | None) -> str:
     if not title and not concept and not visual_elements:
         return ""
     return (
-        "<div class=\"animation-context\">"
-        f"<div class=\"animation-context-title\">{html.escape(title or '动画说明')}</div>"
-        f"<div class=\"animation-context-concept\">{html.escape(concept)}</div>"
-        f"<div class=\"animation-context-elements\">{html.escape(visual_elements)}</div>"
+        '<div class="animation-context">'
+        f'<div class="animation-context-title">{html.escape(title or "动画说明")}</div>'
+        f'<div class="animation-context-concept">{html.escape(concept)}</div>'
+        f'<div class="animation-context-elements">{html.escape(visual_elements)}</div>'
         "</div>"
     )
 
@@ -3220,10 +3635,13 @@ def _inject_animation_context(normalized: str, brief: dict | None) -> str:
     context_html = _animation_context_html(brief)
     if not context_html or "animation-context" in normalized:
         return normalized
-    root_match = re.search(r"<(?P<tag>[a-zA-Z][\w:-]*)(?P<attrs>[^>]*class=[\"'][^\"']*\bsection-animation\b[^\"']*[\"'][^>]*)>", normalized)
+    root_match = re.search(
+        r"<(?P<tag>[a-zA-Z][\w:-]*)(?P<attrs>[^>]*class=[\"'][^\"']*\bsection-animation\b[^\"']*[\"'][^>]*)>",
+        normalized,
+    )
     if not root_match:
         return f"{context_html}\n{normalized}"
-    return f"{normalized[:root_match.end()]}\n{context_html}{normalized[root_match.end():]}"
+    return f"{normalized[: root_match.end()]}\n{context_html}{normalized[root_match.end() :]}"
 
 
 def _normalize_animation_colors(html_text: str) -> str:
@@ -3244,10 +3662,22 @@ def _normalize_animation_colors(html_text: str) -> str:
         normalized,
         flags=re.IGNORECASE,
     )
-    normalized = re.sub(r"(?i)(background(?:-color)?\s*:\s*)white\b", r"\1oklch(98% 0.01 90)", normalized)
-    normalized = re.sub(r"(?i)(color\s*:\s*)white\b", r"\1oklch(98% 0.01 90)", normalized)
-    normalized = re.sub(r"(?i)(background(?:-color)?\s*:\s*)black\b", r"\1oklch(18% 0.01 240)", normalized)
-    normalized = re.sub(r"(?i)(color\s*:\s*)black\b", r"\1oklch(18% 0.01 240)", normalized)
+    normalized = re.sub(
+        r"(?i)(background(?:-color)?\s*:\s*)white\b",
+        r"\1oklch(98% 0.01 90)",
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?i)(color\s*:\s*)white\b", r"\1oklch(98% 0.01 90)", normalized
+    )
+    normalized = re.sub(
+        r"(?i)(background(?:-color)?\s*:\s*)black\b",
+        r"\1oklch(18% 0.01 240)",
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?i)(color\s*:\s*)black\b", r"\1oklch(18% 0.01 240)", normalized
+    )
     return normalized
 
 
@@ -3284,7 +3714,7 @@ def _normalize_animation_html(html: str, brief: dict | None = None) -> str:
     if visible_fallback not in normalized:
         normalized = f"{visible_fallback}\n{normalized}"
     if "<meta charset=" not in normalized.lower():
-        normalized = f"<!doctype html><html><head><meta charset=\"utf-8\"></head><body>{normalized}</body></html>"
+        normalized = f'<!doctype html><html><head><meta charset="utf-8"></head><body>{normalized}</body></html>'
     return normalized
 
 
@@ -3344,7 +3774,8 @@ def _normalize_animations(animations: object, animation_briefs: object) -> list[
             {
                 "brief_id": animation_id,
                 "animation_id": animation_id,
-                "title": _clean_text(animation_data.get("title")) or brief_titles[animation_id],
+                "title": _clean_text(animation_data.get("title"))
+                or brief_titles[animation_id],
                 "html": html,
             }
         )
@@ -3354,8 +3785,10 @@ def _normalize_animations(animations: object, animation_briefs: object) -> list[
 def _persist_outline(user_id: str, outline: dict) -> None:
     with Session(get_engine()) as db_session:
         upsert_user_course_knowledge_outline(db_session, user_id, outline)
-        from app.models import ChapterWeakness
         from sqlmodel import select
+
+        from app.models import ChapterWeakness
+
         course_id = outline.get("course_id", "")
         if course_id:
             stmt = select(ChapterWeakness).where(
@@ -3392,7 +3825,9 @@ def _existing_markdown_value(outline: dict, section: dict) -> dict | None:
     return None if issue else value
 
 
-def _existing_video_value(outline: dict, section: dict, video_briefs: object) -> dict | None:
+def _existing_video_value(
+    outline: dict, section: dict, video_briefs: object
+) -> dict | None:
     section_id = _clean_text(section.get("section_id"))
     section_video_links = outline.get("section_video_links")
     if not isinstance(section_video_links, dict):
@@ -3409,7 +3844,9 @@ def _existing_video_value(outline: dict, section: dict, video_briefs: object) ->
     return existing_value
 
 
-def _existing_animation_value(outline: dict, section: dict, animation_briefs: object) -> dict | None:
+def _existing_animation_value(
+    outline: dict, section: dict, animation_briefs: object
+) -> dict | None:
     section_id = _clean_text(section.get("section_id"))
     section_html_animations = outline.get("section_html_animations")
     if not isinstance(section_html_animations, dict):
@@ -3444,15 +3881,16 @@ async def run_section_markdown_agent(
     except ValueError as exc:
         return {"error": str(exc), "hard_error": True}
 
-    expansion_prompt = ChatPromptTemplate.from_messages([
-        SystemMessage(content=SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT),
-        ("human", "{query}"),
-    ])
+    expansion_prompt = ChatPromptTemplate.from_messages(
+        [
+            SystemMessage(content=SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT),
+            ("human", "{query}"),
+        ]
+    )
     expansion_chain = expansion_prompt | llm
 
     target_section_ids = [
-        _clean_text(section.get("section_id"))
-        for section in target_sections
+        _clean_text(section.get("section_id")) for section in target_sections
     ]
 
     async def generate_markdown(section: dict) -> tuple[str, dict]:
@@ -3505,11 +3943,16 @@ async def run_section_markdown_agent(
                     issue,
                 )
                 section_issue = issue
-            scaffolded_body = _scaffolded_markdown_section_body(section, expansion_section, body)
+            scaffolded_body = _scaffolded_markdown_section_body(
+                section, expansion_section, body
+            )
             return expansion_section, scaffolded_body
 
         body_results = await asyncio.gather(
-            *(generate_section_body(heading) for heading in _REQUIRED_MARKDOWN_HEADING_TITLES)
+            *(
+                generate_section_body(heading)
+                for heading in _REQUIRED_MARKDOWN_HEADING_TITLES
+            )
         )
         section_bodies = {
             heading: _scaffolded_markdown_section_body(section, heading, body)
@@ -3518,12 +3961,20 @@ async def run_section_markdown_agent(
         body_issues = [
             issue
             for heading in _REQUIRED_MARKDOWN_HEADING_TITLES
-            if (issue := _markdown_section_body_issue(heading, _clean_text(section_bodies.get(heading))))
+            if (
+                issue := _markdown_section_body_issue(
+                    heading, _clean_text(section_bodies.get(heading))
+                )
+            )
         ]
         if body_issues:
-            return target_section_id, {"error": f"{target_section_id} Markdown 教学点生成失败：{'；'.join(body_issues)}"}
+            return target_section_id, {
+                "error": f"{target_section_id} Markdown 教学点生成失败：{'；'.join(body_issues)}"
+            }
 
-        markdown_data = _compose_llm_section_markdown(markdown_data, section, section_bodies)
+        markdown_data = _compose_llm_section_markdown(
+            markdown_data, section, section_bodies
+        )
         markdown_data = _normalize_markdown_resources(markdown_data, section)
         quality_issue = _markdown_quality_issue(
             _clean_text(markdown_data.get("markdown")),
@@ -3532,20 +3983,31 @@ async def run_section_markdown_agent(
             markdown_data.get("animation_briefs"),
         )
         if quality_issue:
-            logger.warning("Markdown quality issue for section %s: %s", target_section_id, quality_issue)
-            return target_section_id, {"error": f"{target_section_id} Markdown 文档质量不合格：{quality_issue}"}
+            logger.warning(
+                "Markdown quality issue for section %s: %s",
+                target_section_id,
+                quality_issue,
+            )
+            return target_section_id, {
+                "error": f"{target_section_id} Markdown 文档质量不合格：{quality_issue}"
+            }
 
         animation_briefs = markdown_data.get("animation_briefs")
         video_briefs = markdown_data.get("video_briefs")
         raw_markdown = _clean_text(markdown_data.get("markdown"))
-        cleaned_markdown, recommendation_reason = _extract_recommendation_reason(raw_markdown)
+        cleaned_markdown, recommendation_reason = _extract_recommendation_reason(
+            raw_markdown
+        )
         return target_section_id, {
             "section_id": target_section_id,
             "parent_section_id": section.get("parent_section_id"),
-            "title": _clean_text(section.get("title")) or _clean_text(markdown_data.get("title")),
+            "title": _clean_text(section.get("title"))
+            or _clean_text(markdown_data.get("title")),
             "markdown": cleaned_markdown,
             "video_briefs": video_briefs if isinstance(video_briefs, list) else [],
-            "animation_briefs": animation_briefs if isinstance(animation_briefs, list) else [],
+            "animation_briefs": animation_briefs
+            if isinstance(animation_briefs, list)
+            else [],
             "recommendation_reason": recommendation_reason,
             "generated_at": _now_iso(),
         }
@@ -3558,8 +4020,12 @@ async def run_section_markdown_agent(
         async with _sem:
             return await generate_markdown(section)
 
-    markdown_results = await asyncio.gather(*(_limited_markdown(section) for section in target_sections))
-    for section, (target_section_id, markdown_value) in zip(target_sections, markdown_results, strict=True):
+    markdown_results = await asyncio.gather(
+        *(_limited_markdown(section) for section in target_sections)
+    )
+    for section, (target_section_id, markdown_value) in zip(
+        target_sections, markdown_results, strict=True
+    ):
         if not target_section_id:
             continue
         if _clean_text(markdown_value.get("error")):
@@ -3571,17 +4037,27 @@ async def run_section_markdown_agent(
         logger.warning(
             "Retrying %s failed section markdown(s) sequentially after batch generation: %s",
             len(failed_sections),
-            ", ".join(_clean_text(section.get("section_id")) for section in failed_sections),
+            ", ".join(
+                _clean_text(section.get("section_id")) for section in failed_sections
+            ),
         )
         for section in failed_sections:
             target_section_id, markdown_value = await generate_markdown(section)
             if not target_section_id or _clean_text(markdown_value.get("error")):
-                return {"error": "课程资源生成失败：Markdown 文档未生成，请稍后重试。", "hard_error": True}
+                return {
+                    "error": "课程资源生成失败：Markdown 文档未生成，请稍后重试。",
+                    "hard_error": True,
+                }
             section_markdowns[target_section_id] = markdown_value
     elif failed_sections:
-        return {"error": "课程资源生成失败：Markdown 文档未生成，请稍后重试。", "hard_error": True}
+        return {
+            "error": "课程资源生成失败：Markdown 文档未生成，请稍后重试。",
+            "hard_error": True,
+        }
 
-    updated_outline = _merge_course_resource_data(outline, "section_markdowns", section_markdowns)
+    updated_outline = _merge_course_resource_data(
+        outline, "section_markdowns", section_markdowns
+    )
     section_composed_markdowns = {
         section_id: _compose_section_content(markdown_value, {}, {})
         for section_id, markdown_value in section_markdowns.items()
@@ -3594,20 +4070,36 @@ async def run_section_markdown_agent(
     try:
         _persist_outline(str(state.get("user_id", "")), updated_outline)
     except Exception as exc:
-        logger.error("Failed to persist course resources for user %s: %s", state.get("user_id", ""), exc)
+        logger.error(
+            "Failed to persist course resources for user %s: %s",
+            state.get("user_id", ""),
+            exc,
+        )
         return {"error": "课程资源保存失败，请稍后重试。", "hard_error": True}
 
     try:
         from app.models import UserProfile
         from app.services.resource_quality_service import score_course_resources
+
         user_id = str(state.get("user_id", ""))
         course_id = updated_outline.get("course_id", "")
         with Session(get_engine()) as quality_session:
             profile_row = quality_session.get(UserProfile, user_id)
-            profile_data = profile_row.profile_data if profile_row and isinstance(profile_row.profile_data, dict) else None
-            score_course_resources(quality_session, user_id, course_id, updated_outline, profile_data)
+            profile_data = (
+                profile_row.profile_data
+                if profile_row and isinstance(profile_row.profile_data, dict)
+                else None
+            )
+            score_course_resources(
+                quality_session, user_id, course_id, updated_outline, profile_data
+            )
     except Exception as exc:
-        logger.warning("Quality scoring failed for user %s, course %s: %s", state.get("user_id", ""), updated_outline.get("course_id", ""), exc)
+        logger.warning(
+            "Quality scoring failed for user %s, course %s: %s",
+            state.get("user_id", ""),
+            updated_outline.get("course_id", ""),
+            exc,
+        )
 
     markdown_section_ids = list(section_markdowns.keys())
     return {
@@ -3657,8 +4149,7 @@ async def run_section_video_search_agent(
         except ValueError as exc:
             return {"error": str(exc), "hard_error": True}
         target_section_ids = [
-            _clean_text(section.get("section_id"))
-            for section in target_sections
+            _clean_text(section.get("section_id")) for section in target_sections
         ]
 
     section_markdowns = outline.get("section_markdowns")
@@ -3682,7 +4173,9 @@ async def run_section_video_search_agent(
         quality_issue = "视频资源为空或未绑定 brief。"
         for _verified_attempt in range(2):
             try:
-                verified_videos = await _find_verified_video_from_search(video_briefs, section, outline)
+                verified_videos = await _find_verified_video_from_search(
+                    video_briefs, section, outline
+                )
             except Exception as exc:
                 logger.warning(
                     "Verified video search failed for section %s: %s",
@@ -3693,13 +4186,21 @@ async def run_section_video_search_agent(
             if not verified_videos:
                 continue
             videos = _normalize_videos(verified_videos, video_briefs)
-            quality_issue = await _normalized_video_quality_issue_async(videos, video_briefs, section, outline)
+            quality_issue = await _normalized_video_quality_issue_async(
+                videos, video_briefs, section, outline
+            )
             if not quality_issue:
                 break
 
         if quality_issue:
-            logger.warning("Video quality issue for section %s: %s", target_section_id, quality_issue)
-            fallback_videos = _fallback_videos_for_briefs(video_briefs, section, outline)
+            logger.warning(
+                "Video quality issue for section %s: %s",
+                target_section_id,
+                quality_issue,
+            )
+            fallback_videos = _fallback_videos_for_briefs(
+                video_briefs, section, outline
+            )
             if fallback_videos:
                 return target_section_id, {
                     "section_id": target_section_id,
@@ -3710,7 +4211,9 @@ async def run_section_video_search_agent(
                     "generated_at": _now_iso(),
                     "fallback_reason": quality_issue,
                 }
-            return target_section_id, {"error": f"{target_section_id} 视频资源质量不合格。"}
+            return target_section_id, {
+                "error": f"{target_section_id} 视频资源质量不合格。"
+            }
 
         return target_section_id, {
             "section_id": target_section_id,
@@ -3728,19 +4231,30 @@ async def run_section_video_search_agent(
         async with _sem:
             return await generate_video_links(section)
 
-    video_results = await asyncio.gather(*(_limited_video(section) for section in target_sections))
+    video_results = await asyncio.gather(
+        *(_limited_video(section) for section in target_sections)
+    )
     for target_section_id, video_value in video_results:
         if not target_section_id:
             continue
         if _clean_text(video_value.get("error")):
-            return {"error": "课程资源生成失败：视频资源未生成，请稍后重试。", "hard_error": True}
+            return {
+                "error": "课程资源生成失败：视频资源未生成，请稍后重试。",
+                "hard_error": True,
+            }
         section_video_links[target_section_id] = video_value
 
-    updated_outline = _merge_course_resource_data(outline, "section_video_links", section_video_links)
+    updated_outline = _merge_course_resource_data(
+        outline, "section_video_links", section_video_links
+    )
     try:
         _persist_outline(str(state.get("user_id", "")), updated_outline)
     except Exception as exc:
-        logger.error("Failed to persist course resources for user %s: %s", state.get("user_id", ""), exc)
+        logger.error(
+            "Failed to persist course resources for user %s: %s",
+            state.get("user_id", ""),
+            exc,
+        )
         return {"error": "课程资源保存失败，请稍后重试。", "hard_error": True}
 
     updated_plan = dict(resource_plan) if isinstance(resource_plan, dict) else {}
@@ -3787,17 +4301,19 @@ async def run_section_html_animation_agent(
         except ValueError as exc:
             return {"error": str(exc), "hard_error": True}
         target_section_ids = [
-            _clean_text(section.get("section_id"))
-            for section in target_sections
+            _clean_text(section.get("section_id")) for section in target_sections
         ]
 
-    prompt = ChatPromptTemplate.from_messages([
-        SystemMessage(content=SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT),
-        ("human", "{query}"),
-    ])
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            SystemMessage(content=SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT),
+            ("human", "{query}"),
+        ]
+    )
     chain = prompt | llm
 
     section_markdowns = outline.get("section_markdowns")
+
     async def generate_html_animations(section: dict) -> tuple[str, dict]:
         target_section_id = _clean_text(section.get("section_id"))
         if not target_section_id:
@@ -3809,7 +4325,9 @@ async def run_section_html_animation_agent(
             if isinstance(value, dict):
                 section_markdown = value
         animation_briefs = section_markdown.get("animation_briefs")
-        existing_animation = _existing_animation_value(outline, section, animation_briefs)
+        existing_animation = _existing_animation_value(
+            outline, section, animation_briefs
+        )
         if existing_animation is not None:
             return target_section_id, existing_animation
 
@@ -3828,29 +4346,53 @@ async def run_section_html_animation_agent(
                     fallback={"animations": []},
                     attempts=3,
                 )
-                animations = _normalize_animations(animation_data.get("animations"), animation_briefs)
-                quality_issue = _normalized_animation_quality_issue(animations, animation_briefs, section)
+                animations = _normalize_animations(
+                    animation_data.get("animations"), animation_briefs
+                )
+                quality_issue = _normalized_animation_quality_issue(
+                    animations, animation_briefs, section
+                )
                 if not quality_issue:
                     break
-                logger.warning("Animation quality issue for section %s: %s", target_section_id, quality_issue)
+                logger.warning(
+                    "Animation quality issue for section %s: %s",
+                    target_section_id,
+                    quality_issue,
+                )
                 if attempt == 0:
                     previous_html = ""
                     if animations:
                         previous_html = _clean_text(animations[0].get("html"))
-                    query = _animation_repair_input(state, outline, section, quality_issue, previous_html)
+                    query = _animation_repair_input(
+                        state, outline, section, quality_issue, previous_html
+                    )
                     continue
                 break
             if animation_briefs and (
                 not animations
-                or _normalized_animation_quality_issue(animations, animation_briefs, section)
+                or _normalized_animation_quality_issue(
+                    animations, animation_briefs, section
+                )
             ):
-                return target_section_id, {"error": f"{target_section_id} HTML 动画未生成。"}
+                return target_section_id, {
+                    "error": f"{target_section_id} HTML 动画未生成。"
+                }
         if isinstance(animation_briefs, list) and animation_briefs and not animations:
-            return target_section_id, {"error": f"{target_section_id} HTML 动画生成失败。"}
-        quality_issue = _normalized_animation_quality_issue(animations, animation_briefs, section)
+            return target_section_id, {
+                "error": f"{target_section_id} HTML 动画生成失败。"
+            }
+        quality_issue = _normalized_animation_quality_issue(
+            animations, animation_briefs, section
+        )
         if quality_issue:
-            logger.warning("Animation quality issue for section %s: %s", target_section_id, quality_issue)
-            return target_section_id, {"error": f"{target_section_id} HTML 动画质量不合格。"}
+            logger.warning(
+                "Animation quality issue for section %s: %s",
+                target_section_id,
+                quality_issue,
+            )
+            return target_section_id, {
+                "error": f"{target_section_id} HTML 动画质量不合格。"
+            }
 
         return target_section_id, {
             "section_id": target_section_id,
@@ -3871,7 +4413,9 @@ async def run_section_html_animation_agent(
     animation_results = await asyncio.gather(
         *(_limited_animation(section) for section in target_sections)
     )
-    for section, (target_section_id, animation_value) in zip(target_sections, animation_results, strict=True):
+    for section, (target_section_id, animation_value) in zip(
+        target_sections, animation_results, strict=True
+    ):
         if not target_section_id:
             continue
         if _clean_text(animation_value.get("error")):
@@ -3883,23 +4427,37 @@ async def run_section_html_animation_agent(
         logger.warning(
             "Retrying %s failed section animation(s) sequentially after batch generation: %s",
             len(failed_sections),
-            ", ".join(_clean_text(section.get("section_id")) for section in failed_sections),
+            ", ".join(
+                _clean_text(section.get("section_id")) for section in failed_sections
+            ),
         )
         for section in failed_sections:
             target_section_id, animation_value = await generate_html_animations(section)
             if not target_section_id or _clean_text(animation_value.get("error")):
-                return {"error": "课程资源生成失败：HTML 动画未生成，请稍后重试。", "hard_error": True}
+                return {
+                    "error": "课程资源生成失败：HTML 动画未生成，请稍后重试。",
+                    "hard_error": True,
+                }
             section_html_animations[target_section_id] = animation_value
     elif failed_sections:
-        return {"error": "课程资源生成失败：HTML 动画未生成，请稍后重试。", "hard_error": True}
+        return {
+            "error": "课程资源生成失败：HTML 动画未生成，请稍后重试。",
+            "hard_error": True,
+        }
 
-    updated_outline = _merge_course_resource_data(outline, "section_html_animations", section_html_animations)
+    updated_outline = _merge_course_resource_data(
+        outline, "section_html_animations", section_html_animations
+    )
     section_composed_markdowns: dict[str, dict] = {}
     section_video_links = updated_outline.get("section_video_links")
     if isinstance(section_markdowns, dict):
         for section_id in target_section_ids:
             markdown_value = section_markdowns.get(section_id)
-            video_value = section_video_links.get(section_id) if isinstance(section_video_links, dict) else {}
+            video_value = (
+                section_video_links.get(section_id)
+                if isinstance(section_video_links, dict)
+                else {}
+            )
             animation_value = section_html_animations.get(section_id, {})
             if isinstance(markdown_value, dict):
                 section_composed_markdowns[section_id] = _compose_section_content(
@@ -3916,7 +4474,11 @@ async def run_section_html_animation_agent(
     try:
         _persist_outline(str(state.get("user_id", "")), updated_outline)
     except Exception as exc:
-        logger.error("Failed to persist course resources for user %s: %s", state.get("user_id", ""), exc)
+        logger.error(
+            "Failed to persist course resources for user %s: %s",
+            state.get("user_id", ""),
+            exc,
+        )
         return {"error": "课程资源保存失败，请稍后重试。", "hard_error": True}
 
     updated_plan = dict(resource_plan) if isinstance(resource_plan, dict) else {}
@@ -3926,7 +4488,8 @@ async def run_section_html_animation_agent(
     markdown_count = 0
     if isinstance(section_markdowns, dict):
         markdown_count = sum(
-            1 for section_id in target_section_ids
+            1
+            for section_id in target_section_ids
             if isinstance(section_markdowns.get(section_id), dict)
         )
     section_video_links = updated_outline.get("section_video_links")
@@ -3940,8 +4503,7 @@ async def run_section_html_animation_agent(
             if isinstance(videos, list):
                 video_count += len(videos)
     animation_count = sum(
-        len(value.get("animations", []))
-        for value in section_html_animations.values()
+        len(value.get("animations", [])) for value in section_html_animations.values()
     )
     section_ids_text = "、".join(section_html_animations.keys()) or "指定小节"
     course_name = _clean_text(updated_outline.get("course_name")) or "课程"
@@ -4059,7 +4621,9 @@ async def stream_chapter_resource_generation(
         return
 
     try:
-        target_sections = _target_sections_for_scope(outline, chapter_section_id, "chapter_sections")
+        target_sections = _target_sections_for_scope(
+            outline, chapter_section_id, "chapter_sections"
+        )
     except ValueError as exc:
         yield _chapter_resource_error_event(
             str(exc),
@@ -4104,7 +4668,11 @@ async def stream_chapter_resource_generation(
             "status": "running",
         }
 
-    markdown_args = {"course_id": course_id, "section_id": chapter_section_id, "scope": "chapter_sections"}
+    markdown_args = {
+        "course_id": course_id,
+        "section_id": chapter_section_id,
+        "scope": "chapter_sections",
+    }
     if regeneration_focus:
         markdown_args["regeneration_focus"] = regeneration_focus
     markdown_result = await run_section_markdown_agent(state, llm, markdown_args)

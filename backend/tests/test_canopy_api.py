@@ -141,7 +141,9 @@ def _outline(course_id: str, grade_year: str, course_name: str) -> dict:
 
 
 def test_canopy_overview_requires_auth(tmp_path: Path) -> None:
-    client = TestClient(create_app(database_url=f"sqlite:///{tmp_path / 'canopy-auth.db'}"))
+    client = TestClient(
+        create_app(database_url=f"sqlite:///{tmp_path / 'canopy-auth.db'}")
+    )
 
     response = client.get("/api/branch/canopy")
 
@@ -153,7 +155,9 @@ def test_canopy_overview_starts_growth_tree_from_seed(tmp_path: Path) -> None:
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "canopy-seed@example.com")
 
-    response = client.get("/api/branch/canopy", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/branch/canopy", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -161,7 +165,13 @@ def test_canopy_overview_starts_growth_tree_from_seed(tmp_path: Path) -> None:
     assert body["growth_stage"] == 1
     assert body["completed_count"] == 0
     assert body["active_rate"] == 0
-    assert [milestone["reached"] for milestone in body["milestones"]] == [False, False, False, False, False]
+    assert [milestone["reached"] for milestone in body["milestones"]] == [
+        False,
+        False,
+        False,
+        False,
+        False,
+    ]
 
 
 def test_canopy_overview_returns_calculated_tree_data(tmp_path: Path) -> None:
@@ -178,7 +188,9 @@ def test_canopy_overview_returns_calculated_tree_data(tmp_path: Path) -> None:
     second_passed_at = datetime(2026, 6, 6, tzinfo=timezone.utc)
 
     with Session(engine) as session:
-        user = session.exec(select(User).where(User.identifier == "canopy-overview@example.com")).one()
+        user = session.exec(
+            select(User).where(User.identifier == "canopy-overview@example.com")
+        ).one()
         session.add(
             UserProfile(
                 user_uid=user.uid,
@@ -277,7 +289,9 @@ def test_canopy_overview_returns_calculated_tree_data(tmp_path: Path) -> None:
         )
         session.commit()
 
-    response = client.get("/api/branch/canopy", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/branch/canopy", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -294,8 +308,18 @@ def test_canopy_overview_returns_calculated_tree_data(tmp_path: Path) -> None:
         "year_2_course_2",
         "year_3_course_1",
     ]
-    assert [course["grade"] for course in body["courses"]] == ["year_1", "year_2", "year_2", "year_3"]
-    assert [course["status"] for course in body["courses"]] == ["completed", "completed", "current", "locked"]
+    assert [course["grade"] for course in body["courses"]] == [
+        "year_1",
+        "year_2",
+        "year_2",
+        "year_3",
+    ]
+    assert [course["status"] for course in body["courses"]] == [
+        "completed",
+        "completed",
+        "current",
+        "locked",
+    ]
     assert body["courses"][2]["title"] == "数据库系统"
     assert body["courses"][2]["description"] == "完成 数据库系统"
     assert body["courses"][2]["prerequisite_ids"] == ["year_2_course_1"]
@@ -307,6 +331,12 @@ def test_canopy_overview_returns_calculated_tree_data(tmp_path: Path) -> None:
         "2026.06.04",
         "2026.06.05",
     ]
-    assert [milestone["reached"] for milestone in body["milestones"]] == [True, True, True, True, True]
+    assert [milestone["reached"] for milestone in body["milestones"]] == [
+        True,
+        True,
+        True,
+        True,
+        True,
+    ]
     assert body["milestones"][0]["title"] == "萌芽期 - 画像建立完成"
     assert body["milestones"][4]["desc"] == "成功通关首个章节测验，达成成森里程碑。"

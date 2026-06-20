@@ -5,14 +5,21 @@ import json
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from app.orchestration.graph import _event_for_agent_error, _is_hard_agent_error
-from app.orchestration.graph import route_after_worker, stream_orchestration_events
+from app.orchestration.graph import (
+    _event_for_agent_error,
+    _is_hard_agent_error,
+    route_after_worker,
+    stream_orchestration_events,
+)
 
 
 def test_is_hard_agent_error_detects_hard_error_payload() -> None:
-    assert _is_hard_agent_error(
-        {"error": "学习路径缺少 current_learning_course。", "hard_error": True}
-    ) is True
+    assert (
+        _is_hard_agent_error(
+            {"error": "学习路径缺少 current_learning_course。", "hard_error": True}
+        )
+        is True
+    )
     assert _is_hard_agent_error({"error": "可恢复提示"}) is False
 
 
@@ -78,7 +85,9 @@ def test_stream_orchestration_events_stops_after_hard_agent_error(monkeypatch) -
     assert not any(event["event"] == "message_completed" for event in events)
 
     result_event = next(
-        event for event in events if event["event"] == "agent_result" and event["agent"] == "learning_path_agent"
+        event
+        for event in events
+        if event["event"] == "agent_result" and event["agent"] == "learning_path_agent"
     )
     assert result_event["stepId"] == "learning_path_agent-result"
     assert result_event["kind"] == "agent"
@@ -127,7 +136,9 @@ def test_stream_orchestration_events_starts_with_intent_routing(monkeypatch) -> 
     }
 
 
-def test_stream_orchestration_events_emits_idle_status_while_waiting(monkeypatch) -> None:
+def test_stream_orchestration_events_emits_idle_status_while_waiting(
+    monkeypatch,
+) -> None:
     class StubGraph:
         async def astream_events(self, state, version):
             await asyncio.sleep(0.01)
@@ -163,8 +174,7 @@ def test_stream_orchestration_events_emits_idle_status_while_waiting(monkeypatch
         for event in events
     )
     assert any(
-        event["event"] == "message_completed"
-        and event["full_text"] == "处理完成"
+        event["event"] == "message_completed" and event["full_text"] == "处理完成"
         for event in events
     )
 
@@ -238,7 +248,9 @@ def test_session_completed_reports_final_structured_state(monkeypatch) -> None:
     assert completed["has_outline"] is True
 
 
-def test_session_completed_marks_unsupported_postgraduate_basic_profile_as_incomplete(monkeypatch) -> None:
+def test_session_completed_marks_unsupported_postgraduate_basic_profile_as_incomplete(
+    monkeypatch,
+) -> None:
     unsupported_profile = {
         "type": "basic_profile",
         "summary_text": "当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。",
@@ -386,7 +398,9 @@ def test_session_completed_marks_collecting_profile_as_incomplete(monkeypatch) -
     assert completed["has_outline"] is False
 
 
-def test_stream_orchestration_events_emits_worker_calling_for_forced_route(monkeypatch) -> None:
+def test_stream_orchestration_events_emits_worker_calling_for_forced_route(
+    monkeypatch,
+) -> None:
     class StubGraph:
         async def astream_events(self, state, version):
             yield {"event": "on_chain_start", "name": "learning_path_agent"}
@@ -449,12 +463,15 @@ def test_stream_orchestration_events_emits_worker_calling_for_forced_route(monke
     calling_event = next(
         event
         for event in events
-        if event["event"] == "agent_calling" and event.get("agent") == "learning_path_agent"
+        if event["event"] == "agent_calling"
+        and event.get("agent") == "learning_path_agent"
     )
     assert calling_event["label"] == "学习路径智能体"
 
 
-def test_stream_orchestration_events_emits_supervisor_plan_before_worker_run(monkeypatch) -> None:
+def test_stream_orchestration_events_emits_supervisor_plan_before_worker_run(
+    monkeypatch,
+) -> None:
     class StubChunk:
         def __init__(self, content: str, tool_call_chunks: list[dict]) -> None:
             self.content = content
@@ -515,10 +532,15 @@ def test_stream_orchestration_events_emits_supervisor_plan_before_worker_run(mon
         and event.get("args")
     )
     assert calling_event["label"] == "学习路径智能体"
-    assert calling_event["args"] == '{"grade_year":"year_3","learning_topic":"AI 应用开发"}'
+    assert (
+        calling_event["args"]
+        == '{"grade_year":"year_3","learning_topic":"AI 应用开发"}'
+    )
 
 
-def test_stream_orchestration_events_keeps_soft_worker_failure_in_agent_result(monkeypatch) -> None:
+def test_stream_orchestration_events_keeps_soft_worker_failure_in_agent_result(
+    monkeypatch,
+) -> None:
     class StubGraph:
         async def astream_events(self, state, version):
             yield {"event": "on_chain_start", "name": "profile_agent"}
@@ -572,158 +594,198 @@ def test_stream_orchestration_events_keeps_soft_worker_failure_in_agent_result(m
     events = asyncio.run(collect_events())
 
     result_event = next(
-        event for event in events if event["event"] == "agent_result" and event["agent"] == "profile_agent"
+        event
+        for event in events
+        if event["event"] == "agent_result" and event["agent"] == "profile_agent"
     )
     assert result_event["success"] is False
     assert result_event["error"] == "画像生成失败：结构化输出异常"
 
     assert not any(event["event"] == "error" for event in events)
 
-    completed_event = next(event for event in events if event["event"] == "message_completed")
+    completed_event = next(
+        event for event in events if event["event"] == "message_completed"
+    )
     assert completed_event["full_text"] == "画像生成失败：结构化输出异常"
 
 
-def test_route_after_worker_ends_after_initial_profile_generation_to_wait_for_user_confirmation() -> None:
-    assert route_after_worker(
-        {
-            "profile": {
-                "type": "basic_profile",
-                "summary_text": "大三软件工程学生，继续强化 AI 应用开发。",
-                "confirmed_info": {
-                    "current_grade": "大三",
-                    "major": "软件工程",
-                    "learning_stage": "项目实践",
-                    "has_clear_goal": "是",
-                    "learning_method_preference": "项目驱动",
-                    "learning_pace_preference": "周末集中",
-                    "content_preference": ["实践"],
-                    "need_guidance": "需要",
-                    "knowledge_foundation": "有 Python 基础",
-                    "strengths": "执行力强",
-                    "weaknesses": "部署经验不足",
-                    "experience": "做过课程项目",
-                    "short_term_goal": "更新项目方向",
-                    "long_term_goal": "完成 AI 应用开发项目",
-                    "weekly_available_time": "每周 8 小时",
-                    "constraints": "周末集中",
+def test_route_after_worker_ends_after_initial_profile_generation_to_wait_for_user_confirmation() -> (
+    None
+):
+    assert (
+        route_after_worker(
+            {
+                "profile": {
+                    "type": "basic_profile",
+                    "summary_text": "大三软件工程学生，继续强化 AI 应用开发。",
+                    "confirmed_info": {
+                        "current_grade": "大三",
+                        "major": "软件工程",
+                        "learning_stage": "项目实践",
+                        "has_clear_goal": "是",
+                        "learning_method_preference": "项目驱动",
+                        "learning_pace_preference": "周末集中",
+                        "content_preference": ["实践"],
+                        "need_guidance": "需要",
+                        "knowledge_foundation": "有 Python 基础",
+                        "strengths": "执行力强",
+                        "weaknesses": "部署经验不足",
+                        "experience": "做过课程项目",
+                        "short_term_goal": "更新项目方向",
+                        "long_term_goal": "完成 AI 应用开发项目",
+                        "weekly_available_time": "每周 8 小时",
+                        "constraints": "周末集中",
+                    },
                 },
-            },
-            "messages": [
-                HumanMessage(content="大三，软件工程，AI，周末集中"),
-                AIMessage(
-                    content="",
-                    tool_calls=[{
-                        "name": "profile_agent",
-                        "args": {"conversation_summary": "大三，软件工程，AI，周末集中"},
-                        "id": "force_profile_agent",
-                    }],
-                ),
-                ToolMessage(
-                    content="{}",
-                    tool_call_id="force_profile_agent",
-                ),
-            ],
-        }
-    ) == "supervisor"
+                "messages": [
+                    HumanMessage(content="大三，软件工程，AI，周末集中"),
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "profile_agent",
+                                "args": {
+                                    "conversation_summary": "大三，软件工程，AI，周末集中"
+                                },
+                                "id": "force_profile_agent",
+                            }
+                        ],
+                    ),
+                    ToolMessage(
+                        content="{}",
+                        tool_call_id="force_profile_agent",
+                    ),
+                ],
+            }
+        )
+        == "supervisor"
+    )
 
 
-def test_route_after_worker_returns_supervisor_for_completed_tasks_profile_followup() -> None:
-    assert route_after_worker(
-        {
-            "profile": {
-                "type": "basic_profile",
-                "summary_text": "大三软件工程学生，继续强化 AI 应用开发。",
-                "confirmed_info": {
-                    "current_grade": "大三",
-                    "major": "软件工程",
-                    "learning_stage": "项目实践",
-                    "has_clear_goal": "是",
-                    "learning_method_preference": "项目驱动",
-                    "learning_pace_preference": "周末集中",
-                    "content_preference": ["实践"],
-                    "need_guidance": "需要",
-                    "knowledge_foundation": "有 Python 基础",
-                    "strengths": "执行力强",
-                    "weaknesses": "部署经验不足",
-                    "experience": "做过课程项目",
-                    "short_term_goal": "更新项目方向",
-                    "long_term_goal": "完成 AI 应用开发项目",
-                    "weekly_available_time": "每周 8 小时",
-                    "constraints": "周末集中",
+def test_route_after_worker_returns_supervisor_for_completed_tasks_profile_followup() -> (
+    None
+):
+    assert (
+        route_after_worker(
+            {
+                "profile": {
+                    "type": "basic_profile",
+                    "summary_text": "大三软件工程学生，继续强化 AI 应用开发。",
+                    "confirmed_info": {
+                        "current_grade": "大三",
+                        "major": "软件工程",
+                        "learning_stage": "项目实践",
+                        "has_clear_goal": "是",
+                        "learning_method_preference": "项目驱动",
+                        "learning_pace_preference": "周末集中",
+                        "content_preference": ["实践"],
+                        "need_guidance": "需要",
+                        "knowledge_foundation": "有 Python 基础",
+                        "strengths": "执行力强",
+                        "weaknesses": "部署经验不足",
+                        "experience": "做过课程项目",
+                        "short_term_goal": "更新项目方向",
+                        "long_term_goal": "完成 AI 应用开发项目",
+                        "weekly_available_time": "每周 8 小时",
+                        "constraints": "周末集中",
+                    },
                 },
-            },
-            "messages": [
-                AIMessage(content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"),
-                HumanMessage(content="大三，软件工程，AI，周末集中"),
-                AIMessage(
-                    content="",
-                    tool_calls=[{
-                        "name": "profile_agent",
-                        "args": {"conversation_summary": "大三，软件工程，AI，周末集中"},
-                        "id": "force_profile_agent",
-                    }],
-                ),
-                ToolMessage(
-                    content="{}",
-                    tool_call_id="force_profile_agent",
-                ),
-            ],
-        }
-    ) == "supervisor"
+                "messages": [
+                    AIMessage(
+                        content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"
+                    ),
+                    HumanMessage(content="大三，软件工程，AI，周末集中"),
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "profile_agent",
+                                "args": {
+                                    "conversation_summary": "大三，软件工程，AI，周末集中"
+                                },
+                                "id": "force_profile_agent",
+                            }
+                        ],
+                    ),
+                    ToolMessage(
+                        content="{}",
+                        tool_call_id="force_profile_agent",
+                    ),
+                ],
+            }
+        )
+        == "supervisor"
+    )
 
 
 def test_route_after_course_knowledge_resource_request_returns_supervisor() -> None:
-    assert route_after_worker(
-        {
-            "query": "生成当前课程教学内容",
-            "course_knowledge": {
-                "course_id": "year_3_course_1",
-                "sections": [{"section_id": "1", "parent_section_id": None, "depth": 1}],
-            },
-            "messages": [
-                HumanMessage(content="生成当前课程教学内容"),
-                AIMessage(
-                    content="",
-                    tool_calls=[{
-                        "name": "course_knowledge_agent",
-                        "args": {"course_id": "year_3_course_1"},
-                        "id": "force_course_knowledge_agent",
-                    }],
-                ),
-                ToolMessage(
-                    content='{"course_id": "year_3_course_1"}',
-                    tool_call_id="force_course_knowledge_agent",
-                ),
-            ],
-        }
-    ) == "supervisor"
+    assert (
+        route_after_worker(
+            {
+                "query": "生成当前课程教学内容",
+                "course_knowledge": {
+                    "course_id": "year_3_course_1",
+                    "sections": [
+                        {"section_id": "1", "parent_section_id": None, "depth": 1}
+                    ],
+                },
+                "messages": [
+                    HumanMessage(content="生成当前课程教学内容"),
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "course_knowledge_agent",
+                                "args": {"course_id": "year_3_course_1"},
+                                "id": "force_course_knowledge_agent",
+                            }
+                        ],
+                    ),
+                    ToolMessage(
+                        content='{"course_id": "year_3_course_1"}',
+                        tool_call_id="force_course_knowledge_agent",
+                    ),
+                ],
+            }
+        )
+        == "supervisor"
+    )
 
 
 def test_route_after_course_knowledge_detailed_content_returns_supervisor() -> None:
-    assert route_after_worker(
-        {
-            "query": "帮我重新生成构建本地知识库问答系统 (RAG基础)的详细内容",
-            "course_knowledge": {
-                "course_id": "year_3_course_1",
-                "sections": [{"section_id": "1", "parent_section_id": None, "depth": 1}],
-            },
-            "messages": [
-                HumanMessage(content="帮我重新生成构建本地知识库问答系统 (RAG基础)的详细内容"),
-                AIMessage(
-                    content="",
-                    tool_calls=[{
-                        "name": "course_knowledge_agent",
-                        "args": {"course_id": "year_3_course_1"},
-                        "id": "force_course_knowledge_agent",
-                    }],
-                ),
-                ToolMessage(
-                    content='{"course_id": "year_3_course_1"}',
-                    tool_call_id="force_course_knowledge_agent",
-                ),
-            ],
-        }
-    ) == "supervisor"
+    assert (
+        route_after_worker(
+            {
+                "query": "帮我重新生成构建本地知识库问答系统 (RAG基础)的详细内容",
+                "course_knowledge": {
+                    "course_id": "year_3_course_1",
+                    "sections": [
+                        {"section_id": "1", "parent_section_id": None, "depth": 1}
+                    ],
+                },
+                "messages": [
+                    HumanMessage(
+                        content="帮我重新生成构建本地知识库问答系统 (RAG基础)的详细内容"
+                    ),
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "course_knowledge_agent",
+                                "args": {"course_id": "year_3_course_1"},
+                                "id": "force_course_knowledge_agent",
+                            }
+                        ],
+                    ),
+                    ToolMessage(
+                        content='{"course_id": "year_3_course_1"}',
+                        tool_call_id="force_course_knowledge_agent",
+                    ),
+                ],
+            }
+        )
+        == "supervisor"
+    )
 
 
 def test_route_after_worker_ends_without_followup() -> None:

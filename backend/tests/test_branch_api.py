@@ -215,7 +215,9 @@ def _multi_year_path() -> dict:
     }
 
 
-def _outline(course_id: str, grade_year: str, course_name: str, sections: list[dict]) -> dict:
+def _outline(
+    course_id: str, grade_year: str, course_name: str, sections: list[dict]
+) -> dict:
     return {
         "course_id": course_id,
         "course_name": course_name,
@@ -228,21 +230,27 @@ def _outline(course_id: str, grade_year: str, course_name: str, sections: list[d
 
 
 def test_branch_overview_requires_auth(tmp_path: Path) -> None:
-    client = TestClient(create_app(database_url=f"sqlite:///{tmp_path / 'branch-auth.db'}"))
+    client = TestClient(
+        create_app(database_url=f"sqlite:///{tmp_path / 'branch-auth.db'}")
+    )
 
     response = client.get("/api/branch/overview")
 
     assert response.status_code == 401
 
 
-def test_branch_overview_returns_clickable_tabs_and_course_statuses(tmp_path: Path) -> None:
+def test_branch_overview_returns_clickable_tabs_and_course_statuses(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'branch-overview.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-overview@example.com")
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
     with Session(engine) as session:
-        user = session.exec(select(User).where(User.identifier == "branch-overview@example.com")).one()
+        user = session.exec(
+            select(User).where(User.identifier == "branch-overview@example.com")
+        ).one()
         session.add(
             UserYearLearningPath(
                 user_uid=user.uid,
@@ -261,7 +269,17 @@ def test_branch_overview_returns_clickable_tabs_and_course_statuses(tmp_path: Pa
                     "year_2_course_1",
                     "year_2",
                     "数据结构基础",
-                    [{"section_id": "1", "parent_section_id": None, "depth": 1, "title": "顺序表", "order_index": 1, "description": "基础结构", "key_knowledge_points": ["线性表"]}],
+                    [
+                        {
+                            "section_id": "1",
+                            "parent_section_id": None,
+                            "depth": 1,
+                            "title": "顺序表",
+                            "order_index": 1,
+                            "description": "基础结构",
+                            "key_knowledge_points": ["线性表"],
+                        }
+                    ],
                 ),
             )
         )
@@ -275,13 +293,25 @@ def test_branch_overview_returns_clickable_tabs_and_course_statuses(tmp_path: Pa
                     "year_2_course_2",
                     "year_2",
                     "数据库系统",
-                    [{"section_id": "1", "parent_section_id": None, "depth": 1, "title": "关系模型", "order_index": 1, "description": "核心概念", "key_knowledge_points": ["范式"]}],
+                    [
+                        {
+                            "section_id": "1",
+                            "parent_section_id": None,
+                            "depth": 1,
+                            "title": "关系模型",
+                            "order_index": 1,
+                            "description": "核心概念",
+                            "key_knowledge_points": ["范式"],
+                        }
+                    ],
                 ),
             )
         )
         session.commit()
 
-    response = client.get("/api/branch/overview", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/branch/overview", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -292,8 +322,16 @@ def test_branch_overview_returns_clickable_tabs_and_course_statuses(tmp_path: Pa
     assert year_2["has_courses"] is True
     assert year_2["has_outline_content"] is True
     assert year_2["is_clickable"] is True
-    assert [course["status"] for course in year_2["courses"]] == ["completed", "current", "locked"]
-    assert [course["has_outline"] for course in year_2["courses"]] == [True, True, False]
+    assert [course["status"] for course in year_2["courses"]] == [
+        "completed",
+        "current",
+        "locked",
+    ]
+    assert [course["has_outline"] for course in year_2["courses"]] == [
+        True,
+        True,
+        False,
+    ]
 
     assert year_1["has_courses"] is False
     assert year_1["has_outline_content"] is False
@@ -301,14 +339,18 @@ def test_branch_overview_returns_clickable_tabs_and_course_statuses(tmp_path: Pa
     assert year_1["courses"] == []
 
 
-def test_branch_overview_keeps_year_clickable_without_outline_content(tmp_path: Path) -> None:
+def test_branch_overview_keeps_year_clickable_without_outline_content(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'branch-no-outline.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-no-outline@example.com")
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
     with Session(engine) as session:
-        user = session.exec(select(User).where(User.identifier == "branch-no-outline@example.com")).one()
+        user = session.exec(
+            select(User).where(User.identifier == "branch-no-outline@example.com")
+        ).one()
         session.add(
             UserYearLearningPath(
                 user_uid=user.uid,
@@ -319,7 +361,9 @@ def test_branch_overview_keeps_year_clickable_without_outline_content(tmp_path: 
         )
         session.commit()
 
-    response = client.get("/api/branch/overview", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/branch/overview", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -328,10 +372,16 @@ def test_branch_overview_keeps_year_clickable_without_outline_content(tmp_path: 
     assert year_2["has_courses"] is True
     assert year_2["has_outline_content"] is False
     assert year_2["is_clickable"] is True
-    assert [course["has_outline"] for course in year_2["courses"]] == [False, False, False]
+    assert [course["has_outline"] for course in year_2["courses"]] == [
+        False,
+        False,
+        False,
+    ]
 
 
-def test_branch_overview_falls_back_to_builtin_grade_name_when_grade_plan_name_is_blank(tmp_path: Path) -> None:
+def test_branch_overview_falls_back_to_builtin_grade_name_when_grade_plan_name_is_blank(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'branch-fallback-grade-name.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-fallback-grade-name@example.com")
@@ -339,7 +389,9 @@ def test_branch_overview_falls_back_to_builtin_grade_name_when_grade_plan_name_i
 
     with Session(engine) as session:
         user = session.exec(
-            select(User).where(User.identifier == "branch-fallback-grade-name@example.com")
+            select(User).where(
+                User.identifier == "branch-fallback-grade-name@example.com"
+            )
         ).one()
         path_data = _year_path()
         path_data["grade_plans"]["year_2"]["grade_name"] = "   "
@@ -353,21 +405,29 @@ def test_branch_overview_falls_back_to_builtin_grade_name_when_grade_plan_name_i
         )
         session.commit()
 
-    response = client.get("/api/branch/overview", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/branch/overview", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
     assert body["years"]["year_2"]["grade_name"] == "大二"
 
 
-def test_branch_overview_marks_complete_outline_payload_without_sections_as_outline_content(tmp_path: Path) -> None:
+def test_branch_overview_marks_complete_outline_payload_without_sections_as_outline_content(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'branch-empty-sections-outline.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-empty-sections-outline@example.com")
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
     with Session(engine) as session:
-        user = session.exec(select(User).where(User.identifier == "branch-empty-sections-outline@example.com")).one()
+        user = session.exec(
+            select(User).where(
+                User.identifier == "branch-empty-sections-outline@example.com"
+            )
+        ).one()
         session.add(
             UserYearLearningPath(
                 user_uid=user.uid,
@@ -387,24 +447,34 @@ def test_branch_overview_marks_complete_outline_payload_without_sections_as_outl
         )
         session.commit()
 
-    response = client.get("/api/branch/overview", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/branch/overview", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
     year_2 = body["years"]["year_2"]
 
     assert year_2["has_outline_content"] is True
-    assert [course["has_outline"] for course in year_2["courses"]] == [False, True, False]
+    assert [course["has_outline"] for course in year_2["courses"]] == [
+        False,
+        True,
+        False,
+    ]
 
 
-def test_branch_overview_ignores_legacy_sections_only_outline_payload(tmp_path: Path) -> None:
+def test_branch_overview_ignores_legacy_sections_only_outline_payload(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'branch-legacy-outline.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-legacy-outline@example.com")
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
     with Session(engine) as session:
-        user = session.exec(select(User).where(User.identifier == "branch-legacy-outline@example.com")).one()
+        user = session.exec(
+            select(User).where(User.identifier == "branch-legacy-outline@example.com")
+        ).one()
         session.add(
             UserYearLearningPath(
                 user_uid=user.uid,
@@ -424,24 +494,34 @@ def test_branch_overview_ignores_legacy_sections_only_outline_payload(tmp_path: 
         )
         session.commit()
 
-    response = client.get("/api/branch/overview", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/branch/overview", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
     year_2 = body["years"]["year_2"]
 
     assert year_2["has_outline_content"] is False
-    assert [course["has_outline"] for course in year_2["courses"]] == [False, False, False]
+    assert [course["has_outline"] for course in year_2["courses"]] == [
+        False,
+        False,
+        False,
+    ]
 
 
-def test_branch_overview_marks_last_course_as_completed_when_current_progress_is_completed(tmp_path: Path) -> None:
+def test_branch_overview_marks_last_course_as_completed_when_current_progress_is_completed(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'branch-completed-last.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-completed-last@example.com")
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
     with Session(engine) as session:
-        user = session.exec(select(User).where(User.identifier == "branch-completed-last@example.com")).one()
+        user = session.exec(
+            select(User).where(User.identifier == "branch-completed-last@example.com")
+        ).one()
         path_data = _year_path()
         path_data["current_learning_course"] = {
             "grade_id": "year_2",
@@ -467,24 +547,36 @@ def test_branch_overview_marks_last_course_as_completed_when_current_progress_is
         )
         session.commit()
 
-    response = client.get("/api/branch/overview", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/branch/overview", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
     year_2 = body["years"]["year_2"]
 
     assert year_2["current_course_id"] == "year_2_course_3"
-    assert [course["status"] for course in year_2["courses"]] == ["completed", "completed", "completed"]
+    assert [course["status"] for course in year_2["courses"]] == [
+        "completed",
+        "completed",
+        "completed",
+    ]
 
 
-def test_branch_overview_reads_current_learning_courses_when_legacy_field_is_missing(tmp_path: Path) -> None:
+def test_branch_overview_reads_current_learning_courses_when_legacy_field_is_missing(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'branch-current-learning-courses.db'}"
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-current-learning-courses@example.com")
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
     with Session(engine) as session:
-        user = session.exec(select(User).where(User.identifier == "branch-current-learning-courses@example.com")).one()
+        user = session.exec(
+            select(User).where(
+                User.identifier == "branch-current-learning-courses@example.com"
+            )
+        ).one()
         path_data = _year_path()
         current_course = path_data.pop("current_learning_course")
         path_data["current_learning_courses"] = [current_course]
@@ -498,14 +590,20 @@ def test_branch_overview_reads_current_learning_courses_when_legacy_field_is_mis
         )
         session.commit()
 
-    response = client.get("/api/branch/overview", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/branch/overview", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
     year_2 = body["years"]["year_2"]
 
     assert year_2["current_course_id"] == "year_2_course_2"
-    assert [course["status"] for course in year_2["courses"]] == ["completed", "current", "locked"]
+    assert [course["status"] for course in year_2["courses"]] == [
+        "completed",
+        "current",
+        "locked",
+    ]
 
 
 def test_branch_overview_expands_single_multi_grade_path_row(tmp_path: Path) -> None:
@@ -515,7 +613,9 @@ def test_branch_overview_expands_single_multi_grade_path_row(tmp_path: Path) -> 
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
     with Session(engine) as session:
-        user = session.exec(select(User).where(User.identifier == "branch-expanded@example.com")).one()
+        user = session.exec(
+            select(User).where(User.identifier == "branch-expanded@example.com")
+        ).one()
         session.add(
             UserYearLearningPath(
                 user_uid=user.uid,
@@ -534,7 +634,17 @@ def test_branch_overview_expands_single_multi_grade_path_row(tmp_path: Path) -> 
                     "year_1_course_1",
                     "year_1",
                     "编程基础",
-                    [{"section_id": "1", "parent_section_id": None, "depth": 1, "title": "变量与控制流", "order_index": 1, "description": "基础语法", "key_knowledge_points": ["变量"]}],
+                    [
+                        {
+                            "section_id": "1",
+                            "parent_section_id": None,
+                            "depth": 1,
+                            "title": "变量与控制流",
+                            "order_index": 1,
+                            "description": "基础语法",
+                            "key_knowledge_points": ["变量"],
+                        }
+                    ],
                 ),
             )
         )
@@ -548,13 +658,25 @@ def test_branch_overview_expands_single_multi_grade_path_row(tmp_path: Path) -> 
                     "year_3_course_1",
                     "year_3",
                     "AI 应用开发基础",
-                    [{"section_id": "1", "parent_section_id": None, "depth": 1, "title": "接口接入", "order_index": 1, "description": "完成最小闭环", "key_knowledge_points": ["接口"]}],
+                    [
+                        {
+                            "section_id": "1",
+                            "parent_section_id": None,
+                            "depth": 1,
+                            "title": "接口接入",
+                            "order_index": 1,
+                            "description": "完成最小闭环",
+                            "key_knowledge_points": ["接口"],
+                        }
+                    ],
                 ),
             )
         )
         session.commit()
 
-    response = client.get("/api/branch/overview", headers={"Authorization": f"Bearer {token}"})
+    response = client.get(
+        "/api/branch/overview", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -562,10 +684,18 @@ def test_branch_overview_expands_single_multi_grade_path_row(tmp_path: Path) -> 
     assert body["years"]["year_2"]["courses"][0]["course_node_id"] == "year_2_course_1"
     assert body["years"]["year_3"]["courses"][0]["course_node_id"] == "year_3_course_1"
     assert body["years"]["year_4"]["courses"][0]["course_node_id"] == "year_4_course_1"
-    assert [course["status"] for course in body["years"]["year_1"]["courses"]] == ["completed"]
-    assert [course["status"] for course in body["years"]["year_2"]["courses"]] == ["completed"]
-    assert [course["status"] for course in body["years"]["year_3"]["courses"]] == ["current"]
-    assert [course["status"] for course in body["years"]["year_4"]["courses"]] == ["locked"]
+    assert [course["status"] for course in body["years"]["year_1"]["courses"]] == [
+        "completed"
+    ]
+    assert [course["status"] for course in body["years"]["year_2"]["courses"]] == [
+        "completed"
+    ]
+    assert [course["status"] for course in body["years"]["year_3"]["courses"]] == [
+        "current"
+    ]
+    assert [course["status"] for course in body["years"]["year_4"]["courses"]] == [
+        "locked"
+    ]
     assert body["years"]["year_1"]["current_course_id"] is None
     assert body["years"]["year_3"]["current_course_id"] == "year_3_course_1"
     assert body["years"]["year_4"]["current_course_id"] is None

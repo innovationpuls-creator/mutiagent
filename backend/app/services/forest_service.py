@@ -21,7 +21,6 @@ from app.services.learning_path_service import (
     get_grade_courses,
 )
 
-
 PASSING_SCORE = 70
 
 
@@ -40,7 +39,9 @@ def _top_level_sections(outline: dict) -> list[dict]:
     ]
     return sorted(
         top_level,
-        key=lambda item: item.get("order_index") if isinstance(item.get("order_index"), int) else 0,
+        key=lambda item: (
+            item.get("order_index") if isinstance(item.get("order_index"), int) else 0
+        ),
     )
 
 
@@ -51,7 +52,10 @@ def _find_course(
     for grade_year, path_data in year_paths.items():
         courses = get_grade_courses(path_data, grade_year)
         for course in courses:
-            if isinstance(course, dict) and course.get("course_node_id") == course_node_id:
+            if (
+                isinstance(course, dict)
+                and course.get("course_node_id") == course_node_id
+            ):
                 return grade_year, path_data, course
     return None
 
@@ -70,7 +74,9 @@ def _read_quiz(
     return session.exec(stmt).first()
 
 
-def _latest_attempt(session: Session, user_uid: str, quiz_id: str) -> ChapterQuizAttempt | None:
+def _latest_attempt(
+    session: Session, user_uid: str, quiz_id: str
+) -> ChapterQuizAttempt | None:
     stmt = (
         select(ChapterQuizAttempt)
         .where(
@@ -105,23 +111,36 @@ def _normalize_options(options_raw: object) -> list[dict[str, str]]:
             if not option_id:
                 option_id = chr(65 + idx)
             if not text:
-                text = _clean_text(opt.get("option_text")) or _clean_text(opt.get("label")) or ""
+                text = (
+                    _clean_text(opt.get("option_text"))
+                    or _clean_text(opt.get("label"))
+                    or ""
+                )
             normalized_opts.append({"option_id": option_id, "text": text})
         elif isinstance(opt, str):
             opt_str = opt.strip()
             option_id = ""
             text = opt_str
-            if len(opt_str) > 2 and opt_str[0].isalpha() and opt_str[1] in (".", ":", "、", " "):
+            if (
+                len(opt_str) > 2
+                and opt_str[0].isalpha()
+                and opt_str[1] in (".", ":", "、", " ")
+            ):
                 option_id = opt_str[0].upper()
                 text = opt_str[2:].strip()
-            elif len(opt_str) > 1 and opt_str[0].isalpha() and opt_str[0].isupper() and idx < 26:
+            elif (
+                len(opt_str) > 1
+                and opt_str[0].isalpha()
+                and opt_str[0].isupper()
+                and idx < 26
+            ):
                 expected_letter = chr(65 + idx)
                 if opt_str.startswith(expected_letter):
                     option_id = expected_letter
-                    text = opt_str[len(expected_letter):].strip()
+                    text = opt_str[len(expected_letter) :].strip()
                     if text.startswith((".", ":", "、", " ")):
                         text = text[1:].strip()
-            
+
             if not option_id:
                 option_id = chr(65 + idx)
             normalized_opts.append({"option_id": option_id, "text": text})
@@ -201,7 +220,11 @@ def _chapter_is_available(
         return True
 
     index = next(
-        (idx for idx, chapter in enumerate(chapters) if chapter.get("section_id") == chapter_id),
+        (
+            idx
+            for idx, chapter in enumerate(chapters)
+            if chapter.get("section_id") == chapter_id
+        ),
         -1,
     )
     if index <= 0:
@@ -211,7 +234,9 @@ def _chapter_is_available(
     if not isinstance(previous_id, str):
         return False
 
-    previous_progress = session.get(ChapterProgress, (user_uid, course_node_id, previous_id))
+    previous_progress = session.get(
+        ChapterProgress, (user_uid, course_node_id, previous_id)
+    )
     return previous_progress is not None and previous_progress.state == "passed"
 
 
@@ -230,7 +255,9 @@ def first_generatable_chapter_id(
         chapter_id = chapter.get("section_id")
         if not isinstance(chapter_id, str):
             continue
-        current_progress = session.get(ChapterProgress, (user_uid, course_node_id, chapter_id))
+        current_progress = session.get(
+            ChapterProgress, (user_uid, course_node_id, chapter_id)
+        )
         if current_progress is not None and current_progress.state == "passed":
             continue
         if index == 0:
@@ -238,7 +265,9 @@ def first_generatable_chapter_id(
         previous_id = chapters[index - 1].get("section_id")
         if not isinstance(previous_id, str):
             return None
-        previous_progress = session.get(ChapterProgress, (user_uid, course_node_id, previous_id))
+        previous_progress = session.get(
+            ChapterProgress, (user_uid, course_node_id, previous_id)
+        )
         if previous_progress is not None and previous_progress.state == "passed":
             return chapter_id
         return None
@@ -252,7 +281,10 @@ def chapter_generation_is_available(
     chapter_id: str,
     outline: dict | None,
 ) -> bool:
-    return first_generatable_chapter_id(session, user_uid, course_node_id, outline) == chapter_id
+    return (
+        first_generatable_chapter_id(session, user_uid, course_node_id, outline)
+        == chapter_id
+    )
 
 
 def _course_to_read_dict(course_node_id: str, grade_year: str, course: dict) -> dict:
@@ -282,10 +314,14 @@ def read_forest_quiz_session(
     grade_year, _path_data, course = found
     outline = get_user_course_knowledge_outline(session, user_uid, course_node_id)
     if not isinstance(outline, dict):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="课程大纲不存在")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="课程大纲不存在"
+        )
 
     chapters = _top_level_sections(outline)
-    chapter = next((item for item in chapters if item.get("section_id") == chapter_id), None)
+    chapter = next(
+        (item for item in chapters if item.get("section_id") == chapter_id), None
+    )
     if chapter is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="章节不存在")
 
@@ -302,7 +338,9 @@ def read_forest_quiz_session(
     if isinstance(chapter_markdown_data, dict):
         chapter = {**chapter, "composed_markdown": chapter_markdown_data}
 
-    available = _chapter_is_available(session, user_uid, course_node_id, chapter_id, chapters)
+    available = _chapter_is_available(
+        session, user_uid, course_node_id, chapter_id, chapters
+    )
     progress = _ensure_progress(
         session,
         user_uid,
@@ -318,7 +356,9 @@ def read_forest_quiz_session(
         session.refresh(progress)
 
     quiz = _read_quiz(session, user_uid, course_node_id, chapter_id)
-    latest_attempt = _latest_attempt(session, user_uid, quiz.quiz_id) if quiz is not None else None
+    latest_attempt = (
+        _latest_attempt(session, user_uid, quiz.quiz_id) if quiz is not None else None
+    )
 
     return ForestQuizSessionReadResponse(
         course=_course_to_read_dict(course_node_id, grade_year, course),
@@ -369,7 +409,9 @@ def generate_or_read_quiz(
     return _quiz_to_read(quiz)
 
 
-def _chapter_ids_for_course(session: Session, user_uid: str, course_node_id: str) -> tuple[str, list[str]]:
+def _chapter_ids_for_course(
+    session: Session, user_uid: str, course_node_id: str
+) -> tuple[str, list[str]]:
     outline = get_user_course_knowledge_outline(session, user_uid, course_node_id)
     if not isinstance(outline, dict):
         return "", []
@@ -409,7 +451,9 @@ def _resolve_knowledge_point_name(
     # 1. 尝试从课程大纲 sections.key_knowledge_points 查找
     try:
         if outline is None and not preloaded:
-            outline = get_user_course_knowledge_outline(session, user_uid, course_node_id)
+            outline = get_user_course_knowledge_outline(
+                session, user_uid, course_node_id
+            )
         if isinstance(outline, dict):
             sections = outline.get("sections")
             if isinstance(sections, list):
@@ -421,8 +465,14 @@ def _resolve_knowledge_point_name(
                                 if isinstance(kp, str) and kp.strip() == kp_id:
                                     return kp.strip()
                                 elif isinstance(kp, dict):
-                                    if _safe_str(kp.get("knowledge_point_id")).strip() == kp_id or _safe_str(kp.get("id")).strip() == kp_id:
-                                        return _safe_str(kp.get("name") or kp.get("title") or kp_id).strip()
+                                    if (
+                                        _safe_str(kp.get("knowledge_point_id")).strip()
+                                        == kp_id
+                                        or _safe_str(kp.get("id")).strip() == kp_id
+                                    ):
+                                        return _safe_str(
+                                            kp.get("name") or kp.get("title") or kp_id
+                                        ).strip()
     except Exception:
         pass
 
@@ -438,8 +488,13 @@ def _resolve_knowledge_point_name(
                 if isinstance(core_kps, list):
                     for kp in core_kps:
                         if isinstance(kp, dict):
-                            if _safe_str(kp.get("knowledge_point_id")).strip() == kp_id or _safe_str(kp.get("id")).strip() == kp_id:
-                                return _safe_str(kp.get("name") or kp.get("title") or kp_id).strip()
+                            if (
+                                _safe_str(kp.get("knowledge_point_id")).strip() == kp_id
+                                or _safe_str(kp.get("id")).strip() == kp_id
+                            ):
+                                return _safe_str(
+                                    kp.get("name") or kp.get("title") or kp_id
+                                ).strip()
                         elif isinstance(kp, str) and kp.strip() == kp_id:
                             return kp.strip()
     except Exception:
@@ -548,7 +603,9 @@ def submit_quiz_attempt(
     )
 
     now = datetime.now(timezone.utc)
-    current_progress = _ensure_progress(session, user_uid, quiz.course_node_id, quiz.chapter_id, "available")
+    current_progress = _ensure_progress(
+        session, user_uid, quiz.course_node_id, quiz.chapter_id, "available"
+    )
     current_progress.best_score = max(current_progress.best_score, score)
     current_progress.latest_attempt_id = attempt.attempt_id
     current_progress.updated_at = now
@@ -556,10 +613,14 @@ def submit_quiz_attempt(
     if passed:
         current_progress.state = "passed"
         current_progress.passed_at = now
-        grade_year, chapter_ids = _chapter_ids_for_course(session, user_uid, quiz.course_node_id)
+        grade_year, chapter_ids = _chapter_ids_for_course(
+            session, user_uid, quiz.course_node_id
+        )
         next_chapter_id = _next_chapter_id(chapter_ids, quiz.chapter_id)
         if next_chapter_id:
-            next_progress = _ensure_progress(session, user_uid, quiz.course_node_id, next_chapter_id, "available")
+            next_progress = _ensure_progress(
+                session, user_uid, quiz.course_node_id, next_chapter_id, "available"
+            )
             next_progress.state = "available"
             next_progress.updated_at = now
             session.add(next_progress)

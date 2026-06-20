@@ -4,7 +4,6 @@ import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
-
 PASSING_SCORE = 70
 SUPPORTED_QUESTION_TYPES = {"single_choice", "code", "image_upload"}
 
@@ -13,7 +12,9 @@ def _clean_text(value: object) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def build_fallback_quiz_questions(chapter_id: str, chapter_title: str) -> list[dict[str, Any]]:
+def build_fallback_quiz_questions(
+    chapter_id: str, chapter_title: str
+) -> list[dict[str, Any]]:
     title = chapter_title or f"第 {chapter_id} 章"
     return [
         {
@@ -62,23 +63,36 @@ def _normalize_options(options_raw: object) -> list[dict[str, str]]:
             if not option_id:
                 option_id = chr(65 + idx)
             if not text:
-                text = _clean_text(opt.get("option_text")) or _clean_text(opt.get("label")) or ""
+                text = (
+                    _clean_text(opt.get("option_text"))
+                    or _clean_text(opt.get("label"))
+                    or ""
+                )
             normalized_opts.append({"option_id": option_id, "text": text})
         elif isinstance(opt, str):
             opt_str = opt.strip()
             option_id = ""
             text = opt_str
-            if len(opt_str) > 2 and opt_str[0].isalpha() and opt_str[1] in (".", ":", "、", " "):
+            if (
+                len(opt_str) > 2
+                and opt_str[0].isalpha()
+                and opt_str[1] in (".", ":", "、", " ")
+            ):
                 option_id = opt_str[0].upper()
                 text = opt_str[2:].strip()
-            elif len(opt_str) > 1 and opt_str[0].isalpha() and opt_str[0].isupper() and idx < 26:
+            elif (
+                len(opt_str) > 1
+                and opt_str[0].isalpha()
+                and opt_str[0].isupper()
+                and idx < 26
+            ):
                 expected_letter = chr(65 + idx)
                 if opt_str.startswith(expected_letter):
                     option_id = expected_letter
-                    text = opt_str[len(expected_letter):].strip()
+                    text = opt_str[len(expected_letter) :].strip()
                     if text.startswith((".", ":", "、", " ")):
                         text = text[1:].strip()
-            
+
             if not option_id:
                 option_id = chr(65 + idx)
             normalized_opts.append({"option_id": option_id, "text": text})
@@ -100,9 +114,13 @@ def normalize_quiz_questions(value: object) -> list[dict[str, Any]]:
         if not prompt:
             raise ValueError("题干不能为空")
         points = item.get("points")
-        
+
         correct_val = _clean_text(item.get("correct_option_id")).strip()
-        if len(correct_val) > 2 and correct_val[0].isalpha() and correct_val[1] in (".", ":", "、", " "):
+        if (
+            len(correct_val) > 2
+            and correct_val[0].isalpha()
+            and correct_val[1] in (".", ":", "、", " ")
+        ):
             correct_option_id = correct_val[0].upper()
         else:
             correct_option_id = correct_val.upper()
@@ -139,7 +157,9 @@ def normalize_grading_result(value: object) -> dict[str, Any]:
     question_results = value.get("question_results")
     if not isinstance(question_results, list):
         question_results = []
-    summary = _clean_text(value.get("summary")) or ("已经通过。" if score > PASSING_SCORE else "建议复习后再试一次。")
+    summary = _clean_text(value.get("summary")) or (
+        "已经通过。" if score > PASSING_SCORE else "建议复习后再试一次。"
+    )
     return {
         "score": score,
         "passed": score > PASSING_SCORE,
@@ -187,7 +207,7 @@ async def generate_quiz_questions(
         "2. 代码题 (code)：要求用户编写一段代码或伪代码，来完成/辅助完成「练习任务」，或者编写测试/验证代码以验证「检查标准」中的某项指标是否通过。必须包含 starter_code 作为起点。\n"
         "3. 图片上传题 (image_upload)：要求用户上传完成「练习任务」后的运行效果截图、架构/思路图或结果图，并在 prompt 中说明具体的截图/图片要求。\n\n"
         "只输出 JSON 数组，每题包含 question_id、type、prompt、options、correct_option_id（如果是单选题，请填写正确选项 ID，如 A、B 等）、starter_code、image_prompt、points、knowledge_point_ids。\n"
-        "【特别注意】：如果是单选题 (single_choice)，其 options 字段必须为包含选项字典的数组，每个选项字典格式为：{\"option_id\": \"选项ID，如A/B/C/D\", \"text\": \"选项内容\"}。如果是代码题或图片上传题，options 字段为空数组 []。\n"
+        '【特别注意】：如果是单选题 (single_choice)，其 options 字段必须为包含选项字典的数组，每个选项字典格式为：{"option_id": "选项ID，如A/B/C/D", "text": "选项内容"}。如果是代码题或图片上传题，options 字段为空数组 []。\n'
         f"{kp_instruction}"
         f"chapter_id: {chapter_id}\nchapter_title: {chapter_title}\nchapter_context:\n{chapter_context}"
     )
@@ -201,7 +221,9 @@ async def generate_quiz_questions(
         return build_fallback_quiz_questions(chapter_id, chapter_title)
 
 
-async def grade_quiz_answers(llm: Any, *, questions: list[dict[str, Any]], answers: dict[str, Any]) -> dict[str, Any]:
+async def grade_quiz_answers(
+    llm: Any, *, questions: list[dict[str, Any]], answers: dict[str, Any]
+) -> dict[str, Any]:
     grading_answers = _prepare_answers_for_grading_prompt(answers)
     prompt = (
         "请根据题目和用户答案给出 0-100 分整数分数。"
@@ -211,7 +233,9 @@ async def grade_quiz_answers(llm: Any, *, questions: list[dict[str, Any]], answe
         f"answers:\n{json.dumps(grading_answers, ensure_ascii=False)}"
     )
     if not hasattr(llm, "ainvoke"):
-        return normalize_grading_result({"score": 0, "question_results": [], "summary": "判题模型不可用。"})
+        return normalize_grading_result(
+            {"score": 0, "question_results": [], "summary": "判题模型不可用。"}
+        )
     response = await llm.ainvoke(prompt)
     content = getattr(response, "content", response)
     return normalize_grading_result(json.loads(str(content)))
@@ -233,9 +257,9 @@ async def stream_forest_ai_response(
                     "根据当前题目、用户答案和判题结果给出清晰解析。\n"
                     f"context:\n{json.dumps(context, ensure_ascii=False)}\n"
                     f"user_message:\n{message}"
-                )
+                ),
             },
-            {"type": "image_url", "image_url": {"url": image_attachment}}
+            {"type": "image_url", "image_url": {"url": image_attachment}},
         ]
     else:
         prompt = (

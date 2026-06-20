@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+
 from langchain_core.messages import AIMessage
 
 from app.orchestration.agents.supervisor import (
     ALL_CURRENT_GRADE_COURSES_ID,
-    _learning_path_force_args,
     _force_call_response,
+    _learning_path_force_args,
     build_system_prompt,
     create_supervisor_node,
 )
@@ -72,7 +73,9 @@ def test_force_call_response_uses_next_course_for_course_change_query() -> None:
     assert tool_call["args"]["course_id"] == "year_3_course_2"
 
 
-def test_force_call_response_returns_completion_reply_when_no_next_course_exists() -> None:
+def test_force_call_response_returns_completion_reply_when_no_next_course_exists() -> (
+    None
+):
     response = _force_call_response(
         AGENT_COURSE_KNOWLEDGE,
         {
@@ -133,7 +136,9 @@ def test_force_call_response_maps_named_outline_regeneration_to_course_id() -> N
     assert tool_call["args"] == {"course_id": "year_3_course_1"}
 
 
-def test_force_call_response_maps_chinese_course_name_to_course_id_for_outline() -> None:
+def test_force_call_response_maps_chinese_course_name_to_course_id_for_outline() -> (
+    None
+):
     response = _force_call_response(
         AGENT_COURSE_KNOWLEDGE,
         {
@@ -203,7 +208,9 @@ def test_force_call_response_uses_current_course_for_generic_start_query() -> No
     assert tool_call["args"] == {"course_id": "year_3_course_1"}
 
 
-def test_force_call_response_uses_sentinel_for_explicit_all_course_outline_request() -> None:
+def test_force_call_response_uses_sentinel_for_explicit_all_course_outline_request() -> (
+    None
+):
     response = _force_call_response(
         AGENT_COURSE_KNOWLEDGE,
         {
@@ -224,7 +231,9 @@ def test_force_call_response_uses_sentinel_for_explicit_all_course_outline_reque
     assert tool_call["args"] == {"course_id": ALL_CURRENT_GRADE_COURSES_ID}
 
 
-def test_learning_path_force_args_uses_profile_topic_for_generic_refresh_query() -> None:
+def test_learning_path_force_args_uses_profile_topic_for_generic_refresh_query() -> (
+    None
+):
     args = _learning_path_force_args({"query": "继续生成学习路径"})
 
     assert args == {
@@ -234,7 +243,9 @@ def test_learning_path_force_args_uses_profile_topic_for_generic_refresh_query()
     }
 
 
-def test_learning_path_force_args_treats_punctuated_generic_refresh_query_as_generic() -> None:
+def test_learning_path_force_args_treats_punctuated_generic_refresh_query_as_generic() -> (
+    None
+):
     args = _learning_path_force_args({"query": "继续生成学习路径。"})
 
     assert args == {
@@ -244,7 +255,9 @@ def test_learning_path_force_args_treats_punctuated_generic_refresh_query_as_gen
     }
 
 
-def test_force_call_response_uses_specific_requirements_for_detailed_path_refresh_query() -> None:
+def test_force_call_response_uses_specific_requirements_for_detailed_path_refresh_query() -> (
+    None
+):
     response = _force_call_response(
         AGENT_LEARNING_PATH,
         {
@@ -279,7 +292,9 @@ def test_force_call_response_uses_section_markdown_for_course_resources() -> Non
     }
 
 
-def test_force_call_response_maps_current_course_resource_query_to_one_chapter() -> None:
+def test_force_call_response_maps_current_course_resource_query_to_one_chapter() -> (
+    None
+):
     response = _force_call_response(
         AGENT_SECTION_MARKDOWN,
         {
@@ -287,8 +302,18 @@ def test_force_call_response_maps_current_course_resource_query_to_one_chapter()
             "course_knowledge": {
                 "course_id": "year_3_course_1",
                 "sections": [
-                    {"section_id": "1", "depth": 1, "order_index": 1, "title": "第一章"},
-                    {"section_id": "2", "depth": 1, "order_index": 2, "title": "第二章"},
+                    {
+                        "section_id": "1",
+                        "depth": 1,
+                        "order_index": 1,
+                        "title": "第一章",
+                    },
+                    {
+                        "section_id": "2",
+                        "depth": 1,
+                        "order_index": 2,
+                        "title": "第二章",
+                    },
                 ],
             },
         },
@@ -303,7 +328,9 @@ def test_force_call_response_maps_current_course_resource_query_to_one_chapter()
     }
 
 
-def test_force_call_response_maps_english_second_chapter_query_to_real_root_section() -> None:
+def test_force_call_response_maps_english_second_chapter_query_to_real_root_section() -> (
+    None
+):
     response = _force_call_response(
         AGENT_SECTION_MARKDOWN,
         {
@@ -314,8 +341,18 @@ def test_force_call_response_maps_english_second_chapter_query_to_real_root_sect
             "course_knowledge": {
                 "course_id": "year_3_course_1",
                 "sections": [
-                    {"section_id": "1", "depth": 1, "order_index": 1, "title": "Data Ingestion & Chunking Strategy"},
-                    {"section_id": "2", "depth": 1, "order_index": 2, "title": "Embedding Generation & Storage"},
+                    {
+                        "section_id": "1",
+                        "depth": 1,
+                        "order_index": 1,
+                        "title": "Data Ingestion & Chunking Strategy",
+                    },
+                    {
+                        "section_id": "2",
+                        "depth": 1,
+                        "order_index": 2,
+                        "title": "Embedding Generation & Storage",
+                    },
                 ],
             },
         },
@@ -330,7 +367,9 @@ def test_force_call_response_maps_english_second_chapter_query_to_real_root_sect
     }
 
 
-def test_force_call_response_prompts_for_profile_details_on_generic_profile_update_query() -> None:
+def test_force_call_response_prompts_for_profile_details_on_generic_profile_update_query() -> (
+    None
+):
     response = _force_call_response(
         AGENT_PROFILE,
         {
@@ -339,7 +378,9 @@ def test_force_call_response_prompts_for_profile_details_on_generic_profile_upda
         },
     )
 
-    assert response["response"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+    assert response["response"].startswith(
+        "可以。更新个人画像前，我需要先确认这次是否值得更新。"
+    )
     assert "发生了什么具体变化" in response["response"]
     assert "不会改画像" in response["response"]
     message = response["messages"][0]
@@ -347,7 +388,9 @@ def test_force_call_response_prompts_for_profile_details_on_generic_profile_upda
     assert not message.tool_calls
 
 
-def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_profile_update_query() -> None:
+def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_profile_update_query() -> (
+    None
+):
     response = _force_call_response(
         AGENT_PROFILE,
         {
@@ -356,7 +399,9 @@ def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_p
         },
     )
 
-    assert response["response"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+    assert response["response"].startswith(
+        "可以。更新个人画像前，我需要先确认这次是否值得更新。"
+    )
     assert "发生了什么具体变化" in response["response"]
     assert "不会改画像" in response["response"]
     message = response["messages"][0]
@@ -364,7 +409,9 @@ def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_p
     assert not message.tool_calls
 
 
-def test_force_call_response_prompts_for_profile_details_on_profile_completion_query() -> None:
+def test_force_call_response_prompts_for_profile_details_on_profile_completion_query() -> (
+    None
+):
     response = _force_call_response(
         AGENT_PROFILE,
         {
@@ -373,7 +420,9 @@ def test_force_call_response_prompts_for_profile_details_on_profile_completion_q
         },
     )
 
-    assert response["response"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+    assert response["response"].startswith(
+        "可以。更新个人画像前，我需要先确认这次是否值得更新。"
+    )
     assert "发生了什么具体变化" in response["response"]
     assert "不会改画像" in response["response"]
     message = response["messages"][0]
@@ -381,7 +430,9 @@ def test_force_call_response_prompts_for_profile_details_on_profile_completion_q
     assert not message.tool_calls
 
 
-def test_force_call_response_prompts_for_profile_details_on_question_alignment_query() -> None:
+def test_force_call_response_prompts_for_profile_details_on_question_alignment_query() -> (
+    None
+):
     response = _force_call_response(
         AGENT_PROFILE,
         {
@@ -390,7 +441,9 @@ def test_force_call_response_prompts_for_profile_details_on_question_alignment_q
         },
     )
 
-    assert response["response"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+    assert response["response"].startswith(
+        "可以。更新个人画像前，我需要先确认这次是否值得更新。"
+    )
     assert "发生了什么具体变化" in response["response"]
     assert "不会改画像" in response["response"]
     message = response["messages"][0]
@@ -398,18 +451,24 @@ def test_force_call_response_prompts_for_profile_details_on_question_alignment_q
     assert not message.tool_calls
 
 
-def test_force_call_response_prompts_for_profile_details_on_generic_path_refresh_after_completion() -> None:
+def test_force_call_response_prompts_for_profile_details_on_generic_path_refresh_after_completion() -> (
+    None
+):
     response = _force_call_response(
         AGENT_PROFILE,
         {
             "query": "更新学习路径",
             "messages": [
-                AIMessage(content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"),
+                AIMessage(
+                    content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"
+                ),
             ],
         },
     )
 
-    assert response["response"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+    assert response["response"].startswith(
+        "可以。更新个人画像前，我需要先确认这次是否值得更新。"
+    )
     assert "发生了什么具体变化" in response["response"]
     assert "不会改画像" in response["response"]
     message = response["messages"][0]
@@ -417,18 +476,24 @@ def test_force_call_response_prompts_for_profile_details_on_generic_path_refresh
     assert not message.tool_calls
 
 
-def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_path_refresh_after_completion() -> None:
+def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_path_refresh_after_completion() -> (
+    None
+):
     response = _force_call_response(
         AGENT_PROFILE,
         {
             "query": "更新学习路径。",
             "messages": [
-                AIMessage(content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"),
+                AIMessage(
+                    content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"
+                ),
             ],
         },
     )
 
-    assert response["response"].startswith("可以。更新个人画像前，我需要先确认这次是否值得更新。")
+    assert response["response"].startswith(
+        "可以。更新个人画像前，我需要先确认这次是否值得更新。"
+    )
     assert "发生了什么具体变化" in response["response"]
     assert "不会改画像" in response["response"]
     message = response["messages"][0]
@@ -436,13 +501,17 @@ def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_p
     assert not message.tool_calls
 
 
-def test_force_call_response_pauses_followup_when_user_says_no_need_after_completion() -> None:
+def test_force_call_response_pauses_followup_when_user_says_no_need_after_completion() -> (
+    None
+):
     response = _force_call_response(
         AGENT_PROFILE,
         {
             "query": "先不用了",
             "messages": [
-                AIMessage(content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"),
+                AIMessage(
+                    content="当前所有任务已经完成。如果你想继续下一阶段，我可以先帮你更新个人画像，再重新生成学习路径。"
+                ),
             ],
         },
     )
@@ -453,13 +522,17 @@ def test_force_call_response_pauses_followup_when_user_says_no_need_after_comple
     assert not message.tool_calls
 
 
-def test_force_call_response_pauses_profile_update_when_followup_has_no_change() -> None:
+def test_force_call_response_pauses_profile_update_when_followup_has_no_change() -> (
+    None
+):
     response = _force_call_response(
         AGENT_PROFILE,
         {
             "query": "没有具体变化，只是看看",
             "messages": [
-                AIMessage(content="可以。更新个人画像前，我需要先确认这次是否值得更新。请先告诉我你想更新哪一块。"),
+                AIMessage(
+                    content="可以。更新个人画像前，我需要先确认这次是否值得更新。请先告诉我你想更新哪一块。"
+                ),
             ],
         },
     )
@@ -470,7 +543,9 @@ def test_force_call_response_pauses_profile_update_when_followup_has_no_change()
     assert not message.tool_calls
 
 
-def test_supervisor_node_returns_completion_reply_when_course_change_has_no_next_course() -> None:
+def test_supervisor_node_returns_completion_reply_when_course_change_has_no_next_course() -> (
+    None
+):
     class GuardLlm:
         def bind_tools(self, _tools: list) -> GuardLlm:
             return self
@@ -598,18 +673,20 @@ def test_supervisor_node_direct_text_reply_for_chitchat_and_qa() -> None:
         def __init__(self) -> None:
             self.tools: list = []
             self.called_messages: list = []
-            
+
         def bind_tools(self, tools: list) -> MockLlm:
             self.tools = tools
             return self
 
         async def ainvoke(self, messages: list) -> AIMessage:
             self.called_messages = messages
-            return AIMessage(content="FastAPI 是一个用于构建 API 的现代、快速（高性能）的 Web 框架。")
+            return AIMessage(
+                content="FastAPI 是一个用于构建 API 的现代、快速（高性能）的 Web 框架。"
+            )
 
     mock_llm = MockLlm()
     supervisor_node = create_supervisor_node(mock_llm)
-    
+
     result = asyncio.run(
         supervisor_node(
             {
@@ -634,4 +711,3 @@ def test_supervisor_node_direct_text_reply_for_chitchat_and_qa() -> None:
     assert "直接回复" in system_msg
     assert not result["messages"][0].tool_calls
     assert "FastAPI 是一个" in result["response"]
-

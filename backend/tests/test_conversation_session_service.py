@@ -10,8 +10,8 @@ from app.models import User
 from app.services.conversation_session_service import (
     append_messages,
     latest_learning_path_intake,
-    load_session,
     load_or_create_session,
+    load_session,
     replace_latest_learning_path_intake,
 )
 
@@ -23,13 +23,27 @@ def build_session(tmp_path: Path) -> Session:
     )
     SQLModel.metadata.create_all(engine)
     session = Session(engine)
-    session.add(User(uid="user-1", username="会话用户", identifier="conversation-session@example.com"))
-    session.add(User(uid="user-2", username="第二用户", identifier="conversation-session-2@example.com"))
+    session.add(
+        User(
+            uid="user-1",
+            username="会话用户",
+            identifier="conversation-session@example.com",
+        )
+    )
+    session.add(
+        User(
+            uid="user-2",
+            username="第二用户",
+            identifier="conversation-session-2@example.com",
+        )
+    )
     session.commit()
     return session
 
 
-def test_load_or_create_session_creates_empty_session_for_new_id(tmp_path: Path) -> None:
+def test_load_or_create_session_creates_empty_session_for_new_id(
+    tmp_path: Path,
+) -> None:
     session = build_session(tmp_path)
 
     row = load_or_create_session(session, "sess-new", "user-1")
@@ -39,7 +53,9 @@ def test_load_or_create_session_creates_empty_session_for_new_id(tmp_path: Path)
     assert row.messages == []
 
 
-def test_load_or_create_session_returns_existing_session_for_same_user(tmp_path: Path) -> None:
+def test_load_or_create_session_returns_existing_session_for_same_user(
+    tmp_path: Path,
+) -> None:
     session = build_session(tmp_path)
     created = load_or_create_session(session, "sess-existing", "user-1")
     append_messages(
@@ -61,7 +77,9 @@ def test_load_or_create_session_returns_existing_session_for_same_user(tmp_path:
     ]
 
 
-def test_load_or_create_session_rejects_session_owned_by_another_user(tmp_path: Path) -> None:
+def test_load_or_create_session_rejects_session_owned_by_another_user(
+    tmp_path: Path,
+) -> None:
     session = build_session(tmp_path)
     load_or_create_session(session, "sess-owned", "user-1")
 
@@ -94,7 +112,9 @@ def test_append_messages_raises_for_missing_session(tmp_path: Path) -> None:
     session = build_session(tmp_path)
 
     with pytest.raises(ValueError, match="Conversation session sess-missing not found"):
-        append_messages(session, "sess-missing", [{"type": "human", "data": {"content": "你好"}}])
+        append_messages(
+            session, "sess-missing", [{"type": "human", "data": {"content": "你好"}}]
+        )
 
 
 def test_replace_latest_learning_path_intake_message(tmp_path: Path) -> None:

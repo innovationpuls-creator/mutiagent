@@ -1,22 +1,26 @@
-import pytest
 from unittest.mock import patch
-from app.schemas import ChatMessageRequest
+
+import pytest
 from langchain_core.messages import HumanMessage
-from tests.test_orchestration_api import chat_app, _register_user, _auth_header
+
+from app.schemas import ChatMessageRequest
+from tests.test_orchestration_api import _auth_header, _register_user, chat_app
+
 
 def test_multimodal_request_schema():
     req = ChatMessageRequest(
         session_id="test-session",
         message="explain this drawing",
-        image_attachment="data:image/png;base64,iVBORw0KGgoAAAANS"
+        image_attachment="data:image/png;base64,iVBORw0KGgoAAAANS",
     )
     assert req.image_attachment is not None
     assert "base64" in req.image_attachment
 
+
 @patch("app.api.orchestration.stream_orchestration_events")
 def test_send_message_multimodal_stream(mock_stream, tmp_path):
     captured_messages = []
-    
+
     async def mock_events(state):
         captured_messages.extend(state["messages"])
         yield {"event": "session_started", "session_id": state["session_id"]}
@@ -40,7 +44,7 @@ def test_send_message_multimodal_stream(mock_stream, tmp_path):
             json={
                 "session_id": session_id,
                 "message": "explain this drawing",
-                "image_attachment": image_data
+                "image_attachment": image_data,
             },
             headers=_auth_header(token),
         )
@@ -55,20 +59,27 @@ def test_send_message_multimodal_stream(mock_stream, tmp_path):
         assert isinstance(last_msg, HumanMessage)
         assert isinstance(last_msg.content, list)
         assert last_msg.content[0] == {"type": "text", "text": "explain this drawing"}
-        assert last_msg.content[1] == {"type": "image_url", "image_url": {"url": image_data}}
+        assert last_msg.content[1] == {
+            "type": "image_url",
+            "image_url": {"url": image_data},
+        }
 
 
 from unittest.mock import MagicMock
-from app.orchestration.agents.quiz import stream_forest_ai_response
-from app.main import create_app
+
 from fastapi.testclient import TestClient
-from tests.test_forest_api import _seed_forest_data, _auth_headers
+
+from app.main import create_app
+from app.orchestration.agents.quiz import stream_forest_ai_response
+from tests.test_forest_api import _auth_headers, _seed_forest_data
+
 
 @pytest.mark.anyio
 async def test_stream_forest_ai_response_multimodal():
     mock_llm = MagicMock()
-    
+
     captured_prompts = []
+
     async def mock_astream(prompt):
         captured_prompts.append(prompt)
         chunk = MagicMock()
@@ -95,7 +106,10 @@ async def test_stream_forest_ai_response_multimodal():
     assert prompt[0]["type"] == "text"
     assert "你是 Forest AI" in prompt[0]["text"]
     assert "what is this?" in prompt[0]["text"]
-    assert prompt[1] == {"type": "image_url", "image_url": {"url": "data:image/png;base64,xyz"}}
+    assert prompt[1] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,xyz"},
+    }
 
     # 2. Test without image_attachment (fallback/existing text prompt logic)
     captured_prompts.clear()
@@ -145,7 +159,7 @@ def test_stream_forest_ai_api_multimodal(tmp_path):
                     "answer": None,
                     "grading_result": None,
                 },
-                "image_attachment": "data:image/png;base64,xyz"
+                "image_attachment": "data:image/png;base64,xyz",
             },
             headers=_auth_headers(user_uid),
         )

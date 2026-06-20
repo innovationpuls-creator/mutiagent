@@ -9,7 +9,6 @@ from app.orchestration.agents.models import (
     LearningPathCourseSpecOutput,
     LearningPathResultOutput,
     ProfileSessionOutput,
-    QuestionFormQuestionOutput,
     QuestionFormOutput,
     SectionAnimationBriefOutput,
     SectionHtmlAnimationOutput,
@@ -64,10 +63,33 @@ def _course_node(course_id: str, grade_id: str = "year_3") -> dict:
 
 def _learning_path() -> dict:
     grade_plans = {
-        "year_1": {"grade_id": "year_1", "grade_name": "大一", "grade_goal": "夯实编程基础", "course_nodes": [_course_node("year_1_course_1", "year_1")]},
-        "year_2": {"grade_id": "year_2", "grade_name": "大二", "grade_goal": "建立工程基础", "course_nodes": [_course_node("year_2_course_1", "year_2")]},
-        "year_3": {"grade_id": "year_3", "grade_name": "大三", "grade_goal": "完成 AI Web 项目", "course_nodes": [_course_node("year_3_course_1", "year_3"), _course_node("year_3_course_2", "year_3")]},
-        "year_4": {"grade_id": "year_4", "grade_name": "大四", "grade_goal": "就业作品集", "course_nodes": [_course_node("year_4_course_1", "year_4")]},
+        "year_1": {
+            "grade_id": "year_1",
+            "grade_name": "大一",
+            "grade_goal": "夯实编程基础",
+            "course_nodes": [_course_node("year_1_course_1", "year_1")],
+        },
+        "year_2": {
+            "grade_id": "year_2",
+            "grade_name": "大二",
+            "grade_goal": "建立工程基础",
+            "course_nodes": [_course_node("year_2_course_1", "year_2")],
+        },
+        "year_3": {
+            "grade_id": "year_3",
+            "grade_name": "大三",
+            "grade_goal": "完成 AI Web 项目",
+            "course_nodes": [
+                _course_node("year_3_course_1", "year_3"),
+                _course_node("year_3_course_2", "year_3"),
+            ],
+        },
+        "year_4": {
+            "grade_id": "year_4",
+            "grade_name": "大四",
+            "grade_goal": "就业作品集",
+            "course_nodes": [_course_node("year_4_course_1", "year_4")],
+        },
     }
     return {
         "schema_version": "learning_path.v2.course_node",
@@ -93,14 +115,25 @@ def _learning_path() -> dict:
         },
         "grade_plans": grade_plans,
         "knowledge_graph": {"global_relations": [], "critical_paths": []},
-        "resource_generation_contract": {"downstream_agents": ["learning_resource_agent"], "resource_directions": []},
-        "dynamic_update_contract": {"trackable_metrics": ["题目得分"], "update_triggers": ["score > 70"], "adjustment_strategy": "通过后推进课程"},
+        "resource_generation_contract": {
+            "downstream_agents": ["learning_resource_agent"],
+            "resource_directions": [],
+        },
+        "dynamic_update_contract": {
+            "trackable_metrics": ["题目得分"],
+            "update_triggers": ["score > 70"],
+            "adjustment_strategy": "通过后推进课程",
+        },
         "current_learning_course": {
             "grade_id": "year_3",
             "course_node_id": "year_3_course_1",
             "course_or_chapter_theme": "AI 应用开发项目课",
             "course_goal": "完成一个 AI 功能模块并接入 Web 应用",
-            "time_arrangement": {"semester_scope": "上学期", "duration": "6 周", "pace_reason": "围绕平时学习节奏安排"},
+            "time_arrangement": {
+                "semester_scope": "上学期",
+                "duration": "6 周",
+                "pace_reason": "围绕平时学习节奏安排",
+            },
             "current_focus": "正在学习 AI 应用开发项目课",
             "progress_state": "in_progress",
             "next_action": "开始第一章需求拆解",
@@ -122,7 +155,11 @@ def test_profile_session_output_requires_complete_confirmed_info() -> None:
 
     assert profile.type == "basic_profile"
     assert profile.confirmed_info.current_grade == "大三"
-    assert profile.confirmed_info.content_preference == ["代码实践", "项目案例", "AI 对话调试"]
+    assert profile.confirmed_info.content_preference == [
+        "代码实践",
+        "项目案例",
+        "AI 对话调试",
+    ]
 
 
 def test_confirmed_info_normalizes_list_style_scalar_fields_from_llm() -> None:
@@ -184,7 +221,10 @@ def test_learning_path_normalizes_missing_current_learning_courses() -> None:
     path = LearningPathResultOutput(**_learning_path())
 
     assert len(path.current_learning_courses) == 1
-    assert path.current_learning_courses[0].course_node_id == path.current_learning_course.course_node_id
+    assert (
+        path.current_learning_courses[0].course_node_id
+        == path.current_learning_course.course_node_id
+    )
 
 
 def test_learning_path_rejects_invalid_current_learning_course_progress_state() -> None:
@@ -220,7 +260,11 @@ def test_learning_path_course_spec_normalizes_string_list_fields_from_llm() -> N
     assert spec.stage_titles == ["需求拆解", "状态管理", "部署验收"]
     assert spec.key_points == ["Agent 状态", "工具调用", "结果验证"]
     assert spec.difficult_points == ["部署链路打通", "稳定性排查"]
-    assert spec.acceptance_criteria == ["本地运行无崩溃", "覆盖核心路径", "具备边界条件测试用例。"]
+    assert spec.acceptance_criteria == [
+        "本地运行无崩溃",
+        "覆盖核心路径",
+        "具备边界条件测试用例。",
+    ]
 
 
 def test_section_markdown_normalizes_string_visual_elements_from_llm() -> None:
@@ -228,16 +272,18 @@ def test_section_markdown_normalizes_string_visual_elements_from_llm() -> None:
         section_id="1.1",
         parent_section_id="1",
         title="学习目标",
-        markdown="\n\n".join([
-            "# 1.1 学习目标",
-            "## 学习目标\n明确输入、输出和验收标准。",
-            "<!-- video:id=video_1 -->",
-            "## 核心概念\n功能边界与验收标准。",
-            "## 步骤讲解\n先确认目标，再拆任务。",
-            "<!-- animation:id=anim_1 -->",
-            "## 练习任务\n写一张任务卡。",
-            "## 检查标准\n能给出可验收产出。",
-        ]),
+        markdown="\n\n".join(
+            [
+                "# 1.1 学习目标",
+                "## 学习目标\n明确输入、输出和验收标准。",
+                "<!-- video:id=video_1 -->",
+                "## 核心概念\n功能边界与验收标准。",
+                "## 步骤讲解\n先确认目标，再拆任务。",
+                "<!-- animation:id=anim_1 -->",
+                "## 练习任务\n写一张任务卡。",
+                "## 检查标准\n能给出可验收产出。",
+            ]
+        ),
         video_briefs=[
             {
                 "video_id": "video_1",
@@ -258,7 +304,9 @@ def test_section_markdown_normalizes_string_visual_elements_from_llm() -> None:
         ],
     )
 
-    assert output.animation_briefs[0].visual_elements == ["目标卡片、任务卡片、验收标准卡片"]
+    assert output.animation_briefs[0].visual_elements == [
+        "目标卡片、任务卡片、验收标准卡片"
+    ]
 
 
 def test_section_markdown_rejects_missing_resource_briefs() -> None:
@@ -279,16 +327,18 @@ def test_section_markdown_rejects_low_quality_fallback_markers() -> None:
             section_id="1.1",
             parent_section_id="1",
             title="学习目标",
-            markdown="\n\n".join([
-                "# 1.1 学习目标",
-                "## 学习目标\n目标说明。",
-                "<!-- video:id=video_1 -->",
-                "## 核心概念\nKey Concept\nThis section explores foundational concepts.",
-                "## 步骤讲解\n先确认目标，再拆任务。",
-                "<!-- animation:id=anim_1 -->",
-                "## 练习任务\n写一张任务卡。",
-                "## 检查标准\n能给出可验收产出。",
-            ]),
+            markdown="\n\n".join(
+                [
+                    "# 1.1 学习目标",
+                    "## 学习目标\n目标说明。",
+                    "<!-- video:id=video_1 -->",
+                    "## 核心概念\nKey Concept\nThis section explores foundational concepts.",
+                    "## 步骤讲解\n先确认目标，再拆任务。",
+                    "<!-- animation:id=anim_1 -->",
+                    "## 练习任务\n写一张任务卡。",
+                    "## 检查标准\n能给出可验收产出。",
+                ]
+            ),
             video_briefs=[
                 {
                     "video_id": "video_1",
@@ -316,14 +366,16 @@ def test_section_markdown_rejects_missing_teaching_headings() -> None:
             section_id="1.1",
             parent_section_id="1",
             title="学习目标",
-            markdown="\n\n".join([
-                "# 1.1 学习目标",
-                "## 学习目标\n目标说明。",
-                "<!-- video:id=video_1 -->",
-                "## 核心概念\n功能边界与验收标准。",
-                "## 步骤讲解\n先确认目标，再拆任务。",
-                "<!-- animation:id=anim_1 -->",
-            ]),
+            markdown="\n\n".join(
+                [
+                    "# 1.1 学习目标",
+                    "## 学习目标\n目标说明。",
+                    "<!-- video:id=video_1 -->",
+                    "## 核心概念\n功能边界与验收标准。",
+                    "## 步骤讲解\n先确认目标，再拆任务。",
+                    "<!-- animation:id=anim_1 -->",
+                ]
+            ),
             video_briefs=[
                 {
                     "video_id": "video_1",
@@ -351,16 +403,18 @@ def test_section_markdown_rejects_placeholder_id_mismatch() -> None:
             section_id="1.1",
             parent_section_id="1",
             title="学习目标",
-            markdown="\n\n".join([
-                "# 1.1 学习目标",
-                "## 学习目标\n明确输入、输出和验收标准。",
-                "<!-- video:id=wrong_video -->",
-                "## 核心概念\n功能边界与验收标准。",
-                "## 步骤讲解\n先确认目标，再拆任务。",
-                "<!-- animation:id=anim_1 -->",
-                "## 练习任务\n写一张任务卡。",
-                "## 检查标准\n能给出可验收产出。",
-            ]),
+            markdown="\n\n".join(
+                [
+                    "# 1.1 学习目标",
+                    "## 学习目标\n明确输入、输出和验收标准。",
+                    "<!-- video:id=wrong_video -->",
+                    "## 核心概念\n功能边界与验收标准。",
+                    "## 步骤讲解\n先确认目标，再拆任务。",
+                    "<!-- animation:id=anim_1 -->",
+                    "## 练习任务\n写一张任务卡。",
+                    "## 检查标准\n能给出可验收产出。",
+                ]
+            ),
             video_briefs=[
                 {
                     "video_id": "video_1",
@@ -382,7 +436,9 @@ def test_section_markdown_rejects_placeholder_id_mismatch() -> None:
         )
 
 
-def test_section_animation_brief_normalizes_structured_visual_elements_and_motion_steps() -> None:
+def test_section_animation_brief_normalizes_structured_visual_elements_and_motion_steps() -> (
+    None
+):
     output = SectionAnimationBriefOutput(
         animation_id="anim_1",
         title="接口调用流程动画",
@@ -444,12 +500,14 @@ def test_section_video_search_allows_missing_top_level_query_fields_from_llm() -
     assert output.videos[0].brief_id == "video_1"
 
 
-def test_section_html_animation_allows_missing_top_level_and_item_title_from_llm() -> None:
+def test_section_html_animation_allows_missing_top_level_and_item_title_from_llm() -> (
+    None
+):
     output = SectionHtmlAnimationOutput(
         animations=[
             {
                 "animation_id": "anim_1",
-                "html": "<div class=\"section-animation\"><style></style><p>目标</p></div>",
+                "html": '<div class="section-animation"><style></style><p>目标</p></div>',
             }
         ]
     )
@@ -468,7 +526,7 @@ def test_profile_session_output_supports_question_form() -> None:
         "required": True,
         "options": [],
     }
-    
+
     form_data = {
         "title": "专业基本信息",
         "description": "请提供您的专业信息以帮助我们定制学习计划",
@@ -476,7 +534,7 @@ def test_profile_session_output_supports_question_form() -> None:
         "questions": [question_data],
         "submit_label": "确认提交",
     }
-    
+
     profile = ProfileSessionOutput(
         type="basic_profile",
         stage="basic_info",
@@ -496,4 +554,3 @@ def test_profile_session_output_supports_question_form() -> None:
     assert profile.question_form.questions[0].field_name == "major"
     assert profile.question_form.questions[0].required is True
     assert profile.question_form.questions[0].options == []
-

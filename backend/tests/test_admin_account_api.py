@@ -61,7 +61,10 @@ def test_admin_can_manage_accounts(tmp_path: Path, monkeypatch) -> None:
 
     list_response = client.get("/api/admin/accounts", headers=headers)
     assert list_response.status_code == 200
-    assert any(account["identifier"] == "teacher-admin-api@example.com" for account in list_response.json())
+    assert any(
+        account["identifier"] == "teacher-admin-api@example.com"
+        for account in list_response.json()
+    )
 
     update_response = client.put(
         f"/api/admin/accounts/{created['uid']}",
@@ -85,12 +88,16 @@ def test_admin_can_manage_accounts(tmp_path: Path, monkeypatch) -> None:
     assert updated["role"] == "student"
     assert updated["is_active"] is False
 
-    delete_response = client.delete(f"/api/admin/accounts/{created['uid']}", headers=headers)
+    delete_response = client.delete(
+        f"/api/admin/accounts/{created['uid']}", headers=headers
+    )
     assert delete_response.status_code == 204
 
     final_list_response = client.get("/api/admin/accounts", headers=headers)
     assert final_list_response.status_code == 200
-    assert all(account["uid"] != created["uid"] for account in final_list_response.json())
+    assert all(
+        account["uid"] != created["uid"] for account in final_list_response.json()
+    )
 
 
 def test_student_cannot_manage_accounts(tmp_path: Path, monkeypatch) -> None:
@@ -157,15 +164,27 @@ def test_admin_batch_updates_accounts(tmp_path: Path, monkeypatch) -> None:
         json={"action": "deactivate", "uids": [first["uid"], second["uid"]]},
     )
     assert deactivate_response.status_code == 200
-    assert {account["is_active"] for account in deactivate_response.json() if account["uid"] in {first["uid"], second["uid"]}} == {False}
+    assert {
+        account["is_active"]
+        for account in deactivate_response.json()
+        if account["uid"] in {first["uid"], second["uid"]}
+    } == {False}
 
     role_response = client.post(
         "/api/admin/accounts/batch",
         headers=headers,
-        json={"action": "set_role", "role": "teacher", "uids": [first["uid"], second["uid"]]},
+        json={
+            "action": "set_role",
+            "role": "teacher",
+            "uids": [first["uid"], second["uid"]],
+        },
     )
     assert role_response.status_code == 200
-    assert {account["role"] for account in role_response.json() if account["uid"] in {first["uid"], second["uid"]}} == {"teacher"}
+    assert {
+        account["role"]
+        for account in role_response.json()
+        if account["uid"] in {first["uid"], second["uid"]}
+    } == {"teacher"}
 
     delete_response = client.post(
         "/api/admin/accounts/batch",
@@ -173,7 +192,10 @@ def test_admin_batch_updates_accounts(tmp_path: Path, monkeypatch) -> None:
         json={"action": "delete", "uids": [first["uid"], second["uid"]]},
     )
     assert delete_response.status_code == 200
-    assert all(account["uid"] not in {first["uid"], second["uid"]} for account in delete_response.json())
+    assert all(
+        account["uid"] not in {first["uid"], second["uid"]}
+        for account in delete_response.json()
+    )
 
 
 def test_admin_batch_delete_removes_forest_rows(tmp_path: Path, monkeypatch) -> None:
@@ -240,10 +262,20 @@ def test_admin_batch_delete_removes_forest_rows(tmp_path: Path, monkeypatch) -> 
             created["uid"],
             "year_3_course_2",
             "1",
-            [{"question_id": "q1", "type": "single_choice", "prompt": "题目", "options": [], "points": 100}],
+            [
+                {
+                    "question_id": "q1",
+                    "type": "single_choice",
+                    "prompt": "题目",
+                    "options": [],
+                    "points": 100,
+                }
+            ],
             regenerate=False,
         )
-        quiz = session.exec(select(ChapterQuiz).where(ChapterQuiz.user_uid == created["uid"])).one()
+        quiz = session.exec(
+            select(ChapterQuiz).where(ChapterQuiz.user_uid == created["uid"])
+        ).one()
         session.add(
             ChapterQuizAttempt(
                 attempt_id="attempt-admin-delete",
@@ -279,13 +311,41 @@ def test_admin_batch_delete_removes_forest_rows(tmp_path: Path, monkeypatch) -> 
 
     with Session(engine) as session:
         assert session.get(User, created["uid"]) is None
-        assert session.exec(select(ChapterQuiz).where(ChapterQuiz.user_uid == created["uid"])).all() == []
-        assert session.exec(select(ChapterQuizAttempt).where(ChapterQuizAttempt.user_uid == created["uid"])).all() == []
-        assert session.exec(select(ChapterProgress).where(ChapterProgress.user_uid == created["uid"])).all() == []
-        assert session.exec(select(CourseResourceQuality).where(CourseResourceQuality.user_uid == created["uid"])).all() == []
+        assert (
+            session.exec(
+                select(ChapterQuiz).where(ChapterQuiz.user_uid == created["uid"])
+            ).all()
+            == []
+        )
+        assert (
+            session.exec(
+                select(ChapterQuizAttempt).where(
+                    ChapterQuizAttempt.user_uid == created["uid"]
+                )
+            ).all()
+            == []
+        )
+        assert (
+            session.exec(
+                select(ChapterProgress).where(
+                    ChapterProgress.user_uid == created["uid"]
+                )
+            ).all()
+            == []
+        )
+        assert (
+            session.exec(
+                select(CourseResourceQuality).where(
+                    CourseResourceQuality.user_uid == created["uid"]
+                )
+            ).all()
+            == []
+        )
 
 
-def test_admin_import_updates_existing_and_exports_csv(tmp_path: Path, monkeypatch) -> None:
+def test_admin_import_updates_existing_and_exports_csv(
+    tmp_path: Path, monkeypatch
+) -> None:
     client = make_client(tmp_path, monkeypatch)
     token = login_token(client, "13297540721", "123456")
     headers = {"Authorization": f"Bearer {token}"}
@@ -324,8 +384,16 @@ def test_admin_import_updates_existing_and_exports_csv(tmp_path: Path, monkeypat
     assert body["failures"][0]["identifier"] == "bad@example.com"
 
     accounts = client.get("/api/admin/accounts", headers=headers).json()
-    new_account = next(account for account in accounts if account["identifier"] == "import-new@example.com")
-    updated_account = next(account for account in accounts if account["identifier"] == "import-existing@example.com")
+    new_account = next(
+        account
+        for account in accounts
+        if account["identifier"] == "import-new@example.com"
+    )
+    updated_account = next(
+        account
+        for account in accounts
+        if account["identifier"] == "import-existing@example.com"
+    )
     assert new_account["role"] == "teacher"
     assert new_account["school"] == "南山大学"
     assert new_account["major"] == "软件工程"
@@ -337,7 +405,10 @@ def test_admin_import_updates_existing_and_exports_csv(tmp_path: Path, monkeypat
 
     export_response = client.get("/api/admin/accounts/export", headers=headers)
     assert export_response.status_code == 200
-    assert export_response.text.splitlines()[0] == "username,identifier,password,role,is_active,school,major,class_name"
+    assert (
+        export_response.text.splitlines()[0]
+        == "username,identifier,password,role,is_active,school,major,class_name"
+    )
     assert "import-new@example.com" in export_response.text
 
 
@@ -345,7 +416,11 @@ def test_admin_cannot_lock_out_self(tmp_path: Path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     token = login_token(client, "13297540721", "123456")
     headers = {"Authorization": f"Bearer {token}"}
-    admin = next(account for account in client.get("/api/admin/accounts", headers=headers).json() if account["identifier"] == "13297540721")
+    admin = next(
+        account
+        for account in client.get("/api/admin/accounts", headers=headers).json()
+        if account["identifier"] == "13297540721"
+    )
 
     deactivate_response = client.post(
         "/api/admin/accounts/batch",
@@ -371,6 +446,8 @@ def test_admin_cannot_lock_out_self(tmp_path: Path, monkeypatch) -> None:
     assert role_response.status_code == 400
     assert role_response.json()["detail"] == "不能移除当前登录管理员权限"
 
-    delete_response = client.delete(f"/api/admin/accounts/{admin['uid']}", headers=headers)
+    delete_response = client.delete(
+        f"/api/admin/accounts/{admin['uid']}", headers=headers
+    )
     assert delete_response.status_code == 400
     assert delete_response.json()["detail"] == "不能删除当前登录管理员"
