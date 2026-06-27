@@ -49,17 +49,17 @@ def test_register_persists_user_and_returns_jwt(tmp_path: Path) -> None:
     assert login_response.json()["user"]["role"] == "student"
 
 
-def test_register_can_create_teacher_role(tmp_path: Path) -> None:
+def test_register_can_create_admin_role(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
     response = client.post(
         "/api/auth/register",
         json={
-            "username": "教师用户",
-            "identifier": "teacher@example.com",
+            "username": "管理员用户",
+            "identifier": "admin@example.com",
             "password": "learn-agent-123",
             "confirm_password": "learn-agent-123",
-            "role": "teacher",
+            "role": "admin",
             "school": "南山大学",
             "major": "软件工程",
             "class_name": "一班",
@@ -67,7 +67,7 @@ def test_register_can_create_teacher_role(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 201
-    assert response.json()["user"]["role"] == "teacher"
+    assert response.json()["user"]["role"] == "admin"
 
 
 def test_register_rejects_class_name_equal_to_identifier(tmp_path: Path) -> None:

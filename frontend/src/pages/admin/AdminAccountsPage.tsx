@@ -58,7 +58,6 @@ const emptyDraft: AccountDraft = {
 
 const roleLabels: Record<AuthRole, string> = {
 	student: "学生",
-	teacher: "管理员",
 	admin: "管理员",
 };
 
@@ -94,7 +93,7 @@ function toDraft(account: AuthUser): AccountDraft {
 		username: account.username,
 		identifier: account.identifier,
 		password: "",
-		role: account.role === "teacher" ? "admin" : account.role,
+		role: account.role,
 		is_active: account.is_active,
 		school: account.school,
 		major: account.major,
@@ -162,12 +161,11 @@ export function AdminAccountsPage({
 	const visibleAccounts = useMemo(() => {
 		const text = query.trim().toLowerCase();
 		return accounts.filter((account) => {
-			const effectiveRole = account.role === "teacher" ? "admin" : account.role;
 			const matchesText =
 				!text ||
 				account.username.toLowerCase().includes(text) ||
 				account.identifier.toLowerCase().includes(text);
-			const matchesRole = roleFilter === "all" || effectiveRole === roleFilter;
+			const matchesRole = roleFilter === "all" || account.role === roleFilter;
 			const matchesStatus =
 				statusFilter === "all" ||
 				(statusFilter === "active" ? account.is_active : !account.is_active);

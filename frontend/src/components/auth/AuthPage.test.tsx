@@ -69,7 +69,7 @@ describe("AuthPage", () => {
 		expect(screen.getByText("动态更新的多Agent协同学习系统")).toBeTruthy();
 	});
 
-	it("routes teacher login to the program management page", async () => {
+	it("routes admin login to the program management page", async () => {
 		vi.stubGlobal("localStorage", {
 			getItem: vi.fn(),
 			setItem: vi.fn(),
@@ -80,7 +80,7 @@ describe("AuthPage", () => {
 		});
 		const login = vi.fn().mockResolvedValue({
 			...makeAuthResponse("password"),
-			user: { ...mockUser, role: "teacher" as const },
+			user: { ...mockUser, role: "admin" as const },
 		});
 
 		render(

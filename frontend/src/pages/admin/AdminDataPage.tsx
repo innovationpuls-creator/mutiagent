@@ -363,7 +363,7 @@ function CohortPanel({
 					<span>{cohort.major}</span>
 					<span>{cohort.class_name}</span>
 					<span>{cohort.student_count}</span>
-					<span>{cohort.teacher_count}</span>
+					<span>{cohort.admin_count}</span>
 					<span>
 						{cohort.has_program
 							? (cohort.program_teacher_name ?? "已发布")

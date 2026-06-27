@@ -1,6 +1,6 @@
 export type AuthMode = "login" | "register";
 export type AuthEntry = "student" | "admin";
-export type AuthRole = "student" | "teacher" | "admin";
+export type AuthRole = "student" | "admin";
 export type OAuthProvider = "qq" | "xuexitong";
 export type AuthType = "password" | "oauth";
 

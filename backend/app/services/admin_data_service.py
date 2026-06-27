@@ -29,10 +29,11 @@ from app.services.cultivation_program_service import (
 
 def get_data_overview(session: Session) -> DataOverviewResponse:
     users = session.exec(select(User)).all()
-    accounts = {"student": 0, "teacher": 0, "admin": 0}
+    accounts = {"student": 0, "admin": 0}
     cohorts = set()
     for user in users:
-        accounts[user.role] = accounts.get(user.role, 0) + 1
+        role = "admin" if user.role in {"admin", "teacher"} else "student"
+        accounts[role] = accounts.get(role, 0) + 1
         if user.school.strip() and user.major.strip() and user.class_name.strip():
             cohorts.add((user.school, user.major, user.class_name))
 
@@ -61,7 +62,7 @@ def get_data_overview(session: Session) -> DataOverviewResponse:
 def list_data_cohorts(session: Session) -> list[DataCohortRead]:
     users = session.exec(select(User)).all()
     grouped: dict[tuple[str, str, str], dict[str, int]] = defaultdict(
-        lambda: {"student": 0, "teacher": 0, "admin": 0}
+        lambda: {"student": 0, "admin": 0}
     )
     for user in users:
         if (
@@ -70,7 +71,8 @@ def list_data_cohorts(session: Session) -> list[DataCohortRead]:
             or not user.class_name.strip()
         ):
             continue
-        grouped[(user.school, user.major, user.class_name)][user.role] += 1
+        role = "admin" if user.role in {"admin", "teacher"} else "student"
+        grouped[(user.school, user.major, user.class_name)][role] += 1
 
     programs = session.exec(select(CultivationProgram)).all()
     program_map = {
@@ -87,7 +89,6 @@ def list_data_cohorts(session: Session) -> list[DataCohortRead]:
                 major=major,
                 class_name=class_name,
                 student_count=counts["student"],
-                teacher_count=counts["teacher"],
                 admin_count=counts["admin"],
                 has_program=program is not None,
                 program_teacher_name=teacher.username if teacher else None,

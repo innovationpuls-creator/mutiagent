@@ -32,7 +32,6 @@ function rememberSproutInitOverlay() {
 
 function routeForAuthResult(authResult: AuthResponse): string {
 	if (authResult.user.role === "admin") return "/admin/programs";
-	if (authResult.user.role === "teacher") return "/admin/programs";
 	return "/sprout";
 }
 

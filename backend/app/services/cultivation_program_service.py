@@ -171,7 +171,7 @@ def delete_program_for_cohort(
 
 
 def _require_program_manager(user: User) -> None:
-    if user.role not in {"teacher", "admin"}:
+    if user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="需要管理端权限"
         )

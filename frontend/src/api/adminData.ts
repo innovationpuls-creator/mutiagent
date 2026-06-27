@@ -14,7 +14,6 @@ export interface DataCohort {
 	major: string;
 	class_name: string;
 	student_count: number;
-	teacher_count: number;
 	admin_count: number;
 	has_program: boolean;
 	program_teacher_name: string | null;

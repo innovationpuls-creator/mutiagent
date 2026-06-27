@@ -19,6 +19,7 @@ def run_schema_upgrades(engine: Engine) -> None:
     """
     with engine.begin() as connection:
         _upgrade_user_role_column(connection)
+        _migrate_teachers_to_admins(connection)
         _upgrade_user_cohort_columns(connection)
         _upgrade_course_knowledge_outline_table(connection)
         _upgrade_profile_json_storage(connection)
@@ -66,6 +67,15 @@ def _upgrade_user_role_column(connection: Any) -> None:
         )
     )
     connection.execute(text('CREATE INDEX IF NOT EXISTS ix_user_role ON "user" (role)'))
+
+
+def _migrate_teachers_to_admins(connection: Any) -> None:
+    inspector = inspect(connection)
+    if not inspector.has_table("user"):
+        return
+    connection.execute(
+        text("UPDATE \"user\" SET role = 'admin' WHERE role = 'teacher';")
+    )
 
 
 def _upgrade_user_cohort_columns(connection: Any) -> None:

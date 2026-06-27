@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 OAuthProvider = Literal["qq", "xuexitong"]
 AuthType = Literal["password", "oauth"]
-UserRole = Literal["student", "teacher", "admin"]
+UserRole = Literal["student", "admin"]
 AdminBatchAction = Literal["activate", "deactivate", "delete", "set_role"]
 
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
@@ -221,7 +221,6 @@ class DataCohortRead(BaseModel):
     major: str
     class_name: str
     student_count: int
-    teacher_count: int
     admin_count: int
     has_program: bool
     program_teacher_name: str | None = None

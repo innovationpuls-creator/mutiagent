@@ -42,7 +42,7 @@ CSV_FIELDS = [
     "major",
     "class_name",
 ]
-VALID_ROLES = {"student", "teacher", "admin"}
+VALID_ROLES = {"student", "admin"}
 
 
 def list_accounts(session: Session) -> list[UserRead]:
@@ -348,7 +348,7 @@ def _required(row: dict[str, str], key: str) -> str:
 def _parse_role(value: str | None) -> str:
     role = (value or "").strip()
     if role not in VALID_ROLES:
-        raise ValueError("role 必须是 student、teacher 或 admin")
+        raise ValueError("role 必须是 student 或 admin")
     return role
 
 

@@ -139,7 +139,7 @@ describe("App routing", () => {
 	});
 
 	it("renders teacher route for authenticated users", async () => {
-		stubStoredAuth(true, "teacher");
+		stubStoredAuth(true, "admin");
 		window.history.replaceState({}, "", "/teacher");
 
 		renderApp();

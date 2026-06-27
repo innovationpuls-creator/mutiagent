@@ -1,64 +1,79 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
 const viewports = [
-  { name: 'mobile', width: 375, height: 812 },
-  { name: 'tablet', width: 768, height: 900 },
-  { name: 'desktop', width: 1280, height: 900 },
+	{ name: "mobile", width: 375, height: 812 },
+	{ name: "tablet", width: 768, height: 900 },
+	{ name: "desktop", width: 1280, height: 900 },
 ] as const;
 
 for (const viewport of viewports) {
-  test(`auth page renders cleanly at ${viewport.name}`, async ({ page }) => {
-    const consoleIssues: string[] = [];
-    page.on('console', (message) => {
-      if (message.type() === 'error' || message.type() === 'warning') {
-        consoleIssues.push(message.text());
-      }
-    });
+	test(`auth page renders cleanly at ${viewport.name}`, async ({ page }) => {
+		const consoleIssues: string[] = [];
+		page.on("console", (message) => {
+			if (message.type() === "error" || message.type() === "warning") {
+				consoleIssues.push(message.text());
+			}
+		});
 
-    await page.setViewportSize(viewport);
-    await page.goto('/');
-    await expect(page.getByRole('heading', { name: '从一句轻声的提问，到一张自然舒展的学习地图。' })).toBeVisible();
-    await expect(page.getByText('one-tree')).toBeVisible();
-    await expect(page.getByRole('button', { name: '进入系统' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '学习通登录' })).toBeVisible();
-    await page.screenshot({ path: `test-results/auth-${viewport.name}.png`, fullPage: true });
-    expect(consoleIssues).toEqual([]);
-  });
+		await page.setViewportSize(viewport);
+		await page.goto("/");
+		await expect(
+			page.getByRole("heading", {
+				name: "从一句轻声的提问，到一张自然舒展的学习地图。",
+			}),
+		).toBeVisible();
+		await expect(page.getByText("one-tree")).toBeVisible();
+		await expect(page.getByRole("button", { name: "进入系统" })).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: "学习通登录" }),
+		).toBeVisible();
+		await page.screenshot({
+			path: `test-results/auth-${viewport.name}.png`,
+			fullPage: true,
+		});
+		expect(consoleIssues).toEqual([]);
+	});
 }
 
-test('oauth button shows QR panel without automatic success', async ({ page }) => {
-  await page.goto('/');
-  await page.getByRole('button', { name: /学习通登录/ }).click();
-  await expect(page.getByRole('dialog', { name: '扫码登录' })).toBeVisible();
-  await expect(page.getByLabel('学习通 登录二维码')).toBeVisible();
-  await expect(page.getByAltText('学习通 登录二维码')).toBeVisible();
-  await expect(page.getByText('思绪已对齐')).toBeHidden();
+test("oauth button shows QR panel without automatic success", async ({
+	page,
+}) => {
+	await page.goto("/");
+	await page.getByRole("button", { name: /学习通登录/ }).click();
+	await expect(page.getByRole("dialog", { name: "扫码登录" })).toBeVisible();
+	await expect(page.getByLabel("学习通 登录二维码")).toBeVisible();
+	await expect(page.getByAltText("学习通 登录二维码")).toBeVisible();
+	await expect(page.getByText("思绪已对齐")).toBeHidden();
 });
 
-test('reduced motion disables active animations', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/');
-  const animationCount = await page.locator('.auth-page').evaluate((element) => {
-    return element.getAnimations({ subtree: true }).length;
-  });
+test("reduced motion disables active animations", async ({ page }) => {
+	await page.emulateMedia({ reducedMotion: "reduce" });
+	await page.goto("/");
+	const animationCount = await page
+		.locator(".auth-page")
+		.evaluate((element) => {
+			return element.getAnimations({ subtree: true }).length;
+		});
 
-  expect(animationCount).toBe(0);
+	expect(animationCount).toBe(0);
 });
 
-test('dark mode uses dark material tokens', async ({ page }) => {
-  await page.emulateMedia({ colorScheme: 'dark' });
-  await page.goto('/');
-  const surfaceTokens = await page.locator('.auth-right-surface').evaluate((element) => {
-    const styles = getComputedStyle(element);
-    return {
-      inset: styles.getPropertyValue('--auth-dark-inset').trim(),
-      text: styles.getPropertyValue('--auth-dark-text').trim(),
-    };
-  });
+test("dark mode uses dark material tokens", async ({ page }) => {
+	await page.emulateMedia({ colorScheme: "dark" });
+	await page.goto("/");
+	const surfaceTokens = await page
+		.locator(".auth-right-surface")
+		.evaluate((element) => {
+			const styles = getComputedStyle(element);
+			return {
+				inset: styles.getPropertyValue("--auth-dark-inset").trim(),
+				text: styles.getPropertyValue("--auth-dark-text").trim(),
+			};
+		});
 
-  expect(surfaceTokens).toEqual({
-    inset: 'oklch(18% 0.018 248)',
-    text: 'oklch(94% 0.02 75)',
-  });
-  await expect(page.getByText('欢迎回来')).toBeVisible();
+	expect(surfaceTokens).toEqual({
+		inset: "oklch(18% 0.018 248)",
+		text: "oklch(94% 0.02 75)",
+	});
+	await expect(page.getByText("欢迎回来")).toBeVisible();
 });

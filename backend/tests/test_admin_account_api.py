@@ -42,10 +42,10 @@ def test_admin_can_manage_accounts(tmp_path: Path, monkeypatch) -> None:
         "/api/admin/accounts",
         headers=headers,
         json={
-            "username": "教师用户",
-            "identifier": "teacher-admin-api@example.com",
-            "password": "teacher-password-123",
-            "role": "teacher",
+            "username": "管理员用户",
+            "identifier": "admin-api-test@example.com",
+            "password": "admin-password-123",
+            "role": "admin",
             "is_active": True,
             "school": "南山大学",
             "major": "软件工程",
@@ -55,14 +55,14 @@ def test_admin_can_manage_accounts(tmp_path: Path, monkeypatch) -> None:
 
     assert create_response.status_code == 201
     created = create_response.json()
-    assert created["username"] == "教师用户"
-    assert created["role"] == "teacher"
+    assert created["username"] == "管理员用户"
+    assert created["role"] == "admin"
     assert created["is_active"] is True
 
     list_response = client.get("/api/admin/accounts", headers=headers)
     assert list_response.status_code == 200
     assert any(
-        account["identifier"] == "teacher-admin-api@example.com"
+        account["identifier"] == "admin-api-test@example.com"
         for account in list_response.json()
     )
 
@@ -201,7 +201,7 @@ def test_admin_batch_updates_accounts(tmp_path: Path, monkeypatch) -> None:
         headers=headers,
         json={
             "action": "set_role",
-            "role": "teacher",
+            "role": "admin",
             "uids": [first["uid"], second["uid"]],
         },
     )
@@ -210,7 +210,7 @@ def test_admin_batch_updates_accounts(tmp_path: Path, monkeypatch) -> None:
         account["role"]
         for account in role_response.json()
         if account["uid"] in {first["uid"], second["uid"]}
-    } == {"teacher"}
+    } == {"admin"}
 
     delete_response = client.post(
         "/api/admin/accounts/batch",
@@ -391,7 +391,7 @@ def test_admin_import_updates_existing_and_exports_csv(
     )
     csv_text = (
         "username,identifier,password,role,is_active,school,major,class_name\n"
-        "新账号,import-new@example.com,new-password-123,teacher,true,南山大学,软件工程,一班\n"
+        "新账号,import-new@example.com,new-password-123,admin,true,南山大学,软件工程,一班\n"
         "新姓名,import-existing@example.com,,admin,false,南山大学,软件工程,二班\n"
         "坏账号,bad@example.com,,student,true,南山大学,软件工程,三班\n"
         "错班级,18771701100,student-password-123,student,true,wc,计算机,18771701100\n"
@@ -423,7 +423,7 @@ def test_admin_import_updates_existing_and_exports_csv(
         for account in accounts
         if account["identifier"] == "import-existing@example.com"
     )
-    assert new_account["role"] == "teacher"
+    assert new_account["role"] == "admin"
     assert new_account["school"] == "南山大学"
     assert new_account["major"] == "软件工程"
     assert new_account["class_name"] == "一班"

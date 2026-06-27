@@ -57,8 +57,8 @@ def test_teacher_program_publish_is_unique_per_cohort_and_student_matches(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = make_client(tmp_path, monkeypatch)
-    teacher = register(client, "teacher-program@example.com", "teacher")
-    other_teacher = register(client, "teacher-program-2@example.com", "teacher")
+    teacher = register(client, "teacher-program@example.com", "admin")
+    other_teacher = register(client, "teacher-program-2@example.com", "admin")
     student = register(client, "student-program@example.com", "student")
 
     publish_response = client.post(
@@ -93,7 +93,7 @@ def test_student_matching_requires_exact_school_major_and_class_name(
 ) -> None:
     client = make_client(tmp_path, monkeypatch)
     teacher = register(
-        client, "exact-teacher@example.com", "teacher", class_name="一班"
+        client, "exact-teacher@example.com", "admin", class_name="一班"
     )
     student = register(
         client, "exact-student@example.com", "student", class_name="二班"

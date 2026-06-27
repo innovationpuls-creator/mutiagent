@@ -558,7 +558,7 @@ export interface components {
 			/** Uids */
 			uids: string[];
 			/** Role */
-			role?: ("student" | "teacher" | "admin") | null;
+			role?: ("student" | "admin") | null;
 		};
 		/** AdminAccountCreateRequest */
 		AdminAccountCreateRequest: {
@@ -572,7 +572,7 @@ export interface components {
 			 * Role
 			 * @enum {string}
 			 */
-			role: "student" | "teacher" | "admin";
+			role: "student" | "admin";
 			/**
 			 * Is Active
 			 * @default true
@@ -620,7 +620,7 @@ export interface components {
 			 * Role
 			 * @enum {string}
 			 */
-			role: "student" | "teacher" | "admin";
+			role: "student" | "admin";
 			/** Is Active */
 			is_active: boolean;
 			/** Password */
@@ -853,8 +853,6 @@ export interface components {
 			class_name: string;
 			/** Student Count */
 			student_count: number;
-			/** Teacher Count */
-			teacher_count: number;
 			/** Admin Count */
 			admin_count: number;
 			/** Has Program */
@@ -1172,7 +1170,7 @@ export interface components {
 			 * @default student
 			 * @enum {string}
 			 */
-			role: "student" | "teacher" | "admin";
+			role: "student" | "admin";
 			/** School */
 			school: string;
 			/** Major */
@@ -1258,7 +1256,7 @@ export interface components {
 			 * Role
 			 * @enum {string}
 			 */
-			role: "student" | "teacher" | "admin";
+			role: "student" | "admin";
 			/** School */
 			school: string;
 			/** Major */

@@ -28,9 +28,11 @@ function normalizeUser(user: AuthUser): AuthUser {
 		major: typeof user.major === "string" ? user.major : "",
 		class_name: typeof user.class_name === "string" ? user.class_name : "",
 	};
-	if (normalized.role === "teacher") return { ...normalized, role: "admin" };
-	if (normalized.role === "admin") return normalized;
-	return { ...normalized, role: "student" };
+	const role =
+		(normalized.role as string) === "teacher" || normalized.role === "admin"
+			? "admin"
+			: "student";
+	return { ...normalized, role };
 }
 
 function loadAuth(): { user: AuthUser; token: string } | null {
