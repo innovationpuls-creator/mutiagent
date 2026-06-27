@@ -92,7 +92,7 @@ graph TD
 | **后端框架** | FastAPI / uvicorn | 提供高性能异步 Web API 与 SSE 流式事件流 |
 | **智能体编排**| LangGraph | 基于图结构的状态机编排，实现多 Agent 灵活交互 |
 | **大模型调用**| LangChain / structured_output | 实现 prompt 模板注入及 Pydantic 结构化输出解析 |
-| **数据持久化**| PostgreSQL (JSONB) / SQLModel | JSONB 格式高效保存动态画像与路径，兼容轻量化 SQLite 测试 |
+| **数据持久化**| PostgreSQL (JSONB) / SQLModel | JSONB 格式高效保存动态画像与路径，支持多级智能体状态与历史数据持久化 |
 
 ---
 
@@ -141,13 +141,6 @@ CREATE DATABASE mutiagent OWNER mutiagent;
 GRANT ALL PRIVILEGES ON DATABASE mutiagent TO mutiagent;
 \q
 ```
-
-#### 💡 可选：本地免装 PostgreSQL (SQLite 回退)
-如果您不想在本地安装 Postgres 服务，可以直接将 `.env` 配置文件中的 `DATABASE_URL` 设置为本地 SQLite 单文件地址：
-```ini
-DATABASE_URL=sqlite:///./app.db
-```
-后端检测到 sqlite 协议后会自动注入多线程兼容参数 `check_same_thread=False`。
 
 ### 3. 后端服务启动
 

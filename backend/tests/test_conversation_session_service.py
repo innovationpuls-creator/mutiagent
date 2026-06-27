@@ -123,6 +123,14 @@ def test_replace_latest_learning_path_intake_message(tmp_path: Path) -> None:
     init_db(engine)
 
     with Session(engine) as session:
+        session.add(
+            User(
+                uid="user-1",
+                username="会话用户",
+                identifier="conversation-session@example.com",
+            )
+        )
+        session.commit()
         load_or_create_session(session, "session-intake", "user-1")
         first = {
             "type": "learning_path_intake",

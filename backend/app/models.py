@@ -4,26 +4,9 @@ from datetime import datetime, timezone
 
 from sqlalchemy import Column, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.types import JSON as SAJSON
-
-# Use JSONB for PostgreSQL, fall back to JSON for SQLite/test environments
-from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
-
-class _JSONBOrJSON(TypeDecorator):
-    """Use JSONB on PostgreSQL, plain JSON on SQLite."""
-
-    impl = SAJSON
-    cache_ok = True
-
-    def load_dialect_impl(self, dialect):
-        if dialect.name == "postgresql":
-            return dialect.type_descriptor(JSONB(none_as_null=False))
-        return dialect.type_descriptor(SAJSON())
-
-
-_jsonb = _JSONBOrJSON
+_jsonb = JSONB(none_as_null=False)
 
 
 class User(SQLModel, table=True):

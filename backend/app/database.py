@@ -22,8 +22,6 @@ _engine: Engine | None = None
 
 
 def build_engine(database_url: str = DATABASE_URL) -> Engine:
-    if database_url.startswith("sqlite"):
-        return create_engine(database_url, connect_args={"check_same_thread": False})
     return create_engine(
         database_url,
         pool_pre_ping=True,

@@ -156,4 +156,4 @@ data: {
 
 虽然 LangGraph 在图的节点间流动状态，但在 FastAPI 响应的最后阶段，系统会进行持久化以确保状态安全：
 * 每一轮 Supervisor 或 Worker 执行对画像、按年级路径、课程大纲造成的修改，在单轮 Graph 执行结束后，会通过各自的 ORM 服务保存回 PostgreSQL。
-* **消息历史**：用户的提问与 LLM 生成的 `text_chunk` 文本在单轮结束后会被包装为 `BaseMessage` 结构并整体追加持久化到 `ConversationSession`（存储在 SQLite/Postgre 的 JSONB 中），避免由于无 checkpoint 而遗忘历史对话。
+* **消息历史**：用户的提问与 LLM 生成的 `text_chunk` 文本在单轮结束后会被包装为 `BaseMessage` 结构并整体追加持久化到 `ConversationSession`（存储在 PostgreSQL 的 JSONB 中），避免由于无 checkpoint 而遗忘历史对话。

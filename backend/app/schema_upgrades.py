@@ -61,7 +61,8 @@ def _upgrade_user_role_column(connection: Any) -> None:
 
     connection.execute(
         text(
-            "ALTER TABLE \"user\" ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'student'"
+            'ALTER TABLE "user" ADD COLUMN role VARCHAR(16) '
+            "NOT NULL DEFAULT 'student'"
         )
     )
     connection.execute(text('CREATE INDEX IF NOT EXISTS ix_user_role ON "user" (role)'))
@@ -77,25 +78,26 @@ def _upgrade_user_cohort_columns(connection: Any) -> None:
         if column_name not in columns:
             connection.execute(
                 text(
-                    f"ALTER TABLE \"user\" ADD COLUMN {column_name} VARCHAR(128) NOT NULL DEFAULT ''"
+                    f'ALTER TABLE "user" ADD COLUMN {column_name} '
+                    "VARCHAR(128) NOT NULL DEFAULT ''"
                 )
             )
             connection.execute(
                 text(
-                    f'CREATE INDEX IF NOT EXISTS ix_user_{column_name} ON "user" ({column_name})'
+                    f"CREATE INDEX IF NOT EXISTS ix_user_{column_name} "
+                    f'ON "user" ({column_name})'
                 )
             )
 
 
 def _upgrade_profile_json_storage(connection: Any) -> None:
-    if connection.dialect.name != "postgresql":
-        return
     inspector = inspect(connection)
     if not inspector.has_table("userprofile"):
         return
     connection.execute(
         text(
-            "ALTER TABLE userprofile ALTER COLUMN profile_data TYPE JSONB USING profile_data::jsonb"
+            "ALTER TABLE userprofile ALTER COLUMN profile_data "
+            "TYPE JSONB USING profile_data::jsonb"
         )
     )
 
@@ -109,16 +111,15 @@ def _upgrade_course_knowledge_outline_table(connection: Any) -> None:
         column["name"] for column in inspector.get_columns("usercourseknowledgeoutline")
     }
     needs_rebuild = not {"course_id", "grade_year"}.issubset(columns)
-    if connection.dialect.name == "postgresql":
-        outline_type = next(
-            (
-                str(column["type"]).lower()
-                for column in inspector.get_columns("usercourseknowledgeoutline")
-                if column["name"] == "outline_data"
-            ),
-            "",
-        )
-        needs_rebuild = needs_rebuild or outline_type != "jsonb"
+    outline_type = next(
+        (
+            str(column["type"]).lower()
+            for column in inspector.get_columns("usercourseknowledgeoutline")
+            if column["name"] == "outline_data"
+        ),
+        "",
+    )
+    needs_rebuild = needs_rebuild or outline_type != "jsonb"
 
     if not needs_rebuild:
         return
@@ -134,16 +135,15 @@ def _upgrade_course_knowledge_outline_table(connection: Any) -> None:
 
 
 def _create_course_knowledge_outline_table(connection: Any) -> None:
-    json_type = "JSONB" if connection.dialect.name == "postgresql" else "JSON"
     connection.execute(
         text(
-            f"""
+            """
             CREATE TABLE usercourseknowledgeoutline (
                 user_uid VARCHAR NOT NULL,
                 course_id VARCHAR(128) NOT NULL,
                 grade_year VARCHAR(16) NOT NULL,
                 course_name VARCHAR(256) NOT NULL,
-                outline_data {json_type},
+                outline_data JSONB,
                 created_at TIMESTAMP NOT NULL,
                 updated_at TIMESTAMP NOT NULL,
                 PRIMARY KEY (user_uid, course_id),
@@ -172,17 +172,14 @@ def _copy_course_knowledge_outline_rows(connection: Any, legacy_table: str) -> N
 
     course_expr = "course_id" if "course_id" in columns else "course_node_id"
     grade_expr = "grade_year" if "grade_year" in columns else "grade_id"
-    outline_expr = (
-        "outline_data::jsonb"
-        if connection.dialect.name == "postgresql"
-        else "outline_data"
-    )
+    outline_expr = "outline_data::jsonb"
 
     connection.execute(
         text(
             f"""
             INSERT INTO usercourseknowledgeoutline
-                (user_uid, course_id, grade_year, course_name, outline_data, created_at, updated_at)
+                (user_uid, course_id, grade_year, course_name,
+                 outline_data, created_at, updated_at)
             SELECT
                 user_uid,
                 {course_expr},
