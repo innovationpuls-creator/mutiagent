@@ -1,407 +1,579 @@
 # RAG 知识库与多智能体教材集成设计规格说明书
 
-本设计文档旨在为“一棵树 (OneTree)”系统引入一套基于 **PostgreSQL 特性 (JSONB + pgvector + tsvector)** 的原生 RAG/CAG 教材集成方案。本方案通过**“检索引导的 CAG（Retrieval-guided CAG）”**机制，消除原智能体链中依靠“大模型参数盲猜”生成课程及大纲的缺陷，将所有推荐与生成限制在管理员/教师审核通过的高质量教材范围内。
+本设计文档定义“一棵树 (OneTree)”第一期知识库教学闭环。第一期只做人工发布闸门下的主教材知识库：先有管理员发布的知识库，再由草案智能体、路径智能体、章节智能体和 Markdown 智能体基于知识库生成学生侧内容。
+
+核心原则：
+
+- 不生成无来源课程。
+- 不把未发布教材用于学生侧推荐或内容生成。
+- 原始教材可以是英文，学生侧章节目录和 Markdown 必须是中文。
+- 管理员 Agent 可以整理教材和扩展资料，但所有主教材必须经管理员发布后才进入学生侧。
+- 学生侧章节目录可以个性化，但每个章节必须绑定连续的原教材小节中文正文。
+- Markdown 必须读取绑定的原教材小节正文后生成，不允许只根据章节标题生成。
 
 ---
 
-## 1. 项目愿景与使用流程 (Project Vision & Complete User Flows)
+## 1. 第一期范围
 
-### 1.1 教师/管理员端流程与预期效果
-1. **教材上传阶段**：
-   * 教师登录后台，访问 `/admin/knowledge-base`。
-   * 点击“上传教材”，在弹窗中选择 PDF 文件，输入教材名称（如《Python高级Web开发》），并添加专业标签（如：`["后端开发", "软件工程", "大三"]`）。
-   * 提交后，教材进入“正在解析”状态。
-   * **后台自动切片管道**：如果 PDF 页数超过 200 页或大小超过 30MB，系统在内存中自动使用 Python 进行分片处理，异步调用阿里云百炼文档解析 API，获取高保真 Markdown 全文。
-2. **大纲微调与定位阶段**：
-   * 后台调用大模型，利用结构化输出（`with_structured_output`）提取整本书的规范大纲 JSON（包括章节及小节名称）。
-   * 后台 Python 以此结构化大纲为引导，在 Markdown 全文里自动检索各章节、小节标题的物理位置（`index`），执行精准切片，存入 `textbook_section_content`（小节内容表）。
-   * 教师点击“编辑大纲”，弹出一个可视化的树形大纲编辑器（TOC Editor）。如果发现某节标题有 OCR 解析误差，可以直接修改并保存，直接更新数据库大纲 JSON。
-3. **教材自主采购队列（KB Agent 审批）**：
-   * 当有学生在前端聊天框中请求了知识库目前尚未覆盖的主题时，后台触发 **`admin_kb_agent`**。
-   * KB Agent 自动联网检索，找到公开优质的教材 PDF 和大纲，以 `pending_approval` 状态新增至教师后台的“待审采购教材”列表中。
-   * 教师点击“同意采购”，系统自动下载、解析、切片并发布。
+### 1.1 第一期开启的能力
 
-### 1.2 学生端流程与预期效果
-1. **画像收集与推荐草稿**：
-   * 学生完成初始画像对话后，表达了想学“后端开发”的意图。
-   * 系统通过混合检索，从数据库粗筛出匹配的 Top 15-20 本教材元数据（书名、标签）。
-   * **`learning_path_intake_agent` (草案 Agent)** 在聊天框中以卡片形式输出推荐课程草案（大模型整篇读入这 15-20 本教材的完整大纲作为上下文进行全局规划，绝不猜错书名）。
-2. **草案微调与路径规划**：
-   * 学生在对话框中反馈：“我不想学 Django，帮我换成 FastAPI”。
-   * 草案 Agent 在候选教材中匹配到《FastAPI 高效开发指南》，在聊天框中更新推荐清单，并在下方显示「确认并生成路径」与「修改画像」按钮。
-   * 学生点击「确认并生成路径」，**`learning_path_agent`** 将其编排为 4 年级课程规划，每个课程节点内置对应的 `textbook_id`。
-3. **确定性章节展开**：
-   * 学生进入“分支页（BranchPage）”查看 4 年路径，点击课程进入“展叶页（LeafPage）”。
-   * **`course_knowledge_agent` (章节 Agent)** 直接从数据库读取对应的 `outline` JSON 渲染出目录，不经过任何大模型脑补，生成大纲是 **100% 确定且精准的**。
-4. **Markdown 原文精读生成**：
-   * 学生点击学习“第一章第二节：依赖注入”。
-   * 触发 **`section_markdown_agent`**，后端直接查询该教材第一章该小节的完整正文（`textbook_section_content.content`，约 2000-5000 字），整篇塞入大模型上下文。
-   * 由于精准定位到小节正文，避免了长达数万字的整章文本塞入，**彻底规避了大模型超时（FastAPI 180s超时限制）与 Token 浪费问题**。
-   * 大模型输出的高保真 Markdown 文档有据可查，保证了教学内容的权威性与严肃性。
+1. 管理员维护可信来源清单。
+2. 管理员上传完整教材，或让管理员 Agent 从可信来源清单内寻找完整教材。
+3. 管理员 Agent 整理教材到中文目录和中文小节正文级别。
+4. 管理员校对中文目录后发布教材。
+5. 草案智能体基于已发布教材推荐 4-8 门“课程主题 + 来源教材”。
+6. 学生确认课程草案。
+7. 路径智能体基于已确认课程和来源教材组织正式学习路径。
+8. 学生通过当前项目已有的全局 AI 对话预填提示词触发学生侧章节目录生成。
+9. 章节智能体基于路径信息、学生画像和教材目录生成学生侧章节目录。
+10. Markdown 智能体基于学生侧章节绑定的原教材小节正文生成中文教学 Markdown。
+11. 小节末尾展示最多 3 条扩展资料卡。
+12. 知识库未覆盖时，学生侧不生成无来源课程，并生成管理员后台缺口代办。
+
+### 1.2 第一期不做的能力
+
+- 不做自动采购和自动发布。
+- 不做来源清单外资料自动进入主教材知识库。
+- 不做无来源课程生成。
+- 不做学生反馈纠错闭环。
+- 不做学生可见版本历史。
+- 不保留重新生成章节目录前的旧版本历史。
+- 不要求管理员逐节校对正文。
+- 不在学生侧实时翻译教材。
+- 不在学生打开章节时实时检索扩展资料。
+- 不把课程讲义、单篇 PDF、网页资料作为主教材推荐来源。
 
 ---
 
-## 2. 数据库设计 (PostgreSQL Schema)
+## 2. 产品角色与职责
 
-### 2.1 SQL DDL 结构
-```sql
--- 启用向量扩展及模糊查询扩展
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+### 2.1 管理员
 
--- 教材主表
-CREATE TABLE textbook (
-    id VARCHAR(64) PRIMARY KEY,
-    title VARCHAR(256) NOT NULL,
-    author VARCHAR(128),
-    tags JSONB DEFAULT '[]',
-    outline JSONB DEFAULT '{}',
-    status VARCHAR(32) NOT NULL DEFAULT 'processing',
-    source_link TEXT,
-    embedding VECTOR(1536), -- 用于教材元数据的初筛检索 (对应千问/OpenAI embedding 维度)
-    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL
-);
+管理员负责知识库发布权。
 
--- 教材小节内容表 (颗粒度下沉至小节以保障 CAG 性能)
-CREATE TABLE textbook_section_content (
-    id VARCHAR(64) PRIMARY KEY,
-    textbook_id VARCHAR(64) REFERENCES textbook(id) ON DELETE CASCADE,
-    chapter_number INTEGER NOT NULL,
-    section_id VARCHAR(64) NOT NULL,
-    title VARCHAR(256) NOT NULL,
-    content TEXT NOT NULL,
-    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL
-);
+管理员可以：
 
--- 建立索引
-CREATE INDEX idx_textbook_title ON textbook (title);
-CREATE INDEX idx_textbook_status ON textbook (status);
-CREATE INDEX idx_textbook_outline_gin ON textbook USING gin (outline);
-CREATE INDEX idx_textbook_embedding_hnsw ON textbook USING hnsw (embedding vector_cosine_ops);
-CREATE INDEX idx_textbook_section_textbook_id ON textbook_section_content (textbook_id);
-CREATE UNIQUE INDEX idx_textbook_section_unique_id ON textbook_section_content (textbook_id, section_id);
-```
+- 维护可信来源清单。
+- 上传完整教材。
+- 让管理员 Agent 在可信来源清单内寻找完整教材。
+- 查看教材整理状态。
+- 校对中文目录。
+- 查看缺少扩展资料的小节数量。
+- 发布、下架或删除教材。
+- 处理知识库缺口代办。
 
-### 2.2 SQLModel ORM 声明
-```python
-import os
-from datetime import datetime
-from typing import Optional, List, Dict, Any
-from sqlmodel import SQLModel, Field, Column
-from sqlalchemy.dialects.postgresql import JSONB
-import sqlalchemy as sa
+管理员不需要在第一期逐节校对正文。正文可以查看和追溯，但不是发布硬性步骤。
 
-# 动态配置向量维度防止 API 升级导致维数不兼容
-EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIMENSION", "1536"))
+### 2.2 管理员 Agent
 
-class Textbook(SQLModel, table=True):
-    """教材主表（存储元数据及大纲结构）"""
-    __tablename__ = "textbook"
+管理员 Agent 负责教材和扩展资料整理。
 
-    id: str = Field(primary_key=True, index=True)
-    title: str = Field(index=True, nullable=False, description="教材书名")
-    author: Optional[str] = Field(default=None, description="作者")
-    tags: List[str] = Field(default_factory=list, sa_column=Column(JSONB), description="专业/方向标签")
-    outline: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSONB), description="教材大纲目录结构 JSON")
-    status: str = Field(default="processing", index=True, description="解析状态: pending_approval/processing/success/failed")
-    source_link: Optional[str] = Field(default=None, description="下载/采购来源链接")
-    # sa_column 处动态指定向量维度
-    embedding: Optional[List[float]] = Field(
-        default=None, 
-        sa_column=Column(sa.dialects.postgresql.ARRAY(sa.Float)), 
-        description="教材元数据向量"
-    )
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+管理员 Agent 可以：
 
-class TextbookSectionContent(SQLModel, table=True):
-    """教材小节内容表（分节细粒度存储，完美适配 CAG 上下文限制）"""
-    __tablename__ = "textbook_section_content"
+- 解析完整教材。
+- 将英文教材中文化。
+- 提取中文原教材目录。
+- 切分并保存中文小节正文。
+- 按小节预先绑定扩展资料。
+- 从可信来源清单内寻找可下载、可解析、可审查的完整教材。
 
-    id: str = Field(primary_key=True, index=True)
-    textbook_id: str = Field(foreign_key="textbook.id", index=True, nullable=False)
-    chapter_number: int = Field(index=True, nullable=False, description="章节编号")
-    section_id: str = Field(index=True, nullable=False, description="小节 ID (对应大纲中的节点 ID)")
-    title: str = Field(nullable=False, description="小节名称")
-    content: str = Field(sa_column=sa.Column(sa.Text, nullable=False), description="小节完整正文内容")
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-```
+管理员 Agent 不能：
+
+- 从来源清单外自动收录主教材。
+- 绕过管理员发布闸门。
+- 将课程讲义、单篇 PDF、网页资料作为主教材推荐来源。
+
+### 2.3 学生
+
+学生只和已发布知识库交互。
+
+学生可以：
+
+- 提出学习目标。
+- 查看课程草案。
+- 确认课程草案。
+- 在课程页触发学生侧章节目录生成。
+- 触发章节 Markdown 生成。
+- 在知识库未覆盖时关注主题。
+
+学生不能直接把无来源内容加入正式学习路径。
 
 ---
 
-## 3. 后端 API 路由设计与接口规范 (FastAPI Endpoints)
+## 3. 知识库内容结构
 
-新增以下后台 API 路由，确保 `admin` 与 `teacher` 权限可以访问（复用已有的 `require_admin_user`）：
+第一期知识库分成两类内容：主教材和扩展资料。
 
-### 3.1 教材上传
-* **`POST /api/admin/knowledge-base/upload`**
-  * **请求体 (Form-Data)**:
-    * `file`: UploadFile (PDF)
-    * `title`: str (书名)
-    * `tags`: str (JSON 格式标签数组)
-  * **返回结构 (201 Created)**:
-    ```json
-    {
-      "id": "tb_uuid_123456",
-      "title": "React 进阶技术指南",
-      "status": "processing",
-      "created_at": "2026-06-27T06:00:00Z"
-    }
-    ```
+### 3.1 主教材
 
-### 3.2 教材与大纲列表获取
-* **`GET /api/admin/knowledge-base/textbooks`**
-  * **返回结构**:
-    ```json
-    [
-      {
-        "id": "tb_uuid_123456",
-        "title": "React 进阶技术指南",
-        "author": "张三",
-        "tags": ["前端", "React"],
-        "status": "success",
-        "source_link": null,
-        "created_at": "2026-06-27T06:00:00Z"
-      }
-    ]
-    ```
+主教材是学生侧课程推荐和 Markdown 生成的主要来源。
 
-### 3.3 大纲微调更新
-* **`PUT /api/admin/knowledge-base/textbooks/{id}/outline`**
-  * **请求体 (JSON)**:
-    ```json
-    {
-      "outline": {
-        "chapters": [
-          {
-            "chapter_number": 1,
-            "title": "第一章 React 核心设计理念",
-            "sections": [
-              { "section_id": "sec_1_1", "title": "1.1 Virtual DOM 机制" },
-              { "section_id": "sec_1_2", "title": "1.2 Fiber 架构深入" }
-            ]
-          }
-        ]
-      }
-    }
-    ```
-  * **返回结构**: `{ "status": "ok", "message": "大纲已成功更新并生效" }`
+主教材入库规则：
 
-### 3.4 待审教材审批
-* **`POST /api/admin/knowledge-base/textbooks/{id}/approve`**
-  * **返回结构**: `{ "status": "ok", "message": "已审批通过，开始下载解析" }`
+- 只允许完整教材进入主知识库。
+- 原始教材可以是中文或英文。
+- 英文教材在入库整理阶段完成中文化。
+- 主教材必须整理到原教材小节正文级别。
+- 未完成中文目录和中文小节正文的教材不能发布。
+- 未发布教材不能进入学生侧推荐或生成流程。
 
-### 3.5 删除教材
-* **`DELETE /api/admin/knowledge-base/textbooks/{id}`**
-  * **返回结构 (204 No Content)**: 无返回体
+主教材发布后需要保存：
+
+- 中文教材标题。
+- 中文教材简介。
+- 中文标签。
+- 中文原教材目录。
+- 每个原教材小节的中文正文。
+- 原始来源信息。
+- 整理状态。
+- 发布状态。
+- 缺少扩展资料的小节数量。
+
+草案智能体推荐时只读取主教材的标签、简介和目录。小节正文只在章节 Markdown 生成时读取。
+
+### 3.2 扩展资料
+
+扩展资料用于学生侧小节末尾补充展示，不参与主教材推荐。
+
+扩展资料可以来自：
+
+- 课程讲义。
+- 单篇 PDF。
+- 网页资料。
+- 视频资料。
+- 练习资料。
+
+扩展资料规则：
+
+- 由管理员 Agent 在入库整理阶段预先绑定到具体原教材小节。
+- 学生打开小节时直接展示绑定资料，不做实时检索。
+- 每个学生侧章节末尾最多展示 3 条扩展资料。
+- 统一称为“扩展资料”，不强制在页面上分成阅读、练习、视频等类别。
+- 前端必须渲染为资料卡，不展示裸链接。
+- 英文扩展资料的卡片标题、摘要和按钮文案必须中文化。
+- 原始链接保留为跳转和来源追溯。
+
+资料卡展示规则：
+
+- 优先使用资料自身封面或缩略图。
+- 缺少封面时生成统一风格封面。
+- 阅读资料展示标题、来源、摘要和文档预览感。
+- 视频资料展示标题、来源、封面缩略图和播放入口。
+- 练习资料展示标题、来源和任务摘要。
+
+扩展资料缺失不阻止教材发布。发布前只提示缺少扩展资料的小节数量，不强制展开小节列表。
 
 ---
 
-## 4. 智能体输入输出规格与 CAG 接口协议 (Agents Input/Output & CAG Protocols)
+## 4. 可信来源清单
 
-### 4.1 `learning_path_intake_agent` (草案 Agent)
-* **输入规格 (`OrchestrationState`)**:
-  * `profile`: 用户画像数据。
-  * `query`: 用户的个性化学习诉求。
-  * `candidate_textbooks`: **从数据库检索初筛出的 Top 15-20 本教材元数据 + 大纲 JSON**（作为 CAG 上下文）。
-* **大模型 System Prompt / 契约约束**:
-  * 必须且仅在 `candidate_textbooks` 列出的书目和大纲中进行挑选组合。
-* **输出结构 (`LearningPathIntakeOutput`)**:
-  ```json
-  {
-    "type": "learning_path_intake",
-    "status": "draft",
-    "grade_year": "year_3",
-    "grade_name": "大三",
-    "learning_topic": "Python后端开发",
-    "courses": [
-      {
-        "title": "Python高级Web开发",
-        "purpose": "掌握 FastAPI 和 Django 核心框架原理"
-      }
-    ],
-    "recommendation_reasons": ["依据画像中对高性能API的需求，推荐FastAPI教材"],
-    "risk_warnings": []
-  }
-  ```
+管理员维护可信来源清单。管理员 Agent 只能从可信来源清单内寻找主教材。
 
-### 4.2 `learning_path_agent` (路径 Agent)
-* **输入规格**:
-  * `learning_path_intake`: 经过学生确认（`status="confirmed"`）的教材推荐清单。
-* **输出结构 (`UserYearLearningPath` 保存格式)**:
-  在 `path_data` 的 `course_nodes` 中为每个课程节点强绑定对应的 `textbook_id`：
-  ```json
-  {
-    "grade_plans": {
-      "year_3": {
-        "course_nodes": [
-          {
-            "course_node_id": "course-python-web",
-            "course_or_chapter_theme": "Python高级Web开发",
-            "textbook_id": "tb_uuid_123456",
-            "status": "current",
-            "has_outline": true,
-            "time_arrangement": {
-              "semester_scope": "上学期",
-              "duration": "8周"
-            }
-          }
-        ]
-      }
-    }
-  }
-  ```
+### 4.1 来源准入规则
 
-### 4.3 `course_knowledge_agent` (章节 Agent)
-* **输入规格**:
-  * `course_node_id`: 课程节点 ID。
-  * `textbook_id`: 绑定该课程的教材 ID。
-* **降级与防崩溃兼容逻辑 (Vulnerability 4 修复)**:
-  ```python
-  # 章节 Agent 执行逻辑
-  t_id = state.get("textbook_id")
-  if not t_id:
-      # 降级校准：按课程名称检索教材库
-      course_name = state.get("course_or_chapter_theme")
-      textbook = session.exec(select(Textbook).where(Textbook.title == course_name)).first()
-      if textbook:
-          t_id = textbook.id
-          # 回写状态以修复旧数据
-          state["textbook_id"] = t_id
-      else:
-          # 历史数据兜底降级：启动老版本 LLM 参数大纲生成
-          return run_legacy_param_outline_generation(state)
-  
-  # 正常直接拉取 outline
-  textbook = session.exec(select(Textbook).where(Textbook.id == t_id)).first()
-  return {"outline_data": textbook.outline}
-  ```
+来源必须满足：
 
-### 4.4 `section_markdown_agent` (小节 Markdown Agent)
-* **输入规格**:
-  * `course_node_id` & `chapter_section_id` & `textbook_id`。
-  * `section_content`: **精准查询 `TextbookSectionContent` 表获取的小节正文（约 2000-5000 字）**。
-* **输出结构**: 格式化的教学 Markdown 文本。
+- 可检索。
+- 可下载完整教材。
+- 可被系统解析。
+- 许可边界允许教学使用。
+- 发布前可人工审查。
+
+来源清单中的资料不等于自动可用。每本教材仍必须经过整理、目录校对和管理员发布。
+
+### 4.2 第一批预置来源池
+
+第一批来源池从以下开放教材站点开始，并按来源准入规则逐项启用：
+
+- OpenStax: https://openstax.org/
+- Open Textbook Library: https://open.umn.edu/opentextbooks
+- LibreTexts: https://libretexts.org/
+- Pressbooks Directory: https://pressbooks.directory/
+
+辅助资料来源不能直接进入主教材知识库，只能用于扩展资料整理。
 
 ---
 
-## 5. PostgreSQL 检索引导的 CAG 核心检索算法 (RRF Hybrid Search)
+## 5. 知识库缺口代办
 
-对于草案 Agent 匹配教材，后端在启动图（Graph）执行前，调用本 SQL 完成 Top 15-20 的初筛：
+当学生请求的学习主题在已发布知识库中没有覆盖时，系统不生成无来源课程。
 
-```sql
-WITH vector_search AS (
-    -- 1. 向量相似度初筛 (余弦相似度)
-    SELECT id, title, outline,
-           ROW_NUMBER() OVER (ORDER BY embedding <=> :query_embedding) as rank
-    FROM textbook
-    WHERE embedding IS NOT NULL AND status = 'success'
-    LIMIT 30
-),
-fts_search AS (
-    -- 2. 全文检索初筛 (支持中文分词及标签匹配)
-    SELECT id, title, outline,
-           ROW_NUMBER() OVER (ORDER BY ts_rank(to_tsvector('chinese', title || ' ' || tags::text), to_tsquery('chinese', :query_fts)) DESC) as rank
-    FROM textbook
-    WHERE to_tsvector('chinese', title || ' ' || tags::text) @@ to_tsquery('chinese', :query_fts) AND status = 'success'
-    LIMIT 30
-)
--- 3. 倒数排序融合 (RRF)，保证精确度与语义召回的平衡
-SELECT COALESCE(v.id, f.id) as id,
-       COALESCE(v.title, f.title) as title,
-       COALESCE(v.outline, f.outline) as outline,
-       (1.0 / (60.0 + COALESCE(v.rank, 100)) + 1.0 / (60.0 + COALESCE(f.rank, 100))) as rrf_score
-FROM vector_search v
-FULL OUTER JOIN fts_search f ON v.id = f.id
-ORDER BY rrf_score DESC
-LIMIT :limit; -- limit 设定为 15 或 20
-```
+学生侧展示：
 
----
+- 当前知识库暂未覆盖该主题。
+- 系统已提交给管理员处理。
+- 学生可以关注该主题。
 
-## 6. 教材自动切片管道设计 (LLM-Guided Splitter)
+管理员后台生成标准化缺口代办。
 
-为了规避正则表达式切片的 fragility（易碎性）和非标 PDF 带来的解析混乱，系统采用 **“大模型结构化大纲 + Python 物理定位”** 管道进行切分：
+缺口代办合并规则：
 
-```
-[管理员上传 PDF] ─► [阿里百炼 Document Mind API] ─► 获得 Markdown 纯文本
-                                                            │
-                                                            ▼
-[Python 物理定位切片] ◄─── [大模型 JSON 目录提取] ◄───────  [全文/前言文本]
-  (按标题位置 start:end 切片)    (with_structured_output 约束)
-        │
-        ▼
-[写入数据库 `textbook_section_content`]
-```
+- 按标准化知识主题合并。
+- 同类诉求进入同一个主题代办。
+- 不按学生原始句子逐条堆叠。
 
-1. **大纲语义提取**：
-   提取 PDF 的目录页 Markdown 送入大模型，使用强类型约束输出目录树大纲 JSON，包含所有小节标题的精确名称数组：`["1.1 什么是数据结构", "1.2 算法复杂度分析"]`。
-2. **物理字符索引定位**：
-   后端 Python 直接在 Markdown 全文中，以标题为关键词查找位置：
-   ```python
-   # 获取每个小节标题在 Markdown 全文中的字符起始和截止位置
-   positions = []
-   for title in section_titles:
-       idx = markdown_text.find(title)
-       if idx != -1:
-           positions.append((title, idx))
-   # 根据位置排序并对 markdown_text[start:end] 进行切片，获得纯净的小节正文
-   ```
-3. **入库**：切片后的小节文本与 `TextbookSectionContent` 绑定入库，规避大模型输出 Token 溢出瓶颈，保障数据完整。
+代办展示字段：
+
+- 标准化主题名。
+- 触发次数。
+- 关注人数。
+- 最近触发时间。
+- 相关学生目标摘要。
+
+管理员处理方式：
+
+- 让管理员 Agent 在可信来源清单内寻找完整教材。
+- 管理员自行上传完整教材。
+
+主题补齐并发布后，关注过的学生收到站内提醒，并看到“重新生成课程草案”入口。系统不自动改动学生现有学习路径。
 
 ---
 
-## 7. 性能优化与高并发保障 (CAG Performance Optimizations)
+## 6. 草案智能体
 
-### 7.1 LLM 缓存层设计 (KV Cache / Prompt Caching)
-* **草案 Agent** 的候选列表文本结构固定化（格式、前缀一致），触发百炼的 **Prompt Cache**，使 TTFT 降低 80% 以上。
-* **Markdown Agent** 在对同一小节进行生成时，通过保证小节正文文本放在 Prompt 的最前段（Prefix），通义千问模型会自动对其进行 **KV 缓存**，极速响应同一章节内各个小节的后续生成请求。
+草案智能体负责从已发布知识库推荐课程草案。
 
-### 7.2 数据库索引与性能监控
-* 为 `Textbook` 表的 `outline` 字段使用 `GIN` 索引，确保查询包含特定大纲节点的 SQL 响应在 5ms 以内。
-* 向量字段 `embedding` 采用 `HNSW` 索引，以支持高并发下免训练（No Training）的实时相似度召回。
+### 6.1 输入
+
+草案智能体输入：
+
+- 学生画像。
+- 学生最新学习目标。
+- 已发布主教材的中文标题。
+- 已发布主教材的中文标签。
+- 已发布主教材的中文简介。
+- 已发布主教材的中文目录。
+
+草案智能体不读取整本小节正文做推荐。
+
+### 6.2 输出
+
+草案智能体输出 4-8 门课程草案。
+
+每门课程必须包含：
+
+- 课程主题。
+- 推荐理由。
+- 来源教材。
+
+每门课程只展示最匹配的一本来源教材。
+
+### 6.3 约束
+
+- 只能推荐已发布知识库覆盖的课程主题。
+- 不能推荐无来源课程。
+- 不能让模型凭空编教材名称。
+- 知识库无覆盖时进入缺口代办流程。
+
+学生确认的是课程集合和课程标题。
 
 ---
 
-## 8. 管理端前端新组件设计规范 (Admin Frontend Specs)
+## 7. 路径智能体
 
-管理端前端组件基于 **LXGW WenKai** 字体及暗色主题设计（遵循 `AGENTS.md` 规范）。
+路径智能体负责基于学生确认的课程草案组织正式学习路径。
 
-### 8.1 `/admin/knowledge-base` 主布局
-* **配色系统**：
-  * 主背景：`oklch(16% 0.015 280)`（暗黑色面板）
-  * 文字颜色：`oklch(92% 0.005 280)`
-  * 按钮悬浮交互：过渡动画动效控制在 200ms 内，仅允许使用 `transform` 与 `opacity` 的轻量缓动。
-* **模块构成**：
-  1. **教材上架上传区 (`UploadPanel.tsx`)**：支持拖拽 PDF、多选标签。
-  2. **教材状态表格 (`TextbookTable.tsx`)**：展示解析队列。
-  3. **采购待审队列 (`ApprovalQueue.tsx`)**：展示 `admin_kb_agent` 搜集回来的待审核条目。
+### 7.1 输入
 
-### 8.2 可视化大纲编辑器 (`OutlineEditor.tsx`)
-* **组件设计**：
-  * 采用递归式组件 `OutlineNode` 渲染大纲树，支持折叠/展开。
-  * 点击任意节点标题直接变为 `<input />` 状态，失焦（`onBlur`）时执行临时保存。
-  * 提供拖拽手势图标，允许使用 `framer-motion` 的布局动画实现上下拖动调换顺序。
-  * 提供「保存生效」按钮，点击时将整理好的树状结构以 JSON 形式通过 `PUT` API 发送到后台覆盖大纲。
+路径智能体输入：
+
+- 学生确认后的课程集合。
+- 每门课程对应的来源教材。
+- 学生画像。
+- 学习目标。
+
+### 7.2 输出
+
+路径智能体输出正式学习路径。
+
+路径智能体可以补充：
+
+- 课程顺序。
+- 前置关系。
+- 难度递进。
+- 学习目标。
+- 时间安排。
+- 内部学习阶段。
+- 教材绑定信息。
+- 后续章节生成和资源生成所需字段。
+
+路径智能体可以把一门课程拆成内部学习阶段，但学生侧仍显示为同一门课程。
+
+### 7.3 约束
+
+- 路径智能体不能修改学生确认过的课程标题。
+- 路径智能体可以调整课程顺序。
+- 路径智能体不能把一门确认课程拆成多门新课程。
+- 路径智能体不能加入学生未确认且知识库无来源的课程。
+
+路径智能体整理出的课程组成信息，是后续学生侧章节目录和 Markdown 生成的上层上下文。
 
 ---
 
-## 9. 修改代码硬性约束与注意事项 (Coding Safeguards)
+## 8. 学生侧章节目录
 
-在具体修改代码时，必须遵守以下严格原则，防止破环现有系统：
+学生侧章节目录是学生在课程页看到的课程章节目录。它不是学习路径课程列表，也不是原教材目录的直接展示。
 
-### 9.1 现有契约测试 (Contract Tests) 兼容
-* 运行 `pytest` 发现存在 `test_learning_path_agent_contract.py` 等大量针对 `learning_path_agent` 契约规范的测试。
-* 在为 `course_nodes` 添加 `textbook_id` 属性时，必须在对应的 Pydantic 模型中将其定义为 **`Optional` 字段，或提供默认值 `None`**。
-* 严禁打破旧契约测试中对课程生成格式的期望，否则持续集成（CI）将无法通过。
+### 8.1 生成方式
 
-### 9.2 全栈 API 类型自动生成
-* 每次修改了后端的 Pydantic 结构或 API 返回结构后，**必须立即在前端目录下运行 `npm run gen:api`**，以编译出最新的 `src/types/api.ts`。
-* 严禁前端自行猜测 API 返回的字段，必须严格引用自动生成的 API 类型，保持全栈类型对齐。
+学生侧章节目录由章节智能体生成。
 
-### 9.3 Biome 与 Ruff 代码格式化
-* 在修改任何后端 Python 文件后，必须使用 `ruff check --fix` 和 `ruff format` 格式化代码，清除未使用 imports。
-* 在修改任何前端 TSX/TS 文件后，必须使用 `npx biome check --write` 清理残存垃圾和格式化代码。
+章节智能体参考：
+
+- 路径智能体产出的课程组成信息。
+- 学生画像。
+- 学生学习目标。
+- 当前课程标题。
+- 当前课程来源教材的中文目录。
+- 来源教材的小节正文索引。
+
+### 8.2 触发方式
+
+沿用当前项目逻辑：
+
+- 学生进入课程页后，如果还没有章节目录，页面展示“生成课程章节目录”入口。
+- 点击入口后打开全局 AI 对话。
+- 系统预填提示词。
+- 学生可以直接发送，也可以先修改提示词再发送。
+- 后端识别提示词后生成章节目录。
+
+生成成功后，章节目录直接成为该课程目录，不需要学生额外确认。
+
+### 8.3 章节组织规则
+
+章节智能体可以把原教材中连续相邻的小节合并成一个学生侧章节。
+
+硬性规则：
+
+- 每个学生侧章节必须绑定一个或多个连续原教材小节。
+- 最多合并 7 个连续原教材小节。
+- 绑定小节的中文正文总量控制在 5000-8000 中文字。
+- 超出正文上限时必须拆成多个学生侧章节。
+- 不允许跳跃合并不连续小节。
+- 不允许跨章合并。
+- 章节标题由章节智能体生成中文教学标题。
+- 标题必须基于绑定小节，不允许引入未绑定内容。
+
+学生侧默认只展示轻量章节目录。原教材小节来源放入可展开“来源”区域。
+
+同一本教材、同一门课程，不同学生可以生成不同的学生侧章节目录。底层教材目录和正文来源不变。
+
+### 8.4 重新生成规则
+
+学生可以通过预填提示词主动重新生成学生侧章节目录。
+
+重新生成后：
+
+- 新目录直接覆盖旧目录。
+- 旧章节 Markdown 清空。
+- 旧章节测验清空。
+- 章节级通关状态清空。
+- 课程级学习状态保留。
+- 不保留旧版本历史。
+- 不做二次确认。
+
+---
+
+## 9. Markdown 生成
+
+Markdown 智能体按学生侧章节整体生成中文教学 Markdown。
+
+### 9.1 输入
+
+Markdown 智能体必须读取：
+
+- 学生侧章节标题。
+- 学生画像摘要。
+- 当前课程上下文。
+- 路径智能体产出的课程组成信息。
+- 绑定原教材小节标题列表。
+- 绑定原教材小节中文正文全文。
+
+Markdown 智能体不得只根据学生侧章节标题生成。
+
+### 9.2 输出
+
+Markdown 输出为一篇完整中文教学讲义。
+
+输出规则：
+
+- 可以教学化改写。
+- 必须覆盖原文关键概念。
+- 不允许引入无来源的新知识主线。
+- 文末必须展示来源区域。
+
+来源区域展示：
+
+- 教材名。
+- 原章节/小节标题列表。
+
+第一期不强制展示页码或原文位置。
+
+### 9.3 失败处理
+
+如果章节没有绑定正文，不能生成 Markdown。
+
+Markdown 生成失败时：
+
+- 当前章节显示生成失败。
+- 学生可以重新触发生成。
+- 失败不影响其他章节。
+
+---
+
+## 10. 管理员后台页面
+
+第一期新增知识库管理后台。
+
+### 10.1 主教材管理
+
+后台支持：
+
+- 上传完整教材。
+- 查看教材整理状态。
+- 查看中文目录。
+- 编辑中文目录。
+- 查看缺少扩展资料的小节数量。
+- 发布教材。
+- 下架教材。
+- 删除教材。
+
+教材状态包括：
+
+- 整理中。
+- 整理失败。
+- 待校对目录。
+- 已发布。
+- 已下架。
+
+### 10.2 缺口代办
+
+后台支持：
+
+- 查看标准化缺口主题。
+- 查看触发次数。
+- 查看关注人数。
+- 查看最近触发时间。
+- 查看相关学生目标摘要。
+- 从代办进入补齐流程。
+
+### 10.3 可信来源清单
+
+后台支持：
+
+- 查看来源清单。
+- 新增来源。
+- 停用来源。
+- 删除来源。
+
+管理员 Agent 只从启用状态的来源中寻找主教材。
+
+### 10.4 前端设计规则
+
+后台页面必须遵守项目现有 Headspace meditation 风格和 UI 规范：
+
+- 使用项目既有 OKLCH 颜色 token。
+- 使用 LXGW WenKai 字体。
+- 使用既有间距、圆角、阴影 token。
+- 动画只改变 transform 和 opacity。
+- 提供 reduced-motion 降级。
+- 不使用裸链接堆叠资料。
+- 不做冷黑科技风的后台界面。
+
+---
+
+## 11. 性能目标
+
+### 11.1 学生链路
+
+学生侧等待链路只读取必要数据：
+
+- 草案推荐读取教材标签、简介和目录。
+- 路径规划读取学生确认课程集合和来源教材。
+- 章节目录生成读取当前课程来源教材目录和路径上下文。
+- Markdown 生成读取当前章节绑定的中文正文证据包。
+
+Markdown 证据包控制在 5000-8000 中文字。超过上限时，在章节目录阶段拆分章节。
+
+### 11.2 管理员链路
+
+以下任务在后台异步进行：
+
+- 英文教材中文化。
+- 目录提取。
+- 小节正文切片。
+- 扩展资料搜索和绑定。
+- 资料卡封面补齐。
+
+这些任务不能放进学生等待链路。
+
+---
+
+## 12. 质量闸门
+
+主教材发布闸门：
+
+- 必须是完整教材。
+- 必须完成中文目录。
+- 必须完成中文小节正文。
+- 必须保留原始来源信息。
+- 必须由管理员校对目录。
+- 必须由管理员发布。
+
+学生侧生成闸门：
+
+- 草案智能体只能使用已发布教材。
+- 知识库未覆盖时不能生成课程。
+- 学生侧章节必须绑定连续原教材小节。
+- 没有绑定正文的章节不能生成 Markdown。
+- Markdown 必须展示来源教材和原章节/小节标题列表。
+
+扩展资料不是发布硬闸门。缺少扩展资料只提示数量，不阻止发布。
+
+---
+
+## 13. 验收标准
+
+第一期完成后，必须满足以下验收标准：
+
+1. 管理员可以上传完整教材。
+2. 管理员可以维护可信来源清单。
+3. 管理员 Agent 只能从可信来源清单内寻找完整教材。
+4. 英文教材入库后，学生侧看到中文目录和中文 Markdown。
+5. 管理员可以校对目录并发布教材。
+6. 未发布教材不会进入学生侧推荐。
+7. 草案智能体可以基于已发布教材推荐 4-8 门“课程主题 + 来源教材”。
+8. 知识库未覆盖时，学生侧不生成课程，并生成标准化缺口代办。
+9. 学生可以关注未覆盖主题。
+10. 主题补齐发布后，关注学生收到站内提醒和重新生成课程草案入口。
+11. 学生确认课程草案后，路径智能体不改课程标题。
+12. 路径智能体可以调整课程顺序，并补充关系、阶段、目标和时间安排。
+13. 学生进入课程后，可以通过预填提示词生成学生侧章节目录。
+14. 学生侧章节目录可以个性化。
+15. 每个学生侧章节必须绑定连续原教材小节。
+16. 每个学生侧章节最多绑定 7 个连续小节。
+17. 每个学生侧章节正文证据包控制在 5000-8000 中文字。
+18. Markdown 基于绑定原教材小节正文整体生成。
+19. Markdown 文末展示来源教材和原章节/小节标题列表。
+20. 小节末尾最多展示 3 条扩展资料卡。
+21. 没有扩展资料时，不展示扩展资料区域。
+22. 重新生成章节目录会清空旧章节 Markdown、章节测验和章节级进度。
+23. 重新生成章节目录保留课程级学习状态。
+24. 重新生成章节目录不保留旧版本历史。
+
+---
+
+## 14. 后续阶段
+
+后续阶段可以扩展：
+
+- 自动采购流程。
+- 更细的扩展资料分类。
+- 学生反馈纠错闭环。
+- 学生可见版本历史。
+- 来源质量评分。
+- 按专业方向维护不同来源清单。
+- 更多开放教材来源接入。
+- 教材页码级追溯。
+
+这些内容不进入第一期验收范围。
