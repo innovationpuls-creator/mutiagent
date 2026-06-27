@@ -1,6 +1,6 @@
 # RAG 知识库与多智能体教材集成设计规格说明书
 
-本设计文档旨在为“一棵树 (OneTree)”系统引入一套基于 **PostgreSQL 特性 (JSONB + pgvector + tsvector)** 的原生 RAG/CAG 教材集成方案。本方案旨在消除原智能体链中依靠“大模型参数盲猜（Parametric Guessing）”生成课程及教学大纲的缺陷，将所有推荐与生成限制在管理员/教师审核通过的高质量教材范围内。
+本设计文档旨在为“一棵树 (OneTree)”系统引入一套基于 **PostgreSQL 特性 (JSONB + pgvector + tsvector)** 的原生 RAG/CAG 教材集成方案。本方案通过**“检索引导的 CAG（Retrieval-guided CAG）”**机制，消除原智能体链中依靠“大模型参数盲猜”生成课程及大纲的缺陷，将所有推荐与生成限制在管理员/教师审核通过的高质量教材范围内。
 
 ---
 
@@ -10,27 +10,32 @@
 
 ```mermaid
 graph TD
-  A[学生输入兴趣/画像] --> B[草案 Agent: learning_path_intake_agent]
-  B -->|深层大纲检索 JSONB| C[从数据库检索匹配教材大纲]
-  C --> B
-  B -->|推荐教材大纲/列表| D[学生自然语言微调与一键确认]
-  D --> E[路径 Agent: learning_path_agent]
-  E -->|构建课程关系拓扑与学年排课| F[生成用户学年路径 useryearlearningpath]
-  F -->|点击特定教材节点| G[章节 Agent: course_knowledge_agent]
-  G -->|直接读取数据库教材大纲| H[生成确定性的章节大纲]
-  H -->|点击开始学习某节| I[Markdown Agent: section_markdown_agent]
-  I -->|CAG: 读取 TextbookChapter 章节正文| J[精炼生成教学文档]
+  A[学生输入兴趣/画像] --> B[数据库轻量初筛]
+  B -->|pgvector/tsvector 检索元数据| C[捞出 Top 15-20 本候选教材]
+  C --> D[草案 Agent: learning_path_intake_agent]
+  D -->|CAG: 塞入 15-20 本教材完整大纲| E[大模型规划推荐教材清单]
+  E --> F[学生自然语言微调与一键确认]
+  F --> G[路径 Agent: learning_path_agent]
+  G -->|构建课程关系拓扑与学年排课| H[生成用户学年路径 useryearlearningpath]
+  H -->|点击特定教材节点| I[章节 Agent: course_knowledge_agent]
+  I -->|直接读取数据库教材大纲| J[生成确定性的章节大纲]
+  J -->|点击开始学习某节| K[Markdown Agent: section_markdown_agent]
+  K -->|CAG: 读取 TextbookChapter 章节正文| L[精炼生成教学文档]
 ```
 
-### 1.1 智能体职责调整说明
+### 1.1 智能体职责与 CAG 塞入内容映射
 * **`learning_path_intake_agent` (草案 Agent)**：
-  根据学生特征，在数据库 `Textbook` 表中进行深层目录检索，查找包含对应技术栈或主题的教材，形成推荐清单。支持对话微调（换课、删课），直到用户确认。
+  * **塞入内容**：经初筛后的 **Top 15-20 本教材的【书名 + 完整大纲目录 JSON】**。
+  * **职责**：在精简后的候选教材大纲中进行全局决策，匹配学生特征，输出课程推荐草稿，并支持自然语言对话微调（换课、删课）。
 * **`learning_path_agent` (路径 Agent)**：
-  将确认的教材列表组织为 4 年路径。在 `course_nodes` 中增加 `textbook_id` 属性，指向知识库对应的教材，作为强引用的锚点。
+  * **塞入内容**：用户选定的教材大纲。
+  * **职责**：梳理教材先后置依赖关系，将教材分配到大一至大四学年中，并在 `course_nodes` 中保存 `textbook_id` 指向知识库。
 * **`course_knowledge_agent` (章节 Agent)**：
-  不再调用大语言模型猜测大纲，直接通过 `textbook_id` 读取 `Textbook.outline` 字段，格式化输出给前端。
+  * **塞入内容**：单个教材的 **`Textbook.outline` 大纲 JSON**（直接从数据库读取）。
+  * **职责**：**无需大模型猜测**，直接将大纲转换为系统的章节目录。
 * **`section_markdown_agent` (小节 Markdown Agent)**：
-  从数据库取出 `TextbookChapter.content`（整章正文），以此文本为唯一的事实来源（Context）进行教学设计和总结排版，不脑补概念。
+  * **塞入内容**：对应章节的 **`TextbookChapter.content`（整章正文全文，约 1-3 万字）**。
+  * **职责**：以该章节正文为唯一事实来源，精炼总结生成教学 Markdown 结构文档，严禁臆造外部概念。
 
 ---
 
@@ -53,6 +58,7 @@ CREATE TABLE textbook (
     outline JSONB DEFAULT '{}',
     status VARCHAR(32) NOT NULL DEFAULT 'processing',
     source_link TEXT,
+    embedding VECTOR(1536), -- 用于教材元数据的初筛检索
     created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL
 );
@@ -64,7 +70,6 @@ CREATE TABLE textbook_chapter (
     chapter_number INTEGER NOT NULL,
     title VARCHAR(256) NOT NULL,
     content TEXT NOT NULL,
-    embedding VECTOR(1536), -- 匹配千问/OpenAI text-embedding 维度
     created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL
 );
@@ -73,6 +78,7 @@ CREATE TABLE textbook_chapter (
 CREATE INDEX idx_textbook_title ON textbook (title);
 CREATE INDEX idx_textbook_status ON textbook (status);
 CREATE INDEX idx_textbook_outline_gin ON textbook USING gin (outline);
+CREATE INDEX idx_textbook_embedding_hnsw ON textbook USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX idx_textbook_chapter_textbook_id ON textbook_chapter (textbook_id);
 ```
 
@@ -94,6 +100,7 @@ class Textbook(SQLModel, table=True):
     outline: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSONB), description="教材大纲目录结构 JSON")
     status: str = Field(default="processing", index=True, description="解析状态: pending_approval/processing/success/failed")
     source_link: Optional[str] = Field(default=None, description="下载/采购来源链接")
+    embedding: Optional[List[float]] = Field(default=None, sa_column=Column(JSONB), description="教材元数据向量")
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
@@ -112,68 +119,36 @@ class TextbookChapter(SQLModel, table=True):
 
 ---
 
-## 3. PostgreSQL 专属检索与索引方案设计
+## 3. PostgreSQL 专属初筛检索设计
 
-本方案完全基于 PostgreSQL 内部能力实现，确保整个检索架构极简。
+初筛仅针对教材的**“元数据（书名、标签）”**进行相似度检索，不涉及大体积的正文 Chunks 切片，保障系统的高响应与低存储开销。
 
-### 3.1 深度大纲检索 (JSONB GIN)
-对于保存在 `outline` 中的树状大纲目录：
-```json
-{
-  "chapters": [
-    {
-      "chapter_number": 1,
-      "title": "第一章 基础介绍",
-      "sections": [
-        { "title": "1.1 环境搭建" },
-        { "title": "1.2 FastAPI 核心概念" }
-      ]
-    }
-  ]
-}
-```
-当搜索关键词 `FastAPI` 时，可使用 Postgres 原生 GIN 索引及路径匹配或 JSON PATH：
+### 3.1 混合粗筛检索 (pgvector + tsvector)
+草案 Agent 通过 SQL 拼接全文检索与向量相似度，对教材进行粗筛：
 ```sql
-SELECT id, title, outline FROM textbook 
-WHERE outline @> '{"chapters": [{"sections": [{"title": "FastAPI"}]}]}';
+WITH vector_search AS (
+    SELECT id, title, outline,
+           ROW_NUMBER() OVER (ORDER BY embedding <=> :query_embedding) as rank
+    FROM textbook
+    WHERE embedding IS NOT NULL AND status = 'success'
+    LIMIT 30
+),
+fts_search AS (
+    SELECT id, title, outline,
+           ROW_NUMBER() OVER (ORDER BY ts_rank(to_tsvector('chinese', title || ' ' || tags::text), to_tsquery('chinese', :query_fts)) DESC) as rank
+    FROM textbook
+    WHERE to_tsvector('chinese', title || ' ' || tags::text) @@ to_tsquery('chinese', :query_fts) AND status = 'success'
+    LIMIT 30
+)
+SELECT COALESCE(v.id, f.id) as id,
+       COALESCE(v.title, f.title) as title,
+       COALESCE(v.outline, f.outline) as outline,
+       (1.0 / (60.0 + COALESCE(v.rank, 100)) + 1.0 / (60.0 + COALESCE(f.rank, 100))) as rrf_score
+FROM vector_search v
+FULL OUTER JOIN fts_search f ON v.id = f.id
+ORDER BY rrf_score DESC
+LIMIT :limit; -- 返回 Top 15-20 本候选教材给草案 Agent 塞入上下文
 ```
-
-### 3.2 混合检索排序 (Hybrid Search + RRF)
-在小节内容生成阶段，通过 SQL 拼接全文检索与向量相似度评分，利用倒数排序融合 (Reciprocal Rank Fusion) 算法合并召回：
-1. **向量索引 (HNSW)**：
-   ```sql
-   CREATE INDEX idx_textbook_chapter_embedding_hnsw ON textbook_chapter USING hnsw (embedding vector_cosine_ops);
-   ```
-2. **全文检索索引 (GIN)**：
-   ```sql
-   CREATE INDEX idx_textbook_chapter_content_fts ON textbook_chapter USING gin (to_tsvector('chinese', content));
-   ```
-3. **混合检索 SQL (RRF)**：
-   ```sql
-   WITH vector_search AS (
-       SELECT id, textbook_id, chapter_number, title,
-              ROW_NUMBER() OVER (ORDER BY embedding <=> :query_embedding) as rank
-       FROM textbook_chapter
-       WHERE embedding IS NOT NULL
-       LIMIT 20
-   ),
-   fts_search AS (
-       SELECT id, textbook_id, chapter_number, title,
-              ROW_NUMBER() OVER (ORDER BY ts_rank(to_tsvector('chinese', content), to_tsquery('chinese', :query_fts)) DESC) as rank
-       FROM textbook_chapter
-       WHERE to_tsvector('chinese', content) @@ to_tsquery('chinese', :query_fts)
-       LIMIT 20
-   )
-   SELECT COALESCE(v.id, f.id) as id,
-          COALESCE(v.textbook_id, f.textbook_id) as textbook_id,
-          COALESCE(v.chapter_number, f.chapter_number) as chapter_number,
-          COALESCE(v.title, f.title) as title,
-          (1.0 / (60.0 + COALESCE(v.rank, 100)) + 1.0 / (60.0 + COALESCE(f.rank, 100))) as rrf_score
-   FROM vector_search v
-   FULL OUTER JOIN fts_search f ON v.id = f.id
-   ORDER BY rrf_score DESC
-   LIMIT :limit;
-   ```
 
 ---
 
@@ -183,7 +158,7 @@ WHERE outline @> '{"chapters": [{"sections": [{"title": "FastAPI"}]}]}';
 
 * **`POST /api/admin/knowledge-base/upload`**：
   * **Payload**：Multipart/Form-data (PDF 文件、书名、专业/方向标签)
-  * **逻辑**：将 PDF 保存至临时目录，并将任务放入后台队列，返回 `task_id` 和初始化 `textbook` 实体（status="processing"）。
+  * **逻辑**：将 PDF 保存至临时目录，并将任务放入后台队列，返回 `task_id` 和初始化 `textbook` 实体。
 * **`GET /api/admin/knowledge-base/textbooks`**：
   * **返回**：`List[TextbookRead]`（包含元数据、状态、大纲及采购来源）。
 * **`GET /api/admin/knowledge-base/textbooks/{id}`**：
@@ -223,7 +198,9 @@ def init_docmind_client() -> Client:
    # 正则匹配类似于 "# 第一章 介绍" 或 "## 第1章 基础" 作为切片锚点
    chapters = re.split(r'(?m)^#\s+(第[一二三四五六七八九十\d]+章\s+.*)$', markdown_text)
    ```
-2. **生成大纲结构**：使用百炼大模型（`with_structured_output` 绑定大纲 Schema）阅读 Markdown 目录，输出合法的目录 JSON 存入 `textbook.outline`。
+2. **生成大纲结构与向量化**：
+   * 使用百炼大模型输出合法的目录 JSON 存入 `textbook.outline`。
+   * 对“书名+标签+前言/介绍”生成一次性向量，存入 `textbook.embedding` 以供初筛使用。
 
 ### 5.3 智能体自主采购机制 (`admin_kb_agent`)
 * 当学生发起“知识库目前无覆盖”的主题学习时，后台异步调用 `admin_kb_agent`。
