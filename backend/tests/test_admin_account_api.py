@@ -100,6 +100,32 @@ def test_admin_can_manage_accounts(tmp_path: Path, monkeypatch) -> None:
     )
 
 
+def test_admin_rejects_class_name_equal_to_identifier(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    token = login_token(client, "13297540721", "123456")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.post(
+        "/api/admin/accounts",
+        headers=headers,
+        json={
+            "username": "错误班级",
+            "identifier": "18771701100",
+            "password": "student-password-123",
+            "role": "student",
+            "is_active": True,
+            "school": "wc",
+            "major": "计算机",
+            "class_name": "18771701100",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "班级不能填写登录标识" in response.text
+
+
 def test_student_cannot_manage_accounts(tmp_path: Path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     response = client.post(
@@ -368,6 +394,7 @@ def test_admin_import_updates_existing_and_exports_csv(
         "新账号,import-new@example.com,new-password-123,teacher,true,南山大学,软件工程,一班\n"
         "新姓名,import-existing@example.com,,admin,false,南山大学,软件工程,二班\n"
         "坏账号,bad@example.com,,student,true,南山大学,软件工程,三班\n"
+        "错班级,18771701100,student-password-123,student,true,wc,计算机,18771701100\n"
     )
 
     import_response = client.post(
@@ -380,8 +407,10 @@ def test_admin_import_updates_existing_and_exports_csv(
     body = import_response.json()
     assert body["created"] == 1
     assert body["updated"] == 1
-    assert body["failed"] == 1
+    assert body["failed"] == 2
     assert body["failures"][0]["identifier"] == "bad@example.com"
+    assert body["failures"][1]["identifier"] == "18771701100"
+    assert body["failures"][1]["reason"] == "班级不能填写登录标识"
 
     accounts = client.get("/api/admin/accounts", headers=headers).json()
     new_account = next(

@@ -70,6 +70,26 @@ def test_register_can_create_teacher_role(tmp_path: Path) -> None:
     assert response.json()["user"]["role"] == "teacher"
 
 
+def test_register_rejects_class_name_equal_to_identifier(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "错误班级",
+            "identifier": "18771701100",
+            "password": "learn-agent-123",
+            "confirm_password": "learn-agent-123",
+            "school": "wc",
+            "major": "计算机",
+            "class_name": "18771701100",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "班级不能填写登录标识" in response.text
+
+
 def test_init_db_creates_admin_from_env(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ADMIN_USERNAME", "管理员")
     monkeypatch.setenv("ADMIN_IDENTIFIER", "admin@example.com")

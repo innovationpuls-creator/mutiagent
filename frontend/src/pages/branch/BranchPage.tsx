@@ -111,6 +111,7 @@ function normalizeTeacherProgramCourses(
 		})
 		.map((course) => ({
 			...course,
+			status: course.status === "locked" ? "current" : course.status,
 			is_custom: true,
 		}));
 }
@@ -132,9 +133,12 @@ function mergeTeacherProgramCourses(
 				(course) => course.course_node_id === preset.course_node_id,
 			);
 			if (existIdx >= 0) {
+				const existingCourse = year.courses[existIdx];
 				year.courses[existIdx] = {
 					...preset,
-					...year.courses[existIdx],
+					...existingCourse,
+					status:
+						existingCourse.status === "completed" ? "completed" : preset.status,
 					key_points: preset.key_points,
 					difficult_points: preset.difficult_points,
 					acceptance_criteria: preset.acceptance_criteria,
@@ -969,13 +973,14 @@ function PathSession({
 										<MascotBlob />
 									</div>
 									{showCoachmark && (
-										<div
+										<button
+											type="button"
 											className="leaf-coachmark-balloon"
 											onClick={onCloseCoachmark}
 										>
 											<span>✨ 点击此处，开启第一章学习</span>
 											<div className="balloon-arrow" />
-										</div>
+										</button>
 									)}
 									<motion.article className="branch-blob-card-shell">
 										{iconLabel(stage.center.status) === "current" && (

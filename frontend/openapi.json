@@ -1,0 +1,3399 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Mutiagent API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Register",
+        "operationId": "register_api_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/oauth/mock": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Oauth",
+        "operationId": "oauth_api_auth_oauth_mock_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Me",
+        "operationId": "me_api_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/admin/accounts": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Accounts",
+        "operationId": "accounts_api_admin_accounts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserRead"
+                  },
+                  "type": "array",
+                  "title": "Response Accounts Api Admin Accounts Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create",
+        "operationId": "create_api_admin_accounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminAccountCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/admin/accounts/batch": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Batch",
+        "operationId": "batch_api_admin_accounts_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminAccountBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserRead"
+                  },
+                  "type": "array",
+                  "title": "Response Batch Api Admin Accounts Batch Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/admin/accounts/import": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Import Csv",
+        "operationId": "import_csv_api_admin_accounts_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminAccountImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAccountImportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/admin/accounts/export": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Export Csv",
+        "operationId": "export_csv_api_admin_accounts_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/admin/accounts/{uid}": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Update",
+        "operationId": "update_api_admin_accounts__uid__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Uid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminAccountUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Delete",
+        "operationId": "delete_api_admin_accounts__uid__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Uid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/data/overview": {
+      "get": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "Overview",
+        "operationId": "overview_api_admin_data_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataOverviewResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/admin/data/cohorts": {
+      "get": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "Cohorts",
+        "operationId": "cohorts_api_admin_data_cohorts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DataCohortRead"
+                  },
+                  "type": "array",
+                  "title": "Response Cohorts Api Admin Data Cohorts Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/admin/data/programs": {
+      "get": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "Programs",
+        "operationId": "programs_api_admin_data_programs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CultivationProgramRead"
+                  },
+                  "type": "array",
+                  "title": "Response Programs Api Admin Data Programs Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/admin/data/users/{uid}/learning-data": {
+      "get": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "User Learning Data",
+        "operationId": "user_learning_data_api_admin_data_users__uid__learning_data_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Uid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserLearningDataRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "Delete User Learning Data",
+        "operationId": "delete_user_learning_data_api_admin_data_users__uid__learning_data_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Uid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/data/cohorts/{school}/{major}/{class_name}/program": {
+      "delete": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "Delete Cohort Program",
+        "operationId": "delete_cohort_program_api_admin_data_cohorts__school___major___class_name__program_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "school",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "School"
+            }
+          },
+          {
+            "name": "major",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Major"
+            }
+          },
+          {
+            "name": "class_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Class Name"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/teacher/program": {
+      "get": {
+        "tags": [
+          "teacher"
+        ],
+        "summary": "Read Program",
+        "operationId": "read_program_api_teacher_program_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CultivationProgramRead"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Read Program Api Teacher Program Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "teacher"
+        ],
+        "summary": "Save Program",
+        "operationId": "save_program_api_teacher_program_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CultivationProgramSaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CultivationProgramRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/teacher/program/publish": {
+      "post": {
+        "tags": [
+          "teacher"
+        ],
+        "summary": "Publish Program",
+        "operationId": "publish_program_api_teacher_program_publish_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CultivationProgramSaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CultivationProgramRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/student/matched-program": {
+      "get": {
+        "tags": [
+          "student"
+        ],
+        "summary": "Matched Program",
+        "operationId": "matched_program_api_student_matched_program_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CultivationProgramRead"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Matched Program Api Student Matched Program Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/chat/start": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Start Chat",
+        "description": "Start a new chat session.",
+        "operationId": "start_chat_api_chat_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/chat/message": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Send Message",
+        "description": "Send a message and receive SSE-streamed agent responses.",
+        "operationId": "send_message_api_chat_message_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/chat/sessions/{session_id}": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get Session State",
+        "description": "Get the current state of a chat session.",
+        "operationId": "get_session_state_api_chat_sessions__session_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/dashboard": {
+      "get": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "Get Dashboard",
+        "operationId": "get_dashboard_api_profile_dashboard_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Dashboard Api Profile Dashboard Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/learning-path/me": {
+      "get": {
+        "tags": [
+          "learning-path"
+        ],
+        "summary": "Read My Learning Path",
+        "operationId": "read_my_learning_path_api_learning_path_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YearLearningPathsReadResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/branch/canopy": {
+      "get": {
+        "tags": [
+          "branch"
+        ],
+        "summary": "Read Canopy Overview",
+        "operationId": "read_canopy_overview_api_branch_canopy_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanopyOverviewResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/branch/overview": {
+      "get": {
+        "tags": [
+          "branch"
+        ],
+        "summary": "Read Branch Overview",
+        "operationId": "read_branch_overview_api_branch_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BranchOverviewReadResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/leaf/courses/{course_node_id}": {
+      "get": {
+        "tags": [
+          "leaf"
+        ],
+        "summary": "Get Leaf Course",
+        "operationId": "get_leaf_course_api_leaf_courses__course_node_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "course_node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Node Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeafCourseReadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forest/courses/{course_node_id}/chapters/{chapter_id}/quiz": {
+      "get": {
+        "tags": [
+          "forest"
+        ],
+        "summary": "Get Forest Quiz Session",
+        "operationId": "get_forest_quiz_session_api_forest_courses__course_node_id__chapters__chapter_id__quiz_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "course_node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Node Id"
+            }
+          },
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Chapter Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForestQuizSessionReadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forest/courses/{course_node_id}/chapters/{chapter_id}/quiz/generate": {
+      "post": {
+        "tags": [
+          "forest"
+        ],
+        "summary": "Generate Forest Quiz",
+        "operationId": "generate_forest_quiz_api_forest_courses__course_node_id__chapters__chapter_id__quiz_generate_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "course_node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Node Id"
+            }
+          },
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Chapter Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForestQuizGenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForestQuizRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forest/quizzes/{quiz_id}/attempts": {
+      "post": {
+        "tags": [
+          "forest"
+        ],
+        "summary": "Create Forest Quiz Attempt",
+        "operationId": "create_forest_quiz_attempt_api_forest_quizzes__quiz_id__attempts_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "quiz_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Quiz Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForestQuizAttemptCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForestAttemptRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forest/quizzes/{quiz_id}/attempts/stream": {
+      "post": {
+        "tags": [
+          "forest"
+        ],
+        "summary": "Submit Quiz Attempt Stream",
+        "operationId": "submit_quiz_attempt_stream_api_forest_quizzes__quiz_id__attempts_stream_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "quiz_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Quiz Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForestQuizAttemptCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forest/ai/stream": {
+      "post": {
+        "tags": [
+          "forest"
+        ],
+        "summary": "Stream Forest Ai",
+        "operationId": "stream_forest_ai_api_forest_ai_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForestAiStreamRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AdminAccountBatchRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "activate",
+              "deactivate",
+              "delete",
+              "set_role"
+            ],
+            "title": "Action"
+          },
+          "uids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Uids"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "student",
+                  "teacher",
+                  "admin"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "uids"
+        ],
+        "title": "AdminAccountBatchRequest"
+      },
+      "AdminAccountCreateRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Username"
+          },
+          "identifier": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Identifier"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 6,
+            "title": "Password"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "student",
+              "teacher",
+              "admin"
+            ],
+            "title": "Role"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "school": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "School"
+          },
+          "major": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Major"
+          },
+          "class_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Class Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "identifier",
+          "password",
+          "role",
+          "school",
+          "major",
+          "class_name"
+        ],
+        "title": "AdminAccountCreateRequest"
+      },
+      "AdminAccountImportFailure": {
+        "properties": {
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identifier"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row",
+          "reason"
+        ],
+        "title": "AdminAccountImportFailure"
+      },
+      "AdminAccountImportRequest": {
+        "properties": {
+          "csv_text": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Csv Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "csv_text"
+        ],
+        "title": "AdminAccountImportRequest"
+      },
+      "AdminAccountImportResponse": {
+        "properties": {
+          "created": {
+            "type": "integer",
+            "title": "Created"
+          },
+          "updated": {
+            "type": "integer",
+            "title": "Updated"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "failures": {
+            "items": {
+              "$ref": "#/components/schemas/AdminAccountImportFailure"
+            },
+            "type": "array",
+            "title": "Failures"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created",
+          "updated",
+          "failed"
+        ],
+        "title": "AdminAccountImportResponse"
+      },
+      "AdminAccountUpdateRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Username"
+          },
+          "identifier": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Identifier"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "student",
+              "teacher",
+              "admin"
+            ],
+            "title": "Role"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 6
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "school": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "School"
+          },
+          "major": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Major"
+          },
+          "class_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Class Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "identifier",
+          "role",
+          "is_active",
+          "school",
+          "major",
+          "class_name"
+        ],
+        "title": "AdminAccountUpdateRequest"
+      },
+      "AuthResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "auth_type": {
+            "type": "string",
+            "enum": [
+              "password",
+              "oauth"
+            ],
+            "title": "Auth Type"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserRead"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "auth_type",
+          "user"
+        ],
+        "title": "AuthResponse"
+      },
+      "BranchCourseNodeRead": {
+        "properties": {
+          "course_node_id": {
+            "type": "string",
+            "title": "Course Node Id"
+          },
+          "course_or_chapter_theme": {
+            "type": "string",
+            "title": "Course Or Chapter Theme"
+          },
+          "course_goal": {
+            "type": "string",
+            "title": "Course Goal"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "current",
+              "locked"
+            ],
+            "title": "Status"
+          },
+          "has_outline": {
+            "type": "boolean",
+            "title": "Has Outline"
+          }
+        },
+        "type": "object",
+        "required": [
+          "course_node_id",
+          "course_or_chapter_theme",
+          "course_goal",
+          "status",
+          "has_outline"
+        ],
+        "title": "BranchCourseNodeRead"
+      },
+      "BranchOverviewReadResponse": {
+        "properties": {
+          "years": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BranchYearRead"
+            },
+            "type": "object",
+            "title": "Years"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "years"
+        ],
+        "title": "BranchOverviewReadResponse"
+      },
+      "BranchYearRead": {
+        "properties": {
+          "grade_id": {
+            "type": "string",
+            "title": "Grade Id"
+          },
+          "grade_name": {
+            "type": "string",
+            "title": "Grade Name"
+          },
+          "has_courses": {
+            "type": "boolean",
+            "title": "Has Courses"
+          },
+          "has_outline_content": {
+            "type": "boolean",
+            "title": "Has Outline Content"
+          },
+          "is_clickable": {
+            "type": "boolean",
+            "title": "Is Clickable"
+          },
+          "current_course_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Course Id"
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/BranchCourseNodeRead"
+            },
+            "type": "array",
+            "title": "Courses"
+          }
+        },
+        "type": "object",
+        "required": [
+          "grade_id",
+          "grade_name",
+          "has_courses",
+          "has_outline_content",
+          "is_clickable",
+          "courses"
+        ],
+        "title": "BranchYearRead"
+      },
+      "CanopyCourseNode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "grade": {
+            "type": "string",
+            "title": "Grade"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "prerequisite_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Prerequisite Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "grade",
+          "status",
+          "description"
+        ],
+        "title": "CanopyCourseNode"
+      },
+      "CanopyMilestone": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "desc": {
+            "type": "string",
+            "title": "Desc"
+          },
+          "reached": {
+            "type": "boolean",
+            "title": "Reached"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "title",
+          "desc",
+          "reached"
+        ],
+        "title": "CanopyMilestone"
+      },
+      "CanopyOverviewResponse": {
+        "properties": {
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/CanopyCourseNode"
+            },
+            "type": "array",
+            "title": "Courses"
+          },
+          "growth_stage": {
+            "type": "integer",
+            "title": "Growth Stage"
+          },
+          "completed_count": {
+            "type": "integer",
+            "title": "Completed Count"
+          },
+          "active_rate": {
+            "type": "integer",
+            "title": "Active Rate"
+          },
+          "avg_score": {
+            "type": "integer",
+            "title": "Avg Score"
+          },
+          "focused_hours": {
+            "type": "number",
+            "title": "Focused Hours"
+          },
+          "milestones": {
+            "items": {
+              "$ref": "#/components/schemas/CanopyMilestone"
+            },
+            "type": "array",
+            "title": "Milestones"
+          },
+          "quality_scores": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CourseQualityScore"
+            },
+            "type": "object",
+            "title": "Quality Scores"
+          }
+        },
+        "type": "object",
+        "required": [
+          "growth_stage",
+          "completed_count",
+          "active_rate",
+          "avg_score",
+          "focused_hours"
+        ],
+        "title": "CanopyOverviewResponse"
+      },
+      "ChatMessageRequest": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Session Id"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message"
+          },
+          "image_attachment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Attachment",
+            "description": "Base64 encoded image attachment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "message"
+        ],
+        "title": "ChatMessageRequest"
+      },
+      "ChatResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "reply_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reply Text"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          },
+          "year_learning_paths": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year Learning Paths"
+          },
+          "course_knowledge": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Knowledge"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id"
+        ],
+        "title": "ChatResponse"
+      },
+      "ChatStartRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Query"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "ChatStartRequest"
+      },
+      "CourseQualityScore": {
+        "properties": {
+          "accuracy": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Accuracy",
+            "default": 0
+          },
+          "difficulty_fit": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Difficulty Fit",
+            "default": 0
+          },
+          "completeness": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Completeness",
+            "default": 0
+          },
+          "overall": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Overall",
+            "default": 0
+          },
+          "suggestions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Suggestions"
+          },
+          "scored_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scored At"
+          }
+        },
+        "type": "object",
+        "title": "CourseQualityScore"
+      },
+      "CultivationProgramRead": {
+        "properties": {
+          "program_id": {
+            "type": "string",
+            "title": "Program Id"
+          },
+          "teacher_uid": {
+            "type": "string",
+            "title": "Teacher Uid"
+          },
+          "teacher_name": {
+            "type": "string",
+            "title": "Teacher Name"
+          },
+          "teacher_identifier": {
+            "type": "string",
+            "title": "Teacher Identifier"
+          },
+          "school": {
+            "type": "string",
+            "title": "School"
+          },
+          "major": {
+            "type": "string",
+            "title": "Major"
+          },
+          "class_name": {
+            "type": "string",
+            "title": "Class Name"
+          },
+          "courses": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Courses"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "program_id",
+          "teacher_uid",
+          "teacher_name",
+          "teacher_identifier",
+          "school",
+          "major",
+          "class_name",
+          "published_at",
+          "updated_at"
+        ],
+        "title": "CultivationProgramRead"
+      },
+      "CultivationProgramSaveRequest": {
+        "properties": {
+          "courses": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Courses"
+          },
+          "school": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "School"
+          },
+          "major": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Major"
+          },
+          "class_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Name"
+          }
+        },
+        "type": "object",
+        "title": "CultivationProgramSaveRequest"
+      },
+      "DataCohortRead": {
+        "properties": {
+          "school": {
+            "type": "string",
+            "title": "School"
+          },
+          "major": {
+            "type": "string",
+            "title": "Major"
+          },
+          "class_name": {
+            "type": "string",
+            "title": "Class Name"
+          },
+          "student_count": {
+            "type": "integer",
+            "title": "Student Count"
+          },
+          "teacher_count": {
+            "type": "integer",
+            "title": "Teacher Count"
+          },
+          "admin_count": {
+            "type": "integer",
+            "title": "Admin Count"
+          },
+          "has_program": {
+            "type": "boolean",
+            "title": "Has Program"
+          },
+          "program_teacher_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Program Teacher Name"
+          },
+          "program_updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Program Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "school",
+          "major",
+          "class_name",
+          "student_count",
+          "teacher_count",
+          "admin_count",
+          "has_program"
+        ],
+        "title": "DataCohortRead"
+      },
+      "DataOverviewResponse": {
+        "properties": {
+          "accounts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Accounts"
+          },
+          "cohorts": {
+            "type": "integer",
+            "title": "Cohorts"
+          },
+          "programs": {
+            "type": "integer",
+            "title": "Programs"
+          },
+          "learning_data": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Learning Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "accounts",
+          "cohorts",
+          "programs",
+          "learning_data"
+        ],
+        "title": "DataOverviewResponse"
+      },
+      "ForestAiContext": {
+        "properties": {
+          "course_node_id": {
+            "type": "string",
+            "title": "Course Node Id"
+          },
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "quiz_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiz Id"
+          },
+          "question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Id"
+          },
+          "question": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question"
+          },
+          "answer": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "grading_result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grading Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "course_node_id",
+          "chapter_id"
+        ],
+        "title": "ForestAiContext"
+      },
+      "ForestAiStreamRequest": {
+        "properties": {
+          "course_node_id": {
+            "type": "string",
+            "title": "Course Node Id"
+          },
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "quiz_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiz Id"
+          },
+          "question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Id"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message"
+          },
+          "active_question_context": {
+            "$ref": "#/components/schemas/ForestAiContext"
+          },
+          "image_attachment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Attachment",
+            "description": "Base64 encoded image attachment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "course_node_id",
+          "chapter_id",
+          "message",
+          "active_question_context"
+        ],
+        "title": "ForestAiStreamRequest"
+      },
+      "ForestAttemptRead": {
+        "properties": {
+          "attempt_id": {
+            "type": "string",
+            "title": "Attempt Id"
+          },
+          "quiz_id": {
+            "type": "string",
+            "title": "Quiz Id"
+          },
+          "score": {
+            "type": "integer",
+            "title": "Score"
+          },
+          "passed": {
+            "type": "boolean",
+            "title": "Passed"
+          },
+          "answers": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Answers"
+          },
+          "grading_result": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Grading Result"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attempt_id",
+          "quiz_id",
+          "score",
+          "passed",
+          "answers",
+          "grading_result",
+          "created_at"
+        ],
+        "title": "ForestAttemptRead"
+      },
+      "ForestChapterProgressRead": {
+        "properties": {
+          "course_node_id": {
+            "type": "string",
+            "title": "Course Node Id"
+          },
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "locked",
+              "available",
+              "passed"
+            ],
+            "title": "State"
+          },
+          "best_score": {
+            "type": "integer",
+            "title": "Best Score"
+          },
+          "latest_attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Attempt Id"
+          },
+          "passed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passed At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "course_node_id",
+          "chapter_id",
+          "state",
+          "best_score",
+          "updated_at"
+        ],
+        "title": "ForestChapterProgressRead"
+      },
+      "ForestQuizAttemptCreateRequest": {
+        "properties": {
+          "answers": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Answers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "answers"
+        ],
+        "title": "ForestQuizAttemptCreateRequest"
+      },
+      "ForestQuizGenerateRequest": {
+        "properties": {
+          "regenerate": {
+            "type": "boolean",
+            "title": "Regenerate",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "ForestQuizGenerateRequest"
+      },
+      "ForestQuizQuestionRead": {
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "single_choice",
+              "code",
+              "image_upload"
+            ],
+            "title": "Type"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "options": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Options"
+          },
+          "starter_code": {
+            "type": "string",
+            "title": "Starter Code",
+            "default": ""
+          },
+          "image_prompt": {
+            "type": "string",
+            "title": "Image Prompt",
+            "default": ""
+          },
+          "points": {
+            "type": "integer",
+            "title": "Points",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id",
+          "type",
+          "prompt"
+        ],
+        "title": "ForestQuizQuestionRead"
+      },
+      "ForestQuizRead": {
+        "properties": {
+          "quiz_id": {
+            "type": "string",
+            "title": "Quiz Id"
+          },
+          "course_node_id": {
+            "type": "string",
+            "title": "Course Node Id"
+          },
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "generating",
+              "ready",
+              "error"
+            ],
+            "title": "Status"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/ForestQuizQuestionRead"
+            },
+            "type": "array",
+            "title": "Questions"
+          },
+          "generation_error": {
+            "type": "string",
+            "title": "Generation Error",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "quiz_id",
+          "course_node_id",
+          "chapter_id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ForestQuizRead"
+      },
+      "ForestQuizSessionReadResponse": {
+        "properties": {
+          "course": {
+            "$ref": "#/components/schemas/LeafCourseRead"
+          },
+          "chapter": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Chapter"
+          },
+          "quiz": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ForestQuizRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest_attempt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ForestAttemptRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "progress": {
+            "$ref": "#/components/schemas/ForestChapterProgressRead"
+          },
+          "next_unlocked_chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Unlocked Chapter Id"
+          },
+          "next_course_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Course Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "course",
+          "chapter",
+          "progress"
+        ],
+        "title": "ForestQuizSessionReadResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status"
+          },
+          "database": {
+            "type": "string",
+            "const": "connected",
+            "title": "Database"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "database"
+        ],
+        "title": "HealthResponse"
+      },
+      "LeafCourseRead": {
+        "properties": {
+          "course_node_id": {
+            "type": "string",
+            "title": "Course Node Id"
+          },
+          "grade_id": {
+            "type": "string",
+            "title": "Grade Id"
+          },
+          "course_or_chapter_theme": {
+            "type": "string",
+            "title": "Course Or Chapter Theme"
+          },
+          "course_goal": {
+            "type": "string",
+            "title": "Course Goal"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "current",
+              "locked"
+            ],
+            "title": "Status"
+          },
+          "has_outline": {
+            "type": "boolean",
+            "title": "Has Outline"
+          }
+        },
+        "type": "object",
+        "required": [
+          "course_node_id",
+          "grade_id",
+          "course_or_chapter_theme",
+          "course_goal",
+          "status",
+          "has_outline"
+        ],
+        "title": "LeafCourseRead"
+      },
+      "LeafCourseReadResponse": {
+        "properties": {
+          "access_state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "locked"
+            ],
+            "title": "Access State"
+          },
+          "course": {
+            "$ref": "#/components/schemas/LeafCourseRead"
+          },
+          "outline": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outline"
+          },
+          "sections": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Sections"
+          },
+          "section_composed_markdowns": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Section Composed Markdowns"
+          },
+          "generation_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeafGenerationStatusRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "can_generate": {
+            "type": "boolean",
+            "title": "Can Generate"
+          },
+          "first_generatable_chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Generatable Chapter Id"
+          },
+          "locked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_state",
+          "course",
+          "can_generate"
+        ],
+        "title": "LeafCourseReadResponse"
+      },
+      "LeafGenerationStatusRead": {
+        "properties": {
+          "course_node_id": {
+            "type": "string",
+            "title": "Course Node Id"
+          },
+          "chapter_section_id": {
+            "type": "string",
+            "title": "Chapter Section Id"
+          },
+          "status": {
+            "type": "string",
+            "const": "running",
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "course_node_id",
+          "chapter_section_id",
+          "status",
+          "message"
+        ],
+        "title": "LeafGenerationStatusRead"
+      },
+      "LoginRequest": {
+        "properties": {
+          "account": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Account"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 6,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account",
+          "password"
+        ],
+        "title": "LoginRequest"
+      },
+      "OAuthRequest": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "qq",
+              "xuexitong"
+            ],
+            "title": "Provider"
+          },
+          "authorization_code": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 4,
+            "title": "Authorization Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "authorization_code"
+        ],
+        "title": "OAuthRequest"
+      },
+      "RegisterRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Username"
+          },
+          "identifier": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Identifier"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 6,
+            "title": "Password"
+          },
+          "confirm_password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 6,
+            "title": "Confirm Password"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "student",
+              "teacher",
+              "admin"
+            ],
+            "title": "Role",
+            "default": "student"
+          },
+          "school": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "School"
+          },
+          "major": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Major"
+          },
+          "class_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Class Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "identifier",
+          "password",
+          "confirm_password",
+          "school",
+          "major",
+          "class_name"
+        ],
+        "title": "RegisterRequest"
+      },
+      "SessionStateResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "user_uid": {
+            "type": "string",
+            "title": "User Uid"
+          },
+          "messages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          },
+          "year_learning_paths": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year Learning Paths"
+          },
+          "latest_grade_year": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Grade Year"
+          },
+          "course_knowledge": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Knowledge"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "user_uid",
+          "updated_at"
+        ],
+        "title": "SessionStateResponse"
+      },
+      "UserLearningDataRead": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserRead"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          },
+          "year_learning_paths": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Year Learning Paths"
+          },
+          "course_outlines": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Course Outlines"
+          },
+          "chapter_quizzes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Chapter Quizzes"
+          },
+          "chapter_progress": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Chapter Progress"
+          },
+          "chapter_weaknesses": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Chapter Weaknesses"
+          },
+          "resource_quality": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Resource Quality"
+          },
+          "conversation_sessions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Conversation Sessions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user"
+        ],
+        "title": "UserLearningDataRead"
+      },
+      "UserRead": {
+        "properties": {
+          "uid": {
+            "type": "string",
+            "title": "Uid"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "student",
+              "teacher",
+              "admin"
+            ],
+            "title": "Role"
+          },
+          "school": {
+            "type": "string",
+            "title": "School"
+          },
+          "major": {
+            "type": "string",
+            "title": "Major"
+          },
+          "class_name": {
+            "type": "string",
+            "title": "Class Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "uid",
+          "username",
+          "identifier",
+          "role",
+          "school",
+          "major",
+          "class_name",
+          "provider",
+          "is_active",
+          "created_at",
+          "last_login_at"
+        ],
+        "title": "UserRead"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "YearLearningPathsReadResponse": {
+        "properties": {
+          "year_learning_paths": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Year Learning Paths"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "year_learning_paths"
+        ],
+        "title": "YearLearningPathsReadResponse"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

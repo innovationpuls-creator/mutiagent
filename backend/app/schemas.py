@@ -30,6 +30,11 @@ def _validate_required_text(value: str) -> str:
     return trimmed
 
 
+def _validate_class_name_is_not_identifier(identifier: str, class_name: str) -> None:
+    if identifier.strip() == class_name.strip():
+        raise ValueError("班级不能填写登录标识")
+
+
 # ── Auth ──
 
 
@@ -70,6 +75,11 @@ class RegisterRequest(BaseModel):
         if data.get("password") != confirm_password:
             raise ValueError("两次输入的密码不一致")
         return confirm_password
+
+    @model_validator(mode="after")
+    def class_name_must_not_equal_identifier(self) -> "RegisterRequest":
+        _validate_class_name_is_not_identifier(self.identifier, self.class_name)
+        return self
 
 
 class OAuthRequest(BaseModel):
@@ -118,6 +128,11 @@ class AdminAccountCreateRequest(BaseModel):
     def validate_required_text(cls, v: str) -> str:
         return _validate_required_text(v)
 
+    @model_validator(mode="after")
+    def class_name_must_not_equal_identifier(self) -> "AdminAccountCreateRequest":
+        _validate_class_name_is_not_identifier(self.identifier, self.class_name)
+        return self
+
 
 class AdminAccountUpdateRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
@@ -138,6 +153,11 @@ class AdminAccountUpdateRequest(BaseModel):
     @classmethod
     def validate_required_text(cls, v: str) -> str:
         return _validate_required_text(v)
+
+    @model_validator(mode="after")
+    def class_name_must_not_equal_identifier(self) -> "AdminAccountUpdateRequest":
+        _validate_class_name_is_not_identifier(self.identifier, self.class_name)
+        return self
 
 
 class AdminAccountBatchRequest(BaseModel):

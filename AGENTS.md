@@ -127,6 +127,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **路由拆分**：FastAPI 的接口必须基于功能模块通过 `APIRouter` 拆分，禁止在 main.py 中堆砌逻辑。
 - **节点解耦**：LangGraph 的 State 与 Node 必须解耦，保持中枢路由的轻量化。Worker Agent 各自是独立的 LangChain Chain，不直接互相调用。
 - **Ruff 规范**：所有修改后的 Python 代码必须符合 Ruff 的规则。AI（包括 Antigravity、Codex 和其他 Agent）在修改任何 Python 文件后，必须使用 Ruff 进行格式化和代码清理（自动执行 `ruff check --fix` 和 `ruff format`），以清除未使用的导入、变量或不合规语法。
+- **全栈接口类型对齐**：每当 AI 修改了后端的 Pydantic 数据模型（Schemas）、请求体或返回体，必须自动在前端目录下执行一次 `npm run gen:api`（以编译出最新的 `src/types/api.ts`）。严禁自行猜测或在前端硬编码 API 字段，所有接口请求必须强引用 `src/types/api.ts` 中导出的 paths 类型。
 
 ## Git
 

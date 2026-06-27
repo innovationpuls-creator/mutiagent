@@ -214,6 +214,8 @@ def import_accounts(
             class_name = _required(row, "class_name")
             if not identifier:
                 raise ValueError("identifier 不能为空")
+            if identifier == class_name:
+                raise ValueError("班级不能填写登录标识")
 
             existing = find_user(session, identifier)
             if existing:
