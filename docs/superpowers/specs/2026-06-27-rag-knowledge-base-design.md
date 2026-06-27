@@ -7,34 +7,37 @@
 ## 1. 项目愿景与使用流程 (Project Vision & Complete User Flows)
 
 ### 1.1 教师/管理员端流程与预期效果
-1. **教材上架阶段**：
+1. **教材上传阶段**：
    * 教师登录后台，访问 `/admin/knowledge-base`。
    * 点击“上传教材”，在弹窗中选择 PDF 文件，输入教材名称（如《Python高级Web开发》），并添加专业标签（如：`["后端开发", "软件工程", "大三"]`）。
-   * 提交后，教材进入“正在解析”状态。后台异步调用阿里云百炼文档解析 API，将 PDF 解析为结构化的 Markdown 文本，并根据大纲自动切分章节，存储至 PostgreSQL 中。
-2. **大纲微调阶段**：
-   * 解析成功后，教师点击“编辑大纲”，弹出一个可视化的树形大纲编辑器（TOC Editor）。
-   * 教师可以预览大模型解析出的第 1 章至第 N 章的大纲结构。如果发现某节标题（如“1.2 FastApi基础”）解析有 OCR 误差，可以直接在双击修改为“1.2 FastAPI 核心概念”，拖动节点调整顺序，点击保存后直接更新数据库大纲 JSON。
+   * 提交后，教材进入“正在解析”状态。
+   * **后台自动切片管道**：如果 PDF 页数超过 200 页或大小超过 30MB，系统在内存中自动使用 Python 进行分片处理，异步调用阿里云百炼文档解析 API，获取高保真 Markdown 全文。
+2. **大纲微调与定位阶段**：
+   * 后台调用大模型，利用结构化输出（`with_structured_output`）提取整本书的规范大纲 JSON（包括章节及小节名称）。
+   * 后台 Python 以此结构化大纲为引导，在 Markdown 全文里自动检索各章节、小节标题的物理位置（`index`），执行精准切片，存入 `textbook_section_content`（小节内容表）。
+   * 教师点击“编辑大纲”，弹出一个可视化的树形大纲编辑器（TOC Editor）。如果发现某节标题有 OCR 解析误差，可以直接修改并保存，直接更新数据库大纲 JSON。
 3. **教材自主采购队列（KB Agent 审批）**：
-   * 当有学生在前端聊天框中请求了知识库目前尚未覆盖的主题（如“Flutter移动开发”）时，后台触发 **`admin_kb_agent`**。
-   * KB Agent 自动联网检索，找到公开优质的《Flutter 开发实战 PDF》和目录大纲，以 `pending_approval` 状态新增至教师后台的“待审采购教材”列表中，并显示推荐理由和下载来源。
-   * 教师在后台点击“同意采购”，系统自动执行下载、解析、切片并发布上线。
+   * 当有学生在前端聊天框中请求了知识库目前尚未覆盖的主题时，后台触发 **`admin_kb_agent`**。
+   * KB Agent 自动联网检索，找到公开优质的教材 PDF 和大纲，以 `pending_approval` 状态新增至教师后台的“待审采购教材”列表中。
+   * 教师点击“同意采购”，系统自动下载、解析、切片并发布。
 
 ### 1.2 学生端流程与预期效果
 1. **画像收集与推荐草稿**：
    * 学生完成初始画像对话后，表达了想学“后端开发”的意图。
-   * 系统粗筛出知识库中与“后端开发”相关的 Top 15-20 本教材大纲。
-   * **`learning_path_intake_agent` (草案 Agent)** 在聊天框中以精美的卡片形式输出推荐课程草案（全部取材于初筛的教材大纲）。
+   * 系统通过混合检索，从数据库粗筛出匹配的 Top 15-20 本教材元数据（书名、标签）。
+   * **`learning_path_intake_agent` (草案 Agent)** 在聊天框中以卡片形式输出推荐课程草案（大模型整篇读入这 15-20 本教材的完整大纲作为上下文进行全局规划，绝不猜错书名）。
 2. **草案微调与路径规划**：
-   * 学生在对话框中打字反馈：“我不想学 Django，帮我换成 FastAPI”。
-   * 草案 Agent 再次在候选教材中匹配到《FastAPI 高效开发指南》，在聊天框中动态更新推荐清单，并在下方显示「确认并生成路径」与「修改画像」按钮。
-   * 学生点击「确认并生成路径」，**`learning_path_agent`** 将其编排为 4 年级课程规划，生成的每个课程节点内置对应的 `textbook_id`。
+   * 学生在对话框中反馈：“我不想学 Django，帮我换成 FastAPI”。
+   * 草案 Agent 在候选教材中匹配到《FastAPI 高效开发指南》，在聊天框中更新推荐清单，并在下方显示「确认并生成路径」与「修改画像」按钮。
+   * 学生点击「确认并生成路径」，**`learning_path_agent`** 将其编排为 4 年级课程规划，每个课程节点内置对应的 `textbook_id`。
 3. **确定性章节展开**：
-   * 学生进入“分支页（BranchPage）”查看 4 年路径，点击《FastAPI 高效开发指南》进入“展叶页（LeafPage）”。
-   * **`course_knowledge_agent` (章节 Agent)** 触发运行。它直接从数据库读取对应的 `outline` JSON 渲染出目录，不经过任何大模型脑补，生成大纲是 **100% 确定且精准的**。
+   * 学生进入“分支页（BranchPage）”查看 4 年路径，点击课程进入“展叶页（LeafPage）”。
+   * **`course_knowledge_agent` (章节 Agent)** 直接从数据库读取对应的 `outline` JSON 渲染出目录，不经过任何大模型脑补，生成大纲是 **100% 确定且精准的**。
 4. **Markdown 原文精读生成**：
    * 学生点击学习“第一章第二节：依赖注入”。
-   * 触发 **`section_markdown_agent`**，后端直接查询该教材第一章的完整正文（`TextbookChapter.content`），整篇塞入大模型上下文。
-   * 大模型输出的高保真 Markdown 文档有据可查，严格尊重教材原文，保证了教学内容的权威性与严肃性。
+   * 触发 **`section_markdown_agent`**，后端直接查询该教材第一章该小节的完整正文（`textbook_section_content.content`，约 2000-5000 字），整篇塞入大模型上下文。
+   * 由于精准定位到小节正文，避免了长达数万字的整章文本塞入，**彻底规避了大模型超时（FastAPI 180s超时限制）与 Token 浪费问题**。
+   * 大模型输出的高保真 Markdown 文档有据可查，保证了教学内容的权威性与严肃性。
 
 ---
 
@@ -60,11 +63,12 @@ CREATE TABLE textbook (
     updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL
 );
 
--- 教材章节内容表
-CREATE TABLE textbook_chapter (
+-- 教材小节内容表 (颗粒度下沉至小节以保障 CAG 性能)
+CREATE TABLE textbook_section_content (
     id VARCHAR(64) PRIMARY KEY,
     textbook_id VARCHAR(64) REFERENCES textbook(id) ON DELETE CASCADE,
     chapter_number INTEGER NOT NULL,
+    section_id VARCHAR(64) NOT NULL,
     title VARCHAR(256) NOT NULL,
     content TEXT NOT NULL,
     created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
@@ -76,16 +80,21 @@ CREATE INDEX idx_textbook_title ON textbook (title);
 CREATE INDEX idx_textbook_status ON textbook (status);
 CREATE INDEX idx_textbook_outline_gin ON textbook USING gin (outline);
 CREATE INDEX idx_textbook_embedding_hnsw ON textbook USING hnsw (embedding vector_cosine_ops);
-CREATE INDEX idx_textbook_chapter_textbook_id ON textbook_chapter (textbook_id);
-CREATE UNIQUE INDEX idx_textbook_chapter_unique_num ON textbook_chapter (textbook_id, chapter_number);
+CREATE INDEX idx_textbook_section_textbook_id ON textbook_section_content (textbook_id);
+CREATE UNIQUE INDEX idx_textbook_section_unique_id ON textbook_section_content (textbook_id, section_id);
 ```
 
 ### 2.2 SQLModel ORM 声明
 ```python
+import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from sqlmodel import SQLModel, Field, Column
 from sqlalchemy.dialects.postgresql import JSONB
+import sqlalchemy as sa
+
+# 动态配置向量维度防止 API 升级导致维数不兼容
+EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIMENSION", "1536"))
 
 class Textbook(SQLModel, table=True):
     """教材主表（存储元数据及大纲结构）"""
@@ -98,19 +107,25 @@ class Textbook(SQLModel, table=True):
     outline: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSONB), description="教材大纲目录结构 JSON")
     status: str = Field(default="processing", index=True, description="解析状态: pending_approval/processing/success/failed")
     source_link: Optional[str] = Field(default=None, description="下载/采购来源链接")
-    embedding: Optional[List[float]] = Field(default=None, sa_column=Column(JSONB), description="教材元数据向量")
+    # sa_column 处动态指定向量维度
+    embedding: Optional[List[float]] = Field(
+        default=None, 
+        sa_column=Column(sa.dialects.postgresql.ARRAY(sa.Float)), 
+        description="教材元数据向量"
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
-class TextbookChapter(SQLModel, table=True):
-    """教材章节内容表（按章切割存储，用于 CAG 生成）"""
-    __tablename__ = "textbook_chapter"
+class TextbookSectionContent(SQLModel, table=True):
+    """教材小节内容表（分节细粒度存储，完美适配 CAG 上下文限制）"""
+    __tablename__ = "textbook_section_content"
 
     id: str = Field(primary_key=True, index=True)
     textbook_id: str = Field(foreign_key="textbook.id", index=True, nullable=False)
     chapter_number: int = Field(index=True, nullable=False, description="章节编号")
-    title: str = Field(nullable=False, description="章节名称")
-    content: str = Field(sa_column=Column(sa.Text, nullable=False), description="章节完整 Markdown 内容")
+    section_id: str = Field(index=True, nullable=False, description="小节 ID (对应大纲中的节点 ID)")
+    title: str = Field(nullable=False, description="小节名称")
+    content: str = Field(sa_column=sa.Column(sa.Text, nullable=False), description="小节完整正文内容")
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 ```
@@ -126,7 +141,7 @@ class TextbookChapter(SQLModel, table=True):
   * **请求体 (Form-Data)**:
     * `file`: UploadFile (PDF)
     * `title`: str (书名)
-    * `tags`: str (JSON 格式标签数组, 如 `["前端", "React"]`)
+    * `tags`: str (JSON 格式标签数组)
   * **返回结构 (201 Created)**:
     ```json
     {
@@ -165,8 +180,8 @@ class TextbookChapter(SQLModel, table=True):
             "chapter_number": 1,
             "title": "第一章 React 核心设计理念",
             "sections": [
-              { "title": "1.1 Virtual DOM 机制" },
-              { "title": "1.2 Fiber 架构深入" }
+              { "section_id": "sec_1_1", "title": "1.1 Virtual DOM 机制" },
+              { "section_id": "sec_1_2", "title": "1.2 Fiber 架构深入" }
             ]
           }
         ]
@@ -187,24 +202,13 @@ class TextbookChapter(SQLModel, table=True):
 
 ## 4. 智能体输入输出规格与 CAG 接口协议 (Agents Input/Output & CAG Protocols)
 
-在多智能体 Graph 运行中，各 Worker Agent 之间的输入、输出以及持久化机制进行了深度绑定：
-
-```
-OrchestrationState 
-  ├── 搭载用户画像 (profile)
-  ├── 检索初筛召回教材大纲列表 ─► (草案 Agent 的 Context 塞入)
-  ├── 产出学习路径草案 (learning_path_intake)
-  └── 点亮路径课程 ─► 读取指定教材章节内容 ─► (Markdown Agent 的 Context 塞入)
-```
-
 ### 4.1 `learning_path_intake_agent` (草案 Agent)
 * **输入规格 (`OrchestrationState`)**:
   * `profile`: 用户画像数据。
-  * `query`: 用户的个性化学习诉求（如：“我想重点学 Python 后端开发”）。
-  * `candidate_textbooks`: **从数据库检索过滤出的 Top 15-20 本教材元数据 + 大纲 JSON**（后端在将 State 传入图前预先装载，作为 CAG 上下文）。
+  * `query`: 用户的个性化学习诉求。
+  * `candidate_textbooks`: **从数据库检索初筛出的 Top 15-20 本教材元数据 + 大纲 JSON**（作为 CAG 上下文）。
 * **大模型 System Prompt / 契约约束**:
-  * 必须仅在 `candidate_textbooks` 列出的书目和大纲结构中进行挑选。
-  * 禁止推荐任何在上下文中不存在的教材。
+  * 必须且仅在 `candidate_textbooks` 列出的书目和大纲中进行挑选组合。
 * **输出结构 (`LearningPathIntakeOutput`)**:
   ```json
   {
@@ -253,38 +257,40 @@ OrchestrationState
 
 ### 4.3 `course_knowledge_agent` (章节 Agent)
 * **输入规格**:
-  * `course_node_id`: 学生点亮的课程节点 ID。
+  * `course_node_id`: 课程节点 ID。
   * `textbook_id`: 绑定该课程的教材 ID。
-* **业务逻辑 (不经过 LLM 盲猜)**:
-  直接根据 `textbook_id` 从数据库 `Textbook` 表查询，并返回其 `outline` 大纲字段：
+* **降级与防崩溃兼容逻辑 (Vulnerability 4 修复)**:
   ```python
-  # 章节 Agent 直接读取，不执行大模型推理
-  textbook = session.exec(select(Textbook).where(Textbook.id == textbook_id)).first()
+  # 章节 Agent 执行逻辑
+  t_id = state.get("textbook_id")
+  if not t_id:
+      # 降级校准：按课程名称检索教材库
+      course_name = state.get("course_or_chapter_theme")
+      textbook = session.exec(select(Textbook).where(Textbook.title == course_name)).first()
+      if textbook:
+          t_id = textbook.id
+          # 回写状态以修复旧数据
+          state["textbook_id"] = t_id
+      else:
+          # 历史数据兜底降级：启动老版本 LLM 参数大纲生成
+          return run_legacy_param_outline_generation(state)
+  
+  # 正常直接拉取 outline
+  textbook = session.exec(select(Textbook).where(Textbook.id == t_id)).first()
   return {"outline_data": textbook.outline}
   ```
 
 ### 4.4 `section_markdown_agent` (小节 Markdown Agent)
 * **输入规格**:
-  * `course_node_id` & `chapter_section_id`。
-  * `chapter_content`: **查询 `TextbookChapter` 表获取的整章 Markdown 原文（约 1-3 万字）**。
-* **大模型 System Prompt 约束**:
-  * “你正在生成教学文档。你的输入中附带了《教材章节原文》。你生成的 Markdown 教学内容必须严格基于原文中阐述的知识点和逻辑结构，禁止编造或脑补任何非原文提供的概念或 API。保证内容格式精美且有据可依。”
+  * `course_node_id` & `chapter_section_id` & `textbook_id`。
+  * `section_content`: **精准查询 `TextbookSectionContent` 表获取的小节正文（约 2000-5000 字）**。
 * **输出结构**: 格式化的教学 Markdown 文本。
-
-### 4.5 `admin_kb_agent` (自主采购智能体)
-* **输入规格**:
-  * `missing_topic`: 学生请求但目前知识库无法覆盖的冷启动技术方向（如：“我想学 Rust 智能合约开发”）。
-* **逻辑**:
-  * 调用百炼 `get_search_worker_llm()`，使用内置 Search Tool 寻找优质公开 PDF 或官方 GitBook。
-  * 解析出临时的大纲 JSON 和源下载地址。
-* **输出结构 (待审教材实体存入数据库)**:
-  `Textbook` 实体被插入，状态为 `status="pending_approval"`，等待管理员审核通过。
 
 ---
 
 ## 5. PostgreSQL 检索引导的 CAG 核心检索算法 (RRF Hybrid Search)
 
-对于草案 Agent 匹配教材，后端在启动图（Graph）执行前，调用本 SQL 完成 Top 15-20 的初筛，并填充到 `candidate_textbooks` 状态中：
+对于草案 Agent 匹配教材，后端在启动图（Graph）执行前，调用本 SQL 完成 Top 15-20 的初筛：
 
 ```sql
 WITH vector_search AS (
@@ -303,7 +309,7 @@ fts_search AS (
     WHERE to_tsvector('chinese', title || ' ' || tags::text) @@ to_tsquery('chinese', :query_fts) AND status = 'success'
     LIMIT 30
 )
--- 3. 倒数排序融合 (RRF)，完美兼容向量与文本差异，保证精准度
+-- 3. 倒数排序融合 (RRF)，保证精确度与语义召回的平衡
 SELECT COALESCE(v.id, f.id) as id,
        COALESCE(v.title, f.title) as title,
        COALESCE(v.outline, f.outline) as outline,
@@ -316,38 +322,65 @@ LIMIT :limit; -- limit 设定为 15 或 20
 
 ---
 
-## 6. 性能优化与高并发保障 (CAG Performance Optimizations)
+## 6. 教材自动切片管道设计 (LLM-Guided Splitter)
 
-整篇塞入大纲与正文面临的最大瓶颈是 **LLM 首字延迟 (Time to First Token, TTFT)** 以及 **Token 消耗成本**。本系统通过以下技术栈级优化保障高并发和低延迟：
+为了规避正则表达式切片的 fragility（易碎性）和非标 PDF 带来的解析混乱，系统采用 **“大模型结构化大纲 + Python 物理定位”** 管道进行切分：
 
-### 6.1 LLM 缓存层设计 (KV Cache / Prompt Caching)
-* **大模型 Prompt 缓存机制**：
-  在百炼/OpenAI 调用中，首字延迟高主要是因为重新计算长文本的 KV。
-  * **草案 Agent** 的候选大纲列表具有高度重复性（不同学生在同一段时间内的热门专业基本一致）。我们将候选列表的文本结构固定化（格式、前缀一致），从而使得百炼大模型能够命中 **Prompt Cache**，使 TTFT 降低 80% 以上，并节省 50% 的输入 Token 费用。
-  * **Markdown Agent** 在对同一章的不同小节生成内容时，每次传入的 `TextbookChapter.content`（整章正文）是完全一样的。通过保证正文文本放在 Prompt 的最前段（Prefix），通义千问模型会自动对其进行 **KV 缓存**，极速响应同一章节内各个小节的后续生成请求。
+```
+[管理员上传 PDF] ─► [阿里百炼 Document Mind API] ─► 获得 Markdown 纯文本
+                                                            │
+                                                            ▼
+[Python 物理定位切片] ◄─── [大模型 JSON 目录提取] ◄───────  [全文/前言文本]
+  (按标题位置 start:end 切片)    (with_structured_output 约束)
+        │
+        ▼
+[写入数据库 `textbook_section_content`]
+```
 
-### 6.2 数据库索引与性能监控
-* 为 `Textbook` 表的 `outline` 字段使用 `GIN` 索引，确保查询包含特定大纲节点的 SQL 响应在 5ms 以内。
-* 向量字段 `embedding` 采用 `HNSW` 索引而不是 `IVFFlat`，以支持高并发下免训练（No Training）的实时相似度召回。
+1. **大纲语义提取**：
+   提取 PDF 的目录页 Markdown 送入大模型，使用强类型约束输出目录树大纲 JSON，包含所有小节标题的精确名称数组：`["1.1 什么是数据结构", "1.2 算法复杂度分析"]`。
+2. **物理字符索引定位**：
+   后端 Python 直接在 Markdown 全文中，以标题为关键词查找位置：
+   ```python
+   # 获取每个小节标题在 Markdown 全文中的字符起始和截止位置
+   positions = []
+   for title in section_titles:
+       idx = markdown_text.find(title)
+       if idx != -1:
+           positions.append((title, idx))
+   # 根据位置排序并对 markdown_text[start:end] 进行切片，获得纯净的小节正文
+   ```
+3. **入库**：切片后的小节文本与 `TextbookSectionContent` 绑定入库，规避大模型输出 Token 溢出瓶颈，保障数据完整。
 
 ---
 
-## 7. 管理端前端新组件设计规范 (Admin Frontend Specs)
+## 7. 性能优化与高并发保障 (CAG Performance Optimizations)
+
+### 7.1 LLM 缓存层设计 (KV Cache / Prompt Caching)
+* **草案 Agent** 的候选列表文本结构固定化（格式、前缀一致），触发百炼的 **Prompt Cache**，使 TTFT 降低 80% 以上。
+* **Markdown Agent** 在对同一小节进行生成时，通过保证小节正文文本放在 Prompt 的最前段（Prefix），通义千问模型会自动对其进行 **KV 缓存**，极速响应同一章节内各个小节的后续生成请求。
+
+### 7.2 数据库索引与性能监控
+* 为 `Textbook` 表的 `outline` 字段使用 `GIN` 索引，确保查询包含特定大纲节点的 SQL 响应在 5ms 以内。
+* 向量字段 `embedding` 采用 `HNSW` 索引，以支持高并发下免训练（No Training）的实时相似度召回。
+
+---
+
+## 8. 管理端前端新组件设计规范 (Admin Frontend Specs)
 
 管理端前端组件基于 **LXGW WenKai** 字体及暗色主题设计（遵循 `AGENTS.md` 规范）。
 
-### 7.1 `/admin/knowledge-base` 主布局
+### 8.1 `/admin/knowledge-base` 主布局
 * **配色系统**：
   * 主背景：`oklch(16% 0.015 280)`（暗黑色面板）
   * 文字颜色：`oklch(92% 0.005 280)`
-  * 按钮悬浮交互：过渡动画动效控制在 200ms 内，仅允许使用 `transform` 与 `opacity` 的缓动，不可变动布局。
+  * 按钮悬浮交互：过渡动画动效控制在 200ms 内，仅允许使用 `transform` 与 `opacity` 的轻量缓动。
 * **模块构成**：
   1. **教材上架上传区 (`UploadPanel.tsx`)**：支持拖拽 PDF、多选标签。
   2. **教材状态表格 (`TextbookTable.tsx`)**：展示解析队列。
   3. **采购待审队列 (`ApprovalQueue.tsx`)**：展示 `admin_kb_agent` 搜集回来的待审核条目。
 
-### 7.2 可视化大纲编辑器 (`OutlineEditor.tsx`)
-大模型解析出来的教材大纲，必须能够微调保存。
+### 8.2 可视化大纲编辑器 (`OutlineEditor.tsx`)
 * **组件设计**：
   * 采用递归式组件 `OutlineNode` 渲染大纲树，支持折叠/展开。
   * 点击任意节点标题直接变为 `<input />` 状态，失焦（`onBlur`）时执行临时保存。
@@ -356,19 +389,19 @@ LIMIT :limit; -- limit 设定为 15 或 20
 
 ---
 
-## 8. 修改代码硬性约束与注意事项 (Coding Safeguards)
+## 9. 修改代码硬性约束与注意事项 (Coding Safeguards)
 
 在具体修改代码时，必须遵守以下严格原则，防止破环现有系统：
 
-### 8.1 现有契约测试 (Contract Tests) 兼容
+### 9.1 现有契约测试 (Contract Tests) 兼容
 * 运行 `pytest` 发现存在 `test_learning_path_agent_contract.py` 等大量针对 `learning_path_agent` 契约规范的测试。
-* 在为 `course_nodes` 添加 `textbook_id` 属性时，必须在对应的 Pydantic 模型（如 `backend/app/orchestration/agents/models.py` 里的 `LearningPathIntakeCourseOutput` 及 `BranchCourseNode`）中将其定义为 **`Optional` 字段，或提供默认值 `None`**。
+* 在为 `course_nodes` 添加 `textbook_id` 属性时，必须在对应的 Pydantic 模型中将其定义为 **`Optional` 字段，或提供默认值 `None`**。
 * 严禁打破旧契约测试中对课程生成格式的期望，否则持续集成（CI）将无法通过。
 
-### 8.2 全栈 API 类型自动生成
+### 9.2 全栈 API 类型自动生成
 * 每次修改了后端的 Pydantic 结构或 API 返回结构后，**必须立即在前端目录下运行 `npm run gen:api`**，以编译出最新的 `src/types/api.ts`。
 * 严禁前端自行猜测 API 返回的字段，必须严格引用自动生成的 API 类型，保持全栈类型对齐。
 
-### 8.3 Biome 与 Ruff 代码格式化
+### 9.3 Biome 与 Ruff 代码格式化
 * 在修改任何后端 Python 文件后，必须使用 `ruff check --fix` 和 `ruff format` 格式化代码，清除未使用 imports。
 * 在修改任何前端 TSX/TS 文件后，必须使用 `npx biome check --write` 清理残存垃圾和格式化代码。
