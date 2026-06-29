@@ -620,8 +620,7 @@ export function AdminKnowledgeBasePage({
 								disabled={
 									busy ||
 									isGeneratingContent ||
-									(generationProgress &&
-										generationProgress.status === "running")
+									generationProgress?.status === "running"
 								}
 								style={{
 									padding: "var(--space-8) var(--space-16)",
