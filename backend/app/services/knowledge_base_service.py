@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
+import os
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from langchain_openai import OpenAIEmbeddings
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.database import get_engine
@@ -17,6 +21,8 @@ from app.models import (
     TextbookSectionContent,
 )
 from app.orchestration.llm import get_worker_llm
+
+logger = logging.getLogger(__name__)
 
 _ADMITTED_SOURCE_VALUES = {
     "status": "enabled",
@@ -893,3 +899,105 @@ def get_textbook_generation_progress(
         "status": status_val,
         "current_section_title": current_section_title,
     }
+
+
+def get_embeddings_client() -> OpenAIEmbeddings:
+    base_url = os.getenv("LLM_BASE_URL")
+    api_key = os.getenv("LLM_API_KEY")
+    model = os.getenv("LLM_EMBEDDING_MODEL", "text-embedding-v2")
+    return OpenAIEmbeddings(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+    )
+
+
+def hybrid_search_textbooks(
+    session: Session, query: str, limit: int = 15
+) -> list[Textbook]:
+    # Only search published textbooks
+    bind = session.get_bind()
+    dialect_name = bind.dialect.name
+
+    if dialect_name == "postgresql":
+        try:
+            embeddings = get_embeddings_client()
+            query_vector = embeddings.embed_query(query)
+
+            # Perform RRF Hybrid Search in PostgreSQL using raw SQL text:
+            # Combine cosine distance embedding <=> :vector and tsvector match
+            # Make sure to handle tsquery correctly using websearch_to_tsquery
+            # or plainto_tsquery.
+            # Return the Textbook instances matching the IDs
+            sql = text("""
+                WITH vector_search AS (
+                    SELECT textbook_id,
+                           ROW_NUMBER() OVER (
+                               ORDER BY embedding <=> :vector
+                           ) as rank
+                    FROM textbook
+                    WHERE embedding IS NOT NULL
+                      AND student_availability_status = 'published'
+                    LIMIT 30
+                ),
+                fts_search AS (
+                    SELECT textbook_id,
+                           ROW_NUMBER() OVER (
+                               ORDER BY ts_rank(
+                                   to_tsvector(
+                                       'chinese',
+                                       title || ' ' || tags::text
+                                   ),
+                                   plainto_tsquery('chinese', :query)
+                               ) DESC
+                           ) as rank
+                    FROM textbook
+                    WHERE to_tsvector(
+                              'chinese',
+                              title || ' ' || tags::text
+                          ) @@ plainto_tsquery('chinese', :query)
+                      AND student_availability_status = 'published'
+                    LIMIT 30
+                )
+                SELECT COALESCE(v.textbook_id, f.textbook_id) as textbook_id,
+                       (1.0 / (60.0 + COALESCE(v.rank, 100)) +
+                        1.0 / (60.0 + COALESCE(f.rank, 100))) as rrf_score
+                FROM vector_search v
+                FULL OUTER JOIN fts_search f ON v.textbook_id = f.textbook_id
+                ORDER BY rrf_score DESC
+                LIMIT :limit
+            """)
+            res = session.execute(
+                sql, {"vector": query_vector, "query": query, "limit": limit}
+            ).all()
+            ids = [r[0] for r in res]
+            if not ids:
+                return []
+            # Retrieve instances in RRF order
+            tbs = session.exec(
+                select(Textbook).where(Textbook.textbook_id.in_(ids))
+            ).all()
+            tb_map = {tb.textbook_id: tb for tb in tbs}
+            return [tb_map[t_id] for t_id in ids if t_id in tb_map]
+        except Exception as e:
+            logger.warning("PostgreSQL hybrid search failed, falling back: %s", e)
+
+    # SQLite or Postgres fallback: Simple matching
+    stmt = select(Textbook).where(Textbook.student_availability_status == "published")
+    all_tbs = session.exec(stmt).all()
+
+    # Calculate simple match score (e.g., query string overlap in title or tags)
+    scored = []
+    for tb in all_tbs:
+        score = 0
+        if query.lower() in tb.title.lower():
+            score += 10
+        if tb.tags:
+            for tag in tb.tags:
+                if query.lower() in tag.lower():
+                    score += 5
+        if score > 0:
+            scored.append((score, tb))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [item[1] for item in scored[:limit]]
