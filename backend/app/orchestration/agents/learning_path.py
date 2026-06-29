@@ -38,7 +38,7 @@ DEFAULT_PATH_COMMANDS = (
 )
 DEFAULT_TOPIC = "学习路径"
 MIN_LEARNING_PATH_COURSES = 4
-MAX_LEARNING_PATH_COURSES = 10
+MAX_LEARNING_PATH_COURSES = 8
 LEARNING_PATH_STRUCTURED_TIMEOUT_SECONDS = 120.0
 LEARNING_PATH_RETRY_ERROR = "学习路径生成失败，请重试生成学习路径。"
 
@@ -147,7 +147,7 @@ def _validate_learning_path_contract(path_data: dict) -> str:
         <= len(normalized_course_nodes)
         <= MAX_LEARNING_PATH_COURSES
     ):
-        return "当前学年课程数量必须在 4 到 10 门之间。"
+        return "当前学年课程数量必须在 4 到 8 门之间。"
     if not any(
         course.get("course_node_id") == course_id for course in normalized_course_nodes
     ):
@@ -312,6 +312,10 @@ def _course_node(
     course_node_id: str,
     grade_id: str,
     theme: str,
+    source_textbook_id: str,
+    source_textbook_title: str,
+    source_outline_section_ids: list[str],
+    course_stage_plan: list[str],
     semester_scope: str = "上学期",
     duration: str,
     pace_reason: str,
@@ -330,6 +334,10 @@ def _course_node(
         "course_node_id": course_node_id,
         "grade_id": grade_id,
         "course_or_chapter_theme": theme,
+        "source_textbook_id": source_textbook_id,
+        "source_textbook_title": source_textbook_title,
+        "source_outline_section_ids": source_outline_section_ids,
+        "course_stage_plan": course_stage_plan,
         "time_arrangement": _time_arrangement(duration, pace_reason, semester_scope),
         "course_goal": goal,
         "prerequisite_node_ids": prerequisite_node_ids,
@@ -539,11 +547,13 @@ def _build_analysis_input(
         "1. 判断用户当前阶段、目标导向、时间约束与关键短板。\n"
         "2. 判断当前年级最应该先开始的课程，以及为什么先学它。\n"
         "3. 判断课程之间的依赖、阶段拆分、实践闭环与验收标准。\n"
-        "4. 如果输入里已经有历史学习路径与完成度，必须在此基础上延续当前进度，不要重新从第一门课开始。\n"
-        "5. 再把分析结果映射到轻量规划骨架，输出 4-10 门课程的 course_specs；"
+        "4. 如果输入里已经有历史学习路径与完成度，必须在此基础上延续当前进度，"
+        "不要重新从第一门课开始。\n"
+        "5. 再把分析结果映射到轻量规划骨架，输出 4-8 门课程的 course_specs；"
         "课程数量必须与已确认课程草案一致，课程顺序必须与已确认课程草案一致。"
         "不要输出完整知识图谱或章节明细。\n\n"
         "已确认课程草案是正式学习路径的边界，不能扩展到用户没有确认的方向：\n"
+        "课程标题和来源绑定必须来自已确认课程草案，模型不得替换教材来源。\n"
         f"{json.dumps(intake, ensure_ascii=False, indent=2)}\n"
         f"已确认课程顺序：\n{intake_course_lines}\n\n"
         f"用户画像关键信息：{json.dumps(profile, ensure_ascii=False, indent=2)}\n"
@@ -932,6 +942,10 @@ def _build_learning_path_from_course_specs(
                 course_node_id=spec["course_node_id"],
                 grade_id=grade_year,
                 theme=spec["theme"],
+                source_textbook_id=spec["source_textbook_id"],
+                source_textbook_title=spec["source_textbook_title"],
+                source_outline_section_ids=spec["source_outline_section_ids"],
+                course_stage_plan=spec["course_stage_plan"],
                 semester_scope=_normalize_semester_scope(
                     str(spec.get("semester_scope") or ""),
                     course_index=index,
@@ -957,7 +971,9 @@ def _build_learning_path_from_course_specs(
                     from_node_id=previous_course_id,
                     to_node_id=spec["course_node_id"],
                     relation_type="extends",
-                    description=f"先完成 {previous_course_id}，再进入 {spec['theme']}。",
+                    description=(
+                        f"先完成 {previous_course_id}，再进入 {spec['theme']}。"
+                    ),
                 )
             )
         previous_course_id = spec["course_node_id"]
@@ -1043,27 +1059,9 @@ def _build_local_learning_path(
     grade_year: str,
     learning_topic: str,
 ) -> dict:
-    confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
-    constraints = str(confirmed.get("constraints") or "")
-    pace_reason = (
-        f"围绕{constraints}安排" if constraints else "根据后续补充的时间与约束调整"
-    )
-    topic = learning_topic or DEFAULT_TOPIC
-    _grade_name, grade_goal, course_specs, _leading_relations = _grade_course_specs(
-        grade_year, topic, pace_reason
-    )
-
-    return _build_learning_path_from_course_specs(
-        profile,
-        grade_year=grade_year,
-        learning_topic=topic,
-        grade_goal=grade_goal,
-        goal_type="项目实践",
-        desired_outcome=f"完成一个围绕 {topic} 的课程级项目",
-        four_year_outcome="形成就业级项目作品集",
-        current_focus="",
-        next_action="",
-        course_specs=course_specs,
+    raise ValueError(
+        "正式学习路径必须先有已确认课程草案并绑定教材来源，"
+        "不能使用本地兜底规格生成无绑定路径。"
     )
 
 
@@ -1129,6 +1127,40 @@ def _scope_learning_path_to_grade_year(path_dict: dict, grade_year: str) -> dict
     return scoped_path
 
 
+def _bind_confirmed_course_sources(
+    path_dict: dict, grade_year: str, intake_courses: list[dict] | None
+) -> dict:
+    courses = _path_courses(path_dict, grade_year)
+    expected_courses = intake_courses if isinstance(intake_courses, list) else []
+    if not courses or not expected_courses:
+        return path_dict
+    if len(courses) != len(expected_courses):
+        raise ValueError("学习路径 course_nodes 数量必须与已确认课程草案一致。")
+
+    for index, course_node in enumerate(courses):
+        intake_course = expected_courses[index]
+        course_node["course_or_chapter_theme"] = str(intake_course["title"]).strip()
+        course_node["source_textbook_id"] = str(
+            intake_course["source_textbook_id"]
+        ).strip()
+        course_node["source_textbook_title"] = str(
+            intake_course["source_textbook_title"]
+        ).strip()
+        course_node["source_outline_section_ids"] = intake_course[
+            "source_outline_section_ids"
+        ]
+        course_node["course_stage_plan"] = [
+            str(item).strip()
+            for item in course_node.get("course_stage_plan", [])
+            if str(item).strip()
+        ] or [
+            str(item).strip()
+            for item in course_node.get("learning_sequence", [])
+            if str(item).strip()
+        ]
+    return path_dict
+
+
 def _apply_existing_progress_to_path(
     path_dict: dict,
     grade_year: str,
@@ -1169,7 +1201,9 @@ def _apply_existing_progress_to_path(
         if isinstance(next_course, dict):
             current_course = _current_course_from_node(
                 next_course,
-                current_focus=f"基于已完成进度，继续推进 {next_course['course_or_chapter_theme']}",
+                current_focus=(
+                    f"基于已完成进度，继续推进 {next_course['course_or_chapter_theme']}"
+                ),
                 next_action="延续当前完成度，从这一门课继续推进",
             )
             path_dict["current_learning_course"] = current_course
@@ -1179,7 +1213,9 @@ def _apply_existing_progress_to_path(
     next_index = max(0, min(completed_courses, total_courses - 1))
     current_course = _current_course_from_node(
         courses[next_index],
-        current_focus=f"基于已完成进度，继续推进 {courses[next_index]['course_or_chapter_theme']}",
+        current_focus=(
+            f"基于已完成进度，继续推进 {courses[next_index]['course_or_chapter_theme']}"
+        ),
         next_action="延续当前完成度，从这一门课继续推进",
     )
     path_dict["current_learning_course"] = current_course
@@ -1196,7 +1232,8 @@ def _build_learning_path_from_plan(
     intake_courses: list[dict] | None = None,
 ) -> dict:
     if plan_data.get("schema_version") == "learning_path.v2.course_node":
-        return _scope_learning_path_to_grade_year(plan_data, grade_year)
+        scoped_path = _scope_learning_path_to_grade_year(plan_data, grade_year)
+        return _bind_confirmed_course_sources(scoped_path, grade_year, intake_courses)
 
     confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
     constraints = str(confirmed.get("constraints") or "")
@@ -1219,7 +1256,7 @@ def _build_learning_path_from_plan(
         <= len(raw_course_specs)
         <= MAX_LEARNING_PATH_COURSES
     ):
-        raise ValueError("学习路径 course_specs 数量必须在 4 到 10 门之间。")
+        raise ValueError("学习路径 course_specs 数量必须在 4 到 8 门之间。")
 
     expected_courses = intake_courses if isinstance(intake_courses, list) else []
     if expected_courses and len(raw_course_specs) != len(expected_courses):
@@ -1233,12 +1270,12 @@ def _build_learning_path_from_plan(
             expected_courses[index - 1] if index <= len(expected_courses) else {}
         )
         intake_title = (
-            str(intake_course.get("title", "")).strip()
+            str(intake_course["title"]).strip()
             if isinstance(intake_course, dict)
             else ""
         )
         intake_purpose = (
-            str(intake_course.get("purpose", "")).strip()
+            str(intake_course["purpose"]).strip()
             if isinstance(intake_course, dict)
             else ""
         )
@@ -1247,6 +1284,13 @@ def _build_learning_path_from_plan(
             {
                 "course_node_id": f"{grade_year}_course_{index}",
                 "theme": intake_title or str(spec.get("theme") or "").strip(),
+                "source_textbook_id": str(intake_course["source_textbook_id"]).strip(),
+                "source_textbook_title": str(
+                    intake_course["source_textbook_title"]
+                ).strip(),
+                "source_outline_section_ids": intake_course[
+                    "source_outline_section_ids"
+                ],
                 "semester_scope": str(spec.get("semester_scope") or "").strip(),
                 "duration": str(spec.get("duration") or "").strip(),
                 "pace_reason": str(spec.get("pace_reason") or "").strip(),
@@ -1271,13 +1315,18 @@ def _build_learning_path_from_plan(
                     for item in spec.get("acceptance_criteria", [])
                     if str(item).strip()
                 ],
+                "course_stage_plan": [
+                    str(item).strip()
+                    for item in spec.get("stage_titles", [])
+                    if str(item).strip()
+                ],
                 "difficulty_level": _normalize_difficulty_level(
                     str(spec.get("difficulty_level") or "中级")
                 ),
             }
         )
 
-    return _build_learning_path_from_course_specs(
+    path_dict = _build_learning_path_from_course_specs(
         profile,
         grade_year=grade_year,
         learning_topic=learning_topic,
@@ -1298,6 +1347,7 @@ def _build_learning_path_from_plan(
         next_action=str(plan_data.get("next_action") or "").strip(),
         course_specs=course_specs,
     )
+    return _bind_confirmed_course_sources(path_dict, grade_year, intake_courses)
 
 
 async def run_learning_path_agent(
@@ -1334,7 +1384,6 @@ async def run_learning_path_agent(
             "hard_error": True,
         }
 
-    query = str(state.get("query", "")).strip()
     resolved_topic = str(intake.get("learning_topic", "")).strip()
     if not resolved_topic:
         return {

@@ -1,3 +1,7 @@
+"""Course knowledge agent contracts and prompt assembly."""
+
+# ruff: noqa: C901,E501
+
 from __future__ import annotations
 
 import asyncio
@@ -8,9 +12,12 @@ import re
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
+from sqlmodel import Session
 
+from app.database import get_engine
 from app.orchestration.agents.models import (
     CourseKnowledgeOutput,
+    SectionItem,
 )
 from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.agents.prompts import COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
@@ -19,6 +26,10 @@ from app.orchestration.agents.utils import (
     extract_last_tool_call_id,
 )
 from app.orchestration.state import OrchestrationState
+from app.services.knowledge_base_service import (
+    get_textbook_section_binding_context,
+    require_student_visible_textbooks,
+)
 from app.services.learning_path_service import iter_year_learning_paths
 
 logger = logging.getLogger(__name__)
@@ -27,6 +38,7 @@ SINGLE_COURSE_OUTLINE_TIMEOUT_SECONDS = 180.0
 YEAR_COURSE_OUTLINE_TIMEOUT_SECONDS = 360.0
 COURSE_KNOWLEDGE_RETRY_ERROR = "课程大纲生成失败，请稍后重试。"
 ALL_CURRENT_GRADE_COURSES_ID = "__all_current_grade__"
+SOURCE_CONTENT_CHAR_LIMIT = 8000
 _JSON_CODE_BLOCK_PATTERN = re.compile(
     r"```(?:json)?\s*(?P<body>.*?)```", re.DOTALL | re.IGNORECASE
 )
@@ -405,6 +417,15 @@ def _normalize_generated_sections(raw_sections: object) -> list[dict]:
                 "order_index": order_index,
                 "description": _clean_text(payload.get("description")),
                 "key_knowledge_points": key_knowledge_points,
+                "source_textbook_id": _clean_text(payload.get("source_textbook_id")),
+                "source_textbook_title": _clean_text(
+                    payload.get("source_textbook_title")
+                ),
+                "source_section_ids": _string_list(payload.get("source_section_ids")),
+                "source_section_titles": _string_list(
+                    payload.get("source_section_titles")
+                ),
+                "source_content_chars": payload.get("source_content_chars"),
             }
         )
 
@@ -458,7 +479,7 @@ def _normalize_generated_sections(raw_sections: object) -> list[dict]:
                 "二级小节 section_id 必须使用 1.1、1.2、1.3 这种编号并归属对应一级章节。"
             )
 
-    return normalized_sections
+    return [SectionItem(**section).model_dump() for section in normalized_sections]
 
 
 def _normalize_generated_course_outline(
@@ -479,6 +500,7 @@ def _normalize_generated_course_outline(
         or "课程大纲已根据当前学习画像与课程顺序生成。"
     )
     sections = _normalize_generated_sections(payload.get("sections"))
+    sections = _apply_source_section_content_lengths(selected_course, sections)
     section_ids = [
         section["section_id"] for section in sections if isinstance(section, dict)
     ]
@@ -509,6 +531,107 @@ def _normalize_generated_course_outline(
         total_estimated_hours=total_estimated_hours,
     )
     return outline.model_dump()
+
+
+def _source_section_contexts_for_courses(
+    courses: list[dict],
+) -> dict[str, list[dict[str, object]]]:
+    contexts: dict[str, list[dict[str, object]]] = {}
+    with Session(get_engine()) as db_session:
+        for course in courses:
+            course_id = _clean_text(course.get("course_node_id"))
+            textbook_id = _clean_text(course.get("source_textbook_id"))
+            section_ids = _string_list(course.get("source_outline_section_ids"))
+            if not course_id or not textbook_id or not section_ids:
+                continue
+            contexts[course_id] = get_textbook_section_binding_context(
+                db_session,
+                textbook_id,
+                section_ids,
+            )
+    return contexts
+
+
+def _apply_source_section_content_lengths(
+    selected_course: dict,
+    sections: list[dict],
+) -> list[dict]:
+    textbook_id = _clean_text(selected_course.get("source_textbook_id"))
+    textbook_title = _clean_text(selected_course.get("source_textbook_title"))
+    allowed_section_ids = _string_list(
+        selected_course.get("source_outline_section_ids")
+    )
+    if not textbook_id or not allowed_section_ids:
+        return sections
+
+    source_contexts = _source_section_contexts_for_courses([selected_course])
+    course_id = _clean_text(selected_course.get("course_node_id"))
+    source_rows = source_contexts.get(course_id, [])
+    source_rows_by_id = {str(row["section_id"]): row for row in source_rows}
+    allowed_set = set(allowed_section_ids)
+
+    normalized_sections: list[dict] = []
+    for section in sections:
+        section_source_ids = _string_list(section.get("source_section_ids"))
+        if not section_source_ids:
+            raise ValueError("课程大纲章节缺少 source_section_ids。")
+        if any(section_id not in allowed_set for section_id in section_source_ids):
+            raise ValueError("课程大纲章节绑定了未授权教材小节。")
+        source_section_rows = [
+            source_rows_by_id[section_id] for section_id in section_source_ids
+        ]
+        _require_valid_source_section_group(source_section_rows)
+        source_content_chars = sum(
+            int(row["content_char_count"]) for row in source_section_rows
+        )
+        if source_content_chars > SOURCE_CONTENT_CHAR_LIMIT:
+            raise ValueError(
+                "source_content_chars 不能超过 8000，必须拆成多个学生端章节。"
+            )
+
+        normalized_section = {
+            **section,
+            "source_textbook_id": textbook_id,
+            "source_textbook_title": textbook_title
+            or _clean_text(section.get("source_textbook_title")),
+            "source_section_ids": [
+                str(row["section_id"]) for row in source_section_rows
+            ],
+            "source_section_titles": [str(row["title"]) for row in source_section_rows],
+            "source_content_chars": source_content_chars,
+        }
+        normalized_sections.append(normalized_section)
+    return normalized_sections
+
+
+def _require_valid_source_section_group(source_rows: list[dict[str, object]]) -> None:
+    if not source_rows:
+        raise ValueError("课程大纲章节缺少有效教材小节。")
+    if len(source_rows) > 7:
+        raise ValueError("课程大纲章节最多绑定 7 个教材小节。")
+
+    order_indexes = [int(row["order_index"]) for row in source_rows]
+    if order_indexes != list(
+        range(order_indexes[0], order_indexes[0] + len(source_rows))
+    ):
+        raise ValueError("课程大纲章节绑定的教材小节必须连续。")
+
+    chapter_keys = {
+        _source_section_chapter_key(
+            str(row.get("section_id", "")),
+            row.get("parent_section_id"),
+        )
+        for row in source_rows
+    }
+    if len(chapter_keys) > 1:
+        raise ValueError("课程大纲章节不能跨原教材章。")
+
+
+def _source_section_chapter_key(section_id: str, parent_section_id: object) -> str:
+    parent = _clean_text(parent_section_id)
+    if parent:
+        return parent.split(".", 1)[0]
+    return section_id.split(".", 1)[0]
 
 
 def _normalize_generated_year_course_outlines(
@@ -559,9 +682,12 @@ def _normalize_generated_year_course_outlines(
     ]
 
 
-def _course_input_payload(course: dict) -> dict:
+def _course_input_payload(
+    course: dict,
+    source_section_contexts: dict[str, list[dict[str, object]]] | None = None,
+) -> dict:
     time_arrangement = course.get("time_arrangement", {})
-    return {
+    payload = {
         "course_id": _clean_text(course.get("course_node_id")),
         "course_name": _clean_text(course.get("course_or_chapter_theme")),
         "grade_year": _clean_text(course.get("grade_id")),
@@ -578,7 +704,16 @@ def _course_input_payload(course: dict) -> dict:
         "key_points": _string_list(course.get("key_points")),
         "difficult_points": _string_list(course.get("difficult_points")),
         "acceptance_criteria": _string_list(course.get("acceptance_criteria")),
+        "source_textbook_id": _clean_text(course.get("source_textbook_id")),
+        "source_textbook_title": _clean_text(course.get("source_textbook_title")),
+        "source_outline_section_ids": _string_list(
+            course.get("source_outline_section_ids")
+        ),
     }
+    course_id = payload["course_id"]
+    if source_section_contexts is not None and course_id in source_section_contexts:
+        payload["source_outline_sections"] = source_section_contexts[course_id]
+    return payload
 
 
 def _profile_input_payload(profile: dict) -> dict:
@@ -639,8 +774,9 @@ def _build_analysis_input(
     profile: dict,
     year_learning_paths: dict | None,
     latest_grade_year: str = "",
+    source_section_contexts: dict[str, list[dict[str, object]]] | None = None,
 ) -> str:
-    compact_course = _course_input_payload(selected_course)
+    compact_course = _course_input_payload(selected_course, source_section_contexts)
     course_sequence = _same_grade_course_sequence(
         year_learning_paths,
         selected_course,
@@ -650,13 +786,18 @@ def _build_analysis_input(
 
     return (
         "请为以下课程生成详细的章节大纲。\n\n"
-        "只使用下面与大纲规划直接相关的信息。当前课程名称必须与当前课程输入里的 course_name 完全一致。\n"
-        "学习路径只提供同年级课程先后顺序，不提供章节；不要把课程顺序、阶段词或路径规划字段当作章节。\n"
+        "只使用下面与大纲规划直接相关的信息。当前课程名称必须与"
+        "当前课程输入里的 course_name 完全一致。\n"
+        "学习路径只提供同年级课程先后顺序，不提供章节；不要把课程顺序、"
+        "阶段词或路径规划字段当作章节。\n"
         "输出前先完成以下分析：\n"
         "1. 判断这门课的主目标、当前用户基础与最容易卡住的难点。\n"
         "2. 判断这门课在同年级课程顺序里应该承接什么、为后续课程准备什么。\n"
-        "3. 根据个人画像和课程顺序自行设计章节、1.1/1.2 这类小节和每个 section 的 key_knowledge_points。\n"
-        "4. 再把分析结果映射成层级化章节大纲。\n\n"
+        "3. 根据个人画像和课程顺序自行设计章节、1.1/1.2 这类小节"
+        "和每个 section 的 key_knowledge_points。\n"
+        "4. 再把分析结果映射成层级化章节大纲。\n"
+        "5. sections[] 的 source_* 字段必须来自这些绑定教材小节，"
+        "不能新增未绑定来源。\n\n"
         f"当前课程输入：{json.dumps(compact_course, ensure_ascii=False, indent=2)}\n"
         f"同年级课程顺序：{json.dumps(course_sequence, ensure_ascii=False, indent=2)}\n"
         f"学习者输入：{json.dumps(compact_profile, ensure_ascii=False, indent=2)}"
@@ -668,29 +809,45 @@ def _build_year_analysis_input(
     courses: list[dict],
     current_course_id: str,
     profile: dict,
+    source_section_contexts: dict[str, list[dict[str, object]]] | None = None,
 ) -> str:
     compact_courses = []
     for index, course in enumerate(courses, start=1):
-        payload = _course_input_payload(course)
+        payload = _course_input_payload(course, source_section_contexts)
         payload["order"] = index
         payload["is_current"] = payload["course_id"] == current_course_id
         compact_courses.append(payload)
 
     return (
         "请一次性为当前年级的全部课程生成详细章节大纲。\n\n"
-        "你必须利用全年课程顺序、课程之间的承接关系和学习者画像统一设计每门课的大纲。"
-        "这不是逐门孤立生成；每门课的小节都要体现它承接前序课程、准备后续课程的位置。\n"
-        "输出必须覆盖全年课程输入中的每一门课程，且 course_id 必须与输入完全一致；不要新增、删除或改名课程。\n"
-        "每门课仍然只生成课程结构：章名、小节名、短结构说明和 key_knowledge_points。\n"
-        "一级章节 section_id 必须使用 1、2 这种数字编号；每个一级章节必须至少包含 1.1、1.2 这种二级小节。\n"
-        "不要把学习路径里的 learning_sequence、stage_titles 或课程顺序条目直接当作章节。\n\n"
+        "你必须利用全年课程顺序、课程之间的承接关系和学习者画像"
+        "统一设计每门课的大纲。"
+        "这不是逐门孤立生成；每门课的小节都要体现它承接前序课程、"
+        "准备后续课程的位置。\n"
+        "输出必须覆盖全年课程输入中的每一门课程，且 course_id 必须"
+        "与输入完全一致；不要新增、删除或改名课程。\n"
+        "每门课仍然只生成课程结构：章名、小节名、短结构说明和 "
+        "key_knowledge_points。\n"
+        "一级章节 section_id 必须使用 1、2 这种数字编号；每个一级章节"
+        "必须至少包含 1.1、1.2 这种二级小节。\n"
+        "不要把学习路径里的 learning_sequence、stage_titles 或课程顺序"
+        "条目直接当作章节。\n\n"
+        "sections[] 的 source_* 字段必须来自这些绑定教材小节，"
+        "不能新增未绑定来源。\n\n"
         "输出 JSON 顶层只包含 grade_year、year_summary、course_outlines。\n"
-        "course_outlines 是数组；每项必须包含 course_id、personalization_summary、sections、learning_sequence、total_estimated_hours。\n"
-        "sections 是数组；每项必须包含 section_id、parent_section_id、depth、title、order_index、description、key_knowledge_points。\n"
+        "course_outlines 是数组；每项必须包含 course_id、"
+        "personalization_summary、sections、learning_sequence、"
+        "total_estimated_hours。\n"
+        "sections 是数组；每项必须包含 section_id、parent_section_id、"
+        "depth、title、order_index、description、key_knowledge_points、"
+        "source_textbook_id、source_textbook_title、source_section_ids、"
+        "source_section_titles、source_content_chars。\n"
         "key_knowledge_points 必须是非空字符串数组。\n\n"
         f"当前年级：{grade_year}\n"
-        f"全年课程输入：{json.dumps(compact_courses, ensure_ascii=False, indent=2)}\n"
-        f"学习者输入：{json.dumps(_profile_input_payload(profile), ensure_ascii=False, indent=2)}"
+        "全年课程输入："
+        f"{json.dumps(compact_courses, ensure_ascii=False, indent=2)}\n"
+        "学习者输入："
+        f"{json.dumps(_profile_input_payload(profile), ensure_ascii=False, indent=2)}"
     )
 
 
@@ -704,7 +861,9 @@ def _build_repair_input(original_input: str, error_message: str) -> str:
         "2. 一级章节 section_id 必须使用 1、2 这种数字编号，对应第一章、第二章。\n"
         "3. 每个一级章节必须至少包含三个直属二级小节，编号必须使用 1.1、1.2、1.3、2.1、2.2、2.3 这种形式。\n"
         "4. 每个 section 的 key_knowledge_points 必须非空，且必须是该章或小节的具体知识点、小能力或验收点。\n"
-        "5. 不要使用学习路径里的 learning_sequence、stage_titles 或课程顺序条目作为章节。"
+        "5. 每个 section 必须包含 source_textbook_id、source_textbook_title、source_section_ids、source_section_titles、source_content_chars。\n"
+        "6. 每个 section 的 source_* 字段必须来自这些绑定教材小节，不能新增未绑定来源。\n"
+        "7. 不要使用学习路径里的 learning_sequence、stage_titles 或课程顺序条目作为章节。"
     )
 
 
@@ -753,7 +912,12 @@ _SINGLE_COURSE_JSON_CONTRACT = """\
       "title": "第一章：概念引入与直觉建立",
       "order_index": 1,
       "description": "这一章解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"]
+      "key_knowledge_points": ["具体知识点或能力点"],
+      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
+      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
+      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
+      "source_section_titles": ["绑定教材小节标题"],
+      "source_content_chars": 1200
     },
     {
       "section_id": "1.1",
@@ -762,7 +926,12 @@ _SINGLE_COURSE_JSON_CONTRACT = """\
       "title": "1.1 生活中的类比分析",
       "order_index": 2,
       "description": "这一小节解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"]
+      "key_knowledge_points": ["具体知识点或能力点"],
+      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
+      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
+      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
+      "source_section_titles": ["绑定教材小节标题"],
+      "source_content_chars": 1200
     },
     {
       "section_id": "1.2",
@@ -771,7 +940,12 @@ _SINGLE_COURSE_JSON_CONTRACT = """\
       "title": "1.2 核心定义与公式",
       "order_index": 3,
       "description": "这一小节解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"]
+      "key_knowledge_points": ["具体知识点或能力点"],
+      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
+      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
+      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
+      "source_section_titles": ["绑定教材小节标题"],
+      "source_content_chars": 1200
     },
     {
       "section_id": "1.3",
@@ -780,7 +954,12 @@ _SINGLE_COURSE_JSON_CONTRACT = """\
       "title": "1.3 边界情况与分析",
       "order_index": 4,
       "description": "这一小节解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"]
+      "key_knowledge_points": ["具体知识点或能力点"],
+      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
+      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
+      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
+      "source_section_titles": ["绑定教材小节标题"],
+      "source_content_chars": 1200
     },
     {
       "section_id": "2",
@@ -789,7 +968,12 @@ _SINGLE_COURSE_JSON_CONTRACT = """\
       "title": "第二章：黄金法则应用",
       "order_index": 5,
       "description": "这一章解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"]
+      "key_knowledge_points": ["具体知识点或能力点"],
+      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
+      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
+      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
+      "source_section_titles": ["绑定教材小节标题"],
+      "source_content_chars": 1200
     },
     {
       "section_id": "2.1",
@@ -798,7 +982,12 @@ _SINGLE_COURSE_JSON_CONTRACT = """\
       "title": "2.1 法则基本步骤",
       "order_index": 6,
       "description": "这一小节解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"]
+      "key_knowledge_points": ["具体知识点或能力点"],
+      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
+      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
+      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
+      "source_section_titles": ["绑定教材小节标题"],
+      "source_content_chars": 1200
     },
     {
       "section_id": "2.2",
@@ -807,7 +996,12 @@ _SINGLE_COURSE_JSON_CONTRACT = """\
       "title": "2.2 实际场景应用",
       "order_index": 7,
       "description": "这一小节解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"]
+      "key_knowledge_points": ["具体知识点或能力点"],
+      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
+      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
+      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
+      "source_section_titles": ["绑定教材小节标题"],
+      "source_content_chars": 1200
     },
     {
       "section_id": "2.3",
@@ -816,7 +1010,12 @@ _SINGLE_COURSE_JSON_CONTRACT = """\
       "title": "2.3 综合实战演练",
       "order_index": 8,
       "description": "这一小节解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"]
+      "key_knowledge_points": ["具体知识点或能力点"],
+      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
+      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
+      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
+      "source_section_titles": ["绑定教材小节标题"],
+      "source_content_chars": 1200
     }
   ],
   "learning_sequence": ["第一章：面向用户的学习步骤", "第二章：面向用户的学习步骤"],
@@ -842,7 +1041,12 @@ _YEAR_COURSES_JSON_CONTRACT = """\
           "title": "第一章章名",
           "order_index": 1,
           "description": "这一章解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"]
+          "key_knowledge_points": ["具体知识点或能力点"],
+          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
+          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
+          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
+          "source_section_titles": ["绑定教材小节标题"],
+          "source_content_chars": 1200
         },
         {
           "section_id": "1.1",
@@ -851,7 +1055,12 @@ _YEAR_COURSES_JSON_CONTRACT = """\
           "title": "1.1 小节名",
           "order_index": 2,
           "description": "这一小节解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"]
+          "key_knowledge_points": ["具体知识点或能力点"],
+          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
+          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
+          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
+          "source_section_titles": ["绑定教材小节标题"],
+          "source_content_chars": 1200
         },
         {
           "section_id": "1.2",
@@ -860,7 +1069,12 @@ _YEAR_COURSES_JSON_CONTRACT = """\
           "title": "1.2 小节名",
           "order_index": 3,
           "description": "这一小节解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"]
+          "key_knowledge_points": ["具体知识点或能力点"],
+          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
+          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
+          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
+          "source_section_titles": ["绑定教材小节标题"],
+          "source_content_chars": 1200
         },
         {
           "section_id": "1.3",
@@ -869,7 +1083,12 @@ _YEAR_COURSES_JSON_CONTRACT = """\
           "title": "1.3 小节名",
           "order_index": 4,
           "description": "这一小节解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"]
+          "key_knowledge_points": ["具体知识点或能力点"],
+          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
+          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
+          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
+          "source_section_titles": ["绑定教材小节标题"],
+          "source_content_chars": 1200
         },
         {
           "section_id": "2",
@@ -878,7 +1097,12 @@ _YEAR_COURSES_JSON_CONTRACT = """\
           "title": "第二章章名",
           "order_index": 5,
           "description": "这一章解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"]
+          "key_knowledge_points": ["具体知识点或能力点"],
+          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
+          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
+          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
+          "source_section_titles": ["绑定教材小节标题"],
+          "source_content_chars": 1200
         },
         {
           "section_id": "2.1",
@@ -887,7 +1111,12 @@ _YEAR_COURSES_JSON_CONTRACT = """\
           "title": "2.1 小节名",
           "order_index": 6,
           "description": "这一小节解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"]
+          "key_knowledge_points": ["具体知识点或能力点"],
+          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
+          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
+          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
+          "source_section_titles": ["绑定教材小节标题"],
+          "source_content_chars": 1200
         },
         {
           "section_id": "2.2",
@@ -896,7 +1125,12 @@ _YEAR_COURSES_JSON_CONTRACT = """\
           "title": "2.2 小节名",
           "order_index": 7,
           "description": "这一小节解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"]
+          "key_knowledge_points": ["具体知识点或能力点"],
+          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
+          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
+          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
+          "source_section_titles": ["绑定教材小节标题"],
+          "source_content_chars": 1200
         },
         {
           "section_id": "2.3",
@@ -905,7 +1139,12 @@ _YEAR_COURSES_JSON_CONTRACT = """\
           "title": "2.3 小节名",
           "order_index": 8,
           "description": "这一小节解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"]
+          "key_knowledge_points": ["具体知识点或能力点"],
+          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
+          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
+          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
+          "source_section_titles": ["绑定教材小节标题"],
+          "source_content_chars": 1200
         }
       ],
       "learning_sequence": ["第一章：面向用户的学习步骤", "第二章：面向用户的学习步骤"],
@@ -930,6 +1169,147 @@ def _current_outline_from_generated(
     return outlines[0]
 
 
+def _try_db_outline_translation(
+    db_session: Session,
+    course: dict,
+    grade_year: str,
+) -> dict | None:
+    from sqlmodel import select
+
+    from app.models import Textbook, TextbookSectionContent
+
+    source_textbook_id = str(course.get("source_textbook_id") or "").strip()
+    if not source_textbook_id or source_textbook_id == "None":
+        theme = str(course.get("course_or_chapter_theme") or "").strip()
+        if theme:
+            normalized_theme = "".join(theme.lower().split())
+            stmt = select(Textbook).where(
+                Textbook.student_availability_status == "published"
+            )
+            all_tbs = db_session.exec(stmt).all()
+            for tb in all_tbs:
+                normalized_title = "".join(tb.title.lower().split())
+                if normalized_title == normalized_theme:
+                    course["source_textbook_id"] = tb.textbook_id
+                    course["source_textbook_title"] = tb.title
+                    source_textbook_id = tb.textbook_id
+                    break
+
+    if not source_textbook_id or source_textbook_id == "None":
+        return None
+
+    textbook = db_session.get(Textbook, source_textbook_id)
+    if textbook is None or textbook.student_availability_status != "published":
+        return None
+
+    outline_data = textbook.outline
+    if not outline_data or "chapters" not in outline_data:
+        return None
+
+    chapters = outline_data.get("chapters") or []
+    translated_sections = []
+    total_chars = 0
+
+    for ch in chapters:
+        ch_num = ch.get("chapter_number")
+        ch_title = ch.get("title") or ""
+        try:
+            ch_order_index = int(ch_num)
+        except (ValueError, TypeError):
+            ch_order_index = 1
+
+        ch_sec_id = str(ch_num)
+        ch_sections = ch.get("sections") or []
+        ch_source_ids = [
+            str(s.get("section_id")).strip() for s in ch_sections if s.get("section_id")
+        ]
+        ch_source_titles = [
+            str(s.get("title")).strip() for s in ch_sections if s.get("title")
+        ]
+        if not ch_source_ids:
+            ch_source_ids = [ch_sec_id]
+            ch_source_titles = [ch_title]
+
+        chapter_item = {
+            "section_id": ch_sec_id,
+            "parent_section_id": None,
+            "depth": 1,
+            "title": ch_title,
+            "order_index": ch_order_index,
+            "description": f"{ch_title}说明。",
+            "key_knowledge_points": [f"{ch_title}重点"],
+            "source_textbook_id": textbook.textbook_id,
+            "source_textbook_title": textbook.title,
+            "source_section_ids": ch_source_ids,
+            "source_section_titles": ch_source_titles,
+            "source_content_chars": 0,
+        }
+        translated_sections.append(chapter_item)
+
+        for idx, sec in enumerate(ch_sections):
+            sec_id = str(sec.get("section_id")).strip()
+            sec_title = str(sec.get("title")).strip()
+
+            stmt = select(TextbookSectionContent).where(
+                TextbookSectionContent.textbook_id == textbook.textbook_id,
+                TextbookSectionContent.section_id == sec_id,
+            )
+            content_record = db_session.exec(stmt).first()
+            content_zh = content_record.content_zh if content_record else ""
+            content_chars = len(content_zh)
+            total_chars += content_chars
+
+            section_item = {
+                "section_id": sec_id,
+                "parent_section_id": ch_sec_id,
+                "depth": 2,
+                "title": sec_title,
+                "order_index": idx + 1,
+                "description": f"{sec_title}说明。",
+                "key_knowledge_points": [f"{sec_title}知识点"],
+                "source_textbook_id": textbook.textbook_id,
+                "source_textbook_title": textbook.title,
+                "source_section_ids": [sec_id],
+                "source_section_titles": [sec_title],
+                "source_content_chars": content_chars,
+            }
+            translated_sections.append(section_item)
+
+    depth_2_sections = [s for s in translated_sections if s["depth"] == 2]
+    if depth_2_sections:
+        learning_sequence = [
+            f"学习并掌握「{s['title']}」中的核心概念与工程实践。"
+            for s in depth_2_sections
+        ]
+    else:
+        learning_sequence = [
+            f"阅读《{textbook.title}》相关章节。",
+            "结合各小节的核心知识点进行练习与巩固。",
+        ]
+
+    estimated_hours = max(4, total_chars // 2000)
+    output_dict = {
+        "course_id": course.get("course_node_id") or "",
+        "course_name": course.get("course_or_chapter_theme")
+        or course.get("title")
+        or "",
+        "grade_year": course.get("grade_id") or grade_year or "",
+        "personalization_summary": f"已基于教材《{textbook.title}》的真实大纲和正文结构生成课程详细大纲，无需 LLM 模型介入。",
+        "sections": translated_sections,
+        "learning_sequence": learning_sequence,
+        "total_estimated_hours": f"{estimated_hours} 学时",
+    }
+
+    try:
+        from app.orchestration.agents.models import CourseKnowledgeOutput
+
+        outline_obj = CourseKnowledgeOutput(**output_dict)
+        return outline_obj.model_dump()
+    except Exception as e:
+        logger.error("Direct translated outline validation failed: %s", e)
+        return None
+
+
 async def run_course_knowledge_agent(
     state: OrchestrationState, llm: BaseChatModel
 ) -> dict:
@@ -945,129 +1325,255 @@ async def run_course_knowledge_agent(
     if not year_learning_paths:
         return {"error": "请先生成学习路径。"}
 
+    try:
+        with Session(get_engine()) as db_session:
+            selected_course = None
+            if course_id != ALL_CURRENT_GRADE_COURSES_ID:
+                selected_course = _select_course_for_outline(
+                    state.get("year_learning_paths"),
+                    course_id,
+                    latest_grade_year,
+                )
+                source_textbook_id = str(
+                    selected_course.get("source_textbook_id") or ""
+                ).strip()
+                if not source_textbook_id or source_textbook_id == "None":
+                    theme = str(
+                        selected_course.get("course_or_chapter_theme") or ""
+                    ).strip()
+                    if theme:
+                        from sqlmodel import select
+
+                        from app.models import Textbook
+
+                        normalized_theme = "".join(theme.lower().split())
+                        stmt = select(Textbook).where(
+                            Textbook.student_availability_status == "published"
+                        )
+                        all_tbs = db_session.exec(stmt).all()
+                        for tb in all_tbs:
+                            normalized_title = "".join(tb.title.lower().split())
+                            if normalized_title == normalized_theme:
+                                selected_course["source_textbook_id"] = tb.textbook_id
+                                selected_course["source_textbook_title"] = tb.title
+                                break
+
+                if (
+                    selected_course.get("source_textbook_id")
+                    and selected_course.get("source_textbook_id") != "None"
+                ):
+                    require_student_visible_textbooks(
+                        db_session, selected_course.get("source_textbook_id", "")
+                    )
+            else:
+                grade_year, grade_courses, current_course_id = (
+                    _select_grade_courses_for_outlines(
+                        year_learning_paths,
+                        latest_grade_year,
+                    )
+                )
+                for course in grade_courses:
+                    source_textbook_id = str(
+                        course.get("source_textbook_id") or ""
+                    ).strip()
+                    if not source_textbook_id or source_textbook_id == "None":
+                        theme = str(course.get("course_or_chapter_theme") or "").strip()
+                        if theme:
+                            from sqlmodel import select
+
+                            from app.models import Textbook
+
+                            normalized_theme = "".join(theme.lower().split())
+                            stmt = select(Textbook).where(
+                                Textbook.student_availability_status == "published"
+                            )
+                            all_tbs = db_session.exec(stmt).all()
+                            for tb in all_tbs:
+                                normalized_title = "".join(tb.title.lower().split())
+                                if normalized_title == normalized_theme:
+                                    course["source_textbook_id"] = tb.textbook_id
+                                    course["source_textbook_title"] = tb.title
+                                    break
+
+                    if (
+                        course.get("source_textbook_id")
+                        and course.get("source_textbook_id") != "None"
+                    ):
+                        require_student_visible_textbooks(
+                            db_session, course.get("source_textbook_id", "")
+                        )
+    except ValueError as exc:
+        return {"error": str(exc), "hard_error": True}
+
     generated_outlines: list[dict]
     if course_id != ALL_CURRENT_GRADE_COURSES_ID:
         try:
-            selected_course = _select_course_for_outline(
-                state.get("year_learning_paths"),
-                course_id,
-                latest_grade_year,
-            )
+            assert selected_course is not None
         except ValueError as exc:
             return {"error": str(exc), "hard_error": True}
 
-        input_text = _append_json_output_contract(
-            _build_analysis_input(
-                selected_course,
-                profile,
-                year_learning_paths,
-                latest_grade_year,
-            ),
-            _SINGLE_COURSE_JSON_CONTRACT,
-        )
-
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT),
-                ("human", "{query}"),
-            ]
-        )
-        chain = prompt | llm
-
-        try:
-            generated_outlines = [
-                await _invoke_json_outline(chain, selected_course, input_text)
-            ]
-        except asyncio.TimeoutError:
-            logger.warning(
-                "CourseKnowledgeAgent JSON prompt output timed out after %.1fs",
-                SINGLE_COURSE_OUTLINE_TIMEOUT_SECONDS,
+        with Session(get_engine()) as db_session:
+            db_translated = _try_db_outline_translation(
+                db_session, selected_course, latest_grade_year
             )
-            return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
-        except Exception as exc:
-            logger.warning(
-                "CourseKnowledgeAgent JSON prompt output failed, retrying once: %s", exc
+
+        if db_translated is not None:
+            generated_outlines = [db_translated]
+            current_outline = db_translated
+        else:
+            try:
+                source_section_contexts = _source_section_contexts_for_courses(
+                    [selected_course]
+                )
+            except ValueError as exc:
+                return {"error": str(exc), "hard_error": True}
+
+            input_text = _append_json_output_contract(
+                _build_analysis_input(
+                    selected_course,
+                    profile,
+                    year_learning_paths,
+                    latest_grade_year,
+                    source_section_contexts=source_section_contexts,
+                ),
+                _SINGLE_COURSE_JSON_CONTRACT,
             )
-            repair_input = _build_repair_input(input_text, str(exc))
+
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT),
+                    ("human", "{query}"),
+                ]
+            )
+            chain = prompt | llm
+
             try:
                 generated_outlines = [
-                    await _invoke_json_outline(chain, selected_course, repair_input)
+                    await _invoke_json_outline(chain, selected_course, input_text)
                 ]
             except asyncio.TimeoutError:
                 logger.warning(
-                    "CourseKnowledgeAgent repair output timed out after %.1fs",
+                    "CourseKnowledgeAgent JSON prompt output timed out after %.1fs",
                     SINGLE_COURSE_OUTLINE_TIMEOUT_SECONDS,
                 )
                 return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
-            except Exception as repair_exc:
+            except Exception as exc:
                 logger.warning(
-                    "CourseKnowledgeAgent repair output failed: %s", repair_exc
+                    "CourseKnowledgeAgent JSON prompt output failed, retrying once: %s",
+                    exc,
                 )
-                return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
-        current_outline = generated_outlines[0]
+                repair_input = _build_repair_input(input_text, str(exc))
+                try:
+                    generated_outlines = [
+                        await _invoke_json_outline(chain, selected_course, repair_input)
+                    ]
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "CourseKnowledgeAgent repair output timed out after %.1fs",
+                        SINGLE_COURSE_OUTLINE_TIMEOUT_SECONDS,
+                    )
+                    return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
+                except Exception as repair_exc:
+                    logger.warning(
+                        "CourseKnowledgeAgent repair output failed: %s", repair_exc
+                    )
+                    return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
+            current_outline = generated_outlines[0]
     else:
-        try:
-            grade_year, grade_courses, current_course_id = (
-                _select_grade_courses_for_outlines(
-                    year_learning_paths,
-                    latest_grade_year,
+        grade_year, grade_courses, current_course_id = (
+            _select_grade_courses_for_outlines(
+                year_learning_paths,
+                latest_grade_year,
+            )
+        )
+
+        db_translated_map = {}
+        unmapped_courses = []
+        with Session(get_engine()) as db_session:
+            for course in grade_courses:
+                db_translated = _try_db_outline_translation(
+                    db_session, course, grade_year
                 )
-            )
-        except ValueError as exc:
-            return {"error": str(exc), "hard_error": True}
+                if db_translated is not None:
+                    db_translated_map[course["course_node_id"]] = db_translated
+                else:
+                    unmapped_courses.append(course)
 
-        input_text = _append_json_output_contract(
-            _build_year_analysis_input(
-                grade_year, grade_courses, current_course_id, profile
-            ),
-            _YEAR_COURSES_JSON_CONTRACT,
-        )
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT),
-                ("human", "{query}"),
-            ]
-        )
-        chain = prompt | llm
-
-        try:
-            generated_outlines = await _invoke_json_year_outlines(
-                chain, grade_courses, input_text
-            )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "CourseKnowledgeAgent yearly JSON prompt output timed out after %.1fs",
-                YEAR_COURSE_OUTLINE_TIMEOUT_SECONDS,
-            )
-            return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
-        except Exception as exc:
-            logger.warning(
-                "CourseKnowledgeAgent yearly JSON prompt output failed, retrying once: %s",
-                exc,
-            )
-            repair_input = _build_repair_input(input_text, str(exc))
+        if unmapped_courses:
             try:
-                generated_outlines = await _invoke_json_year_outlines(
-                    chain, grade_courses, repair_input
+                source_section_contexts = _source_section_contexts_for_courses(
+                    unmapped_courses
+                )
+            except ValueError as exc:
+                return {"error": str(exc), "hard_error": True}
+
+            input_text = _append_json_output_contract(
+                _build_year_analysis_input(
+                    grade_year,
+                    unmapped_courses,
+                    current_course_id,
+                    profile,
+                    source_section_contexts=source_section_contexts,
+                ),
+                _YEAR_COURSES_JSON_CONTRACT,
+            )
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT),
+                    ("human", "{query}"),
+                ]
+            )
+            chain = prompt | llm
+
+            try:
+                llm_generated = await _invoke_json_year_outlines(
+                    chain, unmapped_courses, input_text
                 )
             except asyncio.TimeoutError:
                 logger.warning(
-                    "CourseKnowledgeAgent yearly repair output timed out after %.1fs",
+                    "CourseKnowledgeAgent yearly JSON prompt output timed out after %.1fs",
                     YEAR_COURSE_OUTLINE_TIMEOUT_SECONDS,
                 )
                 return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
-            except Exception as repair_exc:
+            except Exception as exc:
                 logger.warning(
-                    "CourseKnowledgeAgent yearly repair output failed: %s", repair_exc
+                    "CourseKnowledgeAgent yearly JSON prompt output failed, retrying once: %s",
+                    exc,
                 )
-                return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
+                repair_input = _build_repair_input(input_text, str(exc))
+                try:
+                    llm_generated = await _invoke_json_year_outlines(
+                        chain, unmapped_courses, repair_input
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "CourseKnowledgeAgent yearly repair output timed out after %.1fs",
+                        YEAR_COURSE_OUTLINE_TIMEOUT_SECONDS,
+                    )
+                    return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
+                except Exception as repair_exc:
+                    logger.warning(
+                        "CourseKnowledgeAgent yearly repair output failed: %s",
+                        repair_exc,
+                    )
+                    return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
+
+            llm_generated_map = {out["course_id"]: out for out in llm_generated}
+        else:
+            llm_generated_map = {}
+
+        generated_outlines = []
+        for course in grade_courses:
+            c_id = course["course_node_id"]
+            if c_id in db_translated_map:
+                generated_outlines.append(db_translated_map[c_id])
+            else:
+                generated_outlines.append(llm_generated_map[c_id])
+
         current_outline = _current_outline_from_generated(
             generated_outlines, current_course_id
         )
 
-    from sqlmodel import Session
-
-    from app.database import get_engine
     from app.services.course_knowledge_service import (
         upsert_user_course_knowledge_outline,
     )

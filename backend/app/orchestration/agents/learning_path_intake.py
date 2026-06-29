@@ -12,6 +12,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from sqlmodel import Session
 
 from app.database import get_engine
 from app.orchestration.agents.models import (
@@ -26,6 +27,11 @@ from app.orchestration.state import OrchestrationState
 from app.services.conversation_session_service import (
     load_or_create_session,
     replace_latest_learning_path_intake,
+)
+from app.services.knowledge_base_service import get_published_textbook_context_for_topic
+from app.services.learning_path_service import (
+    get_grade_courses,
+    iter_year_learning_paths,
 )
 
 logger = logging.getLogger(__name__)
@@ -149,9 +155,29 @@ async def run_learning_path_intake_agent(
     if not is_complete_profile_data(profile):
         return {"error": "请先完成基础画像再生成学习路径。", "hard_error": True}
 
+    confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
+    learning_topic = _learning_topic_from_texts(query, profile, confirmed)
+    knowledge_context = _published_textbook_context_for_intake(
+        learning_topic,
+        query,
+        profile,
+    )
+    if not knowledge_context["textbooks"]:
+        gap_id = knowledge_context.get("gap_id")
+        error = f"知识库暂无覆盖「{learning_topic}」的已发布教材，已加入管理员待办。"
+        return {
+            "error": error,
+            "gap_id": gap_id,
+        }
+
     try:
         intake = await _invoke_intake_draft(
-            state, llm, query=query, profile=profile, existing_intake=existing_intake
+            state,
+            llm,
+            query=query,
+            profile=profile,
+            existing_intake=existing_intake,
+            knowledge_context=knowledge_context,
         )
     except Exception as exc:
         logger.warning(
@@ -159,8 +185,9 @@ async def run_learning_path_intake_agent(
             type(exc).__name__,
             exc,
         )
+        error_detail = f"{type(exc).__name__}: {exc}"
         return {
-            "error": f"{LEARNING_PATH_INTAKE_RETRY_ERROR} ({type(exc).__name__}: {exc})",
+            "error": f"{LEARNING_PATH_INTAKE_RETRY_ERROR} ({error_detail})",
             "hard_error": True,
         }
 
@@ -219,17 +246,21 @@ async def _invoke_intake_draft(
     query: str,
     profile: dict,
     existing_intake: dict | None,
+    knowledge_context: dict,
 ) -> dict:
     if not hasattr(llm, "with_structured_output"):
         logger.warning(
-            "LearningPathIntakeAgent LLM lacks structured output; using local draft fallback."
+            "LearningPathIntakeAgent LLM lacks structured output; "
+            "using local draft fallback."
         )
         return _build_intake_draft(
+            state,
             profile,
             query=query,
             user_modification_summary=query
             if is_intake_modification_query(query)
             else "",
+            knowledge_context=knowledge_context,
         )
 
     structured_llm = llm.with_structured_output(LearningPathIntakeDraftOutput)
@@ -237,7 +268,7 @@ async def _invoke_intake_draft(
         SystemMessage(content=LEARNING_PATH_INTAKE_AGENT_SYSTEM_PROMPT),
         HumanMessage(
             content=_build_intake_generation_input(
-                state, query, profile, existing_intake
+                state, query, profile, existing_intake, knowledge_context
             )
         ),
     ]
@@ -247,14 +278,17 @@ async def _invoke_intake_draft(
         invoke_result = structured_llm(messages)
     else:
         logger.warning(
-            "LearningPathIntakeAgent structured output is not invokable; using local draft fallback."
+            "LearningPathIntakeAgent structured output is not invokable; "
+            "using local draft fallback."
         )
         return _build_intake_draft(
+            state,
             profile,
             query=query,
             user_modification_summary=query
             if is_intake_modification_query(query)
             else "",
+            knowledge_context=knowledge_context,
         )
 
     result = await asyncio.wait_for(
@@ -262,7 +296,10 @@ async def _invoke_intake_draft(
         timeout=LEARNING_PATH_INTAKE_STRUCTURED_TIMEOUT_SECONDS,
     )
     intake = _normalize_intake_draft(
-        _raw_intake_to_dict(result), profile=profile, query=query
+        _raw_intake_to_dict(result),
+        profile=profile,
+        query=query,
+        knowledge_context=knowledge_context,
     )
     return LearningPathIntakeOutput.model_validate(intake).model_dump()
 
@@ -284,6 +321,7 @@ def _build_intake_generation_input(
     query: str,
     profile: dict,
     existing_intake: dict | None,
+    knowledge_context: dict,
 ) -> str:
     confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
     return "\n".join(
@@ -293,9 +331,16 @@ def _build_intake_generation_input(
             f"已完成画像：{json.dumps(confirmed, ensure_ascii=False)}",
             f"画像摘要：{profile.get('summary_text') or profile.get('text') or ''}",
             f"已有课程草案：{json.dumps(existing_intake or {}, ensure_ascii=False)}",
-            f"已有学习路径：{json.dumps(state.get('year_learning_paths') or {}, ensure_ascii=False)}",
+            "已有学习路径："
+            f"{json.dumps(state.get('year_learning_paths') or {}, ensure_ascii=False)}",
+            "已发布知识库教材上下文："
+            f"{json.dumps(knowledge_context, ensure_ascii=False)}",
             "生成规则：",
-            "- 课程数量必须由你根据画像和目标判断，但只能在 4-10 门之间。",
+            "- 课程数量必须由你根据画像和目标判断，但只能在 4-8 门之间。",
+            "- 课程只能从已发布知识库教材上下文中推荐。",
+            "- 每门课程的 source_textbook_id、source_textbook_title、"
+            "source_outline_section_ids 必须来自已发布知识库教材上下文。",
+            "- 已发布知识库教材上下文不包含教材正文，不要编造教材正文。",
             "- 课程必须与用户目标、年级、基础、偏好和每周时间匹配。",
             "- 如果用户自然表达了修改方向，要吸收修改并输出新的 draft。",
             "- 不要输出 confirmed；用户确认由系统单独处理。",
@@ -304,7 +349,13 @@ def _build_intake_generation_input(
     )
 
 
-def _normalize_intake_draft(intake: dict, *, profile: dict, query: str) -> dict:
+def _normalize_intake_draft(
+    intake: dict,
+    *,
+    profile: dict,
+    query: str,
+    knowledge_context: dict,
+) -> dict:
     confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
     grade_name = str(confirmed.get("current_grade", "")).strip()
     grade_year = grade_year_from_current_grade(grade_name)
@@ -321,11 +372,17 @@ def _normalize_intake_draft(intake: dict, *, profile: dict, query: str) -> dict:
         intake["user_modification_summary"] = query
     intake["requires_second_confirmation"] = False
     intake["risk_warnings"] = []
+    _require_intake_courses_from_knowledge_context(intake, knowledge_context)
     return intake
 
 
 def _build_intake_draft(
-    profile: dict, *, query: str, user_modification_summary: str
+    state: OrchestrationState | dict,
+    profile: dict,
+    *,
+    query: str,
+    user_modification_summary: str,
+    knowledge_context: dict,
 ) -> dict:
     confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
     current_grade = (
@@ -334,8 +391,10 @@ def _build_intake_draft(
     grade_name = str(current_grade).strip()
     grade_year = grade_year_from_current_grade(grade_name)
     learning_topic = _learning_topic_from_texts(query, profile, confirmed)
-    courses = _courses_for_topic(learning_topic)
-    return {
+    courses = _bind_fallback_course_sources(
+        _courses_for_topic(learning_topic), state, grade_year, knowledge_context
+    )
+    draft = {
         "type": "learning_path_intake",
         "status": "draft",
         "grade_year": grade_year,
@@ -346,6 +405,139 @@ def _build_intake_draft(
         "user_modification_summary": user_modification_summary,
         "risk_warnings": [],
         "requires_second_confirmation": False,
+    }
+    return LearningPathIntakeOutput.model_validate(draft).model_dump()
+
+
+def _bind_fallback_course_sources(
+    courses: list[dict[str, str]],
+    state: OrchestrationState | dict,
+    grade_year: str,
+    knowledge_context: dict,
+) -> list[dict[str, object]]:
+    source_bindings = _source_bindings_from_knowledge_context(knowledge_context)
+    if not source_bindings:
+        source_bindings = _source_bindings_from_existing_paths(state, grade_year)
+    if not source_bindings:
+        raise ValueError("本地课程草案无法找到已有课程来源绑定。")
+
+    bound_courses: list[dict[str, object]] = []
+    for index, course in enumerate(courses):
+        source = source_bindings[index % len(source_bindings)]
+        bound_courses.append({**course, **source})
+    return bound_courses
+
+
+def _published_textbook_context_for_intake(
+    learning_topic: str,
+    query: str,
+    profile: dict,
+) -> dict:
+    summary = profile.get("summary_text") or profile.get("text") or ""
+    student_goal_summary = "\n".join(
+        text for text in (query, str(summary)) if text.strip()
+    )
+    with Session(get_engine()) as db_session:
+        return get_published_textbook_context_for_topic(
+            db_session,
+            learning_topic,
+            student_goal_summary=student_goal_summary,
+        )
+
+
+def _source_bindings_from_knowledge_context(
+    knowledge_context: dict,
+) -> list[dict[str, object]]:
+    textbooks = knowledge_context.get("textbooks")
+    if not isinstance(textbooks, list):
+        return []
+
+    bindings: list[dict[str, object]] = []
+    for textbook in textbooks:
+        if not isinstance(textbook, dict):
+            continue
+        textbook_id = str(textbook.get("textbook_id", "")).strip()
+        title = str(textbook.get("title", "")).strip()
+        outline_summary = textbook.get("outline_summary")
+        if not textbook_id or not title or not isinstance(outline_summary, list):
+            continue
+        section_ids = [
+            str(section.get("section_id", "")).strip()
+            for section in outline_summary
+            if isinstance(section, dict) and str(section.get("section_id", "")).strip()
+        ]
+        if not section_ids:
+            continue
+        bindings.append(
+            {
+                "source_textbook_id": textbook_id,
+                "source_textbook_title": title,
+                "source_outline_section_ids": section_ids[:1],
+            }
+        )
+    return bindings
+
+
+def _require_intake_courses_from_knowledge_context(
+    intake: dict,
+    knowledge_context: dict,
+) -> None:
+    allowed_textbook_ids = {
+        str(textbook.get("textbook_id", "")).strip()
+        for textbook in knowledge_context.get("textbooks", [])
+        if isinstance(textbook, dict)
+    }
+    if not allowed_textbook_ids:
+        raise ValueError("课程草案缺少已发布教材上下文。")
+    for course in intake.get("courses", []):
+        if not isinstance(course, dict):
+            raise ValueError("课程草案课程格式无效。")
+        source_textbook_id = str(course.get("source_textbook_id", "")).strip()
+        if source_textbook_id not in allowed_textbook_ids:
+            raise ValueError("课程草案教材来源不在已发布知识库上下文中。")
+
+
+def _source_bindings_from_existing_paths(
+    state: OrchestrationState | dict, grade_year: str
+) -> list[dict[str, object]]:
+    year_learning_paths = state.get("year_learning_paths")
+    bindings: list[dict[str, object]] = []
+    for path in iter_year_learning_paths(year_learning_paths, grade_year):
+        path_grade_plans = path.get("grade_plans", {})
+        if not isinstance(path_grade_plans, dict):
+            continue
+        ordered_grade_years = [grade_year]
+        ordered_grade_years.extend(
+            available_grade_year
+            for available_grade_year in path_grade_plans
+            if available_grade_year != grade_year
+        )
+        for path_grade_year in ordered_grade_years:
+            for course in get_grade_courses(path, path_grade_year):
+                source = _source_binding_from_course(course)
+                if source is not None:
+                    bindings.append(source)
+    return bindings
+
+
+def _source_binding_from_course(course: dict) -> dict[str, object] | None:
+    source_textbook_id = str(course.get("source_textbook_id", "")).strip()
+    source_textbook_title = str(course.get("source_textbook_title", "")).strip()
+    source_outline_section_ids = [
+        str(section_id).strip()
+        for section_id in course.get("source_outline_section_ids", [])
+        if str(section_id).strip()
+    ]
+    if (
+        not source_textbook_id
+        or not source_textbook_title
+        or not source_outline_section_ids
+    ):
+        return None
+    return {
+        "source_textbook_id": source_textbook_id,
+        "source_textbook_title": source_textbook_title,
+        "source_outline_section_ids": source_outline_section_ids,
     }
 
 
@@ -455,9 +647,7 @@ def _draft_response_text(intake: dict) -> str:
     return "\n".join(lines)
 
 
-def _check_risk_pending(state: OrchestrationState | dict, intake: dict) -> None:
-    profile = state.get("profile")
-    confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
+def _check_risk_pending(state: OrchestrationState | dict, intake: dict) -> None:  # noqa: C901
     user_id = state.get("user_id", "")
     if not user_id:
         return
@@ -537,13 +727,19 @@ def _check_risk_pending(state: OrchestrationState | dict, intake: dict) -> None:
 
 def _confirmed_response_text(intake: dict) -> str:
     topic = intake.get("learning_topic", "")
-    return f"好的，已确认这份{topic}学习路径草稿。下一步会生成正式学习路径，包括课程顺序、学习目标、时间安排和下一步行动。"
+    return (
+        f"好的，已确认这份{topic}学习路径草稿。下一步会生成正式学习路径，"
+        "包括课程顺序、学习目标、时间安排和下一步行动。"
+    )
 
 
 def _risk_cancelled_response_text(intake: dict) -> str:
     topic = intake.get("learning_topic", "")
     topic_text = f"{topic}的" if topic else ""
-    return f"好的，已保留原学习路径，不做本次修改。{topic_text}课程草稿已回到普通草稿状态，你也可以继续告诉我哪里需要修改。"
+    return (
+        f"好的，已保留原学习路径，不做本次修改。{topic_text}"
+        "课程草稿已回到普通草稿状态，你也可以继续告诉我哪里需要修改。"
+    )
 
 
 def _persist_learning_path_intake(
