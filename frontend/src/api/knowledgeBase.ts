@@ -17,6 +17,18 @@ export type KnowledgeGapFindMaterialsResponse =
 	components["schemas"]["KnowledgeGapFindMaterialsResponse"];
 export type KnowledgeGapUploadResponse =
 	components["schemas"]["KnowledgeGapUploadResponse"];
+export type KnowledgeBaseAgentTextbookHit =
+	components["schemas"]["KnowledgeBaseAgentTextbookHit"];
+export type KnowledgeBaseAgentGapHit =
+	components["schemas"]["KnowledgeBaseAgentGapHit"];
+export type KnowledgeBaseAgentRequest =
+	components["schemas"]["KnowledgeBaseAgentRequest"];
+export type KnowledgeBaseAgentResponse =
+	components["schemas"]["KnowledgeBaseAgentResponse"];
+export type KnowledgeBaseSourceConfirmResponse =
+	components["schemas"]["KnowledgeBaseSourceConfirmResponse"];
+export type KnowledgeBaseSourceResult =
+	components["schemas"]["KnowledgeBaseSourceResult"];
 
 export interface AdminKnowledgeBaseApi {
 	listSources(token: string): Promise<KnowledgeSource[]>;
@@ -26,37 +38,19 @@ export interface AdminKnowledgeBaseApi {
 		token: string,
 		textbookId: string,
 	): Promise<TextbookExtensionResource[]>;
-	findMaterials(
+	runAgent(token: string, message: string): Promise<KnowledgeBaseAgentResponse>;
+	confirmSourceResult(
 		token: string,
-		gapId: string,
-	): Promise<KnowledgeGapFindMaterialsResponse>;
-	uploadGapMaterials(
-		token: string,
-		gapId: string,
-		payload: StructuredTextbookCreateRequest,
-	): Promise<KnowledgeGapUploadResponse>;
+		sourceResult: KnowledgeBaseSourceResult,
+	): Promise<KnowledgeBaseSourceConfirmResponse>;
 	publishTextbook(token: string, textbookId: string): Promise<Textbook>;
 	unpublishTextbook(token: string, textbookId: string): Promise<Textbook>;
 	deleteTextbook(token: string, textbookId: string): Promise<void>;
-	generateOutline(
-		token: string,
-		prompt: string,
-		tags: string[],
-	): Promise<Textbook>;
 	updateOutline(
 		token: string,
 		textbookId: string,
 		outline: unknown,
 	): Promise<Textbook>;
-	generateContent(token: string, textbookId: string): Promise<unknown>;
-	getGenerationProgress(
-		token: string,
-		textbookId: string,
-	): Promise<{
-		progress_percentage: number;
-		status: string;
-		current_section_title: string;
-	}>;
 }
 
 async function requestJson<TResponse>(
@@ -114,22 +108,21 @@ export const adminKnowledgeBaseApi: AdminKnowledgeBaseApi = {
 			`/api/admin/knowledge-base/textbooks/${encodeURIComponent(textbookId)}/extension-resources`,
 		);
 	},
-	findMaterials(token: string, gapId: string) {
-		return requestJson<KnowledgeGapFindMaterialsResponse>(
+	runAgent(token: string, message: string) {
+		return requestJson<KnowledgeBaseAgentResponse>(
 			token,
-			`/api/admin/knowledge-base/gaps/${encodeURIComponent(gapId)}/find-materials`,
-			{ method: "POST" },
+			"/api/admin/knowledge-base/agent",
+			{ method: "POST", body: JSON.stringify({ message }) },
 		);
 	},
-	uploadGapMaterials(
-		token: string,
-		gapId: string,
-		payload: StructuredTextbookCreateRequest,
-	) {
-		return requestJson<KnowledgeGapUploadResponse>(
+	confirmSourceResult(token: string, sourceResult: KnowledgeBaseSourceResult) {
+		return requestJson<KnowledgeBaseSourceConfirmResponse>(
 			token,
-			`/api/admin/knowledge-base/gaps/${encodeURIComponent(gapId)}/upload`,
-			{ method: "POST", body: JSON.stringify(payload) },
+			"/api/admin/knowledge-base/source-results/confirm",
+			{
+				method: "POST",
+				body: JSON.stringify({ source_result: sourceResult }),
+			},
 		);
 	},
 	publishTextbook(token: string, textbookId: string) {
@@ -153,16 +146,6 @@ export const adminKnowledgeBaseApi: AdminKnowledgeBaseApi = {
 			{ method: "DELETE" },
 		);
 	},
-	generateOutline(token: string, prompt: string, tags: string[]) {
-		return requestJson<Textbook>(
-			token,
-			"/api/admin/knowledge-base/generate-outline",
-			{
-				method: "POST",
-				body: JSON.stringify({ prompt, tags }),
-			},
-		);
-	},
 	updateOutline(token: string, textbookId: string, outline: unknown) {
 		return requestJson<Textbook>(
 			token,
@@ -171,25 +154,6 @@ export const adminKnowledgeBaseApi: AdminKnowledgeBaseApi = {
 				method: "PUT",
 				body: JSON.stringify({ outline }),
 			},
-		);
-	},
-	generateContent(token: string, textbookId: string) {
-		return requestJson<unknown>(
-			token,
-			`/api/admin/knowledge-base/textbooks/${encodeURIComponent(textbookId)}/generate-content`,
-			{
-				method: "POST",
-			},
-		);
-	},
-	getGenerationProgress(token: string, textbookId: string) {
-		return requestJson<{
-			progress_percentage: number;
-			status: string;
-			current_section_title: string;
-		}>(
-			token,
-			`/api/admin/knowledge-base/textbooks/${encodeURIComponent(textbookId)}/generation-progress`,
 		);
 	},
 };

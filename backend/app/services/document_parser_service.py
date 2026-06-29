@@ -295,3 +295,11 @@ def parse_and_slice_pdf(
     sections_content = locate_and_slice_sections(markdown_text, outline)
 
     return markdown_text, outline, sections_content
+
+
+def parse_textbook_source_to_sections(
+    source_url: str,
+    language: str,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    _, outline, sections_content = parse_and_slice_pdf(source_url)
+    return outline, sections_content

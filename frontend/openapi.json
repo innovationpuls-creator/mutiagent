@@ -1333,6 +1333,913 @@
 				]
 			}
 		},
+		"/api/admin/knowledge-base/sources": {
+			"get": {
+				"tags": ["knowledge-base"],
+				"summary": "Admin Sources",
+				"operationId": "admin_sources_api_admin_knowledge_base_sources_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"items": {
+										"$ref": "#/components/schemas/KnowledgeSourceRead"
+									},
+									"type": "array",
+									"title": "Response Admin Sources Api Admin Knowledge Base Sources Get"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			},
+			"post": {
+				"tags": ["knowledge-base"],
+				"summary": "Create Admin Source",
+				"operationId": "create_admin_source_api_admin_knowledge_base_sources_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/KnowledgeSourceCreateRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/KnowledgeSourceRead"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			}
+		},
+		"/api/admin/knowledge-base/textbooks": {
+			"get": {
+				"tags": ["knowledge-base"],
+				"summary": "Admin Textbooks",
+				"operationId": "admin_textbooks_api_admin_knowledge_base_textbooks_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"items": {
+										"$ref": "#/components/schemas/TextbookRead"
+									},
+									"type": "array",
+									"title": "Response Admin Textbooks Api Admin Knowledge Base Textbooks Get"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			},
+			"post": {
+				"tags": ["knowledge-base"],
+				"summary": "Create Admin Textbook",
+				"operationId": "create_admin_textbook_api_admin_knowledge_base_textbooks_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/StructuredTextbookCreateRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/TextbookRead"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			}
+		},
+		"/api/admin/knowledge-base/textbooks/{textbook_id}/publish": {
+			"post": {
+				"tags": ["knowledge-base"],
+				"summary": "Publish Admin Textbook",
+				"operationId": "publish_admin_textbook_api_admin_knowledge_base_textbooks__textbook_id__publish_post",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "textbook_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Textbook Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/TextbookRead"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/admin/knowledge-base/textbooks/{textbook_id}/outline": {
+			"put": {
+				"tags": ["knowledge-base"],
+				"summary": "Update Admin Textbook Outline",
+				"operationId": "update_admin_textbook_outline_api_admin_knowledge_base_textbooks__textbook_id__outline_put",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "textbook_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Textbook Id"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"additionalProperties": true,
+								"title": "Outline"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/TextbookRead"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/admin/knowledge-base/textbooks/{textbook_id}/unpublish": {
+			"post": {
+				"tags": ["knowledge-base"],
+				"summary": "Unpublish Admin Textbook",
+				"operationId": "unpublish_admin_textbook_api_admin_knowledge_base_textbooks__textbook_id__unpublish_post",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "textbook_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Textbook Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/TextbookRead"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/admin/knowledge-base/textbooks/{textbook_id}": {
+			"delete": {
+				"tags": ["knowledge-base"],
+				"summary": "Delete Admin Textbook",
+				"operationId": "delete_admin_textbook_api_admin_knowledge_base_textbooks__textbook_id__delete",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "textbook_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Textbook Id"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "Successful Response"
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/admin/knowledge-base/textbooks/{textbook_id}/agent-organize": {
+			"post": {
+				"tags": ["knowledge-base"],
+				"summary": "Organize Admin Textbook",
+				"operationId": "organize_admin_textbook_api_admin_knowledge_base_textbooks__textbook_id__agent_organize_post",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "textbook_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Textbook Id"
+						}
+					}
+				],
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/KnowledgeBaseIngestionJobRead"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/admin/knowledge-base/ingestion-jobs/{job_id}": {
+			"get": {
+				"tags": ["knowledge-base"],
+				"summary": "Read Admin Ingestion Job",
+				"operationId": "read_admin_ingestion_job_api_admin_knowledge_base_ingestion_jobs__job_id__get",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "job_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Job Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/KnowledgeBaseIngestionJobRead"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/admin/knowledge-base/agent": {
+			"post": {
+				"tags": ["knowledge-base"],
+				"summary": "Admin Knowledge Base Agent",
+				"operationId": "admin_knowledge_base_agent_api_admin_knowledge_base_agent_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/KnowledgeBaseAgentRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/KnowledgeBaseAgentResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			}
+		},
+		"/api/admin/knowledge-base/source-results/confirm": {
+			"post": {
+				"tags": ["knowledge-base"],
+				"summary": "Confirm Admin Source Result",
+				"operationId": "confirm_admin_source_result_api_admin_knowledge_base_source_results_confirm_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/KnowledgeBaseSourceConfirmRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/KnowledgeBaseSourceConfirmResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			}
+		},
+		"/api/admin/knowledge-base/uploads": {
+			"post": {
+				"tags": ["knowledge-base"],
+				"summary": "Upload Admin Textbook File",
+				"operationId": "upload_admin_textbook_file_api_admin_knowledge_base_uploads_post",
+				"requestBody": {
+					"content": {
+						"multipart/form-data": {
+							"schema": {
+								"$ref": "#/components/schemas/Body_upload_admin_textbook_file_api_admin_knowledge_base_uploads_post"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/KnowledgeBaseSourceConfirmResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			}
+		},
+		"/api/admin/knowledge-base/gaps": {
+			"get": {
+				"tags": ["knowledge-base"],
+				"summary": "Admin Gaps",
+				"operationId": "admin_gaps_api_admin_knowledge_base_gaps_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"items": {
+										"$ref": "#/components/schemas/KnowledgeGapAdminRead"
+									},
+									"type": "array",
+									"title": "Response Admin Gaps Api Admin Knowledge Base Gaps Get"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			}
+		},
+		"/api/admin/knowledge-base/gaps/{gap_id}/find-materials": {
+			"post": {
+				"tags": ["knowledge-base"],
+				"summary": "Find Admin Gap Materials",
+				"operationId": "find_admin_gap_materials_api_admin_knowledge_base_gaps__gap_id__find_materials_post",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "gap_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Gap Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/KnowledgeGapFindMaterialsResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/admin/knowledge-base/gaps/{gap_id}/upload": {
+			"post": {
+				"tags": ["knowledge-base"],
+				"summary": "Upload Admin Gap Materials",
+				"operationId": "upload_admin_gap_materials_api_admin_knowledge_base_gaps__gap_id__upload_post",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "gap_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Gap Id"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/StructuredTextbookCreateRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/KnowledgeGapUploadResponse"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/admin/knowledge-base/textbooks/{textbook_id}/extension-resources": {
+			"get": {
+				"tags": ["knowledge-base"],
+				"summary": "Admin Extension Resources",
+				"operationId": "admin_extension_resources_api_admin_knowledge_base_textbooks__textbook_id__extension_resources_get",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "textbook_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Textbook Id"
+						}
+					},
+					{
+						"name": "section_id",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							},
+							"title": "Section Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/TextbookExtensionResourceRead"
+									},
+									"title": "Response Admin Extension Resources Api Admin Knowledge Base Textbooks  Textbook Id  Extension Resources Get"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"post": {
+				"tags": ["knowledge-base"],
+				"summary": "Create Admin Extension Resource",
+				"operationId": "create_admin_extension_resource_api_admin_knowledge_base_textbooks__textbook_id__extension_resources_post",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "textbook_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Textbook Id"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/TextbookExtensionResourceCreateRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/TextbookExtensionResourceRead"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/knowledge-base/gaps/{gap_id}/follow": {
+			"post": {
+				"tags": ["knowledge-base"],
+				"summary": "Follow Gap",
+				"operationId": "follow_gap_api_knowledge_base_gaps__gap_id__follow_post",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "gap_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Gap Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/KnowledgeGapFollowRead"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/knowledge-base/notices": {
+			"get": {
+				"tags": ["knowledge-base"],
+				"summary": "Notices",
+				"operationId": "notices_api_knowledge_base_notices_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"items": {
+										"$ref": "#/components/schemas/KnowledgeGapNoticeRead"
+									},
+									"type": "array",
+									"title": "Response Notices Api Knowledge Base Notices Get"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			}
+		},
+		"/api/knowledge-base/notices/{notice_id}/read": {
+			"post": {
+				"tags": ["knowledge-base"],
+				"summary": "Read Notice",
+				"operationId": "read_notice_api_knowledge_base_notices__notice_id__read_post",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "notice_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Notice Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/KnowledgeGapNoticeRead"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
 		"/api/health": {
 			"get": {
 				"summary": "Health",
@@ -1601,6 +2508,40 @@
 				"type": "object",
 				"required": ["access_token", "auth_type", "user"],
 				"title": "AuthResponse"
+			},
+			"Body_upload_admin_textbook_file_api_admin_knowledge_base_uploads_post": {
+				"properties": {
+					"title": {
+						"type": "string",
+						"maxLength": 256,
+						"minLength": 1,
+						"title": "Title"
+					},
+					"language": {
+						"type": "string",
+						"maxLength": 32,
+						"title": "Language",
+						"default": "zh"
+					},
+					"description": {
+						"type": "string",
+						"title": "Description",
+						"default": ""
+					},
+					"tags": {
+						"type": "string",
+						"title": "Tags",
+						"default": ""
+					},
+					"file": {
+						"type": "string",
+						"contentMediaType": "application/octet-stream",
+						"title": "File"
+					}
+				},
+				"type": "object",
+				"required": ["title", "file"],
+				"title": "Body_upload_admin_textbook_file_api_admin_knowledge_base_uploads_post"
 			},
 			"BranchCourseNodeRead": {
 				"properties": {
@@ -2646,6 +3587,790 @@
 				"required": ["status", "database"],
 				"title": "HealthResponse"
 			},
+			"KnowledgeBaseAgentGapHit": {
+				"properties": {
+					"gap_id": {
+						"type": "string",
+						"title": "Gap Id"
+					},
+					"normalized_topic": {
+						"type": "string",
+						"title": "Normalized Topic"
+					},
+					"status": {
+						"type": "string",
+						"enum": [
+							"open",
+							"material_searching",
+							"material_found",
+							"resolved",
+							"closed"
+						],
+						"title": "Status"
+					},
+					"reason": {
+						"type": "string",
+						"title": "Reason",
+						"default": ""
+					}
+				},
+				"type": "object",
+				"required": ["gap_id", "normalized_topic", "status"],
+				"title": "KnowledgeBaseAgentGapHit"
+			},
+			"KnowledgeBaseAgentRequest": {
+				"properties": {
+					"message": {
+						"type": "string",
+						"maxLength": 4000,
+						"minLength": 1,
+						"title": "Message"
+					}
+				},
+				"type": "object",
+				"required": ["message"],
+				"title": "KnowledgeBaseAgentRequest"
+			},
+			"KnowledgeBaseAgentResponse": {
+				"properties": {
+					"reply_text": {
+						"type": "string",
+						"title": "Reply Text"
+					},
+					"selected_textbook_id": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Selected Textbook Id"
+					},
+					"selected_source_result_id": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Selected Source Result Id"
+					},
+					"textbook_hits": {
+						"items": {
+							"$ref": "#/components/schemas/KnowledgeBaseAgentTextbookHit"
+						},
+						"type": "array",
+						"title": "Textbook Hits"
+					},
+					"gap_hits": {
+						"items": {
+							"$ref": "#/components/schemas/KnowledgeBaseAgentGapHit"
+						},
+						"type": "array",
+						"title": "Gap Hits"
+					},
+					"source_results": {
+						"items": {
+							"$ref": "#/components/schemas/KnowledgeBaseSourceResult"
+						},
+						"type": "array",
+						"title": "Source Results"
+					}
+				},
+				"type": "object",
+				"required": ["reply_text"],
+				"title": "KnowledgeBaseAgentResponse"
+			},
+			"KnowledgeBaseAgentTextbookHit": {
+				"properties": {
+					"textbook_id": {
+						"type": "string",
+						"title": "Textbook Id"
+					},
+					"title": {
+						"type": "string",
+						"title": "Title"
+					},
+					"source_name": {
+						"type": "string",
+						"title": "Source Name"
+					},
+					"student_availability_status": {
+						"type": "string",
+						"enum": ["draft", "published", "unpublished", "archived"],
+						"title": "Student Availability Status"
+					},
+					"score": {
+						"type": "integer",
+						"minimum": 0.0,
+						"title": "Score"
+					},
+					"reason": {
+						"type": "string",
+						"title": "Reason",
+						"default": ""
+					}
+				},
+				"type": "object",
+				"required": [
+					"textbook_id",
+					"title",
+					"source_name",
+					"student_availability_status",
+					"score"
+				],
+				"title": "KnowledgeBaseAgentTextbookHit"
+			},
+			"KnowledgeBaseIngestionJobRead": {
+				"properties": {
+					"job_id": {
+						"type": "string",
+						"title": "Job Id"
+					},
+					"textbook_id": {
+						"type": "string",
+						"title": "Textbook Id"
+					},
+					"job_type": {
+						"type": "string",
+						"title": "Job Type"
+					},
+					"status": {
+						"type": "string",
+						"enum": ["queued", "running", "failed", "completed"],
+						"title": "Status"
+					},
+					"error_message": {
+						"type": "string",
+						"title": "Error Message"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Created At"
+					},
+					"started_at": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "date-time"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Started At"
+					},
+					"finished_at": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "date-time"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Finished At"
+					}
+				},
+				"type": "object",
+				"required": [
+					"job_id",
+					"textbook_id",
+					"job_type",
+					"status",
+					"error_message",
+					"created_at",
+					"started_at",
+					"finished_at"
+				],
+				"title": "KnowledgeBaseIngestionJobRead"
+			},
+			"KnowledgeBaseSourceConfirmRequest": {
+				"properties": {
+					"source_result": {
+						"$ref": "#/components/schemas/KnowledgeBaseSourceResult"
+					}
+				},
+				"type": "object",
+				"required": ["source_result"],
+				"title": "KnowledgeBaseSourceConfirmRequest"
+			},
+			"KnowledgeBaseSourceConfirmResponse": {
+				"properties": {
+					"textbook": {
+						"$ref": "#/components/schemas/TextbookRead"
+					},
+					"job": {
+						"$ref": "#/components/schemas/KnowledgeBaseIngestionJobRead"
+					}
+				},
+				"type": "object",
+				"required": ["textbook", "job"],
+				"title": "KnowledgeBaseSourceConfirmResponse"
+			},
+			"KnowledgeBaseSourceResult": {
+				"properties": {
+					"source_result_id": {
+						"type": "string",
+						"maxLength": 128,
+						"minLength": 1,
+						"title": "Source Result Id"
+					},
+					"title": {
+						"type": "string",
+						"maxLength": 256,
+						"minLength": 1,
+						"title": "Title"
+					},
+					"original_title": {
+						"type": "string",
+						"maxLength": 256,
+						"title": "Original Title",
+						"default": ""
+					},
+					"language": {
+						"type": "string",
+						"maxLength": 32,
+						"title": "Language",
+						"default": ""
+					},
+					"source_url": {
+						"type": "string",
+						"maxLength": 1024,
+						"minLength": 1,
+						"title": "Source Url"
+					},
+					"source_type": {
+						"type": "string",
+						"enum": ["pdf", "html"],
+						"title": "Source Type"
+					},
+					"provider_name": {
+						"type": "string",
+						"maxLength": 256,
+						"title": "Provider Name",
+						"default": ""
+					},
+					"description": {
+						"type": "string",
+						"title": "Description",
+						"default": ""
+					},
+					"tags": {
+						"items": {
+							"type": "string"
+						},
+						"type": "array",
+						"title": "Tags"
+					},
+					"parseability_score": {
+						"type": "integer",
+						"maximum": 100.0,
+						"minimum": 0.0,
+						"title": "Parseability Score"
+					},
+					"parseability_reason": {
+						"type": "string",
+						"title": "Parseability Reason",
+						"default": ""
+					},
+					"topic_summary": {
+						"type": "string",
+						"title": "Topic Summary",
+						"default": ""
+					},
+					"is_recommended": {
+						"type": "boolean",
+						"title": "Is Recommended",
+						"default": false
+					}
+				},
+				"type": "object",
+				"required": [
+					"source_result_id",
+					"title",
+					"source_url",
+					"source_type",
+					"parseability_score"
+				],
+				"title": "KnowledgeBaseSourceResult"
+			},
+			"KnowledgeGapAdminRead": {
+				"properties": {
+					"gap_id": {
+						"type": "string",
+						"title": "Gap Id"
+					},
+					"normalized_topic": {
+						"type": "string",
+						"title": "Normalized Topic"
+					},
+					"trigger_count": {
+						"type": "integer",
+						"title": "Trigger Count"
+					},
+					"follow_count": {
+						"type": "integer",
+						"title": "Follow Count"
+					},
+					"latest_triggered_at": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "date-time"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Latest Triggered At"
+					},
+					"student_goal_summaries": {
+						"items": {
+							"type": "string"
+						},
+						"type": "array",
+						"title": "Student Goal Summaries"
+					},
+					"status": {
+						"type": "string",
+						"enum": [
+							"open",
+							"material_searching",
+							"material_found",
+							"resolved",
+							"closed"
+						],
+						"title": "Status"
+					},
+					"resolved_textbook_id": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Resolved Textbook Id"
+					},
+					"resolved_at": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "date-time"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Resolved At"
+					},
+					"sources": {
+						"items": {
+							"$ref": "#/components/schemas/KnowledgeSourceRead"
+						},
+						"type": "array",
+						"title": "Sources"
+					},
+					"actions": {
+						"items": {
+							"type": "string"
+						},
+						"type": "array",
+						"title": "Actions"
+					}
+				},
+				"type": "object",
+				"required": [
+					"gap_id",
+					"normalized_topic",
+					"trigger_count",
+					"follow_count",
+					"latest_triggered_at",
+					"student_goal_summaries",
+					"status",
+					"resolved_textbook_id",
+					"resolved_at"
+				],
+				"title": "KnowledgeGapAdminRead"
+			},
+			"KnowledgeGapFindMaterialsResponse": {
+				"properties": {
+					"gap": {
+						"$ref": "#/components/schemas/KnowledgeGapRead"
+					},
+					"sources": {
+						"items": {
+							"$ref": "#/components/schemas/KnowledgeSourceRead"
+						},
+						"type": "array",
+						"title": "Sources"
+					}
+				},
+				"type": "object",
+				"required": ["gap", "sources"],
+				"title": "KnowledgeGapFindMaterialsResponse"
+			},
+			"KnowledgeGapFollowRead": {
+				"properties": {
+					"follow_id": {
+						"type": "string",
+						"title": "Follow Id"
+					},
+					"gap_id": {
+						"type": "string",
+						"title": "Gap Id"
+					},
+					"user_uid": {
+						"type": "string",
+						"title": "User Uid"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Created At"
+					}
+				},
+				"type": "object",
+				"required": ["follow_id", "gap_id", "user_uid", "created_at"],
+				"title": "KnowledgeGapFollowRead"
+			},
+			"KnowledgeGapNoticeActionPayload": {
+				"properties": {
+					"action": {
+						"type": "string",
+						"const": "regenerate_learning_path_intake",
+						"title": "Action"
+					},
+					"learning_topic": {
+						"type": "string",
+						"title": "Learning Topic"
+					},
+					"textbook_id": {
+						"type": "string",
+						"title": "Textbook Id"
+					}
+				},
+				"additionalProperties": false,
+				"type": "object",
+				"required": ["action", "learning_topic", "textbook_id"],
+				"title": "KnowledgeGapNoticeActionPayload"
+			},
+			"KnowledgeGapNoticeRead": {
+				"properties": {
+					"notice_id": {
+						"type": "string",
+						"title": "Notice Id"
+					},
+					"gap_id": {
+						"type": "string",
+						"title": "Gap Id"
+					},
+					"user_uid": {
+						"type": "string",
+						"title": "User Uid"
+					},
+					"notice_type": {
+						"type": "string",
+						"const": "knowledge_gap_resolved",
+						"title": "Notice Type"
+					},
+					"title": {
+						"type": "string",
+						"title": "Title"
+					},
+					"body": {
+						"type": "string",
+						"title": "Body"
+					},
+					"action_label": {
+						"type": "string",
+						"title": "Action Label"
+					},
+					"action_payload": {
+						"$ref": "#/components/schemas/KnowledgeGapNoticeActionPayload"
+					},
+					"read_at": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "date-time"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Read At"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Created At"
+					}
+				},
+				"type": "object",
+				"required": [
+					"notice_id",
+					"gap_id",
+					"user_uid",
+					"notice_type",
+					"title",
+					"body",
+					"action_label",
+					"action_payload",
+					"read_at",
+					"created_at"
+				],
+				"title": "KnowledgeGapNoticeRead"
+			},
+			"KnowledgeGapRead": {
+				"properties": {
+					"gap_id": {
+						"type": "string",
+						"title": "Gap Id"
+					},
+					"normalized_topic": {
+						"type": "string",
+						"title": "Normalized Topic"
+					},
+					"trigger_count": {
+						"type": "integer",
+						"title": "Trigger Count"
+					},
+					"follow_count": {
+						"type": "integer",
+						"title": "Follow Count"
+					},
+					"latest_triggered_at": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "date-time"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Latest Triggered At"
+					},
+					"student_goal_summaries": {
+						"items": {
+							"type": "string"
+						},
+						"type": "array",
+						"title": "Student Goal Summaries"
+					},
+					"status": {
+						"type": "string",
+						"enum": [
+							"open",
+							"material_searching",
+							"material_found",
+							"resolved",
+							"closed"
+						],
+						"title": "Status"
+					},
+					"resolved_textbook_id": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Resolved Textbook Id"
+					},
+					"resolved_at": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "date-time"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Resolved At"
+					}
+				},
+				"type": "object",
+				"required": [
+					"gap_id",
+					"normalized_topic",
+					"trigger_count",
+					"follow_count",
+					"latest_triggered_at",
+					"student_goal_summaries",
+					"status",
+					"resolved_textbook_id",
+					"resolved_at"
+				],
+				"title": "KnowledgeGapRead"
+			},
+			"KnowledgeGapUploadResponse": {
+				"properties": {
+					"gap": {
+						"$ref": "#/components/schemas/KnowledgeGapRead"
+					},
+					"textbook": {
+						"$ref": "#/components/schemas/TextbookRead"
+					}
+				},
+				"type": "object",
+				"required": ["gap", "textbook"],
+				"title": "KnowledgeGapUploadResponse"
+			},
+			"KnowledgeSourceCreateRequest": {
+				"properties": {
+					"source_id": {
+						"type": "string",
+						"maxLength": 64,
+						"minLength": 1,
+						"title": "Source Id"
+					},
+					"name": {
+						"type": "string",
+						"maxLength": 256,
+						"minLength": 1,
+						"title": "Name"
+					},
+					"base_url": {
+						"type": "string",
+						"maxLength": 1024,
+						"title": "Base Url",
+						"default": ""
+					},
+					"status": {
+						"type": "string",
+						"enum": ["enabled", "disabled"],
+						"title": "Status",
+						"default": "enabled"
+					},
+					"source_kind": {
+						"type": "string",
+						"maxLength": 64,
+						"title": "Source Kind",
+						"default": ""
+					},
+					"download_requirement": {
+						"type": "string",
+						"title": "Download Requirement",
+						"default": ""
+					},
+					"ai_search_requirement": {
+						"type": "string",
+						"title": "Ai Search Requirement",
+						"default": ""
+					},
+					"download_status": {
+						"type": "string",
+						"enum": ["unverified", "verified", "failed"],
+						"title": "Download Status",
+						"default": "unverified"
+					},
+					"parse_status": {
+						"type": "string",
+						"enum": ["unverified", "supported", "failed"],
+						"title": "Parse Status",
+						"default": "unverified"
+					},
+					"license_review_status": {
+						"type": "string",
+						"enum": ["unreviewed", "approved", "rejected"],
+						"title": "License Review Status",
+						"default": "unreviewed"
+					},
+					"human_review_status": {
+						"type": "string",
+						"enum": ["unreviewed", "reviewed"],
+						"title": "Human Review Status",
+						"default": "unreviewed"
+					}
+				},
+				"type": "object",
+				"required": ["source_id", "name"],
+				"title": "KnowledgeSourceCreateRequest"
+			},
+			"KnowledgeSourceRead": {
+				"properties": {
+					"source_id": {
+						"type": "string",
+						"maxLength": 64,
+						"minLength": 1,
+						"title": "Source Id"
+					},
+					"name": {
+						"type": "string",
+						"maxLength": 256,
+						"minLength": 1,
+						"title": "Name"
+					},
+					"base_url": {
+						"type": "string",
+						"maxLength": 1024,
+						"title": "Base Url",
+						"default": ""
+					},
+					"status": {
+						"type": "string",
+						"enum": ["enabled", "disabled"],
+						"title": "Status",
+						"default": "enabled"
+					},
+					"source_kind": {
+						"type": "string",
+						"maxLength": 64,
+						"title": "Source Kind",
+						"default": ""
+					},
+					"download_requirement": {
+						"type": "string",
+						"title": "Download Requirement",
+						"default": ""
+					},
+					"ai_search_requirement": {
+						"type": "string",
+						"title": "Ai Search Requirement",
+						"default": ""
+					},
+					"download_status": {
+						"type": "string",
+						"enum": ["unverified", "verified", "failed"],
+						"title": "Download Status",
+						"default": "unverified"
+					},
+					"parse_status": {
+						"type": "string",
+						"enum": ["unverified", "supported", "failed"],
+						"title": "Parse Status",
+						"default": "unverified"
+					},
+					"license_review_status": {
+						"type": "string",
+						"enum": ["unreviewed", "approved", "rejected"],
+						"title": "License Review Status",
+						"default": "unreviewed"
+					},
+					"human_review_status": {
+						"type": "string",
+						"enum": ["unreviewed", "reviewed"],
+						"title": "Human Review Status",
+						"default": "unreviewed"
+					}
+				},
+				"type": "object",
+				"required": ["source_id", "name"],
+				"title": "KnowledgeSourceRead"
+			},
 			"LeafCourseRead": {
 				"properties": {
 					"course_node_id": {
@@ -2722,6 +4447,14 @@
 						},
 						"type": "object",
 						"title": "Section Composed Markdowns"
+					},
+					"section_resource_errors": {
+						"additionalProperties": {
+							"additionalProperties": true,
+							"type": "object"
+						},
+						"type": "object",
+						"title": "Section Resource Errors"
 					},
 					"generation_status": {
 						"anyOf": [
@@ -2967,6 +4700,455 @@
 				"type": "object",
 				"required": ["session_id", "user_uid", "updated_at"],
 				"title": "SessionStateResponse"
+			},
+			"StructuredTextbookCreateRequest": {
+				"properties": {
+					"textbook": {
+						"$ref": "#/components/schemas/TextbookCreateRequest"
+					},
+					"sections": {
+						"items": {
+							"$ref": "#/components/schemas/TextbookSectionContentCreateRequest"
+						},
+						"type": "array",
+						"title": "Sections"
+					}
+				},
+				"type": "object",
+				"required": ["textbook", "sections"],
+				"title": "StructuredTextbookCreateRequest"
+			},
+			"TextbookCreateRequest": {
+				"properties": {
+					"textbook_id": {
+						"type": "string",
+						"maxLength": 64,
+						"minLength": 1,
+						"title": "Textbook Id"
+					},
+					"source_id": {
+						"type": "string",
+						"maxLength": 64,
+						"minLength": 1,
+						"title": "Source Id"
+					},
+					"title": {
+						"type": "string",
+						"maxLength": 256,
+						"minLength": 1,
+						"title": "Title"
+					},
+					"original_title": {
+						"type": "string",
+						"maxLength": 256,
+						"title": "Original Title",
+						"default": ""
+					},
+					"language": {
+						"type": "string",
+						"maxLength": 32,
+						"title": "Language",
+						"default": ""
+					},
+					"translated_language": {
+						"type": "string",
+						"maxLength": 32,
+						"title": "Translated Language",
+						"default": ""
+					},
+					"description": {
+						"type": "string",
+						"title": "Description",
+						"default": ""
+					},
+					"tags": {
+						"items": {
+							"type": "string"
+						},
+						"type": "array",
+						"title": "Tags"
+					},
+					"download_url": {
+						"type": "string",
+						"maxLength": 1024,
+						"title": "Download Url",
+						"default": ""
+					},
+					"file_asset_url": {
+						"type": "string",
+						"maxLength": 1024,
+						"title": "File Asset Url",
+						"default": ""
+					},
+					"outline": {
+						"additionalProperties": true,
+						"type": "object",
+						"title": "Outline"
+					},
+					"ingestion_status": {
+						"type": "string",
+						"enum": [
+							"not_started",
+							"processing",
+							"failed",
+							"ready_for_outline_review",
+							"completed"
+						],
+						"title": "Ingestion Status",
+						"default": "not_started"
+					},
+					"outline_review_status": {
+						"type": "string",
+						"enum": ["unreviewed", "approved"],
+						"title": "Outline Review Status",
+						"default": "unreviewed"
+					},
+					"student_availability_status": {
+						"type": "string",
+						"enum": ["draft", "published", "unpublished", "archived"],
+						"title": "Student Availability Status",
+						"default": "draft"
+					},
+					"ingestion_error_message": {
+						"type": "string",
+						"title": "Ingestion Error Message",
+						"default": ""
+					}
+				},
+				"type": "object",
+				"required": ["textbook_id", "source_id", "title"],
+				"title": "TextbookCreateRequest"
+			},
+			"TextbookExtensionResourceCreateRequest": {
+				"properties": {
+					"resource_id": {
+						"type": "string",
+						"maxLength": 64,
+						"minLength": 1,
+						"title": "Resource Id"
+					},
+					"section_id": {
+						"type": "string",
+						"maxLength": 128,
+						"minLength": 1,
+						"title": "Section Id"
+					},
+					"resource_type": {
+						"type": "string",
+						"maxLength": 64,
+						"title": "Resource Type",
+						"default": ""
+					},
+					"title_zh": {
+						"type": "string",
+						"maxLength": 256,
+						"minLength": 1,
+						"title": "Title Zh"
+					},
+					"description_zh": {
+						"type": "string",
+						"title": "Description Zh",
+						"default": ""
+					},
+					"render_mode": {
+						"type": "string",
+						"enum": ["reader", "video", "webpage"],
+						"title": "Render Mode",
+						"default": "reader"
+					},
+					"url": {
+						"type": "string",
+						"maxLength": 1024,
+						"title": "Url",
+						"default": ""
+					},
+					"cover_url": {
+						"type": "string",
+						"maxLength": 1024,
+						"title": "Cover Url",
+						"default": ""
+					},
+					"source_name": {
+						"type": "string",
+						"maxLength": 256,
+						"title": "Source Name",
+						"default": ""
+					},
+					"status": {
+						"type": "string",
+						"maxLength": 32,
+						"title": "Status",
+						"default": ""
+					}
+				},
+				"type": "object",
+				"required": ["resource_id", "section_id", "title_zh"],
+				"title": "TextbookExtensionResourceCreateRequest"
+			},
+			"TextbookExtensionResourceRead": {
+				"properties": {
+					"resource_id": {
+						"type": "string",
+						"maxLength": 64,
+						"minLength": 1,
+						"title": "Resource Id"
+					},
+					"section_id": {
+						"type": "string",
+						"maxLength": 128,
+						"minLength": 1,
+						"title": "Section Id"
+					},
+					"resource_type": {
+						"type": "string",
+						"maxLength": 64,
+						"title": "Resource Type",
+						"default": ""
+					},
+					"title_zh": {
+						"type": "string",
+						"maxLength": 256,
+						"minLength": 1,
+						"title": "Title Zh"
+					},
+					"description_zh": {
+						"type": "string",
+						"title": "Description Zh",
+						"default": ""
+					},
+					"render_mode": {
+						"type": "string",
+						"enum": ["reader", "video", "webpage"],
+						"title": "Render Mode",
+						"default": "reader"
+					},
+					"url": {
+						"type": "string",
+						"maxLength": 1024,
+						"title": "Url",
+						"default": ""
+					},
+					"cover_url": {
+						"type": "string",
+						"maxLength": 1024,
+						"title": "Cover Url",
+						"default": ""
+					},
+					"source_name": {
+						"type": "string",
+						"maxLength": 256,
+						"title": "Source Name",
+						"default": ""
+					},
+					"status": {
+						"type": "string",
+						"maxLength": 32,
+						"title": "Status",
+						"default": ""
+					},
+					"textbook_id": {
+						"type": "string",
+						"title": "Textbook Id"
+					}
+				},
+				"type": "object",
+				"required": ["resource_id", "section_id", "title_zh", "textbook_id"],
+				"title": "TextbookExtensionResourceRead"
+			},
+			"TextbookRead": {
+				"properties": {
+					"textbook_id": {
+						"type": "string",
+						"maxLength": 64,
+						"minLength": 1,
+						"title": "Textbook Id"
+					},
+					"source_id": {
+						"type": "string",
+						"maxLength": 64,
+						"minLength": 1,
+						"title": "Source Id"
+					},
+					"title": {
+						"type": "string",
+						"maxLength": 256,
+						"minLength": 1,
+						"title": "Title"
+					},
+					"original_title": {
+						"type": "string",
+						"maxLength": 256,
+						"title": "Original Title",
+						"default": ""
+					},
+					"language": {
+						"type": "string",
+						"maxLength": 32,
+						"title": "Language",
+						"default": ""
+					},
+					"translated_language": {
+						"type": "string",
+						"maxLength": 32,
+						"title": "Translated Language",
+						"default": ""
+					},
+					"description": {
+						"type": "string",
+						"title": "Description",
+						"default": ""
+					},
+					"tags": {
+						"items": {
+							"type": "string"
+						},
+						"type": "array",
+						"title": "Tags"
+					},
+					"download_url": {
+						"type": "string",
+						"maxLength": 1024,
+						"title": "Download Url",
+						"default": ""
+					},
+					"file_asset_url": {
+						"type": "string",
+						"maxLength": 1024,
+						"title": "File Asset Url",
+						"default": ""
+					},
+					"outline": {
+						"additionalProperties": true,
+						"type": "object",
+						"title": "Outline"
+					},
+					"ingestion_status": {
+						"type": "string",
+						"enum": [
+							"not_started",
+							"processing",
+							"failed",
+							"ready_for_outline_review",
+							"completed"
+						],
+						"title": "Ingestion Status",
+						"default": "not_started"
+					},
+					"outline_review_status": {
+						"type": "string",
+						"enum": ["unreviewed", "approved"],
+						"title": "Outline Review Status",
+						"default": "unreviewed"
+					},
+					"student_availability_status": {
+						"type": "string",
+						"enum": ["draft", "published", "unpublished", "archived"],
+						"title": "Student Availability Status",
+						"default": "draft"
+					},
+					"ingestion_error_message": {
+						"type": "string",
+						"title": "Ingestion Error Message",
+						"default": ""
+					},
+					"published_at": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "date-time"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Published At"
+					},
+					"unpublished_at": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "date-time"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Unpublished At"
+					},
+					"archived_at": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "date-time"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Archived At"
+					}
+				},
+				"type": "object",
+				"required": ["textbook_id", "source_id", "title"],
+				"title": "TextbookRead"
+			},
+			"TextbookSectionContentCreateRequest": {
+				"properties": {
+					"section_content_id": {
+						"type": "string",
+						"maxLength": 64,
+						"minLength": 1,
+						"title": "Section Content Id"
+					},
+					"section_id": {
+						"type": "string",
+						"maxLength": 128,
+						"minLength": 1,
+						"title": "Section Id"
+					},
+					"parent_section_id": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 128
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Parent Section Id"
+					},
+					"order_index": {
+						"type": "integer",
+						"title": "Order Index",
+						"default": 0
+					},
+					"title": {
+						"type": "string",
+						"maxLength": 256,
+						"minLength": 1,
+						"title": "Title"
+					},
+					"original_title": {
+						"type": "string",
+						"maxLength": 256,
+						"title": "Original Title",
+						"default": ""
+					},
+					"content_zh": {
+						"type": "string",
+						"title": "Content Zh",
+						"default": ""
+					},
+					"content_char_count": {
+						"type": "integer",
+						"title": "Content Char Count",
+						"default": 0
+					}
+				},
+				"type": "object",
+				"required": ["section_content_id", "section_id", "title"],
+				"title": "TextbookSectionContentCreateRequest"
 			},
 			"UserLearningDataRead": {
 				"properties": {

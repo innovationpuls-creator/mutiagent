@@ -3,6 +3,11 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timezone
+from hashlib import sha1
+from json import loads
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from langchain_openai import OpenAIEmbeddings
@@ -20,7 +25,14 @@ from app.models import (
     TextbookExtensionResource,
     TextbookSectionContent,
 )
-from app.orchestration.llm import get_worker_llm
+from app.orchestration.llm import get_search_worker_llm, get_worker_llm
+from app.schemas import (
+    KnowledgeBaseAgentGapHit,
+    KnowledgeBaseAgentResponse,
+    KnowledgeBaseAgentTextbookHit,
+    KnowledgeBaseSourceResult,
+)
+from app.services.document_parser_service import parse_textbook_source_to_sections
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +49,17 @@ _VISIBLE_EXTENSION_RESOURCE_STATUS = "published"
 _RESOLVABLE_GAP_STATUSES = ("open", "material_searching", "material_found")
 _NOTICE_TYPE = "knowledge_gap_resolved"
 _NOTICE_ACTION = "regenerate_learning_path_intake"
+_SOURCE_RESULT_LIMIT = 5
+_SOURCE_TYPES = {"pdf", "html"}
+_PLACEHOLDER_HOSTS = {
+    "example.com",
+    "example.org",
+    "example.net",
+    "example.test",
+    "localhost",
+    "127.0.0.1",
+}
+_TEXTBOOK_CONTENT_TYPES = ("application/pdf", "text/html")
 
 
 def create_knowledge_source(
@@ -199,6 +222,92 @@ def create_knowledge_base_ingestion_job(
     return job
 
 
+def confirm_textbook_source_result(
+    session: Session,
+    source_result: KnowledgeBaseSourceResult,
+) -> tuple[Textbook, KnowledgeBaseIngestionJob]:
+    sources = list_admitted_knowledge_sources(session)
+    if not sources:
+        raise ValueError("缺少已准入教材来源。")
+
+    source = sources[0]
+    textbook = Textbook(
+        textbook_id=_new_id("textbook"),
+        source_id=source.source_id,
+        title=source_result.title,
+        original_title=source_result.original_title,
+        language=source_result.language,
+        translated_language="zh"
+        if source_result.language == "en"
+        else source_result.language,
+        description=source_result.description,
+        tags=source_result.tags,
+        download_url=source_result.source_url,
+        file_asset_url=source_result.source_url,
+        outline={},
+        ingestion_status="not_started",
+        outline_review_status="unreviewed",
+        student_availability_status="draft",
+    )
+    session.add(textbook)
+    session.commit()
+    session.refresh(textbook)
+    job = create_knowledge_base_ingestion_job(session, textbook.textbook_id)
+    return textbook, job
+
+
+def create_uploaded_textbook(
+    session: Session,
+    *,
+    title: str,
+    language: str,
+    description: str,
+    tags: list[str],
+    file_name: str,
+    file_bytes: bytes,
+) -> tuple[Textbook, KnowledgeBaseIngestionJob]:
+    sources = list_admitted_knowledge_sources(session)
+    if not sources:
+        raise ValueError("缺少已准入教材来源。")
+    cleaned_file_name = os.path.basename(file_name.strip() or "textbook.pdf")
+    if not cleaned_file_name.lower().endswith((".pdf", ".docx")):
+        raise ValueError("只支持 PDF 或 DOCX 教材文件。")
+
+    upload_dir = os.getenv("KNOWLEDGE_BASE_UPLOAD_DIR") or os.path.join(
+        os.getcwd(),
+        ".codex-artifacts",
+        "knowledge-base-uploads",
+    )
+    os.makedirs(upload_dir, exist_ok=True)
+    textbook_id = _new_id("textbook")
+    stored_path = os.path.join(upload_dir, f"{textbook_id}-{cleaned_file_name}")
+    with open(stored_path, "wb") as file_obj:
+        file_obj.write(file_bytes)
+
+    source = sources[0]
+    textbook = Textbook(
+        textbook_id=textbook_id,
+        source_id=source.source_id,
+        title=title,
+        original_title=title,
+        language=language,
+        translated_language="zh" if language == "en" else language,
+        description=description,
+        tags=tags,
+        download_url=stored_path,
+        file_asset_url=stored_path,
+        outline={},
+        ingestion_status="not_started",
+        outline_review_status="unreviewed",
+        student_availability_status="draft",
+    )
+    session.add(textbook)
+    session.commit()
+    session.refresh(textbook)
+    job = create_knowledge_base_ingestion_job(session, textbook.textbook_id)
+    return textbook, job
+
+
 def start_knowledge_base_ingestion_job(
     session: Session,
     job_id: str,
@@ -265,6 +374,78 @@ def fail_knowledge_base_ingestion_job(
     return job
 
 
+def translate_section_content_to_zh(content: str) -> str:
+    if not content.strip():
+        return ""
+    prompt = (
+        "请将以下教材小节原文译写为适合中国大学生阅读的中文学习正文。"
+        "保留关键术语，不扩写教材之外的新内容。\n\n"
+        f"{content}"
+    )
+    try:
+        response = get_worker_llm().invoke(prompt)
+    except Exception as exc:
+        logger.warning("Section translation failed: %s", exc)
+        return content
+    translated = getattr(response, "content", "")
+    if isinstance(translated, str) and translated.strip():
+        return translated.strip()
+    return content
+
+
+def run_textbook_source_ingestion(
+    session: Session,
+    job_id: str,
+) -> KnowledgeBaseIngestionJob:
+    job = start_knowledge_base_ingestion_job(session, job_id)
+    textbook = _get_ingestion_job_textbook(session, job)
+    try:
+        outline, sections = parse_textbook_source_to_sections(
+            textbook.download_url,
+            textbook.language,
+        )
+        textbook.outline = outline
+        session.add(textbook)
+
+        existing_sections = session.exec(
+            select(TextbookSectionContent).where(
+                TextbookSectionContent.textbook_id == textbook.textbook_id
+            )
+        ).all()
+        for section in existing_sections:
+            session.delete(section)
+        session.flush()
+
+        outline_sections = _outline_summary(outline)
+        for index, section in enumerate(outline_sections, start=1):
+            original_content = sections.get(section["section_id"], "")
+            if not original_content.strip():
+                continue
+            content_zh = (
+                translate_section_content_to_zh(original_content)
+                if textbook.language == "en"
+                else original_content
+            )
+            session.add(
+                TextbookSectionContent(
+                    section_content_id=_new_id("section"),
+                    textbook_id=textbook.textbook_id,
+                    section_id=section["section_id"],
+                    order_index=index,
+                    title=section["title"],
+                    original_title=section["title"],
+                    content_zh=content_zh,
+                    content_char_count=len(content_zh),
+                )
+            )
+
+        session.commit()
+        return complete_knowledge_base_ingestion_job(session, job_id)
+    except Exception as exc:
+        session.rollback()
+        return fail_knowledge_base_ingestion_job(session, job_id, str(exc))
+
+
 def publish_textbook(session: Session, textbook_id: str) -> Textbook:
     textbook = session.get(Textbook, textbook_id)
     if textbook is None:
@@ -299,18 +480,25 @@ def publish_textbook(session: Session, textbook_id: str) -> Textbook:
 def get_published_textbook_context_for_topic(
     session: Session, topic: str, student_goal_summary: str = ""
 ) -> dict:
-    stmt = (
+    matched = hybrid_search_textbooks(session, topic, limit=15)
+    matched_by_id = {textbook.textbook_id: textbook for textbook in matched}
+    published_textbooks = session.exec(
         select(Textbook)
         .where(Textbook.student_availability_status == "published")
         .order_by(Textbook.textbook_id)
-    )
-    matched_textbooks = [
-        _textbook_context_row(textbook)
-        for textbook in session.exec(stmt).all()
-        if _textbook_covers_topic(textbook, topic)
-    ]
-    if matched_textbooks:
-        return {"textbooks": matched_textbooks, "gap_id": None}
+    ).all()
+    for textbook in published_textbooks:
+        if textbook.textbook_id in matched_by_id:
+            continue
+        if _textbook_covers_topic(textbook, topic):
+            matched.append(textbook)
+            matched_by_id[textbook.textbook_id] = textbook
+
+    if matched:
+        return {
+            "textbooks": [_textbook_context_row(textbook) for textbook in matched],
+            "gap_id": None,
+        }
 
     gap = create_or_update_knowledge_gap(session, topic, student_goal_summary)
     return {"textbooks": [], "gap_id": gap.gap_id}
@@ -1001,3 +1189,292 @@ def hybrid_search_textbooks(
 
     scored.sort(key=lambda x: x[0], reverse=True)
     return [item[1] for item in scored[:limit]]
+
+
+def search_admin_textbooks(
+    session: Session, query: str, limit: int = 5
+) -> list[Textbook]:
+    normalized_query = query.strip().lower()
+    if not normalized_query:
+        return []
+
+    rows = session.exec(
+        select(Textbook)
+        .where(Textbook.student_availability_status != "archived")
+        .order_by(Textbook.textbook_id)
+    ).all()
+    scored: list[tuple[int, Textbook]] = []
+    for textbook in rows:
+        searchable_text = [
+            textbook.title,
+            textbook.description,
+            *[tag for tag in textbook.tags if isinstance(tag, str)],
+            *[row["title"] for row in _outline_summary(textbook.outline)],
+        ]
+        score = sum(10 for item in searchable_text if normalized_query in item.lower())
+        if textbook.student_availability_status == "published":
+            score += 5
+        if score > 0:
+            scored.append((score, textbook))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [textbook for _, textbook in scored[:limit]]
+
+
+def search_real_textbook_sources(
+    topic: str, limit: int = _SOURCE_RESULT_LIMIT
+) -> list[KnowledgeBaseSourceResult]:
+    if limit <= 0:
+        return []
+
+    raw_results = _search_real_textbook_sources_with_llm(topic, limit)
+    source_results: list[KnowledgeBaseSourceResult] = []
+    seen_urls: set[str] = set()
+    for raw_result in raw_results:
+        source_result = _normalize_source_result(raw_result)
+        if source_result is None or source_result.source_url in seen_urls:
+            continue
+        seen_urls.add(source_result.source_url)
+        source_results.append(source_result)
+
+    source_results.sort(
+        key=lambda result: (
+            result.parseability_score,
+            result.language.strip().lower() == "zh",
+        ),
+        reverse=True,
+    )
+    limited_results = source_results[:limit]
+    for index, source_result in enumerate(limited_results):
+        source_result.is_recommended = index == 0
+    return limited_results
+
+
+def _search_real_textbook_sources_with_llm(
+    topic: str, limit: int
+) -> list[dict[str, object]]:
+    prompt = (
+        "你是知识库教材来源搜索智能体。请联网搜索真实、可访问、适合作为教材来源的材料。"
+        "只返回 JSON 数组，不要 Markdown，不要解释。"
+        "数组每个对象字段必须是：title, original_title, language, source_url, "
+        "source_type, provider_name, description, tags, parseability_score, "
+        "parseability_reason, topic_summary。"
+        "source_type 只能是 pdf 或 html。"
+        "source_url 必须是真实教材页面或 PDF 地址，"
+        "禁止 example.com、占位链接、无来源链接。"
+        f"\n主题：{topic.strip()}"
+        f"\n最多返回：{limit}"
+    )
+    try:
+        response = get_search_worker_llm().invoke(prompt)
+        content = getattr(response, "content", "")
+        if not isinstance(content, str):
+            return []
+        payload = loads(_extract_json_array(content))
+    except Exception as exc:
+        logger.warning("Real textbook source search failed: %s", exc)
+        return []
+
+    if not isinstance(payload, list):
+        return []
+    return [item for item in payload if isinstance(item, dict)]
+
+
+def _extract_json_array(content: str) -> str:
+    stripped = content.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        return stripped
+    start = stripped.find("[")
+    end = stripped.rfind("]")
+    if start < 0 or end <= start:
+        raise ValueError("搜索结果没有 JSON 数组。")
+    return stripped[start : end + 1]
+
+
+def _normalize_source_result(raw_result: object) -> KnowledgeBaseSourceResult | None:
+    if not isinstance(raw_result, dict):
+        return None
+
+    title = _clean_text(raw_result.get("title"))
+    source_url = _validated_textbook_url(raw_result.get("source_url"))
+    source_type = _clean_text(raw_result.get("source_type")).lower()
+    if not title or not source_url or source_type not in _SOURCE_TYPES:
+        return None
+
+    raw_tags = raw_result.get("tags")
+    tags: list[str] = []
+    if isinstance(raw_tags, list):
+        tags = [tag for tag in (_clean_text(item) for item in raw_tags) if tag]
+
+    parseability_score = _parse_source_score(raw_result.get("parseability_score"))
+    return KnowledgeBaseSourceResult(
+        source_result_id=_source_result_id(source_url),
+        title=title,
+        original_title=_clean_text(raw_result.get("original_title")),
+        language=_clean_text(raw_result.get("language")),
+        source_url=source_url,
+        source_type=source_type,
+        provider_name=_clean_text(raw_result.get("provider_name")),
+        description=_clean_text(raw_result.get("description")),
+        tags=tags,
+        parseability_score=parseability_score,
+        parseability_reason=_clean_text(raw_result.get("parseability_reason")),
+        topic_summary=_clean_text(raw_result.get("topic_summary")),
+    )
+
+
+def _parse_source_score(value: object) -> int:
+    if isinstance(value, int | float | str):
+        try:
+            score = int(value)
+        except (TypeError, ValueError):
+            return 0
+        return max(0, min(score, 100))
+    return 0
+
+
+def _source_result_id(source_url: str) -> str:
+    return "source-result-" + sha1(source_url.encode("utf-8")).hexdigest()[:8]
+
+
+def _clean_text(value: object) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _validated_textbook_url(value: object) -> str:
+    url = _clean_text(value)
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    hostname = parsed.hostname.lower() if parsed.hostname else ""
+    if parsed.scheme not in {"http", "https"} or not hostname:
+        return ""
+    if hostname in _PLACEHOLDER_HOSTS:
+        return ""
+    if not _is_reachable_textbook_url(url):
+        return ""
+    return url
+
+
+def _is_reachable_textbook_url(url: str) -> bool:
+    for method in ("HEAD", "GET"):
+        try:
+            request = Request(url, method=method, headers={"User-Agent": "mutiagent"})
+            with urlopen(request, timeout=8) as response:
+                status = getattr(response, "status", 200)
+                content_type = response.headers.get("content-type", "").lower()
+                return 200 <= status < 400 and any(
+                    item in content_type for item in _TEXTBOOK_CONTENT_TYPES
+                )
+        except HTTPError as exc:
+            if method == "HEAD" and exc.code in {403, 405}:
+                continue
+            return False
+        except (OSError, URLError, TimeoutError):
+            continue
+    return False
+
+
+def _textbook_hits_from_matches(
+    session: Session, matched_textbooks: list[Textbook]
+) -> list[KnowledgeBaseAgentTextbookHit]:
+    source_name_map = {
+        source.source_id: source.name for source in list_knowledge_sources(session)
+    }
+    textbook_hits: list[KnowledgeBaseAgentTextbookHit] = []
+    for textbook in matched_textbooks:
+        source_name = source_name_map.get(textbook.source_id, textbook.source_id)
+        score = 20 if textbook.student_availability_status == "published" else 10
+        reason = (
+            "已发布教材"
+            if textbook.student_availability_status == "published"
+            else "待整理教材"
+        )
+        textbook_hits.append(
+            KnowledgeBaseAgentTextbookHit(
+                textbook_id=textbook.textbook_id,
+                title=textbook.title,
+                source_name=source_name,
+                student_availability_status=textbook.student_availability_status,
+                score=score,
+                reason=reason,
+            )
+        )
+    return textbook_hits
+
+
+def _matching_gap_hits(session: Session, query: str) -> list[KnowledgeBaseAgentGapHit]:
+    gap_hits: list[KnowledgeBaseAgentGapHit] = []
+    normalized_query = query.lower()
+    for gap in session.exec(select(KnowledgeGap).order_by(KnowledgeGap.gap_id)).all():
+        if normalized_query not in gap.normalized_topic.lower() and not any(
+            normalized_query in summary.lower()
+            for summary in gap.student_goal_summaries
+        ):
+            continue
+        gap_hits.append(
+            KnowledgeBaseAgentGapHit(
+                gap_id=gap.gap_id,
+                normalized_topic=gap.normalized_topic,
+                status=gap.status,
+                reason="缺口主题命中。",
+            )
+        )
+    return gap_hits
+
+
+def run_knowledge_base_agent(
+    session: Session, message: str
+) -> KnowledgeBaseAgentResponse:
+    query = message.strip()
+    if not query:
+        return KnowledgeBaseAgentResponse(
+            reply_text="先说一句话，我会自动帮你从知识库里匹配教材。",
+        )
+
+    matched_textbooks = search_admin_textbooks(session, query, limit=5)
+    if not matched_textbooks:
+        matched_textbooks = hybrid_search_textbooks(session, query, limit=5)
+    textbook_hits = _textbook_hits_from_matches(session, matched_textbooks)
+    gap_hits = _matching_gap_hits(session, query)
+    source_results: list[KnowledgeBaseSourceResult] = []
+    reply_parts = ["我按你的要求自动匹配了知识库。"]
+    selected_textbook_id = None
+    selected_source_result_id = None
+    if textbook_hits:
+        selected_textbook_id = textbook_hits[0].textbook_id
+        reply_parts.append(f"当前最合适的主教材是《{textbook_hits[0].title}》。")
+        reply_parts.append(
+            "我先给你命中的教材："
+            + "、".join(f"《{hit.title}》" for hit in textbook_hits[:3])
+            + "。"
+        )
+    else:
+        source_results = search_real_textbook_sources(query, limit=_SOURCE_RESULT_LIMIT)
+        if source_results:
+            selected_source_result_id = source_results[0].source_result_id
+            reply_parts.append(f"找到 {len(source_results)} 个真实教材来源。")
+        else:
+            reply_parts.append(
+                "我尝试联网查找真实教材来源，但没有拿到可用结果。请检查搜索服务配置。"
+            )
+    if gap_hits and not textbook_hits:
+        reply_parts.append(
+            "仍然空着的方向有："
+            + "、".join(f"“{hit.normalized_topic}”" for hit in gap_hits[:3])
+            + "。"
+        )
+    if textbook_hits:
+        reply_parts.append("你可以检查大纲，确认后发布当前教材。")
+    elif source_results:
+        reply_parts.append("你可以选择一个来源后再进入教材入库整理流程。")
+    else:
+        reply_parts.append("你可以补充一个更具体的教材名或检查搜索服务配置。")
+    return KnowledgeBaseAgentResponse(
+        reply_text=" ".join(reply_parts),
+        selected_textbook_id=selected_textbook_id,
+        selected_source_result_id=selected_source_result_id,
+        textbook_hits=textbook_hits,
+        gap_hits=gap_hits[:5],
+        source_results=source_results,
+    )

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
+from app import schemas as app_schemas
 from app.database import get_engine
 from app.main import create_app
 from app.models import (
@@ -345,6 +346,223 @@ def test_find_materials_returns_only_admitted_sources_and_updates_gap(
         gap = session.get(KnowledgeGap, "gap-api")
         assert gap is not None
         assert gap.status == "material_searching"
+
+
+def test_agent_returns_real_textbook_sources_without_creating_textbook(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    headers = admin_headers(client)
+    client.post(
+        "/api/admin/knowledge-base/sources",
+        headers=headers,
+        json=admitted_source_payload(source_id="source-open-textbook"),
+    )
+
+    monkeypatch.setattr(
+        "app.services.knowledge_base_service.search_real_textbook_sources",
+        lambda topic, limit=5: [
+            app_schemas.KnowledgeBaseSourceResult(
+                source_result_id="source-result-ods-python",
+                title="Open Data Structures",
+                original_title="Open Data Structures",
+                language="en",
+                source_url="https://opendatastructures.org/ods-python.pdf",
+                source_type="pdf",
+                provider_name="Open Data Structures",
+                description=(
+                    "Open textbook covering arrays, trees, hash tables, and graphs."
+                ),
+                tags=["数据结构", "算法"],
+                parseability_score=95,
+                parseability_reason="PDF 稳定可访问，目录结构清晰。",
+                topic_summary="覆盖数据结构核心课程内容。",
+                is_recommended=True,
+            ),
+            app_schemas.KnowledgeBaseSourceResult(
+                source_result_id="source-result-ods-java",
+                title="Open Data Structures in Java",
+                original_title="Open Data Structures in Java",
+                language="en",
+                source_url="https://opendatastructures.org/ods-java.pdf",
+                source_type="pdf",
+                provider_name="Open Data Structures",
+                description="Java edition of the open data structures textbook.",
+                tags=["数据结构", "Java"],
+                parseability_score=90,
+                parseability_reason="PDF 稳定可访问。",
+                topic_summary="覆盖线性结构、树、图。",
+                is_recommended=False,
+            ),
+        ],
+    )
+
+    response = client.post(
+        "/api/admin/knowledge-base/agent",
+        headers=headers,
+        json={"message": "数据结构"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["selected_textbook_id"] is None
+    assert body["selected_source_result_id"] == "source-result-ods-python"
+    assert body["textbook_hits"] == []
+    assert len(body["source_results"]) == 2
+    assert body["source_results"][0]["title"] == "Open Data Structures"
+    assert body["source_results"][0]["is_recommended"] is True
+    assert "找到 2 个真实教材来源" in body["reply_text"]
+
+    textbooks_response = client.get(
+        "/api/admin/knowledge-base/textbooks",
+        headers=headers,
+    )
+    assert textbooks_response.status_code == 200
+    assert textbooks_response.json() == []
+
+
+def test_agent_returns_source_results_when_local_textbook_is_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    headers = admin_headers(client)
+    client.post(
+        "/api/admin/knowledge-base/sources",
+        headers=headers,
+        json=admitted_source_payload(),
+    )
+    create_gap(normalized_topic="数据结构")
+
+    monkeypatch.setattr(
+        "app.services.knowledge_base_service.search_real_textbook_sources",
+        lambda topic, limit=5: [
+            app_schemas.KnowledgeBaseSourceResult(
+                source_result_id="source-result-ods-python",
+                title="Open Data Structures",
+                original_title="Open Data Structures",
+                language="en",
+                source_url="https://opendatastructures.org/ods-python.pdf",
+                source_type="pdf",
+                provider_name="Open Data Structures",
+                description="Open textbook.",
+                tags=["数据结构"],
+                parseability_score=95,
+                parseability_reason="PDF 稳定可访问。",
+                topic_summary="覆盖数据结构。",
+                is_recommended=True,
+            )
+        ],
+    )
+
+    response = client.post(
+        "/api/admin/knowledge-base/agent",
+        headers=headers,
+        json={"message": "数据结构"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["selected_textbook_id"] is None
+    assert body["selected_source_result_id"] == "source-result-ods-python"
+    assert body["textbook_hits"] == []
+    assert len(body["source_results"]) == 1
+    assert body["source_results"][0]["title"] == "Open Data Structures"
+    assert "找到 1 个真实教材来源" in body["reply_text"]
+
+    textbooks_response = client.get(
+        "/api/admin/knowledge-base/textbooks", headers=headers
+    )
+    assert textbooks_response.status_code == 200
+    assert textbooks_response.json() == []
+
+    with Session(get_engine()) as session:
+        gap = session.get(KnowledgeGap, "gap-api")
+        assert gap is not None
+        assert gap.status == "open"
+
+
+def test_confirm_source_result_creates_draft_textbook_and_queued_job(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    headers = admin_headers(client)
+    client.post(
+        "/api/admin/knowledge-base/sources",
+        headers=headers,
+        json=admitted_source_payload(source_id="source-open-textbook"),
+    )
+
+    payload = {
+        "source_result": {
+            "source_result_id": "source-result-ods-python",
+            "title": "Open Data Structures",
+            "original_title": "Open Data Structures",
+            "language": "en",
+            "source_url": "https://opendatastructures.org/ods-python.pdf",
+            "source_type": "pdf",
+            "provider_name": "Open Data Structures",
+            "description": "Open textbook covering core data structures.",
+            "tags": ["数据结构", "算法"],
+            "parseability_score": 95,
+            "parseability_reason": "PDF 稳定可访问。",
+            "topic_summary": "覆盖数据结构核心课程。",
+            "is_recommended": True,
+        }
+    }
+
+    response = client.post(
+        "/api/admin/knowledge-base/source-results/confirm",
+        headers=headers,
+        json=payload,
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["textbook"]["title"] == "Open Data Structures"
+    assert body["textbook"]["source_id"] == "source-open-textbook"
+    assert (
+        body["textbook"]["download_url"]
+        == "https://opendatastructures.org/ods-python.pdf"
+    )
+    assert body["textbook"]["ingestion_status"] == "not_started"
+    assert body["textbook"]["outline_review_status"] == "unreviewed"
+    assert body["textbook"]["student_availability_status"] == "draft"
+    assert body["job"]["status"] == "queued"
+    assert body["job"]["job_type"] == "agent_organize"
+
+
+def test_upload_textbook_file_creates_draft_and_queued_job(
+    tmp_path: Path, monkeypatch
+) -> None:
+    upload_dir = tmp_path / "uploads"
+    monkeypatch.setenv("KNOWLEDGE_BASE_UPLOAD_DIR", str(upload_dir))
+    client = make_client(tmp_path, monkeypatch)
+    headers = admin_headers(client)
+    client.post(
+        "/api/admin/knowledge-base/sources",
+        headers=headers,
+        json=admitted_source_payload(source_id="source-upload"),
+    )
+
+    response = client.post(
+        "/api/admin/knowledge-base/uploads",
+        headers=headers,
+        data={
+            "title": "数据结构上传教材",
+            "language": "zh",
+            "description": "管理员上传的 PDF 教材。",
+            "tags": "数据结构,算法",
+        },
+        files={"file": ("data-structures.pdf", b"%PDF-1.4 fake", "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["textbook"]["title"] == "数据结构上传教材"
+    assert body["textbook"]["source_id"] == "source-upload"
+    assert body["textbook"]["student_availability_status"] == "draft"
+    assert body["textbook"]["download_url"].startswith(str(upload_dir))
+    assert body["job"]["status"] == "queued"
 
 
 def test_upload_updates_gap_material_found_without_publishing_textbook(
@@ -794,36 +1012,9 @@ def test_admin_update_textbook_outline(tmp_path: Path, monkeypatch) -> None:
         assert tb.outline_review_status == "approved"
 
 
-def test_admin_generate_textbook_outline(tmp_path: Path, monkeypatch) -> None:
-    from app.api.knowledge_base import GeneratedTextbookOutline
-    from app.services.document_parser_service import ChapterOutline, SectionOutline
-
-    class FakeWorkerLLM:
-        def with_structured_output(self, schema):
-            self.schema = schema
-            return self
-
-        def invoke(self, prompt):
-            return GeneratedTextbookOutline(
-                title="AI测试教材",
-                description="这是一本由AI自动生成的测试教材",
-                chapters=[
-                    ChapterOutline(
-                        chapter_number=1,
-                        title="第一章 AI绪论",
-                        sections=[
-                            SectionOutline(
-                                section_id="sec_1_1", title="1.1 走进AI时代"
-                            ),
-                        ],
-                    )
-                ],
-            )
-
-    monkeypatch.setattr(
-        "app.api.knowledge_base.get_worker_llm", lambda: FakeWorkerLLM()
-    )
-
+def test_admin_generate_textbook_outline_route_is_not_exposed(
+    tmp_path: Path, monkeypatch
+) -> None:
     client = make_client(tmp_path, monkeypatch)
     headers = admin_headers(client)
 
@@ -832,114 +1023,24 @@ def test_admin_generate_textbook_outline(tmp_path: Path, monkeypatch) -> None:
         headers=headers,
         json={"prompt": "生成一本AI教材", "tags": ["AI", "测试"]},
     )
-    assert response.status_code == 201
-    data = response.json()
-    assert data["title"] == "AI测试教材"
-    assert data["description"] == "这是一本由AI自动生成的测试教材"
-    assert data["tags"] == ["AI", "测试"]
-    assert data["student_availability_status"] == "draft"
 
-    textbook_id = data["textbook_id"]
-    with Session(get_engine()) as session:
-        tb = session.get(Textbook, textbook_id)
-        assert tb is not None
-        assert tb.title == "AI测试教材"
-        assert tb.student_availability_status == "draft"
-        assert tb.outline_review_status == "approved"
+    assert response.status_code == 404
 
 
-def test_admin_generate_textbook_contents_and_progress(
+def test_admin_generate_textbook_contents_and_progress_routes_are_not_exposed(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from sqlmodel import select
-
-    from app.api.knowledge_base import GeneratedTextbookOutline
-    from app.services.document_parser_service import ChapterOutline, SectionOutline
-
-    class FakeWorkerLLM:
-        def with_structured_output(self, schema):
-            self.schema = schema
-            return self
-
-        def invoke(self, prompt):
-            return GeneratedTextbookOutline(
-                title="AI测试教材",
-                description="这是一本由AI自动生成的测试教材",
-                chapters=[
-                    ChapterOutline(
-                        chapter_number=1,
-                        title="第一章 AI绪论",
-                        sections=[
-                            SectionOutline(
-                                section_id="sec_1_1", title="1.1 走进AI时代"
-                            ),
-                        ],
-                    )
-                ],
-            )
-
-        async def ainvoke(self, prompt):
-            class FakeResponse:
-                content = (
-                    "这是AI自动生成的教材段落内容。包含了理论讲解、"
-                    "代码示例和详细的概念分析。字数足够多。"
-                )
-
-            return FakeResponse()
-
-    monkeypatch.setattr(
-        "app.api.knowledge_base.get_worker_llm", lambda: FakeWorkerLLM()
-    )
-    monkeypatch.setattr(
-        "app.services.knowledge_base_service.get_worker_llm", lambda: FakeWorkerLLM()
-    )
-
     client = make_client(tmp_path, monkeypatch)
     headers = admin_headers(client)
 
-    gen_res = client.post(
-        "/api/admin/knowledge-base/generate-outline",
-        headers=headers,
-        json={"prompt": "生成一本AI教材", "tags": ["AI", "测试"]},
-    )
-    assert gen_res.status_code == 201
-    textbook_id = gen_res.json()["textbook_id"]
-
-    prog_res = client.get(
-        f"/api/admin/knowledge-base/textbooks/{textbook_id}/generation-progress",
+    progress_response = client.get(
+        "/api/admin/knowledge-base/textbooks/textbook-1/generation-progress",
         headers=headers,
     )
-    assert prog_res.status_code == 200
-    prog_data = prog_res.json()
-    assert prog_data["progress_percentage"] == 0.0
-    assert prog_data["status"] == "not_started"
+    assert progress_response.status_code == 404
 
-    gen_cont_res = client.post(
-        f"/api/admin/knowledge-base/textbooks/{textbook_id}/generate-content",
+    generate_response = client.post(
+        "/api/admin/knowledge-base/textbooks/textbook-1/generate-content",
         headers=headers,
     )
-    assert gen_cont_res.status_code == 201
-    job_data = gen_cont_res.json()
-    assert job_data["textbook_id"] == textbook_id
-    assert job_data["job_type"] == "aigc_generation"
-
-    prog_res2 = client.get(
-        f"/api/admin/knowledge-base/textbooks/{textbook_id}/generation-progress",
-        headers=headers,
-    )
-    assert prog_res2.status_code == 200
-    prog_data2 = prog_res2.json()
-    assert prog_data2["progress_percentage"] == 100.0
-    assert prog_data2["status"] == "completed"
-
-    from app.models import TextbookSectionContent
-
-    with Session(get_engine()) as session:
-        contents = session.exec(
-            select(TextbookSectionContent).where(
-                TextbookSectionContent.textbook_id == textbook_id
-            )
-        ).all()
-        assert len(contents) == 1
-        assert contents[0].section_id == "sec_1_1"
-        assert contents[0].content_zh.startswith("这是AI自动生成的教材段落内容")
+    assert generate_response.status_code == 404

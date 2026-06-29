@@ -527,6 +527,315 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	"/api/admin/knowledge-base/sources": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Admin Sources */
+		get: operations["admin_sources_api_admin_knowledge_base_sources_get"];
+		put?: never;
+		/** Create Admin Source */
+		post: operations["create_admin_source_api_admin_knowledge_base_sources_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/textbooks": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Admin Textbooks */
+		get: operations["admin_textbooks_api_admin_knowledge_base_textbooks_get"];
+		put?: never;
+		/** Create Admin Textbook */
+		post: operations["create_admin_textbook_api_admin_knowledge_base_textbooks_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/textbooks/{textbook_id}/publish": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Publish Admin Textbook */
+		post: operations["publish_admin_textbook_api_admin_knowledge_base_textbooks__textbook_id__publish_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/textbooks/{textbook_id}/outline": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		/** Update Admin Textbook Outline */
+		put: operations["update_admin_textbook_outline_api_admin_knowledge_base_textbooks__textbook_id__outline_put"];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/textbooks/{textbook_id}/unpublish": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Unpublish Admin Textbook */
+		post: operations["unpublish_admin_textbook_api_admin_knowledge_base_textbooks__textbook_id__unpublish_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/textbooks/{textbook_id}": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		/** Delete Admin Textbook */
+		delete: operations["delete_admin_textbook_api_admin_knowledge_base_textbooks__textbook_id__delete"];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/textbooks/{textbook_id}/agent-organize": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Organize Admin Textbook */
+		post: operations["organize_admin_textbook_api_admin_knowledge_base_textbooks__textbook_id__agent_organize_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/ingestion-jobs/{job_id}": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Read Admin Ingestion Job */
+		get: operations["read_admin_ingestion_job_api_admin_knowledge_base_ingestion_jobs__job_id__get"];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/agent": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Admin Knowledge Base Agent */
+		post: operations["admin_knowledge_base_agent_api_admin_knowledge_base_agent_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/source-results/confirm": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Confirm Admin Source Result */
+		post: operations["confirm_admin_source_result_api_admin_knowledge_base_source_results_confirm_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/uploads": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Upload Admin Textbook File */
+		post: operations["upload_admin_textbook_file_api_admin_knowledge_base_uploads_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/gaps": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Admin Gaps */
+		get: operations["admin_gaps_api_admin_knowledge_base_gaps_get"];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/gaps/{gap_id}/find-materials": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Find Admin Gap Materials */
+		post: operations["find_admin_gap_materials_api_admin_knowledge_base_gaps__gap_id__find_materials_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/gaps/{gap_id}/upload": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Upload Admin Gap Materials */
+		post: operations["upload_admin_gap_materials_api_admin_knowledge_base_gaps__gap_id__upload_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/textbooks/{textbook_id}/extension-resources": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Admin Extension Resources */
+		get: operations["admin_extension_resources_api_admin_knowledge_base_textbooks__textbook_id__extension_resources_get"];
+		put?: never;
+		/** Create Admin Extension Resource */
+		post: operations["create_admin_extension_resource_api_admin_knowledge_base_textbooks__textbook_id__extension_resources_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/knowledge-base/gaps/{gap_id}/follow": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Follow Gap */
+		post: operations["follow_gap_api_knowledge_base_gaps__gap_id__follow_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/knowledge-base/notices": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Notices */
+		get: operations["notices_api_knowledge_base_notices_get"];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/knowledge-base/notices/{notice_id}/read": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Read Notice */
+		post: operations["read_notice_api_knowledge_base_notices__notice_id__read_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	"/api/health": {
 		parameters: {
 			query?: never;
@@ -647,6 +956,28 @@ export interface components {
 			 */
 			auth_type: "password" | "oauth";
 			user: components["schemas"]["UserRead"];
+		};
+		/** Body_upload_admin_textbook_file_api_admin_knowledge_base_uploads_post */
+		Body_upload_admin_textbook_file_api_admin_knowledge_base_uploads_post: {
+			/** Title */
+			title: string;
+			/**
+			 * Language
+			 * @default zh
+			 */
+			language: string;
+			/**
+			 * Description
+			 * @default
+			 */
+			description: string;
+			/**
+			 * Tags
+			 * @default
+			 */
+			tags: string;
+			/** File */
+			file: string;
 		};
 		/** BranchCourseNodeRead */
 		BranchCourseNodeRead: {
@@ -1074,6 +1405,401 @@ export interface components {
 			 */
 			database: "connected";
 		};
+		/** KnowledgeBaseAgentGapHit */
+		KnowledgeBaseAgentGapHit: {
+			/** Gap Id */
+			gap_id: string;
+			/** Normalized Topic */
+			normalized_topic: string;
+			/**
+			 * Status
+			 * @enum {string}
+			 */
+			status:
+				| "open"
+				| "material_searching"
+				| "material_found"
+				| "resolved"
+				| "closed";
+			/**
+			 * Reason
+			 * @default
+			 */
+			reason: string;
+		};
+		/** KnowledgeBaseAgentRequest */
+		KnowledgeBaseAgentRequest: {
+			/** Message */
+			message: string;
+		};
+		/** KnowledgeBaseAgentResponse */
+		KnowledgeBaseAgentResponse: {
+			/** Reply Text */
+			reply_text: string;
+			/** Selected Textbook Id */
+			selected_textbook_id?: string | null;
+			/** Selected Source Result Id */
+			selected_source_result_id?: string | null;
+			/** Textbook Hits */
+			textbook_hits?: components["schemas"]["KnowledgeBaseAgentTextbookHit"][];
+			/** Gap Hits */
+			gap_hits?: components["schemas"]["KnowledgeBaseAgentGapHit"][];
+			/** Source Results */
+			source_results?: components["schemas"]["KnowledgeBaseSourceResult"][];
+		};
+		/** KnowledgeBaseAgentTextbookHit */
+		KnowledgeBaseAgentTextbookHit: {
+			/** Textbook Id */
+			textbook_id: string;
+			/** Title */
+			title: string;
+			/** Source Name */
+			source_name: string;
+			/**
+			 * Student Availability Status
+			 * @enum {string}
+			 */
+			student_availability_status:
+				| "draft"
+				| "published"
+				| "unpublished"
+				| "archived";
+			/** Score */
+			score: number;
+			/**
+			 * Reason
+			 * @default
+			 */
+			reason: string;
+		};
+		/** KnowledgeBaseIngestionJobRead */
+		KnowledgeBaseIngestionJobRead: {
+			/** Job Id */
+			job_id: string;
+			/** Textbook Id */
+			textbook_id: string;
+			/** Job Type */
+			job_type: string;
+			/**
+			 * Status
+			 * @enum {string}
+			 */
+			status: "queued" | "running" | "failed" | "completed";
+			/** Error Message */
+			error_message: string;
+			/**
+			 * Created At
+			 * Format: date-time
+			 */
+			created_at: string;
+			/** Started At */
+			started_at: string | null;
+			/** Finished At */
+			finished_at: string | null;
+		};
+		/** KnowledgeBaseSourceConfirmRequest */
+		KnowledgeBaseSourceConfirmRequest: {
+			source_result: components["schemas"]["KnowledgeBaseSourceResult"];
+		};
+		/** KnowledgeBaseSourceConfirmResponse */
+		KnowledgeBaseSourceConfirmResponse: {
+			textbook: components["schemas"]["TextbookRead"];
+			job: components["schemas"]["KnowledgeBaseIngestionJobRead"];
+		};
+		/** KnowledgeBaseSourceResult */
+		KnowledgeBaseSourceResult: {
+			/** Source Result Id */
+			source_result_id: string;
+			/** Title */
+			title: string;
+			/**
+			 * Original Title
+			 * @default
+			 */
+			original_title: string;
+			/**
+			 * Language
+			 * @default
+			 */
+			language: string;
+			/** Source Url */
+			source_url: string;
+			/**
+			 * Source Type
+			 * @enum {string}
+			 */
+			source_type: "pdf" | "html";
+			/**
+			 * Provider Name
+			 * @default
+			 */
+			provider_name: string;
+			/**
+			 * Description
+			 * @default
+			 */
+			description: string;
+			/** Tags */
+			tags?: string[];
+			/** Parseability Score */
+			parseability_score: number;
+			/**
+			 * Parseability Reason
+			 * @default
+			 */
+			parseability_reason: string;
+			/**
+			 * Topic Summary
+			 * @default
+			 */
+			topic_summary: string;
+			/**
+			 * Is Recommended
+			 * @default false
+			 */
+			is_recommended: boolean;
+		};
+		/** KnowledgeGapAdminRead */
+		KnowledgeGapAdminRead: {
+			/** Gap Id */
+			gap_id: string;
+			/** Normalized Topic */
+			normalized_topic: string;
+			/** Trigger Count */
+			trigger_count: number;
+			/** Follow Count */
+			follow_count: number;
+			/** Latest Triggered At */
+			latest_triggered_at: string | null;
+			/** Student Goal Summaries */
+			student_goal_summaries: string[];
+			/**
+			 * Status
+			 * @enum {string}
+			 */
+			status:
+				| "open"
+				| "material_searching"
+				| "material_found"
+				| "resolved"
+				| "closed";
+			/** Resolved Textbook Id */
+			resolved_textbook_id: string | null;
+			/** Resolved At */
+			resolved_at: string | null;
+			/** Sources */
+			sources?: components["schemas"]["KnowledgeSourceRead"][];
+			/** Actions */
+			actions?: string[];
+		};
+		/** KnowledgeGapFindMaterialsResponse */
+		KnowledgeGapFindMaterialsResponse: {
+			gap: components["schemas"]["KnowledgeGapRead"];
+			/** Sources */
+			sources: components["schemas"]["KnowledgeSourceRead"][];
+		};
+		/** KnowledgeGapFollowRead */
+		KnowledgeGapFollowRead: {
+			/** Follow Id */
+			follow_id: string;
+			/** Gap Id */
+			gap_id: string;
+			/** User Uid */
+			user_uid: string;
+			/**
+			 * Created At
+			 * Format: date-time
+			 */
+			created_at: string;
+		};
+		/** KnowledgeGapNoticeActionPayload */
+		KnowledgeGapNoticeActionPayload: {
+			/**
+			 * Action
+			 * @constant
+			 */
+			action: "regenerate_learning_path_intake";
+			/** Learning Topic */
+			learning_topic: string;
+			/** Textbook Id */
+			textbook_id: string;
+		};
+		/** KnowledgeGapNoticeRead */
+		KnowledgeGapNoticeRead: {
+			/** Notice Id */
+			notice_id: string;
+			/** Gap Id */
+			gap_id: string;
+			/** User Uid */
+			user_uid: string;
+			/**
+			 * Notice Type
+			 * @constant
+			 */
+			notice_type: "knowledge_gap_resolved";
+			/** Title */
+			title: string;
+			/** Body */
+			body: string;
+			/** Action Label */
+			action_label: string;
+			action_payload: components["schemas"]["KnowledgeGapNoticeActionPayload"];
+			/** Read At */
+			read_at: string | null;
+			/**
+			 * Created At
+			 * Format: date-time
+			 */
+			created_at: string;
+		};
+		/** KnowledgeGapRead */
+		KnowledgeGapRead: {
+			/** Gap Id */
+			gap_id: string;
+			/** Normalized Topic */
+			normalized_topic: string;
+			/** Trigger Count */
+			trigger_count: number;
+			/** Follow Count */
+			follow_count: number;
+			/** Latest Triggered At */
+			latest_triggered_at: string | null;
+			/** Student Goal Summaries */
+			student_goal_summaries: string[];
+			/**
+			 * Status
+			 * @enum {string}
+			 */
+			status:
+				| "open"
+				| "material_searching"
+				| "material_found"
+				| "resolved"
+				| "closed";
+			/** Resolved Textbook Id */
+			resolved_textbook_id: string | null;
+			/** Resolved At */
+			resolved_at: string | null;
+		};
+		/** KnowledgeGapUploadResponse */
+		KnowledgeGapUploadResponse: {
+			gap: components["schemas"]["KnowledgeGapRead"];
+			textbook: components["schemas"]["TextbookRead"];
+		};
+		/** KnowledgeSourceCreateRequest */
+		KnowledgeSourceCreateRequest: {
+			/** Source Id */
+			source_id: string;
+			/** Name */
+			name: string;
+			/**
+			 * Base Url
+			 * @default
+			 */
+			base_url: string;
+			/**
+			 * Status
+			 * @default enabled
+			 * @enum {string}
+			 */
+			status: "enabled" | "disabled";
+			/**
+			 * Source Kind
+			 * @default
+			 */
+			source_kind: string;
+			/**
+			 * Download Requirement
+			 * @default
+			 */
+			download_requirement: string;
+			/**
+			 * Ai Search Requirement
+			 * @default
+			 */
+			ai_search_requirement: string;
+			/**
+			 * Download Status
+			 * @default unverified
+			 * @enum {string}
+			 */
+			download_status: "unverified" | "verified" | "failed";
+			/**
+			 * Parse Status
+			 * @default unverified
+			 * @enum {string}
+			 */
+			parse_status: "unverified" | "supported" | "failed";
+			/**
+			 * License Review Status
+			 * @default unreviewed
+			 * @enum {string}
+			 */
+			license_review_status: "unreviewed" | "approved" | "rejected";
+			/**
+			 * Human Review Status
+			 * @default unreviewed
+			 * @enum {string}
+			 */
+			human_review_status: "unreviewed" | "reviewed";
+		};
+		/** KnowledgeSourceRead */
+		KnowledgeSourceRead: {
+			/** Source Id */
+			source_id: string;
+			/** Name */
+			name: string;
+			/**
+			 * Base Url
+			 * @default
+			 */
+			base_url: string;
+			/**
+			 * Status
+			 * @default enabled
+			 * @enum {string}
+			 */
+			status: "enabled" | "disabled";
+			/**
+			 * Source Kind
+			 * @default
+			 */
+			source_kind: string;
+			/**
+			 * Download Requirement
+			 * @default
+			 */
+			download_requirement: string;
+			/**
+			 * Ai Search Requirement
+			 * @default
+			 */
+			ai_search_requirement: string;
+			/**
+			 * Download Status
+			 * @default unverified
+			 * @enum {string}
+			 */
+			download_status: "unverified" | "verified" | "failed";
+			/**
+			 * Parse Status
+			 * @default unverified
+			 * @enum {string}
+			 */
+			parse_status: "unverified" | "supported" | "failed";
+			/**
+			 * License Review Status
+			 * @default unreviewed
+			 * @enum {string}
+			 */
+			license_review_status: "unreviewed" | "approved" | "rejected";
+			/**
+			 * Human Review Status
+			 * @default unreviewed
+			 * @enum {string}
+			 */
+			human_review_status: "unreviewed" | "reviewed";
+		};
 		/** LeafCourseRead */
 		LeafCourseRead: {
 			/** Course Node Id */
@@ -1110,6 +1836,12 @@ export interface components {
 			}[];
 			/** Section Composed Markdowns */
 			section_composed_markdowns?: {
+				[key: string]: {
+					[key: string]: unknown;
+				};
+			};
+			/** Section Resource Errors */
+			section_resource_errors?: {
 				[key: string]: {
 					[key: string]: unknown;
 				};
@@ -1207,6 +1939,295 @@ export interface components {
 			 * Format: date-time
 			 */
 			updated_at: string;
+		};
+		/** StructuredTextbookCreateRequest */
+		StructuredTextbookCreateRequest: {
+			textbook: components["schemas"]["TextbookCreateRequest"];
+			/** Sections */
+			sections: components["schemas"]["TextbookSectionContentCreateRequest"][];
+		};
+		/** TextbookCreateRequest */
+		TextbookCreateRequest: {
+			/** Textbook Id */
+			textbook_id: string;
+			/** Source Id */
+			source_id: string;
+			/** Title */
+			title: string;
+			/**
+			 * Original Title
+			 * @default
+			 */
+			original_title: string;
+			/**
+			 * Language
+			 * @default
+			 */
+			language: string;
+			/**
+			 * Translated Language
+			 * @default
+			 */
+			translated_language: string;
+			/**
+			 * Description
+			 * @default
+			 */
+			description: string;
+			/** Tags */
+			tags?: string[];
+			/**
+			 * Download Url
+			 * @default
+			 */
+			download_url: string;
+			/**
+			 * File Asset Url
+			 * @default
+			 */
+			file_asset_url: string;
+			/** Outline */
+			outline?: {
+				[key: string]: unknown;
+			};
+			/**
+			 * Ingestion Status
+			 * @default not_started
+			 * @enum {string}
+			 */
+			ingestion_status:
+				| "not_started"
+				| "processing"
+				| "failed"
+				| "ready_for_outline_review"
+				| "completed";
+			/**
+			 * Outline Review Status
+			 * @default unreviewed
+			 * @enum {string}
+			 */
+			outline_review_status: "unreviewed" | "approved";
+			/**
+			 * Student Availability Status
+			 * @default draft
+			 * @enum {string}
+			 */
+			student_availability_status:
+				| "draft"
+				| "published"
+				| "unpublished"
+				| "archived";
+			/**
+			 * Ingestion Error Message
+			 * @default
+			 */
+			ingestion_error_message: string;
+		};
+		/** TextbookExtensionResourceCreateRequest */
+		TextbookExtensionResourceCreateRequest: {
+			/** Resource Id */
+			resource_id: string;
+			/** Section Id */
+			section_id: string;
+			/**
+			 * Resource Type
+			 * @default
+			 */
+			resource_type: string;
+			/** Title Zh */
+			title_zh: string;
+			/**
+			 * Description Zh
+			 * @default
+			 */
+			description_zh: string;
+			/**
+			 * Render Mode
+			 * @default reader
+			 * @enum {string}
+			 */
+			render_mode: "reader" | "video" | "webpage";
+			/**
+			 * Url
+			 * @default
+			 */
+			url: string;
+			/**
+			 * Cover Url
+			 * @default
+			 */
+			cover_url: string;
+			/**
+			 * Source Name
+			 * @default
+			 */
+			source_name: string;
+			/**
+			 * Status
+			 * @default
+			 */
+			status: string;
+		};
+		/** TextbookExtensionResourceRead */
+		TextbookExtensionResourceRead: {
+			/** Resource Id */
+			resource_id: string;
+			/** Section Id */
+			section_id: string;
+			/**
+			 * Resource Type
+			 * @default
+			 */
+			resource_type: string;
+			/** Title Zh */
+			title_zh: string;
+			/**
+			 * Description Zh
+			 * @default
+			 */
+			description_zh: string;
+			/**
+			 * Render Mode
+			 * @default reader
+			 * @enum {string}
+			 */
+			render_mode: "reader" | "video" | "webpage";
+			/**
+			 * Url
+			 * @default
+			 */
+			url: string;
+			/**
+			 * Cover Url
+			 * @default
+			 */
+			cover_url: string;
+			/**
+			 * Source Name
+			 * @default
+			 */
+			source_name: string;
+			/**
+			 * Status
+			 * @default
+			 */
+			status: string;
+			/** Textbook Id */
+			textbook_id: string;
+		};
+		/** TextbookRead */
+		TextbookRead: {
+			/** Textbook Id */
+			textbook_id: string;
+			/** Source Id */
+			source_id: string;
+			/** Title */
+			title: string;
+			/**
+			 * Original Title
+			 * @default
+			 */
+			original_title: string;
+			/**
+			 * Language
+			 * @default
+			 */
+			language: string;
+			/**
+			 * Translated Language
+			 * @default
+			 */
+			translated_language: string;
+			/**
+			 * Description
+			 * @default
+			 */
+			description: string;
+			/** Tags */
+			tags?: string[];
+			/**
+			 * Download Url
+			 * @default
+			 */
+			download_url: string;
+			/**
+			 * File Asset Url
+			 * @default
+			 */
+			file_asset_url: string;
+			/** Outline */
+			outline?: {
+				[key: string]: unknown;
+			};
+			/**
+			 * Ingestion Status
+			 * @default not_started
+			 * @enum {string}
+			 */
+			ingestion_status:
+				| "not_started"
+				| "processing"
+				| "failed"
+				| "ready_for_outline_review"
+				| "completed";
+			/**
+			 * Outline Review Status
+			 * @default unreviewed
+			 * @enum {string}
+			 */
+			outline_review_status: "unreviewed" | "approved";
+			/**
+			 * Student Availability Status
+			 * @default draft
+			 * @enum {string}
+			 */
+			student_availability_status:
+				| "draft"
+				| "published"
+				| "unpublished"
+				| "archived";
+			/**
+			 * Ingestion Error Message
+			 * @default
+			 */
+			ingestion_error_message: string;
+			/** Published At */
+			published_at?: string | null;
+			/** Unpublished At */
+			unpublished_at?: string | null;
+			/** Archived At */
+			archived_at?: string | null;
+		};
+		/** TextbookSectionContentCreateRequest */
+		TextbookSectionContentCreateRequest: {
+			/** Section Content Id */
+			section_content_id: string;
+			/** Section Id */
+			section_id: string;
+			/** Parent Section Id */
+			parent_section_id?: string | null;
+			/**
+			 * Order Index
+			 * @default 0
+			 */
+			order_index: number;
+			/** Title */
+			title: string;
+			/**
+			 * Original Title
+			 * @default
+			 */
+			original_title: string;
+			/**
+			 * Content Zh
+			 * @default
+			 */
+			content_zh: string;
+			/**
+			 * Content Char Count
+			 * @default 0
+			 */
+			content_char_count: number;
 		};
 		/** UserLearningDataRead */
 		UserLearningDataRead: {
@@ -2259,6 +3280,637 @@ export interface operations {
 				};
 				content: {
 					"application/json": unknown;
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	admin_sources_api_admin_knowledge_base_sources_get: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeSourceRead"][];
+				};
+			};
+		};
+	};
+	create_admin_source_api_admin_knowledge_base_sources_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": components["schemas"]["KnowledgeSourceCreateRequest"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeSourceRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	admin_textbooks_api_admin_knowledge_base_textbooks_get: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["TextbookRead"][];
+				};
+			};
+		};
+	};
+	create_admin_textbook_api_admin_knowledge_base_textbooks_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": components["schemas"]["StructuredTextbookCreateRequest"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["TextbookRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	publish_admin_textbook_api_admin_knowledge_base_textbooks__textbook_id__publish_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				textbook_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["TextbookRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	update_admin_textbook_outline_api_admin_knowledge_base_textbooks__textbook_id__outline_put: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				textbook_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": {
+					[key: string]: unknown;
+				};
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["TextbookRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	unpublish_admin_textbook_api_admin_knowledge_base_textbooks__textbook_id__unpublish_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				textbook_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["TextbookRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	delete_admin_textbook_api_admin_knowledge_base_textbooks__textbook_id__delete: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				textbook_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	organize_admin_textbook_api_admin_knowledge_base_textbooks__textbook_id__agent_organize_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				textbook_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeBaseIngestionJobRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	read_admin_ingestion_job_api_admin_knowledge_base_ingestion_jobs__job_id__get: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				job_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeBaseIngestionJobRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	admin_knowledge_base_agent_api_admin_knowledge_base_agent_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": components["schemas"]["KnowledgeBaseAgentRequest"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeBaseAgentResponse"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	confirm_admin_source_result_api_admin_knowledge_base_source_results_confirm_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": components["schemas"]["KnowledgeBaseSourceConfirmRequest"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeBaseSourceConfirmResponse"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	upload_admin_textbook_file_api_admin_knowledge_base_uploads_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"multipart/form-data": components["schemas"]["Body_upload_admin_textbook_file_api_admin_knowledge_base_uploads_post"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeBaseSourceConfirmResponse"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	admin_gaps_api_admin_knowledge_base_gaps_get: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeGapAdminRead"][];
+				};
+			};
+		};
+	};
+	find_admin_gap_materials_api_admin_knowledge_base_gaps__gap_id__find_materials_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				gap_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeGapFindMaterialsResponse"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	upload_admin_gap_materials_api_admin_knowledge_base_gaps__gap_id__upload_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				gap_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": components["schemas"]["StructuredTextbookCreateRequest"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeGapUploadResponse"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	admin_extension_resources_api_admin_knowledge_base_textbooks__textbook_id__extension_resources_get: {
+		parameters: {
+			query?: {
+				section_id?: string[];
+			};
+			header?: never;
+			path: {
+				textbook_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["TextbookExtensionResourceRead"][];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	create_admin_extension_resource_api_admin_knowledge_base_textbooks__textbook_id__extension_resources_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				textbook_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": components["schemas"]["TextbookExtensionResourceCreateRequest"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["TextbookExtensionResourceRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	follow_gap_api_knowledge_base_gaps__gap_id__follow_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				gap_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeGapFollowRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	notices_api_knowledge_base_notices_get: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeGapNoticeRead"][];
+				};
+			};
+		};
+	};
+	read_notice_api_knowledge_base_notices__notice_id__read_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				notice_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeGapNoticeRead"];
 				};
 			};
 			/** @description Validation Error */

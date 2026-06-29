@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Callable, Generator
 from datetime import datetime, timezone
-from uuid import uuid4
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Depends,
+    File,
+    Form,
     HTTPException,
     Query,
     Response,
+    UploadFile,
     status,
 )
-from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -32,9 +32,12 @@ from app.models import (
     UserCourseKnowledgeOutline,
     UserYearLearningPath,
 )
-from app.orchestration.llm import get_worker_llm
 from app.schemas import (
+    KnowledgeBaseAgentRequest,
+    KnowledgeBaseAgentResponse,
     KnowledgeBaseIngestionJobRead,
+    KnowledgeBaseSourceConfirmRequest,
+    KnowledgeBaseSourceConfirmResponse,
     KnowledgeGapAdminRead,
     KnowledgeGapFindMaterialsResponse,
     KnowledgeGapFollowRead,
@@ -48,42 +51,22 @@ from app.schemas import (
     TextbookExtensionResourceRead,
     TextbookRead,
 )
-from app.services.document_parser_service import ChapterOutline
 from app.services.knowledge_base_service import (
     add_textbook_extension_resource,
+    confirm_textbook_source_result,
     create_knowledge_base_ingestion_job,
     create_knowledge_source,
+    create_uploaded_textbook,
     follow_knowledge_gap,
-    generate_textbook_contents_task,
-    get_textbook_generation_progress,
     list_admitted_knowledge_sources,
     list_knowledge_sources,
     publish_textbook,
+    run_knowledge_base_agent,
     textbook_payload_covers_topic,
     upsert_structured_textbook,
 )
 
 SessionDependency = Callable[[], Generator[Session, None, None]]
-
-
-class GenerateOutlineRequest(BaseModel):
-    prompt: str
-    tags: list[str] = Field(default_factory=list)
-
-
-class GeneratedTextbookOutline(BaseModel):
-    title: str = Field(..., description="Suggested textbook title")
-    description: str = Field(..., description="Suggested textbook description")
-    chapters: list[ChapterOutline] = Field(
-        ..., description="Suggested chapters and sections"
-    )
-
-
-class TextbookGenerationProgressResponse(BaseModel):
-    textbook_id: str
-    progress_percentage: float
-    status: str
-    current_section_title: str
 
 
 def create_knowledge_base_router(session_dependency: SessionDependency) -> APIRouter:
@@ -103,9 +86,10 @@ def create_knowledge_base_router(session_dependency: SessionDependency) -> APIRo
 
     _register_source_routes(router, session_dependency, require_admin)
     _register_textbook_routes(router, session_dependency, require_admin)
-    _register_aigc_textbook_routes(router, session_dependency, require_admin)
+    _register_textbook_outline_routes(router, session_dependency, require_admin)
     _register_textbook_lifecycle_routes(router, session_dependency, require_admin)
     _register_ingestion_job_routes(router, session_dependency, require_admin)
+    _register_agent_routes(router, session_dependency, require_admin)
     _register_gap_routes(router, session_dependency, require_admin)
     _register_extension_routes(router, session_dependency, require_admin)
     _register_student_routes(router, session_dependency, require_student)
@@ -191,7 +175,7 @@ def _register_textbook_routes(
             ) from exc
 
 
-def _register_aigc_textbook_routes(
+def _register_textbook_outline_routes(
     router: APIRouter,
     session_dependency: SessionDependency,
     require_admin: Callable[..., User],
@@ -208,125 +192,10 @@ def _register_aigc_textbook_routes(
     ) -> Textbook:
         textbook = _get_textbook_or_404(session, textbook_id)
         textbook.outline = outline
-        textbook.outline_review_status = "approved"
         session.add(textbook)
         session.commit()
         session.refresh(textbook)
         return textbook
-
-    @router.post(
-        "/api/admin/knowledge-base/generate-outline",
-        response_model=TextbookRead,
-        status_code=status.HTTP_201_CREATED,
-    )
-    def generate_admin_outline(
-        payload: GenerateOutlineRequest,
-        _: User = Depends(require_admin),
-        session: Session = Depends(session_dependency),
-    ) -> Textbook:
-        source_id = "source-ai"
-        ai_source = session.get(KnowledgeSource, source_id)
-        if ai_source is None:
-            ai_source = KnowledgeSource(
-                source_id=source_id,
-                name="AI生成教材",
-                base_url="https://ai.generation.service/source",
-                status="enabled",
-                source_kind="ai_generation",
-                download_requirement="N/A",
-                ai_search_requirement="N/A",
-                download_status="verified",
-                parse_status="supported",
-                license_review_status="approved",
-                human_review_status="reviewed",
-            )
-            session.add(ai_source)
-            session.commit()
-
-        llm = get_worker_llm()
-        structured_llm = llm.with_structured_output(GeneratedTextbookOutline)
-
-        prompt = (
-            "你是一个专业的教材策划专家。请根据以下的主题或提示，生成一本全新教材的"
-            "目录大纲结构、标题 and 描述。\n"
-            f"提示：{payload.prompt}\n"
-            f"标签：{', '.join(payload.tags)}\n\n"
-            "你需要生成：\n"
-            "1. 教材标题 (title)\n"
-            "2. 教材描述 (description)\n"
-            "3. 完整的章节目录大纲 (chapters)。为每个小节生成一个唯一的 section_id，"
-            "格式应为 sec_X_Y，其中 X 是章序号，Y 是节序号（例如：sec_1_1）。"
-        )
-
-        result = structured_llm.invoke(prompt)
-
-        textbook_id = f"textbook-{uuid4().hex}"
-        textbook = Textbook(
-            textbook_id=textbook_id,
-            source_id=source_id,
-            title=result.title,
-            original_title=result.title,
-            language="zh",
-            translated_language="zh",
-            description=result.description,
-            tags=payload.tags,
-            outline={"chapters": [ch.model_dump() for ch in result.chapters]},
-            ingestion_status="completed",
-            outline_review_status="approved",
-            student_availability_status="draft",
-        )
-        session.add(textbook)
-        session.commit()
-        session.refresh(textbook)
-        return textbook
-
-    @router.post(
-        "/api/admin/knowledge-base/textbooks/{textbook_id}/generate-content",
-        response_model=KnowledgeBaseIngestionJobRead,
-        status_code=status.HTTP_201_CREATED,
-    )
-    def generate_admin_textbook_content(
-        textbook_id: str,
-        background_tasks: BackgroundTasks,
-        _: User = Depends(require_admin),
-        session: Session = Depends(session_dependency),
-    ) -> KnowledgeBaseIngestionJob:
-        _get_textbook_or_404(session, textbook_id)
-        job_id = f"job-{uuid4().hex}"
-        job = KnowledgeBaseIngestionJob(
-            job_id=job_id,
-            textbook_id=textbook_id,
-            job_type="aigc_generation",
-            status="queued",
-        )
-        session.add(job)
-        session.commit()
-        session.refresh(job)
-
-        background_tasks.add_task(
-            generate_textbook_contents_task,
-            textbook_id,
-            job_id,
-            session,
-        )
-        return job
-
-    @router.get(
-        "/api/admin/knowledge-base/textbooks/{textbook_id}/generation-progress",
-        response_model=TextbookGenerationProgressResponse,
-    )
-    def get_admin_textbook_generation_progress(
-        textbook_id: str,
-        _: User = Depends(require_admin),
-        session: Session = Depends(session_dependency),
-    ) -> dict[str, object]:
-        try:
-            return get_textbook_generation_progress(session, textbook_id)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(exc),
-            ) from exc
 
 
 def _register_textbook_lifecycle_routes(
@@ -418,6 +287,82 @@ def _register_ingestion_job_routes(
                 detail="知识库任务不存在。",
             )
         return job
+
+
+def _register_agent_routes(
+    router: APIRouter,
+    session_dependency: SessionDependency,
+    require_admin: Callable[..., User],
+) -> None:
+    @router.post(
+        "/api/admin/knowledge-base/agent",
+        response_model=KnowledgeBaseAgentResponse,
+    )
+    def admin_knowledge_base_agent(
+        payload: KnowledgeBaseAgentRequest,
+        _: User = Depends(require_admin),
+        session: Session = Depends(session_dependency),
+    ) -> KnowledgeBaseAgentResponse:
+        return run_knowledge_base_agent(session, payload.message)
+
+    @router.post(
+        "/api/admin/knowledge-base/source-results/confirm",
+        response_model=KnowledgeBaseSourceConfirmResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def confirm_admin_source_result(
+        payload: KnowledgeBaseSourceConfirmRequest,
+        _: User = Depends(require_admin),
+        session: Session = Depends(session_dependency),
+    ) -> KnowledgeBaseSourceConfirmResponse:
+        try:
+            textbook, job = confirm_textbook_source_result(
+                session,
+                payload.source_result,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+        return KnowledgeBaseSourceConfirmResponse(
+            textbook=TextbookRead.model_validate(textbook),
+            job=KnowledgeBaseIngestionJobRead.model_validate(job),
+        )
+
+    @router.post(
+        "/api/admin/knowledge-base/uploads",
+        response_model=KnowledgeBaseSourceConfirmResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def upload_admin_textbook_file(
+        title: str = Form(min_length=1, max_length=256),
+        language: str = Form(default="zh", max_length=32),
+        description: str = Form(default=""),
+        tags: str = Form(default=""),
+        file: UploadFile = File(...),
+        _: User = Depends(require_admin),
+        session: Session = Depends(session_dependency),
+    ) -> KnowledgeBaseSourceConfirmResponse:
+        try:
+            textbook, job = create_uploaded_textbook(
+                session,
+                title=title,
+                language=language,
+                description=description,
+                tags=[tag.strip() for tag in tags.split(",") if tag.strip()],
+                file_name=file.filename or "textbook.pdf",
+                file_bytes=await file.read(),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+        return KnowledgeBaseSourceConfirmResponse(
+            textbook=TextbookRead.model_validate(textbook),
+            job=KnowledgeBaseIngestionJobRead.model_validate(job),
+        )
 
 
 def _register_gap_routes(
