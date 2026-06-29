@@ -1,3 +1,7 @@
+"""Contract tests for the course resource agent."""
+
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import json
@@ -103,6 +107,35 @@ def test_course_resource_llm_timeouts_are_three_minutes() -> None:
     assert _MARKDOWN_TIMEOUT_SECONDS == 180.0
     assert _VIDEO_TIMEOUT_SECONDS == 180.0
     assert _ANIMATION_TIMEOUT_SECONDS == 180.0
+
+
+def test_markdown_input_includes_textbook_evidence_pack() -> None:
+    outline = _outline()
+    outline["source_textbook_id"] = "textbook-ai-web"
+    outline["source_textbook_title"] = "AI 应用开发项目教程"
+    outline["source_outline_section_ids"] = ["1.1", "1.2"]
+    outline["source_section_ids"] = ["1.1", "1.2"]
+    outline["source_section_titles"] = ["功能边界", "验收标准"]
+    outline["source_content_chars"] = 3600
+    outline["sections"][1]["source_textbook_id"] = "textbook-ai-web"
+    outline["sections"][1]["source_textbook_title"] = "AI 应用开发项目教程"
+    outline["sections"][1]["source_section_ids"] = ["1.1", "1.2"]
+    outline["sections"][1]["source_section_titles"] = ["功能边界", "验收标准"]
+    outline["sections"][1]["source_content_chars"] = 3600
+
+    section = _section_by_id(outline, "1.1")
+    assert section is not None
+    payload = _markdown_input(
+        {"profile": _profile(), "year_learning_paths": _year_learning_paths()},
+        outline,
+        section,
+    )
+
+    assert '"source_textbook_id"' in payload
+    assert '"textbook_evidence_pack"' in payload
+    assert '"source_section_ids"' in payload
+    assert '"source_section_titles"' in payload
+    assert '"source_content_chars"' in payload
 
 
 def test_invoke_resource_chain_parses_chat_message_content_before_model_dump() -> None:
@@ -1695,6 +1728,7 @@ def _complete_section_markdown(
                 "- [ ] 能识别低质量内容，例如重复标题、泛泛概念、不可用资源提示或没有绑定学习者画像的说明。\n"
                 "- [ ] 能通过运行结果、截图、表格或口头解释证明本节产出可复查。"
             ),
+            (f"## 来源\n- 《AI 应用开发项目教程》：{section_id} {title}。"),
             (
                 "补充说明：这段测试内容故意写成完整教学文档，用来穿过生产质量门。"
                 "如果模型输出太短、缺少必备标题、带旧兜底文案或资源占位符与 brief 不一致，"
@@ -2054,6 +2088,98 @@ def test_run_section_markdown_agent_returns_error_when_model_returns_error(
     )
 
 
+def test_run_section_markdown_agent_persists_markdown_failure_without_clearing_other_composed_sections(
+    tmp_path,
+) -> None:
+    class RecordingLlm:
+        pass
+
+    class ErrorChain:
+        async def ainvoke(self, _payload):
+            return {"error": "模型无法生成结构化结果"}
+
+    class MarkdownPrompt:
+        def __or__(self, _other):
+            return ErrorChain()
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return MarkdownPrompt()
+
+    existing_composed = {
+        "2.1": {
+            "section_id": "2.1",
+            "parent_section_id": "2",
+            "title": "学习目标",
+            "markdown": "# 2.1 学习目标\n\n旧章节内容。",
+            "blocks": [
+                {
+                    "type": "markdown",
+                    "markdown": "# 2.1 学习目标\n\n旧章节内容。",
+                }
+            ],
+            "generated_at": "2026-06-06T00:00:00Z",
+        }
+    }
+    outline = _outline()
+    outline["section_composed_markdowns"] = existing_composed
+    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-section-error.db'}")
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid="user-1",
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name="AI 应用开发",
+                outline_data=outline,
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+
+    original_factory = module.ChatPromptTemplate
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(
+            run_section_markdown_agent(
+                {
+                    "user_id": "user-1",
+                    "course_knowledge": outline,
+                    "profile": _profile(),
+                    "year_learning_paths": _year_learning_paths(),
+                    "messages": [],
+                },
+                RecordingLlm(),
+                {
+                    "course_id": "year_3_course_1",
+                    "section_id": "1.1",
+                    "scope": "single_section",
+                },
+            )
+        )
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert result.get("error") is not None
+    with Session(engine) as session:
+        row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
+    assert row is not None
+    assert row.outline_data["section_composed_markdowns"] == existing_composed
+    section_error = row.outline_data["section_resource_errors"]["1.1"]
+    assert section_error["section_id"] == "1.1"
+    assert section_error["phase"] == "markdown"
+    assert section_error["message"] == result["error"]
+    assert section_error["retryable"] is True
+    assert section_error["updated_at"]
+
+
 def test_run_section_markdown_agent_accepts_plain_markdown_model_output(
     tmp_path,
 ) -> None:
@@ -2320,6 +2446,7 @@ def test_run_section_markdown_agent_expands_short_markdown_with_llm_content(
             "## 练习任务\n写一张任务卡。",
             "<!-- animation:id=anim_1 -->",
             "## 检查标准\n- [ ] 有目标。\n- [ ] 有任务。\n- [ ] 有资源。\n- [ ] 有证据。",
+            "## 来源\n- 《AI 应用开发项目教程》：1.1 学习目标。",
         ]
     )
 
@@ -6299,3 +6426,134 @@ def test_e2e_animation_html_is_self_contained_and_accessible():
 
     # IIFE pattern for JS isolation
     assert "(function()" in html or "(function() {" in html
+
+
+def test_run_section_markdown_agent_injects_textbook_evidence_cag(tmp_path) -> None:
+    from tests.fixtures.knowledge_base import enabled_source, published_textbook
+    from tests.fixtures.knowledge_base import section as k_section
+
+    # Set up mock/recording LLM
+    class RecordingLlm:
+        pass
+
+    section_bodies = {
+        "学习目标": "学习目标正文内容来自教材证据包事实。",
+        "核心概念": "核心概念解释来自教材证据包事实。",
+        "步骤讲解": "步骤讲解正文内容来自教材证据包事实。\n\n| 步骤 | 输入材料 |\n| --- | --- |\n| 1 | 2 |",
+        "练习任务": "练习任务正文内容来自教材证据包事实。",
+        "检查标准": ("- [ ] 标准 1\n- [ ] 标准 2\n- [ ] 标准 3\n- [ ] 标准 4"),
+    }
+
+    captured_queries = []
+
+    class MarkdownChain:
+        async def ainvoke(self, payload):
+            captured_queries.append(payload["query"])
+            expansion_section = _payload_from_query(payload["query"])[
+                "markdown_expansion_section"
+            ]
+            return section_bodies[expansion_section]
+
+    class MarkdownPrompt:
+        def __or__(self, _other):
+            return MarkdownChain()
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return MarkdownPrompt()
+
+    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-cag.db'}")
+    set_engine(engine)
+    init_db(engine)
+
+    # Seed User, Outline, Textbook, Source, and TextbookSectionContent
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+
+        textbook_id = "textbook-cag-structures"
+        source_id = "source-cag-id"
+
+        session.add(enabled_source(source_id=source_id))
+
+        tb = published_textbook(
+            textbook_id=textbook_id,
+            source_id=source_id,
+            title="CAG教材",
+        )
+        tb.outline = {
+            "sections": [
+                {"section_id": "1.1", "title": "特定章节标题"},
+            ]
+        }
+        session.add(tb)
+
+        # Add actual textbook section content
+        session.add(
+            k_section(
+                textbook_id=textbook_id,
+                section_content_id="section-cag-content-id-1",
+                section_id="1.1",
+                title="特定章节标题",
+                content_zh="这是真实存储于教材正文数据库中的特定中文教学段落，用于细粒度证据塞入。",
+            )
+        )
+
+        # Set up outline which references this textbook and section
+        outline_data = _outline()
+        outline_data["source_textbook_id"] = textbook_id
+        outline_data["source_textbook_title"] = "CAG教材"
+
+        # Bind the textbook info directly to section 1.1
+        target_sec = outline_data["sections"][1]
+        target_sec["source_textbook_id"] = textbook_id
+        target_sec["source_textbook_title"] = "CAG教材"
+        target_sec["source_section_ids"] = ["1.1"]
+        target_sec["source_section_titles"] = ["特定章节标题"]
+        target_sec["source_content_chars"] = 1000
+
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid="user-1",
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name="AI 应用开发",
+                outline_data=outline_data,
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+
+    original_factory = module.ChatPromptTemplate
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        asyncio.run(
+            run_section_markdown_agent(
+                {
+                    "user_id": "user-1",
+                    "course_knowledge": outline_data,
+                    "profile": _profile(),
+                    "year_learning_paths": _year_learning_paths(),
+                    "messages": [],
+                },
+                RecordingLlm(),
+                {
+                    "course_id": "year_3_course_1",
+                    "section_id": "1.1",
+                    "scope": "single_section",
+                },
+            )
+        )
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert len(captured_queries) == 5
+    for query in captured_queries:
+        assert "这是真实存储于教材正文数据库中的特定中文教学段落" in query
+        assert "textbook_evidence_pack" in query
+        assert "evidence_text" in query
+        assert "教材证据包" in query
+        assert "真实内容" in query or "严格基于" in query or "唯一" in query
