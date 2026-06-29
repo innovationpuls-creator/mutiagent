@@ -4,11 +4,32 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import inspect, text
+from sqlalchemy import CheckConstraint, UniqueConstraint, inspect, text
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 
-from app.models import UserYearLearningPath
+from app.models import (
+    KnowledgeBaseIngestionJob,
+    KnowledgeGap,
+    KnowledgeGapFollow,
+    KnowledgeGapNotice,
+    KnowledgeSource,
+    Textbook,
+    TextbookExtensionResource,
+    TextbookSectionContent,
+    UserYearLearningPath,
+)
+
+_KNOWLEDGE_BASE_TABLE_MODELS = (
+    KnowledgeSource,
+    Textbook,
+    TextbookSectionContent,
+    TextbookExtensionResource,
+    KnowledgeGap,
+    KnowledgeGapFollow,
+    KnowledgeGapNotice,
+    KnowledgeBaseIngestionJob,
+)
 
 
 def run_schema_upgrades(engine: Engine) -> None:
@@ -18,12 +39,18 @@ def run_schema_upgrades(engine: Engine) -> None:
     primary keys, or drop tables that were removed from the model.
     """
     with engine.begin() as connection:
+        _create_knowledge_base_tables(connection)
+        _normalize_knowledge_gap_notice_action_payloads(connection)
+        _ensure_knowledge_base_check_constraints(connection)
+        _ensure_knowledge_base_unique_constraints(connection)
+        _recalculate_knowledge_gap_follow_counts(connection)
         _upgrade_user_role_column(connection)
         _migrate_teachers_to_admins(connection)
         _upgrade_user_cohort_columns(connection)
         _upgrade_course_knowledge_outline_table(connection)
         _upgrade_profile_json_storage(connection)
         _drop_removed_agent_conversation_table(connection)
+        _upgrade_textbook_embedding_column(connection)
 
 
 def migrate_removed_learning_path_table(engine: Engine) -> None:
@@ -45,6 +72,456 @@ def migrate_removed_learning_path_table(engine: Engine) -> None:
 
     with engine.begin() as connection:
         connection.execute(text("DROP TABLE IF EXISTS userlearningpath"))
+
+
+def _create_knowledge_base_tables(connection: Any) -> None:
+    for model in _KNOWLEDGE_BASE_TABLE_MODELS:
+        model.__table__.create(bind=connection, checkfirst=True)
+
+
+def _ensure_knowledge_base_check_constraints(connection: Any) -> None:
+    if connection.dialect.name != "postgresql":
+        return
+
+    inspector = inspect(connection)
+    for model in _KNOWLEDGE_BASE_TABLE_MODELS:
+        table = model.__table__
+        if not inspector.has_table(table.name):
+            continue
+
+        existing_names = {
+            constraint["name"]
+            for constraint in inspector.get_check_constraints(table.name)
+        }
+        for constraint in table.constraints:
+            if not isinstance(constraint, CheckConstraint) or not constraint.name:
+                continue
+            if constraint.name in existing_names:
+                if constraint.name != "ck_knowledgegapnotice_action_payload":
+                    continue
+                connection.execute(
+                    text(f"ALTER TABLE {table.name} DROP CONSTRAINT {constraint.name}")
+                )
+            connection.execute(
+                text(
+                    f"ALTER TABLE {table.name} "
+                    f"ADD CONSTRAINT {constraint.name} "
+                    f"CHECK ({constraint.sqltext}) NOT VALID"
+                )
+            )
+
+
+def _normalize_knowledge_gap_notice_action_payloads(connection: Any) -> None:
+    if connection.dialect.name != "postgresql":
+        return
+
+    inspector = inspect(connection)
+    if not inspector.has_table(KnowledgeGapNotice.__tablename__):
+        return
+
+    columns = {
+        column["name"]
+        for column in inspector.get_columns(KnowledgeGapNotice.__tablename__)
+    }
+    if "action_payload" not in columns:
+        return
+
+    connection.execute(
+        text(
+            """
+            UPDATE knowledgegapnotice
+            SET action_payload = jsonb_build_object(
+                'action', 'regenerate_learning_path_intake',
+                'learning_topic', action_payload ->> 'learning_topic',
+                'textbook_id', action_payload ->> 'textbook_id'
+            )
+            WHERE action_payload IS NOT NULL
+                AND jsonb_typeof(action_payload) = 'object'
+                AND (action_payload ? 'action')
+                AND (action_payload ? 'learning_topic')
+                AND (action_payload ? 'textbook_id')
+                AND (
+                    (action_payload ->> 'action')
+                    = 'regenerate_learning_path_intake'
+                )
+                AND ((action_payload ->> 'learning_topic') IS NOT NULL)
+                AND ((action_payload ->> 'textbook_id') IS NOT NULL)
+                AND (
+                    (action_payload - 'action' - 'learning_topic' - 'textbook_id')
+                    <> '{}'::jsonb
+                )
+            """
+        )
+    )
+
+
+def _ensure_knowledge_base_unique_constraints(connection: Any) -> None:
+    if connection.dialect.name != "postgresql":
+        return
+
+    inspector = inspect(connection)
+    for model in _KNOWLEDGE_BASE_TABLE_MODELS:
+        table = model.__table__
+        if not inspector.has_table(table.name):
+            continue
+
+        existing_names = {
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints(table.name)
+        }
+        for constraint in table.constraints:
+            if not isinstance(constraint, UniqueConstraint) or not constraint.name:
+                continue
+            if constraint.name in existing_names:
+                continue
+            columns = ", ".join(column.name for column in constraint.columns)
+            if constraint.name == "uq_knowledgegap_normalized_topic":
+                _merge_duplicate_knowledge_gaps(connection)
+            _remove_duplicate_rows_for_unique_constraint(
+                connection, table.name, constraint
+            )
+            connection.execute(
+                text(
+                    f"ALTER TABLE {table.name} "
+                    f"ADD CONSTRAINT {constraint.name} "
+                    f"UNIQUE ({columns})"
+                )
+            )
+
+
+def _merge_duplicate_knowledge_gaps(connection: Any) -> None:
+    inspector = inspect(connection)
+    if not inspector.has_table(KnowledgeGap.__tablename__):
+        return
+
+    if inspector.has_table(KnowledgeGapFollow.__tablename__):
+        connection.execute(
+            text(
+                """
+                WITH ranked_gaps AS (
+                    SELECT
+                        gap_id,
+                        first_value(gap_id) OVER (
+                            PARTITION BY normalized_topic
+                            ORDER BY gap_id, ctid
+                        ) AS retained_gap_id
+                    FROM knowledgegap
+                ),
+                ranked_follows AS (
+                    SELECT
+                        knowledgegapfollow.ctid AS row_ctid,
+                        row_number() OVER (
+                            PARTITION BY
+                                ranked_gaps.retained_gap_id,
+                                knowledgegapfollow.user_uid
+                            ORDER BY
+                                knowledgegapfollow.follow_id,
+                                knowledgegapfollow.ctid
+                        ) AS row_rank
+                    FROM knowledgegapfollow
+                    JOIN ranked_gaps
+                        ON ranked_gaps.gap_id = knowledgegapfollow.gap_id
+                )
+                DELETE FROM knowledgegapfollow
+                WHERE ctid IN (
+                    SELECT row_ctid
+                    FROM ranked_follows
+                    WHERE row_rank > 1
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                WITH ranked_gaps AS (
+                    SELECT
+                        gap_id,
+                        first_value(gap_id) OVER (
+                            PARTITION BY normalized_topic
+                            ORDER BY gap_id, ctid
+                        ) AS retained_gap_id
+                    FROM knowledgegap
+                )
+                UPDATE knowledgegapfollow
+                SET gap_id = ranked_gaps.retained_gap_id
+                FROM ranked_gaps
+                WHERE knowledgegapfollow.gap_id = ranked_gaps.gap_id
+                    AND knowledgegapfollow.gap_id <> ranked_gaps.retained_gap_id
+                """
+            )
+        )
+
+    if inspector.has_table(KnowledgeGapNotice.__tablename__):
+        connection.execute(
+            text(
+                """
+                WITH ranked_gaps AS (
+                    SELECT
+                        gap_id,
+                        first_value(gap_id) OVER (
+                            PARTITION BY normalized_topic
+                            ORDER BY gap_id, ctid
+                        ) AS retained_gap_id
+                    FROM knowledgegap
+                ),
+                ranked_notices AS (
+                    SELECT
+                        knowledgegapnotice.ctid AS row_ctid,
+                        row_number() OVER (
+                            PARTITION BY
+                                ranked_gaps.retained_gap_id,
+                                knowledgegapnotice.user_uid,
+                                knowledgegapnotice.notice_type
+                            ORDER BY
+                                knowledgegapnotice.notice_id,
+                                knowledgegapnotice.ctid
+                        ) AS row_rank
+                    FROM knowledgegapnotice
+                    JOIN ranked_gaps
+                        ON ranked_gaps.gap_id = knowledgegapnotice.gap_id
+                )
+                DELETE FROM knowledgegapnotice
+                WHERE ctid IN (
+                    SELECT row_ctid
+                    FROM ranked_notices
+                    WHERE row_rank > 1
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                WITH ranked_gaps AS (
+                    SELECT
+                        gap_id,
+                        first_value(gap_id) OVER (
+                            PARTITION BY normalized_topic
+                            ORDER BY gap_id, ctid
+                        ) AS retained_gap_id
+                    FROM knowledgegap
+                )
+                UPDATE knowledgegapnotice
+                SET gap_id = ranked_gaps.retained_gap_id
+                FROM ranked_gaps
+                WHERE knowledgegapnotice.gap_id = ranked_gaps.gap_id
+                    AND knowledgegapnotice.gap_id <> ranked_gaps.retained_gap_id
+                """
+            )
+        )
+
+    _merge_knowledge_gap_parent_fields(connection)
+
+    connection.execute(
+        text(
+            """
+            DELETE FROM knowledgegap
+            WHERE ctid IN (
+                SELECT duplicate_ctid
+                FROM (
+                    SELECT
+                        ctid AS duplicate_ctid,
+                        row_number() OVER (
+                            PARTITION BY normalized_topic
+                            ORDER BY gap_id, ctid
+                        ) AS duplicate_rank
+                    FROM knowledgegap
+                ) duplicate_rows
+                WHERE duplicate_rank > 1
+            )
+            """
+        )
+    )
+
+
+def _merge_knowledge_gap_parent_fields(connection: Any) -> None:
+    connection.execute(
+        text(
+            """
+            WITH ranked_gaps AS (
+                SELECT
+                    gap_id,
+                    normalized_topic,
+                    trigger_count,
+                    latest_triggered_at,
+                    student_goal_summaries,
+                    status,
+                    resolved_textbook_id,
+                    resolved_at,
+                    first_value(gap_id) OVER (
+                        PARTITION BY normalized_topic
+                        ORDER BY gap_id, ctid
+                    ) AS retained_gap_id,
+                    row_number() OVER (
+                        PARTITION BY normalized_topic
+                        ORDER BY gap_id, ctid
+                    ) AS gap_rank
+                FROM knowledgegap
+            ),
+            merged_counts AS (
+                SELECT
+                    retained_gap_id,
+                    sum(coalesce(trigger_count, 0)) AS trigger_count,
+                    max(latest_triggered_at) AS latest_triggered_at
+                FROM ranked_gaps
+                GROUP BY retained_gap_id
+            ),
+            unique_summaries AS (
+                SELECT
+                    retained_gap_id,
+                    summary_text,
+                    min(gap_rank) AS first_gap_rank,
+                    min(summary_index) AS first_summary_index
+                FROM ranked_gaps
+                CROSS JOIN LATERAL jsonb_array_elements_text(
+                    CASE
+                        WHEN jsonb_typeof(student_goal_summaries) = 'array'
+                        THEN student_goal_summaries
+                        ELSE '[]'::jsonb
+                    END
+                ) WITH ORDINALITY AS summaries(summary_text, summary_index)
+                GROUP BY retained_gap_id, summary_text
+            ),
+            merged_summaries AS (
+                SELECT
+                    retained_gap_id,
+                    jsonb_agg(
+                        summary_text
+                        ORDER BY first_gap_rank, first_summary_index, summary_text
+                    ) AS student_goal_summaries
+                FROM unique_summaries
+                GROUP BY retained_gap_id
+            ),
+            ranked_statuses AS (
+                SELECT DISTINCT ON (retained_gap_id)
+                    retained_gap_id,
+                    status
+                FROM ranked_gaps
+                ORDER BY
+                    retained_gap_id,
+                    CASE status
+                        WHEN 'closed' THEN 5
+                        WHEN 'resolved' THEN 4
+                        WHEN 'material_found' THEN 3
+                        WHEN 'material_searching' THEN 2
+                        WHEN 'open' THEN 1
+                        ELSE 0
+                    END DESC,
+                    coalesce(resolved_at, latest_triggered_at) DESC NULLS LAST,
+                    gap_id
+            ),
+            ranked_resolution AS (
+                SELECT DISTINCT ON (retained_gap_id)
+                    retained_gap_id,
+                    resolved_textbook_id,
+                    resolved_at
+                FROM ranked_gaps
+                WHERE
+                    status = 'resolved'
+                    OR resolved_textbook_id IS NOT NULL
+                    OR resolved_at IS NOT NULL
+                ORDER BY
+                    retained_gap_id,
+                    resolved_at DESC NULLS LAST,
+                    latest_triggered_at DESC NULLS LAST,
+                    gap_id
+            )
+            UPDATE knowledgegap
+            SET
+                trigger_count = merged_counts.trigger_count,
+                latest_triggered_at = merged_counts.latest_triggered_at,
+                student_goal_summaries = coalesce(
+                    merged_summaries.student_goal_summaries,
+                    '[]'::jsonb
+                ),
+                status = ranked_statuses.status,
+                resolved_textbook_id = coalesce(
+                    ranked_resolution.resolved_textbook_id,
+                    knowledgegap.resolved_textbook_id
+                ),
+                resolved_at = coalesce(
+                    ranked_resolution.resolved_at,
+                    knowledgegap.resolved_at
+                )
+            FROM merged_counts
+            LEFT JOIN merged_summaries
+                ON merged_summaries.retained_gap_id = merged_counts.retained_gap_id
+            JOIN ranked_statuses
+                ON ranked_statuses.retained_gap_id = merged_counts.retained_gap_id
+            LEFT JOIN ranked_resolution
+                ON ranked_resolution.retained_gap_id = merged_counts.retained_gap_id
+            WHERE knowledgegap.gap_id = merged_counts.retained_gap_id
+            """
+        )
+    )
+
+
+def _remove_duplicate_rows_for_unique_constraint(
+    connection: Any,
+    table_name: str,
+    constraint: UniqueConstraint,
+) -> None:
+    unique_columns = [column.name for column in constraint.columns]
+    primary_key_columns = [column.name for column in constraint.table.primary_key]
+    if not unique_columns or not primary_key_columns:
+        return
+
+    preparer = connection.dialect.identifier_preparer
+    quoted_table = preparer.quote(table_name)
+    partition_columns = ", ".join(preparer.quote(column) for column in unique_columns)
+    order_columns = ", ".join(preparer.quote(column) for column in primary_key_columns)
+    connection.execute(
+        text(
+            f"""
+            DELETE FROM {quoted_table}
+            WHERE ctid IN (
+                SELECT duplicate_ctid
+                FROM (
+                    SELECT
+                        ctid AS duplicate_ctid,
+                        row_number() OVER (
+                            PARTITION BY {partition_columns}
+                            ORDER BY {order_columns}, ctid
+                        ) AS duplicate_rank
+                    FROM {quoted_table}
+                ) duplicate_rows
+                WHERE duplicate_rank > 1
+            )
+            """
+        )
+    )
+
+
+def _recalculate_knowledge_gap_follow_counts(connection: Any) -> None:
+    inspector = inspect(connection)
+    if not inspector.has_table(KnowledgeGap.__tablename__) or not inspector.has_table(
+        KnowledgeGapFollow.__tablename__
+    ):
+        return
+
+    gap_columns = {
+        column["name"] for column in inspector.get_columns(KnowledgeGap.__tablename__)
+    }
+    follow_columns = {
+        column["name"]
+        for column in inspector.get_columns(KnowledgeGapFollow.__tablename__)
+    }
+    if "follow_count" not in gap_columns or "gap_id" not in follow_columns:
+        return
+
+    connection.execute(
+        text(
+            """
+            UPDATE knowledgegap
+            SET follow_count = (
+                SELECT count(*)
+                FROM knowledgegapfollow
+                WHERE knowledgegapfollow.gap_id = knowledgegap.gap_id
+            )
+            """
+        )
+    )
 
 
 def _drop_removed_agent_conversation_table(connection: Any) -> None:
@@ -307,3 +784,15 @@ def _legacy_key_topics(course_node: dict[str, Any]) -> list[str]:
         if isinstance(point, dict) and isinstance(point.get("title"), str):
             topics.append(point["title"])
     return topics
+
+
+def _upgrade_textbook_embedding_column(connection: Any) -> None:
+    inspector = inspect(connection)
+    if not inspector.has_table("textbook"):
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("textbook")}
+    if "embedding" in columns:
+        return
+
+    connection.execute(text("ALTER TABLE textbook ADD COLUMN embedding FLOAT[]"))
