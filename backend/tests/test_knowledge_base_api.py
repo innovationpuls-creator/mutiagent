@@ -27,13 +27,14 @@ from tests.fixtures.knowledge_base import (
     structured_textbook_payload,
     uncovered_topic_gap,
 )
+from tests.postgres import postgresql_test_url
 
 
 def make_client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setenv("ADMIN_USERNAME", "管理员")
     monkeypatch.setenv("ADMIN_IDENTIFIER", "admin-kb@example.com")
     monkeypatch.setenv("ADMIN_PASSWORD", "admin-password-123")
-    database_url = f"sqlite:///{tmp_path / 'knowledge-base-api.db'}"
+    database_url = postgresql_test_url(tmp_path, "knowledge-base-api")
     return TestClient(create_app(database_url=database_url))
 
 

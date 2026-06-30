@@ -14,12 +14,12 @@ from app.services.knowledge_base_service import (
     start_knowledge_base_ingestion_job,
 )
 from tests.fixtures.knowledge_base import enabled_source, textbook
+from tests.postgres import postgresql_test_url
 
 
 def _engine(tmp_path: Path):
     return create_engine(
-        f"sqlite:///{tmp_path / 'knowledge-base-ingestion-job.db'}",
-        connect_args={"check_same_thread": False},
+        postgresql_test_url(tmp_path, "knowledge-base-ingestion-job"),
     )
 
 

@@ -14,13 +14,13 @@ from app.services.knowledge_base_service import (
     publish_textbook,
     upsert_structured_textbook,
 )
+from tests.postgres import postgresql_test_url
 
 
 @pytest.fixture
 def db_session(tmp_path: Path):
     engine = create_engine(
-        f"sqlite:///{tmp_path / 'test_learning_path_intake_published_only.db'}",
-        connect_args={"check_same_thread": False},
+        postgresql_test_url(tmp_path, "test_learning_path_intake_published_only"),
     )
     run_schema_upgrades(engine)
     SQLModel.metadata.create_all(engine)
@@ -149,8 +149,7 @@ def test_learning_path_intake_ignores_unconfirmed_source_results(
     tmp_path: Path,
 ) -> None:
     engine = create_engine(
-        f"sqlite:///{tmp_path / 'published-only.db'}",
-        connect_args={"check_same_thread": False},
+        postgresql_test_url(tmp_path, "published-only"),
     )
     run_schema_upgrades(engine)
     SQLModel.metadata.create_all(engine)

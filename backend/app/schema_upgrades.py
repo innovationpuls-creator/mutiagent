@@ -80,9 +80,6 @@ def _create_knowledge_base_tables(connection: Any) -> None:
 
 
 def _ensure_knowledge_base_check_constraints(connection: Any) -> None:
-    if connection.dialect.name != "postgresql":
-        return
-
     inspector = inspect(connection)
     for model in _KNOWLEDGE_BASE_TABLE_MODELS:
         table = model.__table__
@@ -112,9 +109,6 @@ def _ensure_knowledge_base_check_constraints(connection: Any) -> None:
 
 
 def _normalize_knowledge_gap_notice_action_payloads(connection: Any) -> None:
-    if connection.dialect.name != "postgresql":
-        return
-
     inspector = inspect(connection)
     if not inspector.has_table(KnowledgeGapNotice.__tablename__):
         return
@@ -156,9 +150,6 @@ def _normalize_knowledge_gap_notice_action_payloads(connection: Any) -> None:
 
 
 def _ensure_knowledge_base_unique_constraints(connection: Any) -> None:
-    if connection.dialect.name != "postgresql":
-        return
-
     inspector = inspect(connection)
     for model in _KNOWLEDGE_BASE_TABLE_MODELS:
         table = model.__table__

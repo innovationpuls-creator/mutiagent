@@ -7,6 +7,7 @@ from sqlmodel import Session, create_engine, select
 
 from app.main import create_app
 from app.models import User, UserCourseKnowledgeOutline, UserYearLearningPath
+from tests.postgres import postgresql_test_url
 
 
 def _register(client: TestClient, identifier: str) -> tuple[str, str]:
@@ -231,7 +232,7 @@ def _outline(
 
 def test_branch_overview_requires_auth(tmp_path: Path) -> None:
     client = TestClient(
-        create_app(database_url=f"sqlite:///{tmp_path / 'branch-auth.db'}")
+        create_app(database_url=postgresql_test_url(tmp_path, "branch-auth"))
     )
 
     response = client.get("/api/branch/overview")
@@ -242,10 +243,10 @@ def test_branch_overview_requires_auth(tmp_path: Path) -> None:
 def test_branch_overview_returns_clickable_tabs_and_course_statuses(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'branch-overview.db'}"
+    database_url = postgresql_test_url(tmp_path, "branch-overview")
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-overview@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         user = session.exec(
@@ -342,10 +343,10 @@ def test_branch_overview_returns_clickable_tabs_and_course_statuses(
 def test_branch_overview_keeps_year_clickable_without_outline_content(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'branch-no-outline.db'}"
+    database_url = postgresql_test_url(tmp_path, "branch-no-outline")
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-no-outline@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         user = session.exec(
@@ -382,10 +383,10 @@ def test_branch_overview_keeps_year_clickable_without_outline_content(
 def test_branch_overview_falls_back_to_builtin_grade_name_when_grade_plan_name_is_blank(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'branch-fallback-grade-name.db'}"
+    database_url = postgresql_test_url(tmp_path, "branch-fallback-grade-name")
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-fallback-grade-name@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         user = session.exec(
@@ -417,10 +418,10 @@ def test_branch_overview_falls_back_to_builtin_grade_name_when_grade_plan_name_i
 def test_branch_overview_marks_complete_outline_payload_without_sections_as_outline_content(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'branch-empty-sections-outline.db'}"
+    database_url = postgresql_test_url(tmp_path, "branch-empty-sections-outline")
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-empty-sections-outline@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         user = session.exec(
@@ -466,10 +467,10 @@ def test_branch_overview_marks_complete_outline_payload_without_sections_as_outl
 def test_branch_overview_ignores_legacy_sections_only_outline_payload(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'branch-legacy-outline.db'}"
+    database_url = postgresql_test_url(tmp_path, "branch-legacy-outline")
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-legacy-outline@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         user = session.exec(
@@ -513,10 +514,10 @@ def test_branch_overview_ignores_legacy_sections_only_outline_payload(
 def test_branch_overview_marks_last_course_as_completed_when_current_progress_is_completed(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'branch-completed-last.db'}"
+    database_url = postgresql_test_url(tmp_path, "branch-completed-last")
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-completed-last@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         user = session.exec(
@@ -566,10 +567,10 @@ def test_branch_overview_marks_last_course_as_completed_when_current_progress_is
 def test_branch_overview_reads_current_learning_courses_when_legacy_field_is_missing(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'branch-current-learning-courses.db'}"
+    database_url = postgresql_test_url(tmp_path, "branch-current-learning-courses")
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-current-learning-courses@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         user = session.exec(
@@ -607,10 +608,10 @@ def test_branch_overview_reads_current_learning_courses_when_legacy_field_is_mis
 
 
 def test_branch_overview_expands_single_multi_grade_path_row(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'branch-expanded.db'}"
+    database_url = postgresql_test_url(tmp_path, "branch-expanded")
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "branch-expanded@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         user = session.exec(

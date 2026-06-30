@@ -14,13 +14,14 @@ from app.models import (
     UserYearLearningPath,
 )
 from app.services.forest_service import generate_or_read_quiz
+from tests.postgres import postgresql_test_url
 
 
 def make_client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setenv("ADMIN_USERNAME", "admin")
     monkeypatch.setenv("ADMIN_IDENTIFIER", "13297540721")
     monkeypatch.setenv("ADMIN_PASSWORD", "123456")
-    database_url = f"sqlite:///{tmp_path / 'admin-test.db'}"
+    database_url = postgresql_test_url(tmp_path, "admin-test")
     return TestClient(create_app(database_url=database_url))
 
 
@@ -242,8 +243,8 @@ def test_admin_batch_delete_removes_forest_rows(tmp_path: Path, monkeypatch) -> 
             "class_name": "一班",
         },
     ).json()
-    database_url = f"sqlite:///{tmp_path / 'admin-test.db'}"
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    database_url = postgresql_test_url(tmp_path, "admin-test")
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         session.add(

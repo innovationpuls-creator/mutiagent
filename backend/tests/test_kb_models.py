@@ -5,13 +5,13 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from app.models import Textbook, TextbookSectionContent
 from app.schema_upgrades import run_schema_upgrades
+from tests.postgres import postgresql_test_url
 
 
 @pytest.fixture
 def db_session(tmp_path):
     engine = create_engine(
-        f"sqlite:///{tmp_path / 'test_kb_models.db'}",
-        connect_args={"check_same_thread": False},
+        postgresql_test_url(tmp_path, "test_kb_models"),
     )
     run_schema_upgrades(engine)
     SQLModel.metadata.create_all(engine)

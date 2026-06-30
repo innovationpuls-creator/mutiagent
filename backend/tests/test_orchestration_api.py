@@ -1,3 +1,7 @@
+"""Orchestration API integration tests."""
+
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import json
@@ -29,6 +33,8 @@ from app.orchestration.rule_engine import (
     parse_leaf_regeneration_pending_marker,
     parse_leaf_resource_generation_request,
 )
+from tests.fixtures.knowledge_base import enabled_source, published_textbook, section
+from tests.postgres import postgresql_test_url
 
 ORIGINAL_APPEND_MESSAGES = conversation_session_service.append_messages
 
@@ -80,11 +86,23 @@ def _basic_profile() -> dict:
     }
 
 
+def _source_outline_section_ids_for_course_id(course_id: str) -> list[str]:
+    source_index = course_id.rsplit("_", 1)[-1]
+    return [f"{source_index}.1", f"{source_index}.2"]
+
+
 def _course_node(course_id: str, theme: str, *, grade_id: str = "year_3") -> dict:
+    source_index = course_id.rsplit("_", 1)[-1]
     return {
         "course_node_id": course_id,
         "grade_id": grade_id,
         "course_or_chapter_theme": theme,
+        "source_textbook_id": f"textbook-{grade_id}-{source_index}",
+        "source_textbook_title": f"{theme}教材",
+        "source_outline_section_ids": _source_outline_section_ids_for_course_id(
+            course_id
+        ),
+        "course_stage_plan": ["概念导入", "项目实践", "复盘验收"],
         "time_arrangement": {
             "semester_scope": "上学期",
             "duration": "6 周",
@@ -160,6 +178,58 @@ def _year_3_path() -> dict:
             "next_action": "继续学习第一章",
         },
     }
+
+
+def _iter_path_course_nodes(path_data: dict) -> list[dict]:
+    grade_plans = path_data.get("grade_plans")
+    if not isinstance(grade_plans, dict):
+        return []
+
+    courses: list[dict] = []
+    for grade_plan in grade_plans.values():
+        if not isinstance(grade_plan, dict):
+            continue
+        course_nodes = grade_plan.get("course_nodes")
+        if not isinstance(course_nodes, list):
+            continue
+        courses.extend(course for course in course_nodes if isinstance(course, dict))
+    return courses
+
+
+def _seed_path_textbooks(session: Session, path_data: dict) -> None:
+    session.merge(enabled_source())
+    for course in _iter_path_course_nodes(path_data):
+        textbook_id = str(course.get("source_textbook_id", "")).strip()
+        title = str(course.get("source_textbook_title", "")).strip()
+        source_section_ids = [
+            str(section_id).strip()
+            for section_id in course.get("source_outline_section_ids", [])
+            if str(section_id).strip()
+        ]
+        if not textbook_id or not title or not source_section_ids:
+            continue
+
+        textbook = published_textbook(textbook_id=textbook_id, title=title)
+        textbook.description = f"覆盖{title}、AI、AI 应用开发、完成 AI 功能模块"
+        textbook.tags = ["AI", "AI 应用开发", "完成 AI 功能模块", title]
+        textbook.outline = {
+            "sections": [
+                {"section_id": section_id, "title": f"{title} {section_id}"}
+                for section_id in source_section_ids
+            ]
+        }
+        session.merge(textbook)
+        for index, section_id in enumerate(source_section_ids, start=1):
+            session.merge(
+                section(
+                    textbook_id=textbook_id,
+                    section_content_id=f"{textbook_id}-{section_id}".replace(" ", "-"),
+                    section_id=section_id,
+                    title=f"{title} {section_id}",
+                    content_zh=f"{title} {section_id} 的中文正文。",
+                    order_index=index,
+                )
+            )
 
 
 def _all_years_path() -> dict:
@@ -376,83 +446,130 @@ def _course_outline() -> dict:
 
 
 def _year_course_outline_result(course_ids: list[str]) -> SimpleNamespace:
+    def sourced_section(
+        section: dict, title_prefix: str, source_section_ids: list[str]
+    ) -> dict:
+        source_index = (int(section["order_index"]) - 1) % len(source_section_ids)
+        source_section_id = source_section_ids[source_index]
+        return {
+            **section,
+            "source_textbook_id": f"textbook-{title_prefix}",
+            "source_textbook_title": f"{title_prefix}教材",
+            "source_section_ids": [source_section_id],
+            "source_section_titles": [f"{title_prefix} {source_section_id}"],
+            "source_content_chars": 1200,
+        }
+
     def outline(course_id: str, title_prefix: str) -> dict:
+        source_section_ids = _source_outline_section_ids_for_course_id(course_id)
         return {
             "course_id": course_id,
             "personalization_summary": f"{title_prefix} 按全年课程顺序生成。",
             "sections": [
-                {
-                    "section_id": "1",
-                    "parent_section_id": None,
-                    "depth": 1,
-                    "title": f"{title_prefix} 架构导入",
-                    "order_index": 1,
-                    "description": "确认课程目标与输入输出。",
-                    "key_knowledge_points": ["目标边界", "输入输出"],
-                },
-                {
-                    "section_id": "1.1",
-                    "parent_section_id": "1",
-                    "depth": 2,
-                    "title": "目标确认",
-                    "order_index": 2,
-                    "description": "确认学习目标和交付物。",
-                    "key_knowledge_points": ["学习目标", "交付物"],
-                },
-                {
-                    "section_id": "1.2",
-                    "parent_section_id": "1",
-                    "depth": 2,
-                    "title": "验收设计",
-                    "order_index": 3,
-                    "description": "设计可验证的完成标准。",
-                    "key_knowledge_points": ["验收标准", "运行证据"],
-                },
-                {
-                    "section_id": "1.3",
-                    "parent_section_id": "1",
-                    "depth": 2,
-                    "title": "系统架构",
-                    "order_index": 4,
-                    "description": "设计系统高层架构。",
-                    "key_knowledge_points": ["系统组件", "数据流"],
-                },
-                {
-                    "section_id": "2",
-                    "parent_section_id": None,
-                    "depth": 1,
-                    "title": f"{title_prefix} 实战闭环",
-                    "order_index": 5,
-                    "description": "完成最小项目闭环。",
-                    "key_knowledge_points": ["实现闭环", "复盘"],
-                },
-                {
-                    "section_id": "2.1",
-                    "parent_section_id": "2",
-                    "depth": 2,
-                    "title": "核心实现",
-                    "order_index": 6,
-                    "description": "完成核心功能实现。",
-                    "key_knowledge_points": ["核心功能", "接口联调"],
-                },
-                {
-                    "section_id": "2.2",
-                    "parent_section_id": "2",
-                    "depth": 2,
-                    "title": "结果复盘",
-                    "order_index": 7,
-                    "description": "整理运行证据并衔接下一门课。",
-                    "key_knowledge_points": ["运行证据", "课程衔接"],
-                },
-                {
-                    "section_id": "2.3",
-                    "parent_section_id": "2",
-                    "depth": 2,
-                    "title": "质量验证",
-                    "order_index": 8,
-                    "description": "对实战项目进行质量验证。",
-                    "key_knowledge_points": ["验证方案", "错误修复"],
-                },
+                sourced_section(
+                    {
+                        "section_id": "1",
+                        "parent_section_id": None,
+                        "depth": 1,
+                        "title": f"{title_prefix} 架构导入",
+                        "order_index": 1,
+                        "description": "确认课程目标与输入输出。",
+                        "key_knowledge_points": ["目标边界", "输入输出"],
+                    },
+                    title_prefix,
+                    source_section_ids,
+                ),
+                sourced_section(
+                    {
+                        "section_id": "1.1",
+                        "parent_section_id": "1",
+                        "depth": 2,
+                        "title": "目标确认",
+                        "order_index": 2,
+                        "description": "确认学习目标和交付物。",
+                        "key_knowledge_points": ["学习目标", "交付物"],
+                    },
+                    title_prefix,
+                    source_section_ids,
+                ),
+                sourced_section(
+                    {
+                        "section_id": "1.2",
+                        "parent_section_id": "1",
+                        "depth": 2,
+                        "title": "验收设计",
+                        "order_index": 3,
+                        "description": "设计可验证的完成标准。",
+                        "key_knowledge_points": ["验收标准", "运行证据"],
+                    },
+                    title_prefix,
+                    source_section_ids,
+                ),
+                sourced_section(
+                    {
+                        "section_id": "1.3",
+                        "parent_section_id": "1",
+                        "depth": 2,
+                        "title": "系统架构",
+                        "order_index": 4,
+                        "description": "设计系统高层架构。",
+                        "key_knowledge_points": ["系统组件", "数据流"],
+                    },
+                    title_prefix,
+                    source_section_ids,
+                ),
+                sourced_section(
+                    {
+                        "section_id": "2",
+                        "parent_section_id": None,
+                        "depth": 1,
+                        "title": f"{title_prefix} 实战闭环",
+                        "order_index": 5,
+                        "description": "完成最小项目闭环。",
+                        "key_knowledge_points": ["实现闭环", "复盘"],
+                    },
+                    title_prefix,
+                    source_section_ids,
+                ),
+                sourced_section(
+                    {
+                        "section_id": "2.1",
+                        "parent_section_id": "2",
+                        "depth": 2,
+                        "title": "核心实现",
+                        "order_index": 6,
+                        "description": "完成核心功能实现。",
+                        "key_knowledge_points": ["核心功能", "接口联调"],
+                    },
+                    title_prefix,
+                    source_section_ids,
+                ),
+                sourced_section(
+                    {
+                        "section_id": "2.2",
+                        "parent_section_id": "2",
+                        "depth": 2,
+                        "title": "结果复盘",
+                        "order_index": 7,
+                        "description": "整理运行证据并衔接下一门课。",
+                        "key_knowledge_points": ["运行证据", "课程衔接"],
+                    },
+                    title_prefix,
+                    source_section_ids,
+                ),
+                sourced_section(
+                    {
+                        "section_id": "2.3",
+                        "parent_section_id": "2",
+                        "depth": 2,
+                        "title": "质量验证",
+                        "order_index": 8,
+                        "description": "对实战项目进行质量验证。",
+                        "key_knowledge_points": ["验证方案", "错误修复"],
+                    },
+                    title_prefix,
+                    source_section_ids,
+                ),
             ],
             "learning_sequence": ["1", "2"],
             "total_estimated_hours": "16 小时",
@@ -577,7 +694,7 @@ def _seed_existing_learning_data(database_url: str, identifier: str) -> None:
 
 @contextmanager
 def chat_app(tmp_path: Path):
-    database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+    database_url = postgresql_test_url(tmp_path, "chat-test")
     app = create_app(database_url=database_url)
     with TestClient(app) as client:
         yield client
@@ -663,7 +780,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "brief-profile-repeat@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         first_collecting_profile = {
@@ -822,7 +939,7 @@ class TestChatEndpoints:
 
                     conversation_row = session.get(ConversationSession, session_id)
                     assert conversation_row is not None
-                    assert len(conversation_row.messages) == 5
+                    assert len(conversation_row.messages) == 4
 
         graph_module._graph = None
 
@@ -855,7 +972,7 @@ class TestChatEndpoints:
             assert "session_started" in response.text
             assert "session_completed" in response.text
 
-            engine = build_engine(f"sqlite:///{tmp_path / 'chat-test.db'}")
+            engine = build_engine(postgresql_test_url(tmp_path, "chat-test"))
             with Session(engine) as session:
                 row = session.get(ConversationSession, session_id)
                 assert row is not None
@@ -976,7 +1093,7 @@ class TestChatEndpoints:
             assert "UnboundLocalError" not in response.text
             assert mock_load_owned_session.call_count == 2
 
-            engine = build_engine(f"sqlite:///{tmp_path / 'chat-test.db'}")
+            engine = build_engine(postgresql_test_url(tmp_path, "chat-test"))
             with Session(engine) as session:
                 row = session.get(ConversationSession, session_id)
                 assert row is not None
@@ -1016,7 +1133,7 @@ class TestChatEndpoints:
             assert "event: error" in response.text
             assert "message_completed" not in response.text
 
-            engine = build_engine(f"sqlite:///{tmp_path / 'chat-test.db'}")
+            engine = build_engine(postgresql_test_url(tmp_path, "chat-test"))
             with Session(engine) as session:
                 row = session.get(ConversationSession, session_id)
                 assert row is not None
@@ -1054,7 +1171,7 @@ class TestChatEndpoints:
             assert "编排流异常中断" in response.text
             assert "message_completed" not in response.text
 
-            engine = build_engine(f"sqlite:///{tmp_path / 'chat-test.db'}")
+            engine = build_engine(postgresql_test_url(tmp_path, "chat-test"))
             with Session(engine) as session:
                 row = session.get(ConversationSession, session_id)
                 assert row is not None
@@ -1115,7 +1232,7 @@ class TestChatEndpoints:
             assert len(appended_batches[0]) == 2
             assert len(appended_batches[1]) == 1
 
-            engine = build_engine(f"sqlite:///{tmp_path / 'chat-test.db'}")
+            engine = build_engine(postgresql_test_url(tmp_path, "chat-test"))
             with Session(engine) as session:
                 row = session.get(ConversationSession, session_id)
                 assert row is not None
@@ -1129,7 +1246,7 @@ class TestChatEndpoints:
     ) -> None:
         mock_stream.side_effect = AssertionError("已有课程大纲应直接从数据库返回")
         identifier = "outline-direct@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "outline123456")
@@ -1185,7 +1302,7 @@ class TestChatEndpoints:
 
         mock_stream.side_effect = regenerated_events
         identifier = "outline-regenerate@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "outline123456")
@@ -1213,7 +1330,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "outline-current-course@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
         captured: dict[str, object] = {"queries": []}
 
@@ -1278,6 +1395,7 @@ class TestChatEndpoints:
                     user = session.exec(
                         select(User).where(User.identifier == identifier)
                     ).one()
+                    year_path = _year_3_path()
                     session.add(
                         UserProfile(
                             user_uid=user.uid,
@@ -1290,9 +1408,10 @@ class TestChatEndpoints:
                             user_uid=user.uid,
                             grade_year="year_3",
                             learning_topic="AI 应用开发",
-                            path_data=_year_3_path(),
+                            path_data=year_path,
                         )
                     )
+                    _seed_path_textbooks(session, year_path)
                     session.commit()
 
                 start_resp = client.post(
@@ -1352,7 +1471,7 @@ class TestChatEndpoints:
     ) -> None:
         mock_stream.side_effect = AssertionError("已有课程大纲细节应直接从数据库返回")
         identifier = "outline-detail@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "outline123456")
@@ -1421,7 +1540,7 @@ class TestChatEndpoints:
             "已有课程大纲时下一步提示应直接由当前课程状态生成"
         )
         identifier = "outline-next-step@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "outline123456")
@@ -1451,7 +1570,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "resource-chat@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         async def resource_events(state):
             course_knowledge = dict(state["course_knowledge"])
@@ -1562,7 +1681,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "leaf-stream@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         captured = {}
         thinking_worker_llm = object()
         search_llm = object()
@@ -1651,7 +1770,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "leaf-stream-error@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         async def leaf_events(
             _state,
@@ -1722,7 +1841,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "leaf-non-current@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with patch(
             "app.orchestration.agents.course_resources.stream_chapter_resource_generation",
@@ -1754,7 +1873,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "leaf-non-first@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with patch(
             "app.orchestration.agents.course_resources.stream_chapter_resource_generation",
@@ -1786,7 +1905,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "leaf-next-after-quiz@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         captured = {}
 
         async def leaf_events(
@@ -1865,7 +1984,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "leaf-regen@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         captured = {}
 
         async def leaf_events(
@@ -1972,7 +2091,7 @@ class TestChatEndpoints:
     ) -> None:
         mock_stream.side_effect = AssertionError("已有课程大纲应直接从数据库返回")
         identifier = "outline-persist@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         appended_batches: list[list[dict]] = []
 
         def flaky_append_messages(session, session_id, new_messages):
@@ -2024,7 +2143,7 @@ class TestChatEndpoints:
             "开始第一门课时已有当前课程大纲应直接从数据库返回"
         )
         identifier = "outline-start-direct@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "outline123456")
@@ -2067,7 +2186,7 @@ class TestChatEndpoints:
     ) -> None:
         mock_stream.side_effect = AssertionError("已有学习路径应直接从数据库返回")
         identifier = "path-direct@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "path123456")
@@ -2103,7 +2222,7 @@ class TestChatEndpoints:
     ) -> None:
         mock_stream.side_effect = AssertionError("回顾学习路径短语应直接从数据库返回")
         identifier = "path-shortcut@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "path123456")
@@ -2136,7 +2255,7 @@ class TestChatEndpoints:
     ) -> None:
         mock_stream.side_effect = AssertionError("我的学习路径应直接从数据库返回")
         identifier = "path-my-question@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "path123456")
@@ -2171,7 +2290,7 @@ class TestChatEndpoints:
             "我现在的学习路径是什么应直接从数据库返回"
         )
         identifier = "path-current-question@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "path123456")
@@ -2204,7 +2323,7 @@ class TestChatEndpoints:
     ) -> None:
         mock_stream.side_effect = AssertionError("回顾学习路径短语应直接从数据库返回")
         identifier = "path-multi-year-shortcut@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "path123456")
@@ -2273,7 +2392,7 @@ class TestChatEndpoints:
 
         mock_stream.side_effect = mock_events
         identifier = "path-generic-look-first@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "path123456")
@@ -2306,7 +2425,7 @@ class TestChatEndpoints:
     ) -> None:
         mock_stream.side_effect = AssertionError("回顾学习路径短语应直接从数据库返回")
         identifier = "path-collecting@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "path123456")
@@ -2381,7 +2500,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "session-current-outline@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "current123456")
@@ -2432,7 +2551,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "session-no-outline-fallback@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "current123456")
@@ -2524,7 +2643,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "session-latest-path@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
 
         with chat_app(tmp_path) as client:
             token = _register_user(client, identifier, "latest123456")
@@ -2635,7 +2754,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "completed-course@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -2738,7 +2857,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "profile-update-direct@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -2810,7 +2929,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "profile-update-direct-punctuated@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -2882,7 +3001,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "profile-completion-direct@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -2943,7 +3062,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "profile-question-alignment-direct@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -3009,7 +3128,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "profile-update-no-change-followup@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -3092,7 +3211,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "unsupported-postgraduate-grade@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -3183,7 +3302,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "profile-update-existing-path@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -3295,7 +3414,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "profile-update-single-field@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -3400,7 +3519,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "completed-followup@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -3503,6 +3622,7 @@ class TestChatEndpoints:
                             path_data=year_path,
                         )
                     )
+                    _seed_path_textbooks(session, year_path)
                     session.add(
                         UserCourseKnowledgeOutline(
                             user_uid=user.uid,
@@ -3606,7 +3726,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "completed-unsupported-followup@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -3675,6 +3795,7 @@ class TestChatEndpoints:
                             path_data=year_path,
                         )
                     )
+                    _seed_path_textbooks(session, year_path)
                     session.add(
                         UserCourseKnowledgeOutline(
                             user_uid=user.uid,
@@ -3786,7 +3907,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "completed-next-step@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -3896,7 +4017,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "completed-major-followup@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -4003,6 +4124,7 @@ class TestChatEndpoints:
                             path_data=year_path,
                         )
                     )
+                    _seed_path_textbooks(session, year_path)
                     session.add(
                         UserCourseKnowledgeOutline(
                             user_uid=user.uid,
@@ -4056,7 +4178,7 @@ class TestChatEndpoints:
 
                 assert confirm_response.status_code == 200
                 assert "学习路径已生成" in confirm_response.text
-                assert "AI 应用开发工程化服务编排与部署监控" in confirm_response.text
+                assert "AI 应用开发实践任务" in confirm_response.text
                 assert "learning_path_agent" in confirm_response.text
 
                 with Session(engine) as session:
@@ -4097,7 +4219,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "completed-generic-path-followup@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -4166,6 +4288,7 @@ class TestChatEndpoints:
                             path_data=year_path,
                         )
                     )
+                    _seed_path_textbooks(session, year_path)
                     session.add(
                         UserCourseKnowledgeOutline(
                             user_uid=user.uid,
@@ -4216,7 +4339,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "completed-generic-path-followup-punctuated@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -4285,6 +4408,7 @@ class TestChatEndpoints:
                             path_data=year_path,
                         )
                     )
+                    _seed_path_textbooks(session, year_path)
                     session.add(
                         UserCourseKnowledgeOutline(
                             user_uid=user.uid,
@@ -4335,7 +4459,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "completed-pause-followup@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -4436,7 +4560,7 @@ class TestChatEndpoints:
         self, tmp_path: Path
     ) -> None:
         identifier = "completed-multi-field-followup@example.com"
-        database_url = f"sqlite:///{tmp_path / 'chat-test.db'}"
+        database_url = postgresql_test_url(tmp_path, "chat-test")
         graph_module._graph = None
 
         class GuardSupervisorLlm:
@@ -4550,6 +4674,7 @@ class TestChatEndpoints:
                             path_data=year_path,
                         )
                     )
+                    _seed_path_textbooks(session, year_path)
                     session.add(
                         UserCourseKnowledgeOutline(
                             user_uid=user.uid,
@@ -4606,7 +4731,7 @@ class TestChatEndpoints:
 
                 assert confirm_response.status_code == 200
                 assert "学习路径已生成" in confirm_response.text
-                assert "AI 应用开发工程化服务编排与部署监控" in confirm_response.text
+                assert "AI 应用开发实践任务" in confirm_response.text
                 assert "learning_path_agent" in confirm_response.text
 
                 with Session(engine) as session:
@@ -4693,7 +4818,7 @@ def test_stream_chat_events_injects_weaknesses(tmp_path: Path) -> None:
     from app.api.orchestration import _stream_chat_events
     from app.models import ChapterWeakness
 
-    database_url = f"sqlite:///{tmp_path / 'weakness-inject-test.db'}"
+    database_url = postgresql_test_url(tmp_path, "weakness-inject-test")
     engine = build_engine(database_url)
     SQLModel.metadata.create_all(engine)
 
@@ -4827,7 +4952,7 @@ def test_persist_outline_consumes_weaknesses(tmp_path: Path) -> None:
     from app.models import ChapterWeakness
     from app.orchestration.agents.course_resources import _persist_outline
 
-    database_url = f"sqlite:///{tmp_path / 'weakness-consume-test.db'}"
+    database_url = postgresql_test_url(tmp_path, "weakness-consume-test")
     engine = build_engine(database_url)
     SQLModel.metadata.create_all(engine)
 
@@ -4879,7 +5004,8 @@ def test_persist_outline_consumes_weaknesses(tmp_path: Path) -> None:
         session.commit()
 
     with patch(
-        "app.orchestration.agents.course_resources.get_engine", return_value=engine
+        "app.orchestration.agents.course_resources.common.get_engine",
+        return_value=engine,
     ):
         outline_data = {
             "course_id": "year_3_course_1",

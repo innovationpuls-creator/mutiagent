@@ -13,12 +13,12 @@ from app.orchestration.agents.learning_path_intake import (
     get_published_textbook_context_for_topic,
 )
 from app.schema_upgrades import run_schema_upgrades
+from tests.postgres import postgresql_test_url
 
 
 def _engine(tmp_path: Path):
     return create_engine(
-        f"sqlite:///{tmp_path / 'rag-knowledge-base-e2e.db'}",
-        connect_args={"check_same_thread": False},
+        postgresql_test_url(tmp_path, "rag-knowledge-base-e2e"),
     )
 
 

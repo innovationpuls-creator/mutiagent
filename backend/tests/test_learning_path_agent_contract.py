@@ -1,13 +1,21 @@
+"""Contract tests for the learning path agent."""
+
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
 
+import pytest
 from sqlmodel import Session
 
 from app.database import build_engine, init_db, set_engine
 from app.models import UserYearLearningPath
 from app.orchestration.agents.learning_path import (
+    _build_analysis_input,
+    _build_learning_path_from_plan,
+    _build_local_learning_path,
     _grade_year_from_profile,
     _topic_from_profile,
     _validate_learning_path_contract,
@@ -17,6 +25,7 @@ from app.orchestration.agents.learning_path import (
 from app.orchestration.agents.models import LearningPathPlanOutput
 from app.orchestration.agents.prompts import LEARNING_PATH_AGENT_SYSTEM_PROMPT
 from app.services.learning_path_service import upsert_year_learning_path
+from tests.postgres import postgresql_test_url
 
 
 def _complete_profile(
@@ -76,7 +85,17 @@ def _confirmed_intake(
         "grade_name": grade_name,
         "learning_topic": learning_topic,
         "courses": [
-            {"title": title, "purpose": f"完成 {title} 的关键训练"} for title in titles
+            {
+                "title": title,
+                "purpose": f"完成 {title} 的关键训练",
+                "source_textbook_id": f"textbook-{index}",
+                "source_textbook_title": f"{learning_topic}教材 {index}",
+                "source_outline_section_ids": [
+                    f"textbook-{index}-section-1",
+                    f"textbook-{index}-section-2",
+                ],
+            }
+            for index, title in enumerate(titles, start=1)
         ],
         "recommendation_reasons": [f"目标是学习{learning_topic}"],
         "user_modification_summary": "",
@@ -533,15 +552,132 @@ def test_validate_learning_path_contract_rejects_grade_with_less_than_three_cour
 
     result = _validate_learning_path_contract(payload)
 
-    assert result == "当前学年课程数量必须在 4 到 10 门之间。"
+    assert result == "当前学年课程数量必须在 4 到 8 门之间。"
 
 
 def test_learning_path_prompt_mentions_json_output() -> None:
     assert "json" in LEARNING_PATH_AGENT_SYSTEM_PROMPT.lower()
     assert "先分析" in LEARNING_PATH_AGENT_SYSTEM_PROMPT
     assert "course_specs" in LEARNING_PATH_AGENT_SYSTEM_PROMPT
-    assert "4-10 门课程" in LEARNING_PATH_AGENT_SYSTEM_PROMPT
+    assert "4-8 门课程" in LEARNING_PATH_AGENT_SYSTEM_PROMPT
     assert "必须且只能输出 3 门课程" not in LEARNING_PATH_AGENT_SYSTEM_PROMPT
+
+
+def test_build_learning_path_from_plan_preserves_confirmed_course_source_binding() -> (
+    None
+):
+    intake = _confirmed_intake(
+        learning_topic="AI 应用开发",
+        course_titles=AI_COURSE_TITLES,
+    )
+    plan_data = _llm_learning_path_plan_payload(
+        [
+            "模型返回标题 1",
+            "模型返回标题 2",
+            "模型返回标题 3",
+            "模型返回标题 4",
+        ]
+    )
+
+    path = _build_learning_path_from_plan(
+        _complete_profile(),
+        grade_year="year_3",
+        learning_topic="AI 应用开发",
+        plan_data=plan_data,
+        intake_courses=intake["courses"],
+    )
+
+    course_nodes = path["grade_plans"]["year_3"]["course_nodes"]
+    for index, course_node in enumerate(course_nodes):
+        intake_course = intake["courses"][index]
+        assert course_node["course_or_chapter_theme"] == intake_course["title"]
+        assert course_node["source_textbook_id"] == intake_course["source_textbook_id"]
+        assert (
+            course_node["source_textbook_title"]
+            == intake_course["source_textbook_title"]
+        )
+        assert (
+            course_node["source_outline_section_ids"]
+            == intake_course["source_outline_section_ids"]
+        )
+        assert (
+            course_node["course_stage_plan"]
+            == plan_data["course_specs"][index]["stage_titles"]
+        )
+
+
+def test_build_learning_path_from_full_path_uses_intake_source_binding() -> None:
+    intake = _confirmed_intake(
+        learning_topic="AI 应用开发",
+        course_titles=AI_COURSE_TITLES,
+    )
+    plan_data = _single_year_learning_path_payload(
+        "year_3",
+        "大三",
+        "完成 AI 项目闭环",
+        [
+            "模型返回标题 1",
+            "模型返回标题 2",
+            "模型返回标题 3",
+            "模型返回标题 4",
+        ],
+    )
+    for index, course_node in enumerate(
+        plan_data["grade_plans"]["year_3"]["course_nodes"],
+        start=1,
+    ):
+        course_node["source_textbook_id"] = f"model-textbook-{index}"
+        course_node["source_textbook_title"] = f"模型教材 {index}"
+        course_node["source_outline_section_ids"] = [f"model-section-{index}"]
+        course_node["course_stage_plan"] = [f"模型阶段 {index}"]
+
+    path = _build_learning_path_from_plan(
+        _complete_profile(),
+        grade_year="year_3",
+        learning_topic="AI 应用开发",
+        plan_data=plan_data,
+        intake_courses=intake["courses"],
+    )
+
+    course_nodes = path["grade_plans"]["year_3"]["course_nodes"]
+    for index, course_node in enumerate(course_nodes):
+        intake_course = intake["courses"][index]
+        assert course_node["course_or_chapter_theme"] == intake_course["title"]
+        assert course_node["source_textbook_id"] == intake_course["source_textbook_id"]
+        assert (
+            course_node["source_textbook_title"]
+            == intake_course["source_textbook_title"]
+        )
+        assert (
+            course_node["source_outline_section_ids"]
+            == intake_course["source_outline_section_ids"]
+        )
+
+
+def test_build_analysis_input_forbids_replacing_confirmed_textbook_sources() -> None:
+    query = _build_analysis_input(
+        _complete_profile(),
+        "year_3",
+        "AI 应用开发",
+        "",
+        [],
+        _confirmed_intake(
+            learning_topic="AI 应用开发",
+            course_titles=AI_COURSE_TITLES,
+        ),
+    )
+
+    assert "课程标题和来源绑定必须来自已确认课程草案" in query
+    assert "模型不得替换教材来源" in query
+
+
+def test_build_local_learning_path_rejects_unbound_fallback_generation() -> None:
+    with pytest.raises(ValueError, match="已确认课程草案"):
+        _build_local_learning_path(
+            _complete_profile(),
+            grade_year="year_3",
+            learning_topic="AI 应用开发",
+        )
 
 
 def test_run_learning_path_agent_uses_structured_llm_for_default_query(
@@ -571,7 +707,7 @@ def test_run_learning_path_agent_uses_structured_llm_for_default_query(
             return RecordingChain()
 
     captured: dict[str, object] = {}
-    engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-thinking.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "learning-path-thinking"))
     set_engine(engine)
     init_db(engine)
 
@@ -642,7 +778,7 @@ def test_run_learning_path_agent_accepts_missing_desired_outcome_in_structured_p
 
     captured: dict[str, object] = {}
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'learning-path-missing-desired-outcome.db'}"
+        postgresql_test_url(tmp_path, "learning-path-missing-desired-outcome")
     )
     set_engine(engine)
     init_db(engine)
@@ -703,7 +839,7 @@ def test_run_learning_path_agent_rejects_incomplete_basic_profile(
     tmp_path: Path,
 ) -> None:
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'learning-path-incomplete-profile.db'}"
+        postgresql_test_url(tmp_path, "learning-path-incomplete-profile")
     )
     set_engine(engine)
     init_db(engine)
@@ -727,7 +863,7 @@ def test_run_learning_path_agent_rejects_unsupported_postgraduate_grade(
     tmp_path: Path,
 ) -> None:
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'learning-path-unsupported-grade.db'}"
+        postgresql_test_url(tmp_path, "learning-path-unsupported-grade")
     )
     set_engine(engine)
     init_db(engine)
@@ -764,7 +900,7 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_setup_fails(
         def with_structured_output(self, *_args, **_kwargs):
             raise AssertionError("fallback should not call structured llm successfully")
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-fallback.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "learning-path-fallback"))
     set_engine(engine)
     init_db(engine)
 
@@ -852,7 +988,7 @@ def test_run_learning_path_agent_returns_error_when_contract_validation_fails(
 
     captured: dict[str, object] = {}
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'learning-path-two-course-fallback.db'}"
+        postgresql_test_url(tmp_path, "learning-path-two-course-fallback")
     )
     set_engine(engine)
     init_db(engine)
@@ -931,7 +1067,7 @@ def test_run_learning_path_agent_navigation_path_uses_user_topic_and_keeps_unkno
 
     captured: dict[str, object] = {}
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-vibecoding.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "learning-path-vibecoding"))
     set_engine(engine)
     init_db(engine)
 
@@ -1028,7 +1164,9 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_times_out(
             return SlowChain()
 
     captured: dict[str, object] = {}
-    engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-timeout-fallback.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "learning-path-timeout-fallback")
+    )
     set_engine(engine)
     init_db(engine)
 
@@ -1089,7 +1227,7 @@ def test_run_learning_path_agent_requires_confirmed_intake_for_navigation_query(
                 "learning path should require confirmed intake before LLM"
             )
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-navigation.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "learning-path-navigation"))
     set_engine(engine)
     init_db(engine)
 
@@ -1159,7 +1297,9 @@ def test_run_learning_path_agent_refresh_query_uses_existing_progress_for_llm_an
             return RecordingChain()
 
     captured: dict[str, object] = {}
-    engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-refresh-progress.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "learning-path-refresh-progress")
+    )
     set_engine(engine)
     init_db(engine)
 
@@ -1284,7 +1424,7 @@ def test_run_learning_path_agent_new_grade_generation_includes_previous_year_pro
 
     captured: dict[str, object] = {}
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'learning-path-cross-grade-progress.db'}"
+        postgresql_test_url(tmp_path, "learning-path-cross-grade-progress")
     )
     set_engine(engine)
     init_db(engine)
@@ -1396,7 +1536,9 @@ def test_run_learning_path_agent_refresh_query_returns_error_when_structured_llm
         def with_structured_output(self, *_args, **_kwargs):
             raise AssertionError("fallback should not call structured llm successfully")
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-fallback-refresh.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "learning-path-fallback-refresh")
+    )
     set_engine(engine)
     init_db(engine)
 
@@ -1472,7 +1614,7 @@ def test_learning_path_agent_node_updates_year_learning_paths_state(
         def with_structured_output(self, *_args, **_kwargs):
             raise AssertionError("fallback should not call structured llm successfully")
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'learning-path-node.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "learning-path-node"))
     set_engine(engine)
     init_db(engine)
 

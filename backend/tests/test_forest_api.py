@@ -21,12 +21,13 @@ from app.services.forest_service import (
     read_forest_quiz_session,
     submit_quiz_attempt,
 )
+from tests.postgres import postgresql_test_url
 
 
 def test_forest_tables_are_created(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'forest-tables.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-tables")
     TestClient(create_app(database_url=database_url))
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         assert session.exec(select(ChapterQuiz)).all() == []
@@ -116,7 +117,7 @@ def _outline() -> dict:
 
 
 def _seed_forest_data(database_url: str) -> str:
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
     with Session(engine) as session:
         user = User(
             uid="forest-user",
@@ -151,10 +152,10 @@ def _auth_headers(user_uid: str) -> dict[str, str]:
 
 
 def test_read_forest_quiz_session_opens_first_chapter(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'forest-read.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-read")
     TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         result = read_forest_quiz_session(session, user_uid, "year_3_course_2", "1")
@@ -166,10 +167,10 @@ def test_read_forest_quiz_session_opens_first_chapter(tmp_path: Path) -> None:
 
 
 def test_generate_or_read_quiz_reuses_ready_quiz(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'forest-generate.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-generate")
     TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
     questions = [
         {
             "question_id": "q1",
@@ -193,10 +194,10 @@ def test_generate_or_read_quiz_reuses_ready_quiz(tmp_path: Path) -> None:
 
 
 def test_submit_quiz_attempt_passes_and_opens_next_chapter(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'forest-submit.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-submit")
     TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
     questions = [
         {
             "question_id": "q1",
@@ -229,7 +230,7 @@ def test_submit_quiz_attempt_passes_and_opens_next_chapter(tmp_path: Path) -> No
 
 
 def test_forest_quiz_session_api_reads_current_chapter(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'forest-session-api.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-session-api")
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
 
@@ -246,7 +247,7 @@ def test_forest_quiz_session_api_reads_current_chapter(tmp_path: Path) -> None:
 
 
 def test_generate_forest_quiz_api_persists_questions(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'forest-generate-api.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-generate-api")
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
 
@@ -276,10 +277,10 @@ def test_generate_forest_quiz_api_persists_questions(tmp_path: Path) -> None:
 
 
 def test_generate_forest_quiz_api_reuses_ready_quiz_without_llm(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'forest-generate-reuse-api.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-generate-reuse-api")
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
     questions = [
         {
             "question_id": "q1",
@@ -312,10 +313,10 @@ def test_generate_forest_quiz_api_reuses_ready_quiz_without_llm(tmp_path: Path) 
 
 
 def test_submit_forest_quiz_attempt_api_opens_next_chapter(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'forest-attempt-api.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-attempt-api")
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
     questions = [
         {
             "question_id": "q1",
@@ -354,7 +355,7 @@ def test_submit_forest_quiz_attempt_api_opens_next_chapter(tmp_path: Path) -> No
 
 
 def test_stream_forest_ai_api_returns_sse_chunks(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'forest-ai-stream-api.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-ai-stream-api")
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
 
@@ -392,10 +393,10 @@ def test_stream_forest_ai_api_returns_sse_chunks(tmp_path: Path) -> None:
 
 
 def test_read_forest_quiz_session_with_string_options(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'forest-read-options.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-read-options")
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     questions = [
         {
@@ -427,10 +428,10 @@ def test_read_forest_quiz_session_with_string_options(tmp_path: Path) -> None:
 
 
 def test_weakness_name_resolution(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'forest-weakness.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-weakness")
     TestClient(create_app(database_url=database_url))
 
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
     with Session(engine) as session:
         user = User(
             uid="forest-user",
@@ -579,10 +580,10 @@ def test_weakness_name_resolution(tmp_path: Path) -> None:
 def test_submit_forest_quiz_attempt_stream_api_done_data(tmp_path: Path) -> None:
     import json
 
-    database_url = f"sqlite:///{tmp_path / 'forest-attempt-stream-api-done.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-attempt-stream-api-done")
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
     questions = [
         {
             "question_id": "q1",
@@ -626,10 +627,10 @@ def test_submit_forest_quiz_attempt_stream_api_done_data(tmp_path: Path) -> None
 def test_submit_forest_quiz_attempt_stream_api_returns_error_event(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'forest-attempt-stream-api-error.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-attempt-stream-api-error")
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
     questions = [
         {
             "question_id": "q1",
@@ -665,12 +666,12 @@ def test_submit_forest_quiz_attempt_stream_api_done_data_next_course(
 ) -> None:
     import json
 
-    database_url = (
-        f"sqlite:///{tmp_path / 'forest-attempt-stream-api-done-next-course.db'}"
+    database_url = postgresql_test_url(
+        tmp_path, "forest-attempt-stream-api-done-next-course"
     )
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
     questions = [
         {
             "question_id": "q1",

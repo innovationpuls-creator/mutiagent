@@ -22,6 +22,7 @@ from app.orchestration.rule_engine import (
     AGENT_PROFILE,
     evaluate,
 )
+from tests.postgres import postgresql_test_url
 
 
 class ScriptedStructuredLlm:
@@ -265,7 +266,7 @@ def test_run_profile_agent_local_default_profile_persists(tmp_path: Path) -> Non
     profile["text"] = "【基础学习画像总结】大3软件工程 AI 方向。"
     llm = ScriptedStructuredLlm([profile])
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-fast-path.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-fast-path"))
     set_engine(engine)
     init_db(engine)
 
@@ -302,7 +303,7 @@ def test_run_profile_agent_default_profile_ignores_greeting_as_major(
 ) -> None:
     llm = ScriptedStructuredLlm([_profile()])
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-ignore-greeting.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-ignore-greeting"))
     set_engine(engine)
     init_db(engine)
 
@@ -328,7 +329,7 @@ def test_run_profile_agent_keeps_pace_segment_out_of_major(tmp_path: Path) -> No
     profile["text"] = "【基础学习画像总结】大四计算机科学，继续围绕 AI 应用开发推进。"
     llm = ScriptedStructuredLlm([profile])
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-major-pace.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-major-pace"))
     set_engine(engine)
     init_db(engine)
 
@@ -350,7 +351,7 @@ def test_run_profile_agent_keeps_pace_segment_out_of_major(tmp_path: Path) -> No
 def test_run_profile_agent_returns_collecting_for_unsupported_postgraduate_grade(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-unsupported-grade.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-unsupported-grade"))
     set_engine(engine)
     init_db(engine)
 
@@ -422,7 +423,7 @@ def test_run_profile_agent_updates_explicit_major_field_without_treating_whole_s
     profile["text"] = "【基础学习画像总结】大三计算机科学 AI 方向。"
     llm = ScriptedStructuredLlm([profile])
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-explicit-major.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-explicit-major"))
     set_engine(engine)
     init_db(engine)
 
@@ -453,7 +454,7 @@ def test_run_profile_agent_rewrites_system_generated_knowledge_foundation_after_
     llm = ScriptedStructuredLlm([profile_response])
 
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'profile-generated-knowledge-foundation.db'}"
+        postgresql_test_url(tmp_path, "profile-generated-knowledge-foundation")
     )
     set_engine(engine)
     init_db(engine)
@@ -495,7 +496,7 @@ def test_run_profile_agent_restores_generated_knowledge_foundation_when_existing
     llm = ScriptedStructuredLlm([profile_response])
 
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'profile-empty-generated-knowledge-foundation.db'}"
+        postgresql_test_url(tmp_path, "profile-empty-generated-knowledge-foundation")
     )
     set_engine(engine)
     init_db(engine)
@@ -530,7 +531,9 @@ def test_run_profile_agent_updates_multiple_explicit_fields_in_one_sentence(
     profile["text"] = "【基础学习画像总结】大三计算机科学，当前限制为周末集中。"
     llm = ScriptedStructuredLlm([profile])
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-explicit-multi-field.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "profile-explicit-multi-field")
+    )
     set_engine(engine)
     init_db(engine)
 
@@ -565,7 +568,7 @@ def test_run_profile_agent_prefers_latest_explicit_profile_update_from_history(
     llm = ScriptedStructuredLlm([profile_response])
 
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'profile-explicit-history-latest.db'}"
+        postgresql_test_url(tmp_path, "profile-explicit-history-latest")
     )
     set_engine(engine)
     init_db(engine)
@@ -606,7 +609,7 @@ def test_run_profile_agent_prefers_latest_implicit_grade_and_major_from_history(
     llm = ScriptedStructuredLlm([profile])
 
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'profile-implicit-history-latest.db'}"
+        postgresql_test_url(tmp_path, "profile-implicit-history-latest")
     )
     set_engine(engine)
     init_db(engine)
@@ -634,7 +637,7 @@ def test_run_profile_agent_prefers_latest_implicit_grade_and_major_from_history(
 def test_run_profile_agent_first_profile_requests_missing_major_in_collecting_mode(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-first-signal.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-first-signal"))
     set_engine(engine)
     init_db(engine)
 
@@ -724,7 +727,7 @@ def test_run_profile_agent_first_profile_requests_missing_major_in_collecting_mo
 def test_run_profile_agent_uses_existing_collecting_profile_to_finish_basic_profile(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-follow-up.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-follow-up"))
     set_engine(engine)
     init_db(engine)
 
@@ -829,7 +832,9 @@ def test_run_profile_agent_uses_existing_collecting_profile_to_finish_basic_prof
 def test_run_profile_agent_uses_current_collecting_question_to_parse_free_text_answer(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-current-question-parse.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "profile-current-question-parse")
+    )
     set_engine(engine)
     init_db(engine)
 
@@ -993,7 +998,9 @@ def test_run_profile_agent_uses_current_collecting_question_to_parse_free_text_a
 def test_run_profile_agent_maps_user_delimited_profile_without_fake_fields(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-delimited-real-input.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "profile-delimited-real-input")
+    )
     set_engine(engine)
     init_db(engine)
 
@@ -1058,7 +1065,9 @@ def test_run_profile_agent_maps_user_delimited_profile_without_fake_fields(
 def test_run_profile_agent_allows_llm_to_judge_brief_profile_input(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-brief-llm-judgement.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "profile-brief-llm-judgement")
+    )
     set_engine(engine)
     init_db(engine)
 
@@ -1112,7 +1121,7 @@ def test_run_profile_agent_maps_major_before_grade_in_delimited_profile(
     tmp_path: Path,
 ) -> None:
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'profile-delimited-major-before-grade.db'}"
+        postgresql_test_url(tmp_path, "profile-delimited-major-before-grade")
     )
     set_engine(engine)
     init_db(engine)
@@ -1171,7 +1180,7 @@ def test_run_profile_agent_maps_major_before_grade_in_delimited_profile(
 def test_run_profile_agent_collecting_profile_understands_english_grade_without_corrupting_major(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-english-grade.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-english-grade"))
     set_engine(engine)
     init_db(engine)
 
@@ -1239,7 +1248,7 @@ def test_run_profile_agent_does_not_treat_learning_preference_sentence_as_major(
     tmp_path: Path,
 ) -> None:
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'profile-learning-preference-not-major.db'}"
+        postgresql_test_url(tmp_path, "profile-learning-preference-not-major")
     )
     set_engine(engine)
     init_db(engine)
@@ -1361,7 +1370,9 @@ def test_run_profile_agent_uses_structured_llm_for_rich_first_profile_message(
 
             return invoke
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-rich-first-message.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "profile-rich-first-message")
+    )
     set_engine(engine)
     init_db(engine)
 
@@ -1408,7 +1419,7 @@ def test_run_profile_agent_uses_structured_llm_for_rich_first_profile_message(
 def test_run_profile_agent_converts_unknown_values_to_collecting(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-unknown-values.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-unknown-values"))
     set_engine(engine)
     init_db(engine)
 
@@ -1492,7 +1503,7 @@ def test_run_profile_agent_converts_unknown_values_to_collecting(
 def test_run_profile_agent_converts_empty_llm_values_to_collecting(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-empty-values.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-empty-values"))
     set_engine(engine)
     init_db(engine)
 
@@ -1569,7 +1580,7 @@ def test_run_profile_agent_converts_empty_llm_values_to_collecting(
 def test_run_profile_agent_repairs_stage_type_mismatch_before_persisting(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-repair-stage-type.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-repair-stage-type"))
     set_engine(engine)
     init_db(engine)
 
@@ -1624,7 +1635,7 @@ def test_run_profile_agent_repairs_stage_type_mismatch_before_persisting(
 
 
 def test_profile_form_builder_and_submission(tmp_path: Path) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-form-test.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-form-test"))
     set_engine(engine)
     init_db(engine)
 
@@ -1710,7 +1721,7 @@ def test_profile_form_builder_and_submission(tmp_path: Path) -> None:
 
 
 def test_profile_minimum_completion_routing(tmp_path: Path) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-routing-test.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-routing-test"))
     set_engine(engine)
     init_db(engine)
 
@@ -1766,7 +1777,7 @@ def test_profile_minimum_completion_routing(tmp_path: Path) -> None:
 
 
 def test_profile_form_submission_content_preference_persistence(tmp_path: Path) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-persistence-test.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-persistence-test"))
     set_engine(engine)
     init_db(engine)
 
@@ -1819,7 +1830,7 @@ def test_profile_form_submission_content_preference_persistence(tmp_path: Path) 
 
 def test_profile_keeps_major_after_strengths_form_submission(tmp_path: Path) -> None:
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'profile-major-strengths-regression.db'}"
+        postgresql_test_url(tmp_path, "profile-major-strengths-regression")
     )
     set_engine(engine)
     init_db(engine)
@@ -1891,7 +1902,9 @@ def test_profile_keeps_major_after_strengths_form_submission(tmp_path: Path) -> 
 def test_profile_preserves_data_structure_goal_from_initial_sentence(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'profile-data-structure-goal.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "profile-data-structure-goal")
+    )
     set_engine(engine)
     init_db(engine)
 
@@ -1918,7 +1931,7 @@ def test_profile_preserves_data_structure_goal_from_initial_sentence(
 
 def test_profile_does_not_extract_pace_word_as_learning_topic(tmp_path: Path) -> None:
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'profile-ai-pace-topic-regression.db'}"
+        postgresql_test_url(tmp_path, "profile-ai-pace-topic-regression")
     )
     set_engine(engine)
     init_db(engine)

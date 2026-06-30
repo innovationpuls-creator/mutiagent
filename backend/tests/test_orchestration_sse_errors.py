@@ -1,3 +1,7 @@
+"""SSE error handling tests for orchestration."""
+
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import asyncio
@@ -658,7 +662,7 @@ def test_route_after_worker_ends_after_initial_profile_generation_to_wait_for_us
                 ],
             }
         )
-        == "supervisor"
+        == "__end__"
     )
 
 
@@ -689,6 +693,22 @@ def test_route_after_worker_returns_supervisor_for_completed_tasks_profile_follo
                         "weekly_available_time": "每周 8 小时",
                         "constraints": "周末集中",
                     },
+                },
+                "year_learning_paths": {
+                    "year_3": {
+                        "grade_plans": {
+                            "year_3": {
+                                "course_nodes": [
+                                    {
+                                        "course_node_id": "year_3_course_1",
+                                        "source_textbook_id": "textbook-ai",
+                                        "source_textbook_title": "AI 应用开发教材",
+                                        "source_outline_section_ids": ["1.1"],
+                                    }
+                                ]
+                            }
+                        }
+                    }
                 },
                 "messages": [
                     AIMessage(

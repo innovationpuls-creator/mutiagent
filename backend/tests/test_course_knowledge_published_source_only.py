@@ -9,12 +9,12 @@ from app.database import set_engine
 from app.models import Textbook, TextbookSectionContent, User
 from app.orchestration.agents.course_knowledge import run_course_knowledge_agent
 from app.schema_upgrades import run_schema_upgrades
+from tests.postgres import postgresql_test_url
 
 
 def _engine(tmp_path: Path):
     return create_engine(
-        f"sqlite:///{tmp_path / 'course-knowledge-published-only.db'}",
-        connect_args={"check_same_thread": False},
+        postgresql_test_url(tmp_path, "course-knowledge-published-only"),
     )
 
 

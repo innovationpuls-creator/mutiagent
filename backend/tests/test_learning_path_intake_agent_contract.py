@@ -4,9 +4,10 @@ import asyncio
 from pathlib import Path
 
 from langchain_core.messages import HumanMessage
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.database import build_engine, init_db, set_engine
+from app.models import KnowledgeGap
 from app.orchestration.agents.learning_path_intake import (
     is_intake_confirmation_query,
     is_intake_modification_query,
@@ -22,6 +23,8 @@ from app.services.conversation_session_service import (
     latest_learning_path_intake,
     load_or_create_session,
 )
+from tests.fixtures.knowledge_base import enabled_source, published_textbook, section
+from tests.postgres import postgresql_test_url
 
 
 class _FakeIntakeLLM:
@@ -44,8 +47,18 @@ class _FakeIntakeLLM:
         return self.schema.model_validate(self.result)
 
 
+def _intake_course(title: str, purpose: str, section_id: str) -> dict:
+    return {
+        "title": title,
+        "purpose": purpose,
+        "source_textbook_id": "textbook-data-structures",
+        "source_textbook_title": "数据结构教材",
+        "source_outline_section_ids": [section_id],
+    }
+
+
 def _llm_intake_result(
-    *, courses: list[dict[str, str]] | None = None, topic: str = "数据结构"
+    *, courses: list[dict] | None = None, topic: str = "数据结构"
 ) -> dict:
     return {
         "type": "learning_path_intake",
@@ -55,13 +68,14 @@ def _llm_intake_result(
         "learning_topic": topic,
         "courses": courses
         or [
-            {
-                "title": "LLM 定制复杂度与抽象数据类型",
-                "purpose": "先理解数据结构的分析语言",
-            },
-            {"title": "LLM 定制线性表与栈队列", "purpose": "掌握线性结构实现"},
-            {"title": "LLM 定制树结构与递归", "purpose": "建立递归结构理解"},
-            {"title": "LLM 定制图结构项目", "purpose": "完成综合实践"},
+            _intake_course(
+                "LLM 定制复杂度与抽象数据类型",
+                "先理解数据结构的分析语言",
+                "1.1",
+            ),
+            _intake_course("LLM 定制线性表与栈队列", "掌握线性结构实现", "2.1"),
+            _intake_course("LLM 定制树结构与递归", "建立递归结构理解", "3.1"),
+            _intake_course("LLM 定制图结构项目", "完成综合实践", "4.1"),
         ],
         "recommendation_reasons": ["根据画像由 LLM 判断课程顺序"],
         "user_modification_summary": "",
@@ -96,6 +110,43 @@ def _profile() -> dict:
     }
 
 
+def _seed_published_textbook_context(
+    session: Session,
+    *,
+    topic: str = "数据结构",
+    textbook_id: str = "textbook-data-structures",
+    title: str = "数据结构教材",
+) -> None:
+    source_id = f"source-{textbook_id}"
+    session.add(enabled_source(source_id=source_id))
+    textbook = published_textbook(
+        textbook_id=textbook_id,
+        source_id=source_id,
+        title=title,
+    )
+    textbook.description = f"覆盖{topic}、线性结构、树、图。"
+    textbook.tags = [topic, "线性结构", "树", "图"]
+    textbook.outline = {
+        "sections": [
+            {"section_id": "1.1", "title": f"{topic}基础"},
+            {"section_id": "2.1", "title": "线性结构"},
+            {"section_id": "3.1", "title": "树结构"},
+            {"section_id": "4.1", "title": "图结构"},
+        ]
+    }
+    session.add(textbook)
+    session.add(
+        section(
+            textbook_id=textbook_id,
+            section_content_id=f"section-{textbook_id}-body",
+            section_id="1.1",
+            title=f"{topic}基础",
+            content_zh="这段教材正文不能进入课程草案输入。",
+        )
+    )
+    session.commit()
+
+
 def test_intake_confirmation_query_accepts_natural_language() -> None:
     assert is_intake_confirmation_query("可以")
     assert is_intake_confirmation_query("就按这个来")
@@ -118,12 +169,13 @@ def test_intake_prompt_allows_required_statuses() -> None:
 
 
 def test_run_intake_agent_creates_data_structure_draft(tmp_path: Path) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'intake-draft.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "intake-draft"))
     set_engine(engine)
     init_db(engine)
     fake_llm = _FakeIntakeLLM(_llm_intake_result())
 
     with Session(engine) as session:
+        _seed_published_textbook_context(session)
         load_or_create_session(session, "session-intake-draft", "user-1")
 
     result = asyncio.run(
@@ -148,7 +200,7 @@ def test_run_intake_agent_creates_data_structure_draft(tmp_path: Path) -> None:
     assert intake["status"] == "draft"
     assert intake["grade_year"] == "year_3"
     assert intake["learning_topic"] == "数据结构"
-    assert 4 <= len(intake["courses"]) <= 10
+    assert 4 <= len(intake["courses"]) <= 8
     assert intake["courses"][0]["title"] == "LLM 定制复杂度与抽象数据类型"
     assert fake_llm.schema is LearningPathIntakeDraftOutput
     assert len(fake_llm.calls) == 1
@@ -166,18 +218,94 @@ def test_run_intake_agent_creates_data_structure_draft(tmp_path: Path) -> None:
     assert stored == intake
 
 
+def test_run_intake_agent_injects_published_textbook_context_without_body(
+    tmp_path: Path,
+) -> None:
+    engine = build_engine(postgresql_test_url(tmp_path, "intake-kb-context"))
+    set_engine(engine)
+    init_db(engine)
+    fake_llm = _FakeIntakeLLM(_llm_intake_result())
+
+    with Session(engine) as session:
+        _seed_published_textbook_context(
+            session,
+            topic="数据结构",
+            textbook_id="textbook-data-structures",
+            title="数据结构教材",
+        )
+        load_or_create_session(session, "session-intake-kb-context", "user-1")
+
+    result = asyncio.run(
+        run_learning_path_intake_agent(
+            {
+                "user_id": "user-1",
+                "session_id": "session-intake-kb-context",
+                "query": "请根据我的基础画像生成学习路径。",
+                "profile": _profile(),
+                "messages": [],
+            },
+            fake_llm,
+        )
+    )
+
+    assert "error" not in result
+    assert len(fake_llm.calls) == 1
+    human_message = fake_llm.calls[0][1]
+    assert "已发布知识库教材上下文" in human_message.content
+    assert "textbook-data-structures" in human_message.content
+    assert "数据结构基础" in human_message.content
+    assert "这段教材正文不能进入课程草案输入" not in human_message.content
+    assert "content_zh" not in human_message.content
+
+
+def test_run_intake_agent_returns_gap_without_draft_when_no_published_textbook(
+    tmp_path: Path,
+) -> None:
+    engine = build_engine(postgresql_test_url(tmp_path, "intake-kb-gap"))
+    set_engine(engine)
+    init_db(engine)
+    fake_llm = _FakeIntakeLLM(_llm_intake_result())
+
+    result = asyncio.run(
+        run_learning_path_intake_agent(
+            {
+                "user_id": "user-1",
+                "session_id": "session-intake-kb-gap",
+                "query": "请根据我的基础画像生成学习路径。",
+                "profile": _profile(),
+                "messages": [],
+            },
+            fake_llm,
+        )
+    )
+
+    assert "learning_path_intake" not in result
+    assert result["gap_id"]
+    assert result["error"] == (
+        "知识库暂无覆盖「数据结构」的已发布教材，已加入管理员待办。"
+    )
+    assert fake_llm.calls == []
+    with Session(engine) as session:
+        gap = session.exec(
+            select(KnowledgeGap).where(KnowledgeGap.gap_id == result["gap_id"])
+        ).one()
+    assert gap.normalized_topic == "数据结构"
+
+
 def test_run_intake_agent_uses_llm_courses_for_natural_modification(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'intake-llm-modification.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "intake-llm-modification"))
     set_engine(engine)
     init_db(engine)
+    with Session(engine) as session:
+        _seed_published_textbook_context(session, topic="前端开发")
 
     courses = [
-        {"title": "前端基础与浏览器工作流", "purpose": "建立前端入门基础"},
-        {"title": "HTML CSS 与响应式页面", "purpose": "完成基础页面实践"},
-        {"title": "JavaScript 交互基础", "purpose": "掌握页面交互"},
-        {"title": "React 入门项目", "purpose": "完成组件化项目"},
+        _intake_course("前端基础与浏览器工作流", "建立前端入门基础", "1.1"),
+        _intake_course("HTML CSS 与响应式页面", "完成基础页面实践", "2.1"),
+        _intake_course("JavaScript 交互基础", "掌握页面交互", "3.1"),
+        _intake_course("React 入门项目", "完成组件化项目", "4.1"),
     ]
     fake_llm = _FakeIntakeLLM(_llm_intake_result(courses=courses, topic="前端开发"))
     profile = _profile()
@@ -208,9 +336,11 @@ def test_run_intake_agent_uses_llm_courses_for_natural_modification(
 def test_run_intake_agent_normalizes_chinese_grade_year_from_llm(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'intake-chinese-grade-year.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "intake-chinese-grade-year"))
     set_engine(engine)
     init_db(engine)
+    with Session(engine) as session:
+        _seed_published_textbook_context(session)
 
     llm_result = _llm_intake_result()
     llm_result["grade_year"] = "大三"
@@ -238,9 +368,11 @@ def test_run_intake_agent_normalizes_chinese_grade_year_from_llm(
 def test_run_intake_agent_normalizes_numeric_grade_year_from_structured_llm(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'intake-numeric-grade-year.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "intake-numeric-grade-year"))
     set_engine(engine)
     init_db(engine)
+    with Session(engine) as session:
+        _seed_published_textbook_context(session)
 
     profile = _profile()
     profile["confirmed_info"]["current_grade"] = "大二"
@@ -270,7 +402,7 @@ def test_run_intake_agent_normalizes_numeric_grade_year_from_structured_llm(
 
 
 def test_run_intake_agent_marks_existing_draft_confirmed(tmp_path: Path) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'intake-confirm.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "intake-confirm"))
     set_engine(engine)
     init_db(engine)
 
@@ -281,10 +413,10 @@ def test_run_intake_agent_marks_existing_draft_confirmed(tmp_path: Path) -> None
         "grade_name": "大三",
         "learning_topic": "数据结构",
         "courses": [
-            {"title": "数据结构入门与复杂度基础", "purpose": "建立基础"},
-            {"title": "线性结构实践", "purpose": "练习线性结构"},
-            {"title": "树与递归基础", "purpose": "理解递归结构"},
-            {"title": "图与综合项目", "purpose": "完成综合应用"},
+            _intake_course("数据结构入门与复杂度基础", "建立基础", "1.1"),
+            _intake_course("线性结构实践", "练习线性结构", "2.1"),
+            _intake_course("树与递归基础", "理解递归结构", "3.1"),
+            _intake_course("图与综合项目", "完成综合应用", "4.1"),
         ],
         "recommendation_reasons": ["目标是学习数据结构"],
         "user_modification_summary": "",
@@ -310,7 +442,7 @@ def test_run_intake_agent_marks_existing_draft_confirmed(tmp_path: Path) -> None
 def test_run_intake_agent_confirms_risk_pending_and_clears_risk_fields(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'intake-risk-confirm.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "intake-risk-confirm"))
     set_engine(engine)
     init_db(engine)
 
@@ -321,10 +453,10 @@ def test_run_intake_agent_confirms_risk_pending_and_clears_risk_fields(
         "grade_name": "大三",
         "learning_topic": "数据结构",
         "courses": [
-            {"title": "数据结构入门与复杂度基础", "purpose": "建立基础"},
-            {"title": "线性结构实践", "purpose": "练习线性结构"},
-            {"title": "树与递归基础", "purpose": "理解递归结构"},
-            {"title": "图与综合项目", "purpose": "完成综合应用"},
+            _intake_course("数据结构入门与复杂度基础", "建立基础", "1.1"),
+            _intake_course("线性结构实践", "练习线性结构", "2.1"),
+            _intake_course("树与递归基础", "理解递归结构", "3.1"),
+            _intake_course("图与综合项目", "完成综合应用", "4.1"),
         ],
         "recommendation_reasons": ["目标是学习数据结构"],
         "user_modification_summary": "想删掉已开始课程",
@@ -355,7 +487,7 @@ def test_run_intake_agent_confirms_risk_pending_and_clears_risk_fields(
 def test_run_intake_agent_cancel_risk_pending_keeps_existing_path(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'intake-risk-cancel.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "intake-risk-cancel"))
     set_engine(engine)
     init_db(engine)
 
@@ -366,10 +498,10 @@ def test_run_intake_agent_cancel_risk_pending_keeps_existing_path(
         "grade_name": "大三",
         "learning_topic": "数据结构",
         "courses": [
-            {"title": "数据结构入门与复杂度基础", "purpose": "建立基础"},
-            {"title": "线性结构实践", "purpose": "练习线性结构"},
-            {"title": "树与递归基础", "purpose": "理解递归结构"},
-            {"title": "图与综合项目", "purpose": "完成综合应用"},
+            _intake_course("数据结构入门与复杂度基础", "建立基础", "1.1"),
+            _intake_course("线性结构实践", "练习线性结构", "2.1"),
+            _intake_course("树与递归基础", "理解递归结构", "3.1"),
+            _intake_course("图与综合项目", "完成综合应用", "4.1"),
         ],
         "recommendation_reasons": ["目标是学习数据结构"],
         "user_modification_summary": "想删掉已开始课程",
@@ -404,11 +536,12 @@ def test_run_intake_agent_detects_deletion_of_started_course_and_outlines(
 ) -> None:
     from app.models import UserCourseKnowledgeOutline, UserYearLearningPath
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'intake-risk.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "intake-risk"))
     set_engine(engine)
     init_db(engine)
 
     with Session(engine) as session:
+        _seed_published_textbook_context(session, topic="前端开发")
         # Create user outline
         session.add(
             UserCourseKnowledgeOutline(
@@ -460,7 +593,7 @@ def test_run_intake_agent_detects_deletion_of_started_course_and_outlines(
         )
         session.commit()
 
-    # Query with a modification query that doesn't include "线性结构实践" or "树与递归基础"
+    # Query with a modification query that excludes started course names.
     # Query: "想学前端"
     profile = _profile()
     profile["confirmed_info"]["short_term_goal"] = "学习前端"
@@ -469,10 +602,10 @@ def test_run_intake_agent_detects_deletion_of_started_course_and_outlines(
     fake_llm = _FakeIntakeLLM(
         _llm_intake_result(
             courses=[
-                {"title": "前端基础与浏览器工作流", "purpose": "建立前端入门基础"},
-                {"title": "HTML CSS 与响应式页面", "purpose": "完成基础页面实践"},
-                {"title": "JavaScript 交互基础", "purpose": "掌握页面交互"},
-                {"title": "React 入门项目", "purpose": "完成组件化项目"},
+                _intake_course("前端基础与浏览器工作流", "建立前端入门基础", "1.1"),
+                _intake_course("HTML CSS 与响应式页面", "完成基础页面实践", "2.1"),
+                _intake_course("JavaScript 交互基础", "掌握页面交互", "3.1"),
+                _intake_course("React 入门项目", "完成组件化项目", "4.1"),
             ],
             topic="前端开发",
         )

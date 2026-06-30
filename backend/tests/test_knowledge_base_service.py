@@ -57,6 +57,7 @@ from tests.fixtures.knowledge_base import (
 from tests.fixtures.knowledge_base import (
     textbook as _textbook,
 )
+from tests.postgres import postgresql_test_url
 
 KNOWLEDGE_MODELS = (
     KnowledgeSource,
@@ -72,8 +73,7 @@ KNOWLEDGE_MODELS = (
 
 def _knowledge_engine(tmp_path: Path):
     return create_engine(
-        f"sqlite:///{tmp_path / 'knowledge-base.db'}",
-        connect_args={"check_same_thread": False},
+        postgresql_test_url(tmp_path, "knowledge-base"),
     )
 
 
@@ -169,6 +169,27 @@ def test_run_knowledge_base_agent_source_search_does_not_create_textbook(
     assert response.selected_source_result_id == "source-result-ods-python"
     assert len(response.source_results) == 1
     assert textbooks == []
+
+
+def test_hybrid_search_textbooks_falls_back_cleanly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _knowledge_engine(tmp_path)
+    run_schema_upgrades(engine)
+    SQLModel.metadata.create_all(engine)
+
+    textbook = _textbook(textbook_id="textbook-hybrid", title="FastAPI 高性能开发")
+    textbook.student_availability_status = "published"
+
+    with Session(engine) as session:
+        session.add(textbook)
+        session.commit()
+
+        results = knowledge_base_service.hybrid_search_textbooks(session, "FastAPI", 10)
+
+    assert results
+    assert results[0].title == "FastAPI 高性能开发"
 
 
 def test_schema_upgrades_create_knowledge_base_tables(tmp_path: Path) -> None:

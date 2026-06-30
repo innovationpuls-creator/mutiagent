@@ -12,6 +12,7 @@ from app.models import (
     UserCourseKnowledgeOutline,
     UserYearLearningPath,
 )
+from tests.postgres import postgresql_test_url
 
 
 def _register(client: TestClient, identifier: str) -> tuple[str, str]:
@@ -169,7 +170,7 @@ def _outline(course_id: str, course_name: str) -> dict:
 
 def _seed(client: TestClient, database_url: str, identifier: str) -> str:
     token, _ = _register(client, identifier)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
     with Session(engine) as session:
         user = session.exec(select(User).where(User.identifier == identifier)).one()
         session.add(
@@ -204,7 +205,7 @@ def _seed(client: TestClient, database_url: str, identifier: str) -> str:
 
 def test_leaf_course_requires_auth(tmp_path: Path) -> None:
     client = TestClient(
-        create_app(database_url=f"sqlite:///{tmp_path / 'leaf-auth.db'}")
+        create_app(database_url=postgresql_test_url(tmp_path, "leaf-auth"))
     )
 
     response = client.get("/api/leaf/courses/year_3_course_2")
@@ -215,7 +216,7 @@ def test_leaf_course_requires_auth(tmp_path: Path) -> None:
 def test_leaf_course_returns_current_course_with_outline_and_composed_content(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'leaf-current.db'}"
+    database_url = postgresql_test_url(tmp_path, "leaf-current")
     client = TestClient(create_app(database_url=database_url))
     token = _seed(client, database_url, "leaf-current@example.com")
 
@@ -241,10 +242,10 @@ def test_leaf_course_returns_current_course_with_outline_and_composed_content(
 def test_leaf_course_opens_next_generatable_chapter_after_quiz_pass(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'leaf-next-chapter.db'}"
+    database_url = postgresql_test_url(tmp_path, "leaf-next-chapter")
     client = TestClient(create_app(database_url=database_url))
     token = _seed(client, database_url, "leaf-next-chapter@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         user = session.exec(
@@ -275,11 +276,11 @@ def test_leaf_course_opens_next_generatable_chapter_after_quiz_pass(
 def test_leaf_course_keeps_sections_empty_when_composed_content_missing(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'leaf-resource-fields.db'}"
+    database_url = postgresql_test_url(tmp_path, "leaf-resource-fields")
     client = TestClient(create_app(database_url=database_url))
     token = _seed(client, database_url, "leaf-resource-fields@example.com")
 
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
     with Session(engine) as session:
         user = session.exec(
             select(User).where(User.identifier == "leaf-resource-fields@example.com")
@@ -357,8 +358,52 @@ def test_leaf_course_keeps_sections_empty_when_composed_content_missing(
     assert body["section_composed_markdowns"] == {}
 
 
+def test_leaf_course_returns_section_resource_errors(tmp_path: Path) -> None:
+    database_url = postgresql_test_url(tmp_path, "leaf-section-errors")
+    client = TestClient(create_app(database_url=database_url))
+    token = _seed(client, database_url, "leaf-section-errors@example.com")
+
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        user = session.exec(
+            select(User).where(User.identifier == "leaf-section-errors@example.com")
+        ).one()
+        row = session.get(UserCourseKnowledgeOutline, (user.uid, "year_3_course_2"))
+        assert row is not None
+        outline_data = dict(row.outline_data)
+        outline_data["section_resource_errors"] = {
+            "1.1": {
+                "section_id": "1.1",
+                "phase": "markdown",
+                "message": "课程资源生成失败：Markdown 文档未生成，请稍后重试。",
+                "retryable": True,
+                "updated_at": "2026-06-06T00:00:00Z",
+            }
+        }
+        row.outline_data = outline_data
+        session.add(row)
+        session.commit()
+
+    response = client.get(
+        "/api/leaf/courses/year_3_course_2",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["section_resource_errors"] == {
+        "1.1": {
+            "section_id": "1.1",
+            "phase": "markdown",
+            "message": "课程资源生成失败：Markdown 文档未生成，请稍后重试。",
+            "retryable": True,
+            "updated_at": "2026-06-06T00:00:00Z",
+        }
+    }
+
+
 def test_leaf_course_returns_completed_view_only(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'leaf-completed.db'}"
+    database_url = postgresql_test_url(tmp_path, "leaf-completed")
     client = TestClient(create_app(database_url=database_url))
     token = _seed(client, database_url, "leaf-completed@example.com")
 
@@ -377,7 +422,7 @@ def test_leaf_course_returns_completed_view_only(tmp_path: Path) -> None:
 def test_leaf_course_returns_locked_json_for_existing_locked_course(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'leaf-locked.db'}"
+    database_url = postgresql_test_url(tmp_path, "leaf-locked")
     client = TestClient(create_app(database_url=database_url))
     token = _seed(client, database_url, "leaf-locked@example.com")
 
@@ -396,7 +441,7 @@ def test_leaf_course_returns_locked_json_for_existing_locked_course(
 
 
 def test_leaf_course_returns_404_for_missing_course(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'leaf-missing.db'}"
+    database_url = postgresql_test_url(tmp_path, "leaf-missing")
     client = TestClient(create_app(database_url=database_url))
     token = _seed(client, database_url, "leaf-missing@example.com")
 

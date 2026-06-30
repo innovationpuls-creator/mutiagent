@@ -5,6 +5,7 @@ from sqlmodel import Session, create_engine, select
 
 from app.main import create_app
 from app.models import UserYearLearningPath
+from tests.postgres import postgresql_test_url
 
 
 def make_client(tmp_path: Path, monkeypatch) -> TestClient:
@@ -12,7 +13,7 @@ def make_client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setenv("ADMIN_IDENTIFIER", "13297540721")
     monkeypatch.setenv("ADMIN_PASSWORD", "123456")
     return TestClient(
-        create_app(database_url=f"sqlite:///{tmp_path / 'program-test.db'}")
+        create_app(database_url=postgresql_test_url(tmp_path, "program-test"))
     )
 
 
@@ -92,9 +93,7 @@ def test_student_matching_requires_exact_school_major_and_class_name(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = make_client(tmp_path, monkeypatch)
-    teacher = register(
-        client, "exact-teacher@example.com", "admin", class_name="一班"
-    )
+    teacher = register(client, "exact-teacher@example.com", "admin", class_name="一班")
     student = register(
         client, "exact-student@example.com", "student", class_name="二班"
     )
@@ -179,8 +178,7 @@ def test_admin_data_management_reads_and_clears_learning_data(
     student = register(client, "data-student@example.com", "student")
     student_uid = student["user"]["uid"]
     engine = create_engine(
-        f"sqlite:///{tmp_path / 'program-test.db'}",
-        connect_args={"check_same_thread": False},
+        postgresql_test_url(tmp_path, "program-test"),
     )
 
     with Session(engine) as session:

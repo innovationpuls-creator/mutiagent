@@ -39,6 +39,7 @@ from tests.fixtures.knowledge_base import (
     published_textbook,
     section,
 )
+from tests.postgres import postgresql_test_url
 
 SOURCE_TEXTBOOK_ID = "textbook-ai-web"
 SOURCE_TEXTBOOK_TITLE = "AI 应用开发项目教程"
@@ -207,7 +208,7 @@ def _seed_published_textbook_sections(
     contents_by_section_id: dict[str, str],
     tmp_path: Path,
 ):
-    engine = build_engine(f"sqlite:///{tmp_path / 'course-source-sections.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "course-source-sections"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -781,7 +782,7 @@ def test_normalize_generated_sections_rejects_empty_source_fields() -> None:
 def test_upsert_outline_clears_section_generated_assets_when_outline_changes(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'course-knowledge-upsert.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-upsert"))
     set_engine(engine)
     init_db(engine)
     original_outline = _with_section_sources(
@@ -854,7 +855,7 @@ def test_upsert_outline_clears_section_generated_assets_when_content_plan_change
     tmp_path: Path,
 ) -> None:
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'course-knowledge-upsert-content.db'}"
+        postgresql_test_url(tmp_path, "course-knowledge-upsert-content")
     )
     set_engine(engine)
     init_db(engine)
@@ -1024,7 +1025,9 @@ def test_run_course_knowledge_agent_uses_structured_outline_and_persists(
         def __or__(self, _other):
             return DesignedOutlineChain()
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'course-knowledge-local-outline.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "course-knowledge-local-outline")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -1240,7 +1243,9 @@ def test_run_course_knowledge_agent_generates_all_grade_course_outlines_in_one_c
         def __or__(self, _other):
             return year_chain
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'course-knowledge-year-batch.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "course-knowledge-year-batch")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -1395,7 +1400,7 @@ def test_run_course_knowledge_agent_empty_course_id_generates_current_course_onl
             return CurrentCourseChain()
 
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'course-knowledge-empty-course-id.db'}"
+        postgresql_test_url(tmp_path, "course-knowledge-empty-course-id")
     )
     set_engine(engine)
     init_db(engine)
@@ -1479,7 +1484,7 @@ def test_run_course_knowledge_agent_rejects_incomplete_basic_profile(
     tmp_path: Path,
 ) -> None:
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'course-knowledge-incomplete-profile.db'}"
+        postgresql_test_url(tmp_path, "course-knowledge-incomplete-profile")
     )
     set_engine(engine)
     init_db(engine)
@@ -1558,7 +1563,7 @@ def test_run_course_knowledge_agent_returns_hard_error_after_json_output_failure
         def __or__(self, _other):
             return ExplodingChain()
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'course-knowledge-fallback.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-fallback"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -1743,7 +1748,7 @@ def test_run_course_knowledge_agent_repairs_invalid_json_outline_once(
         def __or__(self, _other):
             return repairing_chain
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'course-knowledge-repair.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-repair"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -1828,7 +1833,7 @@ def test_run_course_knowledge_agent_returns_hard_error_after_timeout(
         def __or__(self, _other):
             return HangingChain()
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'course-knowledge-timeout.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-timeout"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -1969,7 +1974,9 @@ def test_run_course_knowledge_agent_normalizes_partial_json_outline(
             return PartialOutlineChain()
 
     captured: dict[str, object] = {}
-    engine = build_engine(f"sqlite:///{tmp_path / 'course-knowledge-normalize.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "course-knowledge-normalize")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -2094,7 +2101,9 @@ def test_run_course_knowledge_agent_bypasses_llm_if_textbook_mapped(
 ) -> None:
     from app.models import Textbook, TextbookSectionContent
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'course-knowledge-bypass-llm.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "course-knowledge-bypass-llm")
+    )
     set_engine(engine)
     init_db(engine)
 
@@ -2235,7 +2244,7 @@ def test_run_course_knowledge_agent_fallback_title_mapping(
 ) -> None:
     from app.models import Textbook, TextbookSectionContent
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'course-knowledge-fallback.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-fallback"))
     set_engine(engine)
     init_db(engine)
 

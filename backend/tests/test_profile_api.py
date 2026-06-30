@@ -8,6 +8,7 @@ from sqlmodel import Session, create_engine
 
 from app.main import create_app
 from app.models import UserCourseKnowledgeOutline, UserProfile, UserYearLearningPath
+from tests.postgres import postgresql_test_url
 
 
 def _register(client: TestClient) -> tuple[str, str]:
@@ -29,7 +30,7 @@ def _register(client: TestClient) -> tuple[str, str]:
 
 def test_profile_dashboard_requires_auth(tmp_path: Path) -> None:
     client = TestClient(
-        create_app(database_url=f"sqlite:///{tmp_path / 'profile-auth.db'}")
+        create_app(database_url=postgresql_test_url(tmp_path, "profile-auth"))
     )
 
     response = client.get("/api/profile/dashboard")
@@ -41,7 +42,7 @@ def test_profile_dashboard_returns_empty_state_before_profile_generated(
     tmp_path: Path,
 ) -> None:
     client = TestClient(
-        create_app(database_url=f"sqlite:///{tmp_path / 'profile-empty.db'}")
+        create_app(database_url=postgresql_test_url(tmp_path, "profile-empty"))
     )
     token, _ = _register(client)
 
@@ -60,10 +61,10 @@ def test_profile_dashboard_returns_empty_state_before_profile_generated(
 def test_profile_dashboard_treats_empty_profile_row_as_not_generated(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'profile-empty-row.db'}"
+    database_url = postgresql_test_url(tmp_path, "profile-empty-row")
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         session.add(
@@ -88,10 +89,10 @@ def test_profile_dashboard_treats_empty_profile_row_as_not_generated(
 
 
 def test_profile_dashboard_reads_saved_profile(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'profile-saved.db'}"
+    database_url = postgresql_test_url(tmp_path, "profile-saved")
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         session.add(
@@ -132,10 +133,10 @@ def test_profile_dashboard_reads_saved_profile(tmp_path: Path) -> None:
 def test_profile_dashboard_marks_unsupported_postgraduate_grade_as_needing_revision(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'profile-unsupported-grade.db'}"
+    database_url = postgresql_test_url(tmp_path, "profile-unsupported-grade")
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         session.add(
@@ -185,10 +186,10 @@ def test_profile_dashboard_marks_unsupported_postgraduate_grade_as_needing_revis
 def test_profile_dashboard_treats_collecting_profile_as_incomplete(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'profile-collecting.db'}"
+    database_url = postgresql_test_url(tmp_path, "profile-collecting")
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         session.add(
@@ -242,10 +243,10 @@ def test_profile_dashboard_treats_collecting_profile_as_incomplete(
 def test_profile_dashboard_prefers_current_learning_course_from_path(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'profile-path.db'}"
+    database_url = postgresql_test_url(tmp_path, "profile-path")
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         session.add(
@@ -398,10 +399,10 @@ def test_profile_dashboard_prefers_current_learning_course_from_path(
 def test_profile_dashboard_keeps_learning_path_visible_when_profile_is_collecting(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'profile-collecting-path.db'}"
+    database_url = postgresql_test_url(tmp_path, "profile-collecting-path")
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         session.add(
@@ -510,10 +511,10 @@ def test_profile_dashboard_keeps_learning_path_visible_when_profile_is_collectin
 def test_profile_dashboard_prefers_latest_updated_learning_path_when_multiple_years_exist(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'profile-latest-path.db'}"
+    database_url = postgresql_test_url(tmp_path, "profile-latest-path")
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         session.add(
@@ -661,10 +662,10 @@ def test_profile_dashboard_prefers_latest_updated_learning_path_when_multiple_ye
 def test_profile_dashboard_falls_back_to_next_valid_path_when_latest_path_is_invalid(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'profile-fallback-valid-path.db'}"
+    database_url = postgresql_test_url(tmp_path, "profile-fallback-valid-path")
     client = TestClient(create_app(database_url=database_url))
     token, uid = _register(client)
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         session.add(

@@ -16,6 +16,7 @@ from app.models import (
     UserProfile,
     UserYearLearningPath,
 )
+from tests.postgres import postgresql_test_url
 
 
 def _register(client: TestClient, identifier: str) -> tuple[str, str]:
@@ -142,7 +143,7 @@ def _outline(course_id: str, grade_year: str, course_name: str) -> dict:
 
 def test_canopy_overview_requires_auth(tmp_path: Path) -> None:
     client = TestClient(
-        create_app(database_url=f"sqlite:///{tmp_path / 'canopy-auth.db'}")
+        create_app(database_url=postgresql_test_url(tmp_path, "canopy-auth"))
     )
 
     response = client.get("/api/branch/canopy")
@@ -151,7 +152,7 @@ def test_canopy_overview_requires_auth(tmp_path: Path) -> None:
 
 
 def test_canopy_overview_starts_growth_tree_from_seed(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'canopy-seed.db'}"
+    database_url = postgresql_test_url(tmp_path, "canopy-seed")
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "canopy-seed@example.com")
 
@@ -175,10 +176,10 @@ def test_canopy_overview_starts_growth_tree_from_seed(tmp_path: Path) -> None:
 
 
 def test_canopy_overview_returns_calculated_tree_data(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'canopy-overview.db'}"
+    database_url = postgresql_test_url(tmp_path, "canopy-overview")
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "canopy-overview@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     profile_created_at = datetime(2026, 6, 1, tzinfo=timezone.utc)
     path_created_at = datetime(2026, 6, 2, tzinfo=timezone.utc)

@@ -5,13 +5,17 @@ from pydantic import ValidationError
 
 from app.orchestration.agents.models import (
     ConfirmedInfoOutput,
+    CourseKnowledgeOutput,
+    CourseNodeOutput,
     CurrentLearningCourse,
     LearningPathCourseSpecOutput,
+    LearningPathIntakeCourseOutput,
     LearningPathResultOutput,
     ProfileSessionOutput,
     QuestionFormOutput,
     SectionAnimationBriefOutput,
     SectionHtmlAnimationOutput,
+    SectionItem,
     SectionMarkdownOutput,
     SectionVideoSearchOutput,
 )
@@ -31,7 +35,9 @@ def _confirmed_info() -> dict:
         "strengths": "工程实现与课程学习能力",
         "weaknesses": "大型项目实战经验、数据库设计能力、英文阅读速度",
         "experience": "平时学习，项目经验由系统补全为待强化",
-        "short_term_goal": "在 3 个月内独立开发一个具备完整前后端功能的 Web 应用，并部署上线",
+        "short_term_goal": (
+            "在 3 个月内独立开发一个具备完整前后端功能的 Web 应用，并部署上线"
+        ),
         "long_term_goal": "形成 AI 应用开发能力",
         "weekly_available_time": "每周 6-10 小时",
         "constraints": "平时学习节奏，避免过高强度",
@@ -43,6 +49,10 @@ def _course_node(course_id: str, grade_id: str = "year_3") -> dict:
         "course_node_id": course_id,
         "grade_id": grade_id,
         "course_or_chapter_theme": "AI 应用开发项目课",
+        "source_textbook_id": "textbook-ai-web",
+        "source_textbook_title": "AI 应用开发项目教程",
+        "source_outline_section_ids": ["1.1", "1.2", "1.3"],
+        "course_stage_plan": ["需求拆解", "接口联调", "部署验收"],
         "time_arrangement": {
             "semester_scope": "上学期",
             "duration": "6 周",
@@ -59,6 +69,39 @@ def _course_node(course_id: str, grade_id: str = "year_3") -> dict:
         "downstream_resource_direction_ids": [],
         "acceptance_criteria": ["能独立演示完整功能"],
     }
+
+
+def _section_item() -> dict:
+    return {
+        "section_id": "1.1",
+        "parent_section_id": "1",
+        "depth": 2,
+        "title": "学习目标",
+        "order_index": 1,
+        "description": "明确本节学习目标。",
+        "key_knowledge_points": ["功能边界", "验收标准"],
+        "source_textbook_id": "textbook-ai-web",
+        "source_textbook_title": "AI 应用开发项目教程",
+        "source_section_ids": ["1.1", "1.2"],
+        "source_section_titles": ["功能边界", "验收标准"],
+        "source_content_chars": 3600,
+    }
+
+
+def _complete_markdown() -> str:
+    return "\n\n".join(
+        [
+            "# 1.1 学习目标",
+            "## 学习目标\n明确输入、输出和验收标准。",
+            "<!-- video:id=video_1 -->",
+            "## 核心概念\n功能边界与验收标准。",
+            "## 步骤讲解\n先确认目标，再拆任务。",
+            "<!-- animation:id=anim_1 -->",
+            "## 练习任务\n写一张任务卡。",
+            "## 检查标准\n能给出可验收产出。",
+            "## 来源\n- 《AI 应用开发项目教程》：功能边界；验收标准",
+        ]
+    )
 
 
 def _learning_path() -> dict:
@@ -243,6 +286,110 @@ def test_learning_path_rejects_current_learning_course_not_started_state() -> No
         LearningPathResultOutput(**payload)
 
 
+def test_learning_path_intake_course_requires_source_binding() -> None:
+    course = LearningPathIntakeCourseOutput(
+        title="AI 应用开发项目课",
+        purpose="围绕项目实践建立完整开发闭环",
+        source_textbook_id="textbook-ai-web",
+        source_textbook_title="AI 应用开发项目教程",
+        source_outline_section_ids=["1.1", "1.2"],
+    )
+
+    assert course.source_textbook_id == "textbook-ai-web"
+    assert course.source_outline_section_ids == ["1.1", "1.2"]
+
+    with pytest.raises(ValidationError):
+        LearningPathIntakeCourseOutput(
+            title="AI 应用开发项目课",
+            purpose="围绕项目实践建立完整开发闭环",
+        )
+
+
+def test_learning_path_intake_course_rejects_empty_and_extra_textbook_fields() -> None:
+    with pytest.raises(ValidationError):
+        LearningPathIntakeCourseOutput(
+            title="AI 应用开发项目课",
+            purpose="围绕项目实践建立完整开发闭环",
+            source_textbook_id="",
+            source_textbook_title="AI 应用开发项目教程",
+            source_outline_section_ids=["1.1"],
+        )
+
+    with pytest.raises(ValidationError):
+        LearningPathIntakeCourseOutput(
+            title="AI 应用开发项目课",
+            purpose="围绕项目实践建立完整开发闭环",
+            source_textbook_id="textbook-ai-web",
+            source_textbook_title="AI 应用开发项目教程",
+            source_outline_section_ids=["1.1"],
+            source_textbook_isbn="978-7-0000-0000-0",
+        )
+
+
+def test_learning_path_intake_course_rejects_more_than_seven_source_sections() -> None:
+    with pytest.raises(ValidationError):
+        LearningPathIntakeCourseOutput(
+            title="AI 应用开发项目课",
+            purpose="围绕项目实践建立完整开发闭环",
+            source_textbook_id="textbook-ai-web",
+            source_textbook_title="AI 应用开发项目教程",
+            source_outline_section_ids=[
+                "1.1",
+                "1.2",
+                "1.3",
+                "1.4",
+                "1.5",
+                "1.6",
+                "1.7",
+                "1.8",
+            ],
+        )
+
+
+def test_course_node_requires_source_binding_and_stage_plan() -> None:
+    node = CourseNodeOutput(**_course_node("year_3_course_1"))
+
+    assert node.source_textbook_title == "AI 应用开发项目教程"
+    assert node.course_stage_plan == ["需求拆解", "接口联调", "部署验收"]
+
+    payload = _course_node("year_3_course_1")
+    payload.pop("source_textbook_id")
+
+    with pytest.raises(ValidationError):
+        CourseNodeOutput(**payload)
+
+
+def test_course_node_rejects_empty_binding_and_more_than_seven_sources() -> None:
+    empty_payload = _course_node("year_3_course_1")
+    empty_payload["source_textbook_title"] = ""
+
+    with pytest.raises(ValidationError):
+        CourseNodeOutput(**empty_payload)
+
+    oversized_payload = _course_node("year_3_course_1")
+    oversized_payload["source_outline_section_ids"] = [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "1.8",
+    ]
+
+    with pytest.raises(ValidationError):
+        CourseNodeOutput(**oversized_payload)
+
+
+def test_course_node_rejects_extra_textbook_fields() -> None:
+    payload = _course_node("year_3_course_1")
+    payload["source_textbook_isbn"] = "978-7-0000-0000-0"
+
+    with pytest.raises(ValidationError):
+        CourseNodeOutput(**payload)
+
+
 def test_learning_path_course_spec_normalizes_string_list_fields_from_llm() -> None:
     spec = LearningPathCourseSpecOutput(
         theme="AI Agent 最小可用闭环搭建",
@@ -267,23 +414,64 @@ def test_learning_path_course_spec_normalizes_string_list_fields_from_llm() -> N
     ]
 
 
+def test_course_knowledge_section_requires_source_binding() -> None:
+    output = CourseKnowledgeOutput(
+        course_id="year_3_course_1",
+        course_name="AI 应用开发项目课",
+        grade_year="大三",
+        personalization_summary="围绕平时学习节奏安排。",
+        sections=[SectionItem(**_section_item())],
+        learning_sequence=["先明确目标", "再完成练习"],
+        total_estimated_hours="6 小时",
+    )
+
+    assert output.sections[0].source_section_ids == ["1.1", "1.2"]
+    assert output.sections[0].source_content_chars == 3600
+
+    payload = _section_item()
+    payload.pop("source_section_ids")
+
+    with pytest.raises(ValidationError):
+        SectionItem(**payload)
+
+
+def test_section_rejects_empty_binding_and_extra_textbook_fields() -> None:
+    empty_payload = _section_item()
+    empty_payload["source_textbook_id"] = ""
+
+    with pytest.raises(ValidationError):
+        SectionItem(**empty_payload)
+
+    extra_payload = _section_item()
+    extra_payload["source_textbook_isbn"] = "978-7-0000-0000-0"
+
+    with pytest.raises(ValidationError):
+        SectionItem(**extra_payload)
+
+
+def test_course_knowledge_section_rejects_more_than_seven_source_sections() -> None:
+    payload = _section_item()
+    payload["source_section_ids"] = [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "1.8",
+    ]
+
+    with pytest.raises(ValidationError):
+        SectionItem(**payload)
+
+
 def test_section_markdown_normalizes_string_visual_elements_from_llm() -> None:
     output = SectionMarkdownOutput(
         section_id="1.1",
         parent_section_id="1",
         title="学习目标",
-        markdown="\n\n".join(
-            [
-                "# 1.1 学习目标",
-                "## 学习目标\n明确输入、输出和验收标准。",
-                "<!-- video:id=video_1 -->",
-                "## 核心概念\n功能边界与验收标准。",
-                "## 步骤讲解\n先确认目标，再拆任务。",
-                "<!-- animation:id=anim_1 -->",
-                "## 练习任务\n写一张任务卡。",
-                "## 检查标准\n能给出可验收产出。",
-            ]
-        ),
+        markdown=_complete_markdown(),
         video_briefs=[
             {
                 "video_id": "video_1",
@@ -309,6 +497,142 @@ def test_section_markdown_normalizes_string_visual_elements_from_llm() -> None:
     ]
 
 
+def test_section_markdown_rejects_missing_source_footer() -> None:
+    with pytest.raises(ValidationError):
+        SectionMarkdownOutput(
+            section_id="1.1",
+            parent_section_id="1",
+            title="学习目标",
+            markdown="\n\n".join(
+                [
+                    "# 1.1 学习目标",
+                    "## 学习目标\n明确输入、输出和验收标准。",
+                    "<!-- video:id=video_1 -->",
+                    "## 核心概念\n功能边界与验收标准。",
+                    "## 步骤讲解\n先确认目标，再拆任务。",
+                    "<!-- animation:id=anim_1 -->",
+                    "## 练习任务\n写一张任务卡。",
+                    "## 检查标准\n能给出可验收产出。",
+                ]
+            ),
+            video_briefs=[
+                {
+                    "video_id": "video_1",
+                    "title": "学习目标导入视频",
+                    "purpose": "帮助学习者理解功能边界与验收标准",
+                }
+            ],
+            animation_briefs=[
+                {
+                    "animation_id": "anim_1",
+                    "title": "目标动画",
+                    "concept": "展示学习目标如何落到验收标准",
+                    "visual_elements": ["目标卡片", "任务卡片", "验收标准卡片"],
+                    "motion": "依次淡入",
+                    "space": "正文宽度",
+                    "placement_hint": "练习任务之后",
+                }
+            ],
+        )
+
+
+def test_section_markdown_rejects_empty_source_footer() -> None:
+    with pytest.raises(ValidationError):
+        SectionMarkdownOutput(
+            section_id="1.1",
+            parent_section_id="1",
+            title="学习目标",
+            markdown=_complete_markdown().replace(
+                "## 来源\n- 《AI 应用开发项目教程》：功能边界；验收标准",
+                "## 来源\n  ",
+            ),
+            video_briefs=[
+                {
+                    "video_id": "video_1",
+                    "title": "学习目标导入视频",
+                    "purpose": "帮助学习者理解功能边界与验收标准",
+                }
+            ],
+            animation_briefs=[
+                {
+                    "animation_id": "anim_1",
+                    "title": "目标动画",
+                    "concept": "展示学习目标如何落到验收标准",
+                    "visual_elements": ["目标卡片", "任务卡片", "验收标准卡片"],
+                    "motion": "依次淡入",
+                    "space": "正文宽度",
+                    "placement_hint": "练习任务之后",
+                }
+            ],
+        )
+
+
+def test_section_markdown_rejects_non_terminal_source_footer() -> None:
+    with pytest.raises(ValidationError):
+        SectionMarkdownOutput(
+            section_id="1.1",
+            parent_section_id="1",
+            title="学习目标",
+            markdown=_complete_markdown()
+            + "\n\n## 检查标准\n来源段后不允许继续追加二级标题。",
+            video_briefs=[
+                {
+                    "video_id": "video_1",
+                    "title": "学习目标导入视频",
+                    "purpose": "帮助学习者理解功能边界与验收标准",
+                }
+            ],
+            animation_briefs=[
+                {
+                    "animation_id": "anim_1",
+                    "title": "目标动画",
+                    "concept": "展示学习目标如何落到验收标准",
+                    "visual_elements": ["目标卡片", "任务卡片", "验收标准卡片"],
+                    "motion": "依次淡入",
+                    "space": "正文宽度",
+                    "placement_hint": "练习任务之后",
+                }
+            ],
+        )
+
+
+def test_section_markdown_rejects_repeated_source_footer() -> None:
+    markdown = _complete_markdown().replace(
+        "## 来源\n- 《AI 应用开发项目教程》：功能边界；验收标准",
+        (
+            "## 来源\n- 《AI 应用开发项目教程》：功能边界；验收标准"
+            "\n\n## 检查标准\n来源段后不允许继续追加二级标题。"
+            "\n\n## 来源\n- 重复来源"
+        ),
+    )
+
+    with pytest.raises(ValidationError):
+        SectionMarkdownOutput(
+            section_id="1.1",
+            parent_section_id="1",
+            title="学习目标",
+            markdown=markdown,
+            video_briefs=[
+                {
+                    "video_id": "video_1",
+                    "title": "学习目标导入视频",
+                    "purpose": "帮助学习者理解功能边界与验收标准",
+                }
+            ],
+            animation_briefs=[
+                {
+                    "animation_id": "anim_1",
+                    "title": "目标动画",
+                    "concept": "展示学习目标如何落到验收标准",
+                    "visual_elements": ["目标卡片", "任务卡片", "验收标准卡片"],
+                    "motion": "依次淡入",
+                    "space": "正文宽度",
+                    "placement_hint": "练习任务之后",
+                }
+            ],
+        )
+
+
 def test_section_markdown_rejects_missing_resource_briefs() -> None:
     with pytest.raises(ValidationError):
         SectionMarkdownOutput(
@@ -332,7 +656,10 @@ def test_section_markdown_rejects_low_quality_fallback_markers() -> None:
                     "# 1.1 学习目标",
                     "## 学习目标\n目标说明。",
                     "<!-- video:id=video_1 -->",
-                    "## 核心概念\nKey Concept\nThis section explores foundational concepts.",
+                    (
+                        "## 核心概念\nKey Concept\n"
+                        "This section explores foundational concepts."
+                    ),
                     "## 步骤讲解\n先确认目标，再拆任务。",
                     "<!-- animation:id=anim_1 -->",
                     "## 练习任务\n写一张任务卡。",
@@ -436,9 +763,7 @@ def test_section_markdown_rejects_placeholder_id_mismatch() -> None:
         )
 
 
-def test_section_animation_brief_normalizes_structured_visual_elements_and_motion_steps() -> (
-    None
-):
+def test_section_animation_brief_normalizes_visual_elements_and_motion_steps() -> None:
     output = SectionAnimationBriefOutput(
         animation_id="anim_1",
         title="接口调用流程动画",
@@ -507,7 +832,9 @@ def test_section_html_animation_allows_missing_top_level_and_item_title_from_llm
         animations=[
             {
                 "animation_id": "anim_1",
-                "html": '<div class="section-animation"><style></style><p>目标</p></div>',
+                "html": (
+                    '<div class="section-animation"><style></style><p>目标</p></div>'
+                ),
             }
         ]
     )

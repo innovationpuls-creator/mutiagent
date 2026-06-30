@@ -33,6 +33,7 @@ from app.orchestration.agents.course_resources import (
     _video_search_queries,
 )
 from app.orchestration.agents.prompts import SECTION_VIDEO_SEARCH_AGENT_SYSTEM_PROMPT
+from tests.postgres import postgresql_test_url
 
 
 def _outline() -> dict:
@@ -1870,7 +1871,7 @@ def test_run_section_markdown_agent_writes_each_first_chapter_child_section(
             return MarkdownPrompt()
 
     captured = {"schema": None, "queries": [], "sections": []}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "section-markdown"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -1969,7 +1970,7 @@ def test_run_section_markdown_agent_returns_error_when_llm_unavailable(
         def from_messages(_messages):
             return MarkdownPrompt()
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-fallback.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-fallback"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -2037,7 +2038,7 @@ def test_run_section_markdown_agent_returns_error_when_model_returns_error(
             return MarkdownPrompt()
 
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'section-markdown-model-error-fallback.db'}"
+        postgresql_test_url(tmp_path, "section-markdown-model-error-fallback")
     )
     set_engine(engine)
     init_db(engine)
@@ -2124,7 +2125,9 @@ def test_run_section_markdown_agent_persists_markdown_failure_without_clearing_o
     }
     outline = _outline()
     outline["section_composed_markdowns"] = existing_composed
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-section-error.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-markdown-section-error")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -2200,7 +2203,9 @@ def test_run_section_markdown_agent_accepts_plain_markdown_model_output(
         def from_messages(_messages):
             return MarkdownPrompt()
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-plain-output.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-markdown-plain-output")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -2281,7 +2286,9 @@ def test_run_section_markdown_agent_accepts_loose_json_without_brief_metadata(
         def from_messages(_messages):
             return MarkdownPrompt()
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-loose-json.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-markdown-loose-json")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -2372,7 +2379,9 @@ def test_run_section_markdown_agent_generates_markdown_from_five_section_bodies_
             return MarkdownPrompt()
 
     captured = {"schema": None, "queries": [], "attempts": 0}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-quality-retry.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-markdown-quality-retry")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -2561,7 +2570,9 @@ def test_run_section_markdown_agent_expands_short_markdown_with_llm_content(
         "active_expansions": 0,
         "max_active_expansions": 0,
     }
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-expansion.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-markdown-expansion")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -2688,7 +2699,7 @@ def test_run_section_markdown_agent_scaffolds_structural_markdown_gaps(
             return MarkdownPrompt()
 
     captured = {"expansion_calls": 0}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-scaffold.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-scaffold"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -2803,7 +2814,7 @@ def test_run_section_markdown_agent_returns_error_when_quality_repeatedly_fails(
 
     captured = {"attempts": 0, "expansion_attempts": 0}
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'section-markdown-deterministic-rewrite.db'}"
+        postgresql_test_url(tmp_path, "section-markdown-deterministic-rewrite")
     )
     set_engine(engine)
     init_db(engine)
@@ -2897,7 +2908,9 @@ def test_run_section_markdown_agent_uses_backend_generated_resource_briefs(
             return MarkdownPrompt()
 
     captured = {"schema": None, "queries": [], "attempts": 0}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-second-repair.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-markdown-second-repair")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -3001,7 +3014,9 @@ def test_run_section_markdown_agent_generates_child_sections_concurrently(
             return MarkdownPrompt()
 
     captured = {"schema": None, "active": 0, "max_active": 0}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-concurrent.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-markdown-concurrent")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -3092,7 +3107,9 @@ def test_run_section_markdown_agent_returns_error_when_failed_section_cannot_be_
             return MarkdownPrompt()
 
     captured = {"schema": None, "attempts": {}}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-batch-retry.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-markdown-batch-retry")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -3148,7 +3165,7 @@ def test_stream_chapter_resource_generation_reports_error_when_resource_llm_fail
     class ResourceLlm:
         pass
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-stream-fallback.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "section-stream-fallback"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -3319,7 +3336,7 @@ def test_run_section_video_search_agent_writes_url_and_fallback_cover(
         }
     }
     captured = {"schema": None, "queries": [], "verified_search": 0}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-video.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "section-video"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -3439,7 +3456,7 @@ def test_run_section_video_search_agent_retries_transient_search_failure(
         }
     }
     captured = {"schema": None, "queries": [], "attempts": 0, "search_attempts": 0}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-video-retry.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "section-video-retry"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -3574,7 +3591,9 @@ def test_run_section_video_search_agent_retries_when_first_search_result_fails_q
         }
     }
     captured = {"schema": None, "queries": [], "attempts": 0, "search_attempts": 0}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-video-quality-repair.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-video-quality-repair")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -3686,7 +3705,9 @@ def test_run_section_video_search_agent_uses_verified_search_when_llm_videos_sta
         }
     }
     captured = {"schema": None, "queries": [], "attempts": 0, "verified_search": 0}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-video-verified-search.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-video-verified-search")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -3819,7 +3840,7 @@ def test_run_section_video_search_agent_uses_verified_search_when_llm_returns_em
     }
     captured = {"schema": None, "queries": [], "attempts": 0, "verified_search": 0}
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'section-video-empty-direct-search.db'}"
+        postgresql_test_url(tmp_path, "section-video-empty-direct-search")
     )
     set_engine(engine)
     init_db(engine)
@@ -3936,7 +3957,7 @@ def test_run_section_video_search_agent_retries_verified_search_when_first_scan_
     }
     captured = {"schema": None, "queries": [], "attempts": 0, "verified_search": 0}
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'section-video-verified-search-retry.db'}"
+        postgresql_test_url(tmp_path, "section-video-verified-search-retry")
     )
     set_engine(engine)
     init_db(engine)
@@ -4060,7 +4081,9 @@ def test_run_section_video_search_agent_accepts_course_specific_video_metadata(
             section["key_knowledge_points"] = ["向量数据库", "Embedding 原理"]
 
     captured = {"schema": None, "queries": [], "verified_search": 0}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-video-course-topic.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-video-course-topic")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -4170,7 +4193,9 @@ def test_run_section_video_search_agent_accepts_section_topic_match_without_cour
             }
         },
     }
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-video-langgraph-topic.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-video-langgraph-topic")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -4239,7 +4264,9 @@ def test_run_section_video_search_agent_falls_back_when_verified_search_stays_em
             "generated_at": "2026-06-06T00:00:00Z",
         }
     }
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-video-search-fallback.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-video-search-fallback")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -4344,7 +4371,7 @@ def test_run_section_html_animation_agent_uses_animation_briefs(tmp_path) -> Non
         }
     }
     captured = {"schema": None, "queries": []}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-animation.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "section-animation"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -4450,7 +4477,9 @@ def test_run_section_html_animation_agent_accepts_plain_html_model_output(
         }
     }
     captured = {"queries": []}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-animation-plain-html.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-animation-plain-html")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -4571,7 +4600,9 @@ def test_run_section_html_animation_agent_generates_chapter_sections_concurrentl
         }
 
     captured = {"queries": [], "inflight": 0, "max_inflight": 0}
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-animation-concurrent.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-animation-concurrent")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -4667,7 +4698,7 @@ def test_run_section_html_animation_agent_returns_error_when_llm_unavailable(
     }
     captured = {"schema": None, "queries": []}
     engine = build_engine(
-        f"sqlite:///{tmp_path / 'section-animation-local-fallback.db'}"
+        postgresql_test_url(tmp_path, "section-animation-local-fallback")
     )
     set_engine(engine)
     init_db(engine)
@@ -4777,7 +4808,7 @@ def test_resource_agents_reuse_existing_markdown_and_video_but_fail_when_animati
             "generated_at": "2026-06-06T00:00:00Z",
         }
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-resource-reuse.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "section-resource-reuse"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -5844,7 +5875,7 @@ def test_stream_chapter_resource_generation_generates_bound_resources_for_each_c
 
     captured = {"queries": []}
     outline = _outline()
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-stream-complete.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "section-stream-complete"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -6013,7 +6044,9 @@ def test_stream_chapter_resource_generation_accepts_plain_markdown_and_html_outp
         ]
 
     outline = _outline()
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-stream-plain-output.db'}")
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-stream-plain-output")
+    )
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -6463,7 +6496,7 @@ def test_run_section_markdown_agent_injects_textbook_evidence_cag(tmp_path) -> N
         def from_messages(_messages):
             return MarkdownPrompt()
 
-    engine = build_engine(f"sqlite:///{tmp_path / 'section-markdown-cag.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-cag"))
     set_engine(engine)
     init_db(engine)
 

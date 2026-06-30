@@ -3,10 +3,11 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from tests.postgres import postgresql_test_url
 
 
 def make_client(tmp_path: Path) -> TestClient:
-    database_url = f"sqlite:///{tmp_path / 'cors-test.db'}"
+    database_url = postgresql_test_url(tmp_path, "cors-test")
     return TestClient(create_app(database_url=database_url))
 
 

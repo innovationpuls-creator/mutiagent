@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Generator
 from datetime import datetime, timezone
 from hashlib import sha1
 from json import loads
@@ -1104,77 +1105,66 @@ def hybrid_search_textbooks(
     session: Session, query: str, limit: int = 15
 ) -> list[Textbook]:
     # Only search published textbooks
-    bind = session.get_bind()
-    dialect_name = bind.dialect.name
+    try:
+        embeddings = get_embeddings_client()
+        query_vector = embeddings.embed_query(query)
 
-    if dialect_name == "postgresql":
-        try:
-            embeddings = get_embeddings_client()
-            query_vector = embeddings.embed_query(query)
+        # RRF Hybrid Search: cosine distance embedding <=> :vector + tsvector match
+        sql = text("""
+            WITH vector_search AS (
+                SELECT textbook_id,
+                       ROW_NUMBER() OVER (
+                           ORDER BY embedding <=> :vector
+                       ) as rank
+                FROM textbook
+                WHERE embedding IS NOT NULL
+                  AND student_availability_status = 'published'
+                LIMIT 30
+            ),
+            fts_search AS (
+                SELECT textbook_id,
+                       ROW_NUMBER() OVER (
+                           ORDER BY ts_rank(
+                               to_tsvector(
+                                   'chinese',
+                                   title || ' ' || tags::text
+                               ),
+                               plainto_tsquery('chinese', :query)
+                           ) DESC
+                       ) as rank
+                FROM textbook
+                WHERE to_tsvector(
+                          'chinese',
+                          title || ' ' || tags::text
+                      ) @@ plainto_tsquery('chinese', :query)
+                  AND student_availability_status = 'published'
+                LIMIT 30
+            )
+            SELECT COALESCE(v.textbook_id, f.textbook_id) as textbook_id,
+                   (1.0 / (60.0 + COALESCE(v.rank, 100)) +
+                    1.0 / (60.0 + COALESCE(f.rank, 100))) as rrf_score
+            FROM vector_search v
+            FULL OUTER JOIN fts_search f ON v.textbook_id = f.textbook_id
+            ORDER BY rrf_score DESC
+            LIMIT :limit
+        """)
+        res = session.execute(
+            sql, {"vector": query_vector, "query": query, "limit": limit}
+        ).all()
+        ids = [r[0] for r in res]
+        if not ids:
+            return []
+        # Retrieve instances in RRF order
+        tbs = session.exec(select(Textbook).where(Textbook.textbook_id.in_(ids))).all()
+        tb_map = {tb.textbook_id: tb for tb in tbs}
+        return [tb_map[t_id] for t_id in ids if t_id in tb_map]
+    except Exception as e:
+        logger.info("Hybrid search fallback to simple matching: %s", e)
 
-            # Perform RRF Hybrid Search in PostgreSQL using raw SQL text:
-            # Combine cosine distance embedding <=> :vector and tsvector match
-            # Make sure to handle tsquery correctly using websearch_to_tsquery
-            # or plainto_tsquery.
-            # Return the Textbook instances matching the IDs
-            sql = text("""
-                WITH vector_search AS (
-                    SELECT textbook_id,
-                           ROW_NUMBER() OVER (
-                               ORDER BY embedding <=> :vector
-                           ) as rank
-                    FROM textbook
-                    WHERE embedding IS NOT NULL
-                      AND student_availability_status = 'published'
-                    LIMIT 30
-                ),
-                fts_search AS (
-                    SELECT textbook_id,
-                           ROW_NUMBER() OVER (
-                               ORDER BY ts_rank(
-                                   to_tsvector(
-                                       'chinese',
-                                       title || ' ' || tags::text
-                                   ),
-                                   plainto_tsquery('chinese', :query)
-                               ) DESC
-                           ) as rank
-                    FROM textbook
-                    WHERE to_tsvector(
-                              'chinese',
-                              title || ' ' || tags::text
-                          ) @@ plainto_tsquery('chinese', :query)
-                      AND student_availability_status = 'published'
-                    LIMIT 30
-                )
-                SELECT COALESCE(v.textbook_id, f.textbook_id) as textbook_id,
-                       (1.0 / (60.0 + COALESCE(v.rank, 100)) +
-                        1.0 / (60.0 + COALESCE(f.rank, 100))) as rrf_score
-                FROM vector_search v
-                FULL OUTER JOIN fts_search f ON v.textbook_id = f.textbook_id
-                ORDER BY rrf_score DESC
-                LIMIT :limit
-            """)
-            res = session.execute(
-                sql, {"vector": query_vector, "query": query, "limit": limit}
-            ).all()
-            ids = [r[0] for r in res]
-            if not ids:
-                return []
-            # Retrieve instances in RRF order
-            tbs = session.exec(
-                select(Textbook).where(Textbook.textbook_id.in_(ids))
-            ).all()
-            tb_map = {tb.textbook_id: tb for tb in tbs}
-            return [tb_map[t_id] for t_id in ids if t_id in tb_map]
-        except Exception as e:
-            logger.warning("PostgreSQL hybrid search failed, falling back: %s", e)
-
-    # SQLite or Postgres fallback: Simple matching
+    # Fallback: simple string matching (e.g., pgvector extension not available)
     stmt = select(Textbook).where(Textbook.student_availability_status == "published")
     all_tbs = session.exec(stmt).all()
 
-    # Calculate simple match score (e.g., query string overlap in title or tags)
     scored = []
     for tb in all_tbs:
         score = 0
@@ -1426,17 +1416,85 @@ def _matching_gap_hits(session: Session, query: str) -> list[KnowledgeBaseAgentG
 def run_knowledge_base_agent(
     session: Session, message: str
 ) -> KnowledgeBaseAgentResponse:
-    query = message.strip()
-    if not query:
+    final_response: KnowledgeBaseAgentResponse | None = None
+    for event in stream_knowledge_base_agent_events(session, message):
+        if event["event"] != "completed":
+            continue
+        response_payload = event["payload"].get("response")
+        if not isinstance(response_payload, dict):
+            continue
+        final_response = KnowledgeBaseAgentResponse.model_validate(response_payload)
+    if final_response is None:
         return KnowledgeBaseAgentResponse(
+            reply_text="知识库 Agent 未返回结果，请稍后重试。",
+        )
+    return final_response
+
+
+def stream_knowledge_base_agent_events(
+    session: Session, message: str
+) -> Generator[dict[str, object], None, None]:
+    query = message.strip()
+    yield _agent_stream_event(
+        "started",
+        "已收到管理员消息。",
+        raw_length=len(message),
+        normalized_length=len(query),
+    )
+    if not query:
+        response = KnowledgeBaseAgentResponse(
             reply_text="先说一句话，我会自动帮你从知识库里匹配教材。",
         )
+        yield _agent_stream_event("completed", "本轮已结束。", response=response)
+        return
 
+    source_count = session.exec(select(KnowledgeSource)).all()
+    textbook_count = session.exec(select(Textbook)).all()
+    gap_count = session.exec(select(KnowledgeGap)).all()
+    yield _agent_stream_event(
+        "context_loaded",
+        "已读取知识库现状。",
+        source_count=len(source_count),
+        textbook_count=len(textbook_count),
+        gap_count=len(gap_count),
+    )
+    yield _agent_stream_event(
+        "textbook_search_started",
+        "正在按教材标题、简介和标签做精确匹配。",
+    )
     matched_textbooks = search_admin_textbooks(session, query, limit=5)
+    yield _agent_stream_event(
+        "textbook_search_completed",
+        "精确匹配完成。",
+        match_count=len(matched_textbooks),
+    )
     if not matched_textbooks:
+        yield _agent_stream_event(
+            "hybrid_search_started",
+            "未找到直接匹配，正在使用内容向量与目录信号扩展检索。",
+        )
         matched_textbooks = hybrid_search_textbooks(session, query, limit=5)
+        yield _agent_stream_event(
+            "hybrid_search_completed",
+            "扩展检索完成。",
+            match_count=len(matched_textbooks),
+        )
     textbook_hits = _textbook_hits_from_matches(session, matched_textbooks)
+    yield _agent_stream_event(
+        "textbook_hits_ready",
+        "已整理教材命中结果。",
+        hit_count=len(textbook_hits),
+    )
+    yield _agent_stream_event(
+        "gap_search_started",
+        "正在检查未覆盖待办是否命中本轮主题。",
+    )
     gap_hits = _matching_gap_hits(session, query)
+    yield _agent_stream_event(
+        "gap_search_completed",
+        "待办检查完成。",
+        hit_count=len(gap_hits),
+    )
     source_results: list[KnowledgeBaseSourceResult] = []
     reply_parts = ["我按你的要求自动匹配了知识库。"]
     selected_textbook_id = None
@@ -1450,7 +1508,16 @@ def run_knowledge_base_agent(
             + "。"
         )
     else:
+        yield _agent_stream_event(
+            "source_search_started",
+            "知识库内暂无命中，正在联网查找真实教材来源。",
+        )
         source_results = search_real_textbook_sources(query, limit=_SOURCE_RESULT_LIMIT)
+        yield _agent_stream_event(
+            "source_search_completed",
+            "真实教材来源查找完成。",
+            result_count=len(source_results),
+        )
         if source_results:
             selected_source_result_id = source_results[0].source_result_id
             reply_parts.append(f"找到 {len(source_results)} 个真实教材来源。")
@@ -1470,7 +1537,7 @@ def run_knowledge_base_agent(
         reply_parts.append("你可以选择一个来源后再进入教材入库整理流程。")
     else:
         reply_parts.append("你可以补充一个更具体的教材名或检查搜索服务配置。")
-    return KnowledgeBaseAgentResponse(
+    response = KnowledgeBaseAgentResponse(
         reply_text=" ".join(reply_parts),
         selected_textbook_id=selected_textbook_id,
         selected_source_result_id=selected_source_result_id,
@@ -1478,3 +1545,37 @@ def run_knowledge_base_agent(
         gap_hits=gap_hits[:5],
         source_results=source_results,
     )
+    yield _agent_stream_event(
+        "reply_ready",
+        "已生成管理员回复。",
+        reply_length=len(response.reply_text),
+    )
+    yield _agent_stream_event("completed", "本轮已完成。", response=response)
+
+
+def _agent_stream_event(
+    event: str, message: str, **payload: object
+) -> dict[str, object]:
+    serialized_payload = {
+        key: _serialize_agent_stream_value(value) for key, value in payload.items()
+    }
+    serialized_payload["message"] = message
+    return {"event": event, "payload": serialized_payload}
+
+
+def _serialize_agent_stream_value(value: object) -> object:
+    if isinstance(value, KnowledgeBaseAgentResponse):
+        return value.model_dump()
+    if isinstance(value, KnowledgeBaseAgentTextbookHit):
+        return value.model_dump()
+    if isinstance(value, KnowledgeBaseAgentGapHit):
+        return value.model_dump()
+    if isinstance(value, KnowledgeBaseSourceResult):
+        return value.model_dump()
+    if isinstance(value, list):
+        return [_serialize_agent_stream_value(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key): _serialize_agent_stream_value(item) for key, item in value.items()
+        }
+    return value

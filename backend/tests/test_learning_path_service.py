@@ -12,12 +12,12 @@ from app.services.learning_path_service import (
     get_year_learning_path,
     upsert_year_learning_path,
 )
+from tests.postgres import postgresql_test_url
 
 
 def build_session(tmp_path: Path) -> Session:
     engine = create_engine(
-        f"sqlite:///{tmp_path / 'learning-path.db'}",
-        connect_args={"check_same_thread": False},
+        postgresql_test_url(tmp_path, "learning-path"),
     )
     SQLModel.metadata.create_all(engine)
     session = Session(engine)

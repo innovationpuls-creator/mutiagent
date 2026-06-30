@@ -4,6 +4,7 @@ import pytest
 from langchain_core.messages import HumanMessage
 
 from app.schemas import ChatMessageRequest
+from tests.postgres import postgresql_test_url
 from tests.test_orchestration_api import _auth_header, _register_user, chat_app
 
 
@@ -131,7 +132,7 @@ async def test_stream_forest_ai_response_multimodal():
 
 
 def test_stream_forest_ai_api_multimodal(tmp_path):
-    database_url = f"sqlite:///{tmp_path / 'forest-ai-multimodal-test.db'}"
+    database_url = postgresql_test_url(tmp_path, "forest-ai-multimodal-test")
     client = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
 

@@ -1,4 +1,6 @@
-"""Unit tests for the rule engine — pure logic, no LLM calls."""
+"""Unit tests for the rule engine — pure logic, no LLM calls and contract tests."""
+
+# ruff: noqa: E501
 
 from __future__ import annotations
 
@@ -303,8 +305,18 @@ class TestHardRules:
                     "grade_plans": {
                         "year_3": {
                             "course_nodes": [
-                                {"course_node_id": "year_3_course_1"},
-                                {"course_node_id": "year_3_course_2"},
+                                {
+                                    "course_node_id": "year_3_course_1",
+                                    "source_textbook_id": "textbook-ai",
+                                    "source_textbook_title": "AI 应用开发教材",
+                                    "source_outline_section_ids": ["1.1"],
+                                },
+                                {
+                                    "course_node_id": "year_3_course_2",
+                                    "source_textbook_id": "textbook-ai",
+                                    "source_textbook_title": "AI 应用开发教材",
+                                    "source_outline_section_ids": ["2.1"],
+                                },
                             ],
                         },
                     },
@@ -440,8 +452,18 @@ class TestHardRules:
                     "grade_plans": {
                         "year_3": {
                             "course_nodes": [
-                                {"course_node_id": "year_3_course_1"},
-                                {"course_node_id": "year_3_course_2"},
+                                {
+                                    "course_node_id": "year_3_course_1",
+                                    "source_textbook_id": "textbook-ai",
+                                    "source_textbook_title": "AI 应用开发教材",
+                                    "source_outline_section_ids": ["1.1"],
+                                },
+                                {
+                                    "course_node_id": "year_3_course_2",
+                                    "source_textbook_id": "textbook-ai",
+                                    "source_textbook_title": "AI 应用开发教材",
+                                    "source_outline_section_ids": ["2.1"],
+                                },
                             ],
                         },
                     },
@@ -476,8 +498,18 @@ class TestHardRules:
                     "grade_plans": {
                         "year_3": {
                             "course_nodes": [
-                                {"course_node_id": "year_3_course_1"},
-                                {"course_node_id": "year_3_course_2"},
+                                {
+                                    "course_node_id": "year_3_course_1",
+                                    "source_textbook_id": "textbook-ai",
+                                    "source_textbook_title": "AI 应用开发教材",
+                                    "source_outline_section_ids": ["1.1"],
+                                },
+                                {
+                                    "course_node_id": "year_3_course_2",
+                                    "source_textbook_id": "textbook-ai",
+                                    "source_textbook_title": "AI 应用开发教材",
+                                    "source_outline_section_ids": ["2.1"],
+                                },
                             ],
                         },
                     },
@@ -512,8 +544,18 @@ class TestHardRules:
                     "grade_plans": {
                         "year_3": {
                             "course_nodes": [
-                                {"course_node_id": "year_3_course_1"},
-                                {"course_node_id": "year_3_course_2"},
+                                {
+                                    "course_node_id": "year_3_course_1",
+                                    "source_textbook_id": "textbook-ai",
+                                    "source_textbook_title": "AI 应用开发教材",
+                                    "source_outline_section_ids": ["1.1"],
+                                },
+                                {
+                                    "course_node_id": "year_3_course_2",
+                                    "source_textbook_id": "textbook-ai",
+                                    "source_textbook_title": "AI 应用开发教材",
+                                    "source_outline_section_ids": ["2.1"],
+                                },
                             ],
                         },
                     },
@@ -638,8 +680,18 @@ class TestHardRules:
                     "grade_plans": {
                         "year_3": {
                             "course_nodes": [
-                                {"course_node_id": "year_3_course_1"},
-                                {"course_node_id": "year_3_course_2"},
+                                {
+                                    "course_node_id": "year_3_course_1",
+                                    "source_textbook_id": "textbook-ai",
+                                    "source_textbook_title": "AI 应用开发教材",
+                                    "source_outline_section_ids": ["1.1"],
+                                },
+                                {
+                                    "course_node_id": "year_3_course_2",
+                                    "source_textbook_id": "textbook-ai",
+                                    "source_textbook_title": "AI 应用开发教材",
+                                    "source_outline_section_ids": ["2.1"],
+                                },
                             ],
                         },
                     },

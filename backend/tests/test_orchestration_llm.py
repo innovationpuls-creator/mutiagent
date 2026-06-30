@@ -26,11 +26,9 @@ def test_llm_factories_split_worker_and_thinking_modes(monkeypatch) -> None:
     assert supervisor.kwargs["max_tokens"] is None
     assert worker.kwargs["max_tokens"] == 8192
     assert thinking_worker.kwargs["max_tokens"] == 8192
-    assert supervisor.kwargs["model_kwargs"]["extra_body"]["enable_thinking"] is False
-    assert worker.kwargs["model_kwargs"]["extra_body"]["enable_thinking"] is False
-    assert (
-        thinking_worker.kwargs["model_kwargs"]["extra_body"]["enable_thinking"] is True
-    )
+    assert supervisor.kwargs["extra_body"]["enable_thinking"] is False
+    assert worker.kwargs["extra_body"]["enable_thinking"] is False
+    assert thinking_worker.kwargs["extra_body"]["enable_thinking"] is True
 
 
 def test_llm_factories_cache_instances(monkeypatch) -> None:
@@ -152,8 +150,30 @@ def test_search_worker_llm_enables_search(monkeypatch) -> None:
 
     search_worker = llm_module.get_search_worker_llm()
 
-    extra_body = search_worker.kwargs["model_kwargs"]["extra_body"]
+    extra_body = search_worker.kwargs["extra_body"]
     assert extra_body["enable_thinking"] is True
     assert extra_body["enable_search"] is True
     assert extra_body["search_options"]["forced_search"] is True
     assert extra_body["search_options"]["search_strategy"] == "turbo"
+
+
+def test_llm_factories_pass_extra_body_directly(monkeypatch) -> None:
+    import app.orchestration.llm as llm_module
+
+    captured_calls: list[dict] = []
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs):
+            captured_calls.append(kwargs)
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(llm_module, "ChatOpenAI", FakeChatOpenAI)
+    llm_module._search_worker_llm = None
+
+    llm_module.get_search_worker_llm()
+
+    assert len(captured_calls) == 1
+    call = captured_calls[0]
+    assert "extra_body" in call
+    assert call["extra_body"]["enable_thinking"] is True
+    assert call["extra_body"]["enable_search"] is True

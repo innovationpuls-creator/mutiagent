@@ -28,7 +28,6 @@ backend/.venv/
 backend/.pytest_cache/
 backend/**/*.pyc
 backend/**/__pycache__/
-backend/*.db
 backend/*.egg-info/
 
 frontend/node_modules/

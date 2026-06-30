@@ -8,6 +8,7 @@ from sqlmodel import Session, create_engine, select
 from app.main import create_app
 from app.models import ChapterProgress, User, UserYearLearningPath
 from app.services.learning_path_service import upsert_year_learning_path
+from tests.postgres import postgresql_test_url
 
 
 def _register(client: TestClient, identifier: str) -> tuple[str, str]:
@@ -220,7 +221,7 @@ def _multi_year_path() -> dict:
 
 def test_learning_path_me_requires_auth(tmp_path: Path) -> None:
     client = TestClient(
-        create_app(database_url=f"sqlite:///{tmp_path / 'learning-path-auth.db'}")
+        create_app(database_url=postgresql_test_url(tmp_path, "learning-path-auth"))
     )
 
     response = client.get("/api/learning-path/me")
@@ -230,7 +231,7 @@ def test_learning_path_me_requires_auth(tmp_path: Path) -> None:
 
 def test_learning_path_me_returns_404_before_path_generated(tmp_path: Path) -> None:
     client = TestClient(
-        create_app(database_url=f"sqlite:///{tmp_path / 'learning-path-empty.db'}")
+        create_app(database_url=postgresql_test_url(tmp_path, "learning-path-empty"))
     )
     token, _ = _register(client, "learning-path-empty@example.com")
 
@@ -245,10 +246,10 @@ def test_learning_path_me_returns_404_before_path_generated(tmp_path: Path) -> N
 def test_learning_path_me_returns_year_learning_paths_and_latest_updated_at(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'learning-path-saved.db'}"
+    database_url = postgresql_test_url(tmp_path, "learning-path-saved")
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "learning-path-saved@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         user = session.exec(
@@ -310,10 +311,10 @@ def test_learning_path_me_returns_year_learning_paths_and_latest_updated_at(
 def test_learning_path_me_expands_multi_grade_plan_from_single_saved_row(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'learning-path-expanded.db'}"
+    database_url = postgresql_test_url(tmp_path, "learning-path-expanded")
     client = TestClient(create_app(database_url=database_url))
     token, _ = _register(client, "learning-path-expanded@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         user = session.exec(
@@ -353,10 +354,10 @@ def test_learning_path_me_expands_multi_grade_plan_from_single_saved_row(
 def test_upsert_year_learning_path_clears_chapter_progress_when_course_identity_changes(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'learning-path-progress-reset.db'}"
+    database_url = postgresql_test_url(tmp_path, "learning-path-progress-reset")
     client = TestClient(create_app(database_url=database_url))
     _token, _ = _register(client, "learning-path-progress-reset@example.com")
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    engine = create_engine(database_url)
 
     with Session(engine) as session:
         user = session.exec(

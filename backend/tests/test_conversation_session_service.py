@@ -14,12 +14,12 @@ from app.services.conversation_session_service import (
     load_session,
     replace_latest_learning_path_intake,
 )
+from tests.postgres import postgresql_test_url
 
 
 def build_session(tmp_path: Path) -> Session:
     engine = create_engine(
-        f"sqlite:///{tmp_path / 'conversation-session.db'}",
-        connect_args={"check_same_thread": False},
+        postgresql_test_url(tmp_path, "conversation-session"),
     )
     SQLModel.metadata.create_all(engine)
     session = Session(engine)
@@ -118,7 +118,7 @@ def test_append_messages_raises_for_missing_session(tmp_path: Path) -> None:
 
 
 def test_replace_latest_learning_path_intake_message(tmp_path: Path) -> None:
-    engine = build_engine(f"sqlite:///{tmp_path / 'session-intake.db'}")
+    engine = build_engine(postgresql_test_url(tmp_path, "session-intake"))
     set_engine(engine)
     init_db(engine)
 
