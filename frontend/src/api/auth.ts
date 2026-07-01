@@ -85,6 +85,28 @@ export function extractErrorMessage(error: ApiErrorResponse | null): string {
 		return error.detail;
 	}
 
+	if (Array.isArray(error.detail) && error.detail.length > 0) {
+		const firstError = error.detail[0];
+		if (firstError && typeof firstError === "object" && "msg" in firstError) {
+			const msg = firstError.msg;
+			if (typeof msg === "string") {
+				if (msg.startsWith("Value error, ")) {
+					return msg.substring("Value error, ".length);
+				}
+				if (msg.includes("at least") && msg.includes("characters")) {
+					const match = msg.match(/at least (\d+) characters/);
+					if (match) {
+						return `长度不能少于 ${match[1]} 个字符`;
+					}
+				}
+				if (msg === "Field required") {
+					return "必填项不能为空";
+				}
+				return msg;
+			}
+		}
+	}
+
 	return "表单信息不完整，请检查长度和必填项后重试";
 }
 

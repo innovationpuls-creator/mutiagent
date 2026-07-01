@@ -166,7 +166,6 @@
 	position: relative;
 	display: flex;
 	flex-direction: column;
-	justify-content: center;
 	align-items: center;
 	background-image:
 		linear-gradient(oklch(92% 0.02 75 / 0.07) 1px, transparent 1px),
@@ -176,8 +175,9 @@
 		40px 40px,
 		40px 40px,
 		auto;
-	padding: var(--space-12) var(--space-40);
-	overflow: hidden;
+	padding: var(--space-40) var(--space-40);
+	overflow-y: auto;
+	overflow-x: hidden;
 	isolation: isolate;
 }
 
@@ -751,6 +751,7 @@
 	}
 	.auth-right-surface {
 		padding: var(--space-48) var(--space-24);
+		overflow: visible;
 	}
 }
 
