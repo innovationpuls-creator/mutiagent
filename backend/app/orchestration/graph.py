@@ -107,13 +107,6 @@ def route_after_worker(state: OrchestrationState) -> str:
     if isinstance(state.get("course_resource_result"), dict):
         return END
 
-    if (
-        last_agent == "profile_agent"
-        and is_complete_profile_data(state.get("profile"))
-        and not state.get("year_learning_paths")
-    ):
-        return SUPERVISOR_NODE
-
     intake = state.get("learning_path_intake")
     if (
         last_agent == "learning_path_intake_agent"
@@ -232,7 +225,7 @@ def _event_for_agent_error(agent: str, message: str) -> dict:
     return event
 
 
-def _extract_current_learning_course(
+def _extract_current_learning_course(  # noqa: C901
     final_state: dict[str, Any],
 ) -> dict[str, Any] | None:
     year_learning_path = final_state.get("year_learning_path")
@@ -316,7 +309,7 @@ async def _iter_graph_events_with_idle_status(
             pending.cancel()
 
 
-def _final_response_from_state(
+def _final_response_from_state(  # noqa: C901
     final_state: dict[str, Any], supervisor_streaming_text: str
 ) -> str:
     response = final_state.get("response")
@@ -337,10 +330,56 @@ def _final_response_from_state(
 
     course_knowledge = final_state.get("course_knowledge")
     course_knowledges = final_state.get("course_knowledges")
+
+    # Gather used textbook titles and section titles to summarize knowledge base usage
+    outlines = []
+    if isinstance(course_knowledge, dict):
+        outlines.append(course_knowledge)
+    if isinstance(course_knowledges, list):
+        for item in course_knowledges:
+            if isinstance(item, dict) and item not in outlines:
+                outlines.append(item)
+
+    kb_data = {}
+    for outline in outlines:
+        sections = outline.get("sections") or []
+        for sec in sections:
+            if not isinstance(sec, dict):
+                continue
+            tb_title = sec.get("source_textbook_title")
+            sec_titles = sec.get("source_section_titles")
+            if tb_title and isinstance(tb_title, str) and tb_title.strip():
+                tb_title = tb_title.strip()
+                if tb_title not in kb_data:
+                    kb_data[tb_title] = []
+                if isinstance(sec_titles, list):
+                    for st in sec_titles:
+                        if isinstance(st, str) and st.strip():
+                            st_clean = st.strip()
+                            if st_clean not in kb_data[tb_title]:
+                                kb_data[tb_title].append(st_clean)
+
+    kb_summary = ""
+    if kb_data:
+        summary_parts = []
+        for tb_title, sec_titles in kb_data.items():
+            if sec_titles:
+                limit = 8
+                formatted_secs = "、".join(f"「{s}」" for s in sec_titles[:limit])
+                if len(sec_titles) > limit:
+                    formatted_secs += f"等共 {len(sec_titles)} 个章节/小节"
+                summary_parts.append(f"教材《{tb_title}》（运用了{formatted_secs}）")
+            else:
+                summary_parts.append(f"教材《{tb_title}》")
+        kb_summary = (
+            "\n\n在生成大纲时，我主要运用了知识库中以下教材及内容：\n- "
+            + "\n- ".join(summary_parts)
+        )
+
     if isinstance(course_knowledges, list) and course_knowledges:
         count = len([item for item in course_knowledges if isinstance(item, dict)])
         if count > 1:
-            return f"本年级 {count} 门课程的章节大纲已生成。"
+            return f"本年级 {count} 门课程的章节大纲已生成。" + kb_summary
 
     if isinstance(course_knowledge, dict):
         course_name = course_knowledge.get("course_name")
@@ -351,7 +390,7 @@ def _final_response_from_state(
         if isinstance(personalization_summary, str) and personalization_summary.strip():
             parts.append(personalization_summary.strip())
         if parts:
-            return "，".join(parts) + "。"
+            return "，".join(parts) + "。" + kb_summary
 
     current_learning_course = _extract_current_learning_course(final_state)
     if isinstance(current_learning_course, dict):
@@ -374,7 +413,7 @@ def _final_response_from_state(
     return ""
 
 
-async def stream_orchestration_events(
+async def stream_orchestration_events(  # noqa: C901
     state: OrchestrationState,
     idle_timeout_seconds: float = 8.0,
 ) -> AsyncGenerator[dict, None]:
@@ -383,8 +422,6 @@ async def stream_orchestration_events(
 
     current_agent: str | None = None
     supervisor_streaming_text = ""
-    generated_paths_this_turn = False
-    generated_outline_this_turn = False
     announced_agents: set[str] = set()
 
     try:
@@ -491,7 +528,6 @@ async def stream_orchestration_events(
             elif kind == "on_chain_end":
                 if name in AGENT_LABELS:
                     output = event.get("data", {}).get("output", {})
-                    agent_key = name.replace("_agent", "")
 
                     has_error = False
                     error_msg = ""
@@ -540,10 +576,6 @@ async def stream_orchestration_events(
                             error=error_msg,
                         )
                     else:
-                        if name == "learning_path_agent":
-                            generated_paths_this_turn = True
-                        if name == "course_knowledge_agent":
-                            generated_outline_this_turn = True
                         yield _emit(
                             "agent_progress",
                             agent=name,
