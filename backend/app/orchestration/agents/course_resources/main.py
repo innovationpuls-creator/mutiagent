@@ -23,9 +23,127 @@ from app.orchestration.agents.course_resources.video import (
     run_section_video_search_agent,
 )
 from app.orchestration.agents.utils import extract_last_tool_call_id
+from app.orchestration.contracts import quality_passed
+from app.orchestration.events import build_agent_event
+from app.orchestration.recovery import update_section_phase_checkpoint
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
+
+
+def _section_by_clean_id(sections: list[dict]) -> dict[str, dict]:
+    return {
+        section_id: section
+        for section in sections
+        if (section_id := _clean_text(section.get("section_id")))
+    }
+
+
+def _section_input_refs(course_id: str, section: dict) -> dict:
+    refs = {
+        "course_id": course_id,
+        "section_id": _clean_text(section.get("section_id")),
+    }
+    source_textbook_id = _clean_text(section.get("source_textbook_id"))
+    if source_textbook_id:
+        refs["source_textbook_id"] = source_textbook_id
+    source_section_ids = section.get("source_section_ids")
+    if isinstance(source_section_ids, list):
+        refs["source_section_ids"] = source_section_ids
+    return refs
+
+
+def _text_ids(items: object, key: str) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    return [
+        item_id
+        for item in items
+        if isinstance(item, dict) and (item_id := _clean_text(item.get(key)))
+    ]
+
+
+def _markdown_output_refs(outline: dict, section_id: str) -> dict:
+    section_markdowns = outline.get("section_markdowns")
+    markdown_value = (
+        section_markdowns.get(section_id) if isinstance(section_markdowns, dict) else {}
+    )
+    if not isinstance(markdown_value, dict):
+        markdown_value = {}
+    return {
+        "section_markdown_id": section_id,
+        "video_brief_ids": _text_ids(markdown_value.get("video_briefs"), "video_id"),
+        "animation_brief_ids": _text_ids(
+            markdown_value.get("animation_briefs"), "animation_id"
+        ),
+    }
+
+
+def _video_output_refs(outline: dict, section_id: str) -> dict:
+    section_video_links = outline.get("section_video_links")
+    video_value = (
+        section_video_links.get(section_id)
+        if isinstance(section_video_links, dict)
+        else {}
+    )
+    if not isinstance(video_value, dict):
+        video_value = {}
+    return {
+        "section_video_link_id": section_id,
+        "video_brief_ids": _text_ids(video_value.get("videos"), "brief_id"),
+    }
+
+
+def _animation_output_refs(outline: dict, section_id: str) -> dict:
+    section_html_animations = outline.get("section_html_animations")
+    animation_value = (
+        section_html_animations.get(section_id)
+        if isinstance(section_html_animations, dict)
+        else {}
+    )
+    if not isinstance(animation_value, dict):
+        animation_value = {}
+    return {
+        "section_animation_id": section_id,
+        "animation_brief_ids": _text_ids(
+            animation_value.get("animations"), "animation_id"
+        ),
+    }
+
+
+def _video_phase_status(outline: dict, section_id: str) -> str:
+    section_video_links = outline.get("section_video_links")
+    video_value = (
+        section_video_links.get(section_id)
+        if isinstance(section_video_links, dict)
+        else {}
+    )
+    if isinstance(video_value, dict) and video_value.get("status") == "unavailable":
+        return "unavailable"
+    return "completed"
+
+
+def _video_failure_reason(outline: dict, section_id: str) -> str:
+    section_video_links = outline.get("section_video_links")
+    video_value = (
+        section_video_links.get(section_id)
+        if isinstance(section_video_links, dict)
+        else {}
+    )
+    if not isinstance(video_value, dict):
+        return ""
+    return _clean_text(video_value.get("failure_reason"))
+
+
+def _quality_payload_for_status(status: str, failure_reason: str = "") -> dict:
+    if status == "unavailable":
+        return {
+            "passed": False,
+            "severity": "informational",
+            "reason": failure_reason,
+            "checks": [],
+        }
+    return quality_passed().to_dict()
 
 
 def create_section_markdown_agent_node(llm: BaseChatModel):
@@ -143,6 +261,7 @@ async def stream_chapter_resource_generation(
         for section in target_sections
         if _clean_text(section.get("section_id"))
     ]
+    sections_by_id = _section_by_clean_id(target_sections)
     yield {
         "event": "agent_calling",
         "stepId": f"leaf-chapter-{chapter_section_id}",
@@ -156,19 +275,25 @@ async def stream_chapter_resource_generation(
     }
 
     for section_id in section_ids:
-        yield {
-            "event": "agent_progress",
-            "stepId": f"leaf-section-{section_id}",
-            "kind": "course_resource_section",
-            "agent": "section_markdown_agent",
-            "label": f"{section_id} 小节智能体",
-            "message": "正在生成文案，并写入视频与动画占位要求",
-            "course_id": course_id,
-            "chapter_section_id": chapter_section_id,
-            "section_id": section_id,
-            "phase": "markdown",
-            "status": "running",
-        }
+        yield build_agent_event(
+            event="agent_progress",
+            agent="section_markdown_agent",
+            phase="markdown",
+            status="running",
+            step_id=f"leaf-section-{section_id}-markdown",
+            message="正在基于教材证据生成小节 Markdown 与资源规划",
+            depends_on=["course_knowledge_agent"],
+            input_refs=_section_input_refs(
+                course_id, sections_by_id.get(section_id, {})
+            ),
+            extra={
+                "kind": "course_resource_section",
+                "label": f"{section_id} 文案",
+                "course_id": course_id,
+                "chapter_section_id": chapter_section_id,
+                "section_id": section_id,
+            },
+        )
 
     markdown_args = {
         "course_id": course_id,
@@ -195,35 +320,60 @@ async def stream_chapter_resource_generation(
 
     state.update(markdown_result)
     for section_id in section_ids:
-        yield {
-            "event": "agent_result",
-            "stepId": f"leaf-section-{section_id}-markdown",
-            "kind": "course_resource_section",
-            "agent": "section_markdown_agent",
-            "label": f"{section_id} 文案",
-            "summary": "文案与资源 brief 已生成，正在交接给视频和动画智能体",
-            "course_id": course_id,
-            "chapter_section_id": chapter_section_id,
-            "section_id": section_id,
-            "phase": "markdown",
-            "status": "completed",
-            "success": True,
-        }
+        output_refs = _markdown_output_refs(state["course_knowledge"], section_id)
+        updated_outline = update_section_phase_checkpoint(
+            state["course_knowledge"],
+            section_id=section_id,
+            phase="markdown",
+            status="completed",
+            output_refs=output_refs,
+            quality_result=quality_passed().to_dict(),
+        )
+        state["course_knowledge"] = updated_outline
+        yield build_agent_event(
+            event="agent_result",
+            agent="section_markdown_agent",
+            phase="markdown",
+            status="completed",
+            step_id=f"leaf-section-{section_id}-markdown",
+            message="文案与资源 brief 已生成，正在交接给视频和动画智能体",
+            depends_on=["course_knowledge_agent"],
+            input_refs=_section_input_refs(
+                course_id, sections_by_id.get(section_id, {})
+            ),
+            output_refs=output_refs,
+            quality_result=quality_passed(),
+            extra={
+                "kind": "course_resource_section",
+                "label": f"{section_id} 文案",
+                "summary": "文案与资源 brief 已生成，正在交接给视频和动画智能体",
+                "course_id": course_id,
+                "chapter_section_id": chapter_section_id,
+                "section_id": section_id,
+                "success": True,
+            },
+        )
 
     for section_id in section_ids:
-        yield {
-            "event": "agent_progress",
-            "stepId": f"leaf-section-{section_id}-video",
-            "kind": "course_resource_section",
-            "agent": "section_video_search_agent",
-            "label": f"{section_id} 视频",
-            "message": "正在按 Markdown 中的 video_briefs 检索具体视频",
-            "course_id": course_id,
-            "chapter_section_id": chapter_section_id,
-            "section_id": section_id,
-            "phase": "video",
-            "status": "running",
-        }
+        yield build_agent_event(
+            event="agent_progress",
+            agent="section_video_search_agent",
+            phase="video",
+            status="running",
+            step_id=f"leaf-section-{section_id}-video",
+            message="正在按 Markdown 中的 video_briefs 检索具体视频",
+            depends_on=["section_markdown_agent"],
+            input_refs=_section_input_refs(
+                course_id, sections_by_id.get(section_id, {})
+            ),
+            extra={
+                "kind": "course_resource_section",
+                "label": f"{section_id} 视频",
+                "course_id": course_id,
+                "chapter_section_id": chapter_section_id,
+                "section_id": section_id,
+            },
+        )
 
     video_result = await cr_pkg.run_section_video_search_agent(state, search_llm)
     if video_result.get("error"):
@@ -240,35 +390,64 @@ async def stream_chapter_resource_generation(
         return
     state.update(video_result)
     for section_id in section_ids:
-        yield {
-            "event": "agent_result",
-            "stepId": f"leaf-section-{section_id}-video",
-            "kind": "course_resource_section",
-            "agent": "section_video_search_agent",
-            "label": f"{section_id} 视频",
-            "summary": "视频检索已完成，正在交接给 HTML 动画智能体",
-            "course_id": course_id,
-            "chapter_section_id": chapter_section_id,
-            "section_id": section_id,
-            "phase": "video",
-            "status": "completed",
-            "success": True,
-        }
+        output_refs = _video_output_refs(state["course_knowledge"], section_id)
+        status = _video_phase_status(state["course_knowledge"], section_id)
+        failure_reason = _video_failure_reason(state["course_knowledge"], section_id)
+        quality_result = _quality_payload_for_status(status, failure_reason)
+        updated_outline = update_section_phase_checkpoint(
+            state["course_knowledge"],
+            section_id=section_id,
+            phase="video",
+            status=status,
+            output_refs=output_refs,
+            quality_result=quality_result,
+            failure_reason=failure_reason,
+        )
+        state["course_knowledge"] = updated_outline
+        yield build_agent_event(
+            event="agent_result",
+            agent="section_video_search_agent",
+            phase="video",
+            status=status,
+            step_id=f"leaf-section-{section_id}-video",
+            message="视频检索已完成，正在交接给 HTML 动画智能体",
+            depends_on=["section_markdown_agent"],
+            input_refs=_section_input_refs(
+                course_id, sections_by_id.get(section_id, {})
+            ),
+            output_refs=output_refs,
+            quality_result=quality_result,
+            extra={
+                "kind": "course_resource_section",
+                "label": f"{section_id} 视频",
+                "summary": "视频检索已完成，正在交接给 HTML 动画智能体",
+                "course_id": course_id,
+                "chapter_section_id": chapter_section_id,
+                "section_id": section_id,
+                "success": status == "completed",
+            },
+        )
 
     for section_id in section_ids:
-        yield {
-            "event": "agent_progress",
-            "stepId": f"leaf-section-{section_id}-animation",
-            "kind": "course_resource_section",
-            "agent": "section_html_animation_agent",
-            "label": f"{section_id} 动画",
-            "message": "正在按 Markdown 中的 animation_briefs 生成具体交互动画",
-            "course_id": course_id,
-            "chapter_section_id": chapter_section_id,
-            "section_id": section_id,
-            "phase": "animation",
-            "status": "running",
-        }
+        yield build_agent_event(
+            event="agent_progress",
+            agent="section_html_animation_agent",
+            phase="animation",
+            status="running",
+            step_id=f"leaf-section-{section_id}-animation",
+            message="正在按 Markdown 中的 animation_briefs 生成具体交互动画",
+            depends_on=["section_markdown_agent", "section_video_search_agent"],
+            input_refs=_section_input_refs(
+                course_id, sections_by_id.get(section_id, {})
+            ),
+            extra={
+                "kind": "course_resource_section",
+                "label": f"{section_id} 动画",
+                "course_id": course_id,
+                "chapter_section_id": chapter_section_id,
+                "section_id": section_id,
+            },
+        )
 
     animation_result = await cr_pkg.run_section_html_animation_agent(state, llm)
     if animation_result.get("error"):
@@ -286,20 +465,39 @@ async def stream_chapter_resource_generation(
     state.update(animation_result)
 
     for section_id in section_ids:
-        yield {
-            "event": "agent_result",
-            "stepId": f"leaf-section-{section_id}-animation",
-            "kind": "course_resource_section",
-            "agent": "section_html_animation_agent",
-            "label": f"{section_id} 动画",
-            "summary": "动画生成与正文拼装已保存",
-            "course_id": course_id,
-            "chapter_section_id": chapter_section_id,
-            "section_id": section_id,
-            "phase": "animation",
-            "status": "completed",
-            "success": True,
-        }
+        output_refs = _animation_output_refs(state["course_knowledge"], section_id)
+        updated_outline = update_section_phase_checkpoint(
+            state["course_knowledge"],
+            section_id=section_id,
+            phase="animation",
+            status="completed",
+            output_refs=output_refs,
+            quality_result=quality_passed().to_dict(),
+        )
+        state["course_knowledge"] = updated_outline
+        yield build_agent_event(
+            event="agent_result",
+            agent="section_html_animation_agent",
+            phase="animation",
+            status="completed",
+            step_id=f"leaf-section-{section_id}-animation",
+            message="动画生成与正文拼装已保存",
+            depends_on=["section_markdown_agent", "section_video_search_agent"],
+            input_refs=_section_input_refs(
+                course_id, sections_by_id.get(section_id, {})
+            ),
+            output_refs=output_refs,
+            quality_result=quality_passed(),
+            extra={
+                "kind": "course_resource_section",
+                "label": f"{section_id} 动画",
+                "summary": "动画生成与正文拼装已保存",
+                "course_id": course_id,
+                "chapter_section_id": chapter_section_id,
+                "section_id": section_id,
+                "success": True,
+            },
+        )
 
     yield {
         "event": "message_completed",

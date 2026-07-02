@@ -6951,15 +6951,67 @@ def test_stream_chapter_resource_generation_reports_agent_phases_in_order() -> N
         module.run_section_video_search_agent = original_video_agent
         module.run_section_html_animation_agent = original_animation_agent
 
-    phase_events = [
-        (event.get("agent"), event.get("phase"), event.get("status"))
+    agent_events = [
+        event
         for event in events
         if event.get("event") in {"agent_progress", "agent_result"}
+        and event.get("agent")
+        in {
+            "section_markdown_agent",
+            "section_video_search_agent",
+            "section_html_animation_agent",
+        }
+    ]
+    phase_events = [
+        (event.get("agent"), event.get("phase"), event.get("status"))
+        for event in agent_events
     ]
     assert call_order == ["markdown", "video", "animation"]
-    assert ("section_markdown_agent", "markdown", "completed") in phase_events
-    assert ("section_video_search_agent", "video", "completed") in phase_events
-    assert ("section_html_animation_agent", "animation", "completed") in phase_events
+    assert [event["phase"] for event in agent_events] == [
+        "markdown",
+        "markdown",
+        "markdown",
+        "markdown",
+        "markdown",
+        "markdown",
+        "video",
+        "video",
+        "video",
+        "video",
+        "video",
+        "video",
+        "animation",
+        "animation",
+        "animation",
+        "animation",
+        "animation",
+        "animation",
+    ]
+    assert [event["agent_order"] for event in agent_events] == [
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+    ]
+    for event in agent_events:
+        assert "depends_on" in event
+        assert "input_refs" in event
+        assert "output_refs" in event
+        assert "quality_result" in event
     markdown_completed_index = phase_events.index(
         ("section_markdown_agent", "markdown", "completed")
     )
