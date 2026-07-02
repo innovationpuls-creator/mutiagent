@@ -497,6 +497,113 @@ def test_section_markdown_normalizes_string_visual_elements_from_llm() -> None:
     ]
 
 
+def _structured_source_reference() -> dict:
+    return {
+        "textbook_id": "textbook-ai-web",
+        "textbook_title": "AI 应用开发项目教程",
+        "section_id": "1.1",
+        "section_title": "功能边界",
+        "evidence_summary": "依据《AI 应用开发项目教程》1.1 功能边界 的教材内容生成。",
+        "content_char_count": 3600,
+    }
+
+
+def _paragraph_bound_video_brief() -> dict:
+    return {
+        "video_id": "video_1",
+        "title": "功能边界任务卡讲解视频",
+        "target_markdown_heading": "核心概念",
+        "target_paragraph_summary": "解释功能边界如何约束输入、输出和验收标准。",
+        "search_terms": ["功能边界", "任务卡", "验收标准"],
+        "purpose": (
+            "辅助理解「学习目标」中功能边界、任务卡和验收标准如何共同约束第一版交付物。"
+        ),
+    }
+
+
+def _simulation_animation_brief() -> dict:
+    return {
+        "animation_id": "anim_1",
+        "title": "功能边界到验收标准状态流转动画",
+        "target_markdown_heading": "步骤讲解",
+        "target_paragraph_summary": "展示需求原话如何拆成边界、任务卡和检查标准。",
+        "concept": "展示功能边界如何从需求原话收敛为可验收任务卡。",
+        "simulation_type": "concept_process_flow",
+        "visual_elements": ["需求原话", "功能边界", "任务卡", "验收标准"],
+        "visual_model": {
+            "entities": [
+                {"id": "request", "kind": "input", "label": "需求原话"},
+                {"id": "boundary", "kind": "state", "label": "功能边界"},
+                {"id": "checklist", "kind": "output", "label": "验收标准"},
+            ],
+            "relations": [
+                {"from": "request", "to": "boundary", "kind": "narrows_to"},
+                {"from": "boundary", "to": "checklist", "kind": "verifies_by"},
+            ],
+        },
+        "timeline": [
+            {"step": 1, "action": "show", "target": "request"},
+            {"step": 2, "action": "transform", "target": "boundary"},
+            {"step": 3, "action": "connect", "from": "boundary", "to": "checklist"},
+        ],
+        "layout": "从左到右排列需求、边界和验收标准。",
+        "motion": "节点只通过 opacity 和 transform 进入，连线按步骤出现。",
+        "interaction": "点击每个节点显示对应的判断依据。",
+        "success_check": "学习者能指出需求原话如何被边界约束并落到验收标准。",
+        "placement_hint": "步骤讲解中第一次解释功能边界之后。",
+    }
+
+
+def test_section_markdown_output_requires_structured_source_references_and_briefs() -> (
+    None
+):
+    output = SectionMarkdownOutput(
+        section_id="1.1",
+        parent_section_id="1",
+        title="学习目标",
+        markdown=_complete_markdown(),
+        source_references=[_structured_source_reference()],
+        video_briefs=[_paragraph_bound_video_brief()],
+        animation_briefs=[_simulation_animation_brief()],
+    )
+
+    assert output.source_references[0].textbook_id == "textbook-ai-web"
+    assert output.video_briefs[0].target_markdown_heading == "核心概念"
+    assert output.animation_briefs[0].visual_model.entities[0].id == "request"
+
+
+def test_section_markdown_output_rejects_generic_video_brief() -> None:
+    video_brief = _paragraph_bound_video_brief()
+    video_brief["purpose"] = "帮助理解本节内容"
+
+    with pytest.raises(ValidationError, match="video brief purpose is too generic"):
+        SectionMarkdownOutput(
+            section_id="1.1",
+            parent_section_id="1",
+            title="学习目标",
+            markdown=_complete_markdown(),
+            source_references=[_structured_source_reference()],
+            video_briefs=[video_brief],
+            animation_briefs=[_simulation_animation_brief()],
+        )
+
+
+def test_section_markdown_output_rejects_animation_without_visual_model() -> None:
+    animation_brief = _simulation_animation_brief()
+    animation_brief.pop("visual_model")
+
+    with pytest.raises(ValidationError):
+        SectionMarkdownOutput(
+            section_id="1.1",
+            parent_section_id="1",
+            title="学习目标",
+            markdown=_complete_markdown(),
+            source_references=[_structured_source_reference()],
+            video_briefs=[_paragraph_bound_video_brief()],
+            animation_briefs=[animation_brief],
+        )
+
+
 def test_section_markdown_rejects_missing_source_footer() -> None:
     with pytest.raises(ValidationError):
         SectionMarkdownOutput(

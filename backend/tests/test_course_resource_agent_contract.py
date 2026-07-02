@@ -35,6 +35,7 @@ from app.orchestration.agents.course_resources import (
 )
 from app.orchestration.agents.course_resources.common import (
     SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT,
+    _source_references_for_section,
 )
 from app.orchestration.agents.prompts import SECTION_VIDEO_SEARCH_AGENT_SYSTEM_PROMPT
 from tests.postgres import postgresql_test_url
@@ -155,6 +156,37 @@ def test_markdown_quality_requires_source_footer_when_section_has_textbook_bindi
     assert issue == "Markdown 缺少教材来源。"
 
 
+def test_source_references_are_built_from_section_source_binding() -> None:
+    references = _source_references_for_section(
+        {
+            "source_textbook_id": "textbook-data-structures",
+            "source_textbook_title": "数据结构教程",
+            "source_section_ids": ["2.1", "2.2"],
+            "source_section_titles": ["线性表", "单链表"],
+            "source_content_chars": "2400",
+        }
+    )
+
+    assert references == [
+        {
+            "textbook_id": "textbook-data-structures",
+            "textbook_title": "数据结构教程",
+            "section_id": "2.1",
+            "section_title": "线性表",
+            "evidence_summary": "依据《数据结构教程》2.1 线性表 的教材内容生成。",
+            "content_char_count": 2400,
+        },
+        {
+            "textbook_id": "textbook-data-structures",
+            "textbook_title": "数据结构教程",
+            "section_id": "2.2",
+            "section_title": "单链表",
+            "evidence_summary": "依据《数据结构教程》2.2 单链表 的教材内容生成。",
+            "content_char_count": 2400,
+        },
+    ]
+
+
 def test_generated_markdown_briefs_use_specific_data_structure_visual_plan() -> None:
     from app.orchestration.agents.course_resources.common import (
         _generated_markdown_seed_data,
@@ -173,15 +205,47 @@ def test_generated_markdown_briefs_use_specific_data_structure_visual_plan() -> 
     video_brief = seed_data["video_briefs"][0]
     animation_brief = seed_data["animation_briefs"][0]
     assert "单链表" in video_brief["title"]
+    assert video_brief["target_markdown_heading"] == "核心概念"
+    assert video_brief["target_paragraph_summary"] == (
+        "解释单链表节点由 data 和 next 组成，next 指向下一个节点。"
+    )
+    assert video_brief["search_terms"] == ["单链表", "节点", "next 指针", "链式存储"]
     assert "节点" in video_brief["purpose"]
     assert "指针" in video_brief["purpose"]
     assert animation_brief["title"] == "单链表节点指针串联动画"
+    assert animation_brief["target_markdown_heading"] == "核心概念"
+    assert animation_brief["target_paragraph_summary"] == (
+        "解释单链表节点由 data 和 next 组成，next 指向下一个节点。"
+    )
+    assert animation_brief["simulation_type"] == "data_structure_linked_list"
     assert animation_brief["visual_elements"] == [
         "头指针",
         "节点(data,next)",
         "next 指针",
         "尾节点 None",
     ]
+    assert animation_brief["visual_model"]["entities"] == [
+        {"id": "head", "kind": "pointer", "label": "head"},
+        {"id": "node_1", "kind": "node", "fields": ["data", "next"]},
+        {"id": "node_2", "kind": "node", "fields": ["data", "next"]},
+        {"id": "none", "kind": "terminal", "label": "None"},
+    ]
+    assert animation_brief["visual_model"]["relations"] == [
+        {"from": "head", "to": "node_1", "kind": "points_to"},
+        {"from": "node_1.next", "to": "node_2", "kind": "points_to"},
+        {"from": "node_2.next", "to": "none", "kind": "points_to"},
+    ]
+    assert animation_brief["timeline"][-1] == {
+        "step": 6,
+        "action": "connect",
+        "from": "node_2.next",
+        "to": "none",
+    }
+    assert animation_brief["layout"]
+    assert animation_brief["motion"]
+    assert animation_brief["interaction"]
+    assert animation_brief["success_check"]
+    assert animation_brief["placement_hint"]
     assert "节点通过 next 指针串联" in animation_brief["concept"]
 
 
@@ -5607,6 +5671,97 @@ def test_normalize_markdown_resources_rewrites_placeholder_ids_to_brief_ids() ->
     assert "wrong_anim" not in normalized["markdown"]
 
 
+def test_normalized_markdown_resources_preserve_source_references() -> None:
+    section = dict(_outline()["sections"][1])
+    section["source_textbook_id"] = "textbook-ai-web"
+    section["source_textbook_title"] = "AI 应用开发项目教程"
+    section["source_section_ids"] = ["1.1"]
+    section["source_section_titles"] = ["功能边界"]
+    section["source_content_chars"] = 1200
+    source_references = [
+        {
+            "textbook_id": "manual-textbook",
+            "textbook_title": "人工确认教材",
+            "section_id": "A.1",
+            "section_title": "人工确认小节",
+            "evidence_summary": "人工确认来源。",
+            "content_char_count": 88,
+        }
+    ]
+
+    normalized = _normalize_markdown_resources(
+        {
+            "section_id": "1.1",
+            "parent_section_id": "1",
+            "title": "学习目标",
+            "markdown": _complete_section_markdown("1.1", "学习目标"),
+            "source_references": source_references,
+            "video_briefs": [
+                {
+                    "video_id": "video_1",
+                    "title": "学习目标导入视频",
+                    "target_markdown_heading": "核心概念",
+                    "target_paragraph_summary": "解释功能边界与验收标准如何约束学习目标。",
+                    "search_terms": ["学习目标", "功能边界", "验收标准"],
+                    "purpose": "帮助学习者把学习目标落到可验收产出",
+                }
+            ],
+            "animation_briefs": [
+                {
+                    "animation_id": "anim_1",
+                    "title": "学习目标流程动画",
+                    "target_markdown_heading": "步骤讲解",
+                    "target_paragraph_summary": "展示学习目标如何转成任务、资源和检查标准。",
+                    "concept": "展示学习目标如何转成任务、资源和检查标准",
+                    "simulation_type": "concept_process_flow",
+                    "visual_elements": ["学习目标", "练习任务", "检查标准"],
+                    "visual_model": {
+                        "entities": [
+                            {"id": "goal", "kind": "state"},
+                            {"id": "task", "kind": "task"},
+                        ],
+                    },
+                    "timeline": [
+                        {"step": 1, "action": "show", "target": "goal"},
+                        {"step": 2, "action": "connect", "from": "goal", "to": "task"},
+                    ],
+                    "layout": "从左到右排列。",
+                    "motion": "三个节点依次淡入",
+                    "interaction": "点击节点显示说明。",
+                    "success_check": "能复述目标到任务的关系。",
+                    "placement_hint": "练习任务之后",
+                }
+            ],
+        },
+        section,
+    )
+
+    assert normalized["source_references"] == source_references
+
+    filled = _normalize_markdown_resources(
+        {
+            "section_id": "1.1",
+            "parent_section_id": "1",
+            "title": "学习目标",
+            "markdown": _complete_section_markdown("1.1", "学习目标"),
+            "video_briefs": normalized["video_briefs"],
+            "animation_briefs": normalized["animation_briefs"],
+        },
+        section,
+    )
+
+    assert filled["source_references"] == [
+        {
+            "textbook_id": "textbook-ai-web",
+            "textbook_title": "AI 应用开发项目教程",
+            "section_id": "1.1",
+            "section_title": "功能边界",
+            "evidence_summary": "依据《AI 应用开发项目教程》1.1 功能边界 的教材内容生成。",
+            "content_char_count": 1200,
+        }
+    ]
+
+
 def test_normalize_markdown_resources_promotes_common_heading_variants() -> None:
     normalized = _normalize_markdown_resources(
         {
@@ -5937,6 +6092,43 @@ def test_markdown_quality_gate_rejects_missing_teaching_scaffold() -> None:
 
     assert issue is not None
     assert "教学支架" in issue or "关键知识点" in issue
+
+
+def test_markdown_quality_blocks_generic_resource_briefs() -> None:
+    issue = _markdown_quality_issue(
+        _complete_section_markdown("1.1", "学习目标"),
+        _outline()["sections"][1],
+        [
+            {
+                "video_id": "video_1",
+                "title": "学习目标导入视频",
+                "target_markdown_heading": "核心概念",
+                "target_paragraph_summary": "",
+                "search_terms": ["学习目标", "功能边界"],
+                "purpose": "帮助理解本节内容",
+            }
+        ],
+        [
+            {
+                "animation_id": "anim_1",
+                "title": "流程动画",
+                "target_markdown_heading": "不存在标题",
+                "target_paragraph_summary": "展示目标如何转成任务。",
+                "concept": "理解本节内容",
+                "simulation_type": "",
+                "visual_elements": ["学习目标"],
+                "visual_model": {"entities": []},
+                "timeline": [],
+                "layout": "从左到右排列。",
+                "motion": "节点依次淡入。",
+                "interaction": "点击节点显示说明。",
+                "success_check": "",
+                "placement_hint": "练习任务之后。",
+            }
+        ],
+    )
+
+    assert issue == "Markdown resource briefs are too generic."
 
 
 def test_markdown_quality_gate_accepts_english_checkpoint_knowledge_points_with_anchor_coverage() -> (

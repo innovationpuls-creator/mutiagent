@@ -32,6 +32,7 @@ from app.orchestration.agents.course_resources.common import (
     _profile_summary_for_prompt,
     _resource_context,
     _rewrite_resource_placeholders,
+    _source_references_for_section,
     _target_sections_for_scope,
     _text_items,
     _tool_args,
@@ -39,6 +40,9 @@ from app.orchestration.agents.course_resources.common import (
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
+
+_GENERIC_VIDEO_PURPOSES = {"帮助理解本节内容", "辅助理解本节内容"}
+_GENERIC_ANIMATION_TEXTS = {"流程动画", "教学动画", "理解本节内容"}
 
 
 def _section_source_footer(section: dict) -> str:
@@ -125,6 +129,12 @@ def _markdown_quality_issue(
     if required_terms and not any(term in text for term in required_terms):
         return "Markdown 未绑定目标小节内容。"
 
+    resource_briefs_issue = _markdown_resource_briefs_issue(
+        text, video_briefs, animation_briefs
+    )
+    if resource_briefs_issue:
+        return resource_briefs_issue
+
     video_ids = _extract_brief_ids_from_markdown(text, "video")
     animation_ids = _extract_brief_ids_from_markdown(text, "animation")
     expected_video_ids = {
@@ -145,6 +155,58 @@ def _markdown_quality_issue(
         source_body = _markdown_section_body(text, "来源")
         if not source_body:
             return "Markdown 缺少教材来源。"
+    return None
+
+
+def _markdown_resource_briefs_issue(
+    markdown: str,
+    video_briefs: object,
+    animation_briefs: object,
+) -> str | None:
+    headings = {
+        match.group(1).strip() for match in _MARKDOWN_HEADING_PATTERN.finditer(markdown)
+    }
+    if not isinstance(video_briefs, list) or not isinstance(animation_briefs, list):
+        return "Markdown resource briefs are too generic."
+
+    for brief in video_briefs:
+        if not isinstance(brief, dict):
+            return "Markdown resource briefs are too generic."
+        target_heading = _clean_text(brief.get("target_markdown_heading"))
+        search_terms = _text_items(brief.get("search_terms"))
+        purpose = _clean_text(brief.get("purpose"))
+        if (
+            not target_heading
+            or target_heading not in headings
+            or not _clean_text(brief.get("target_paragraph_summary"))
+            or len(search_terms) < 3
+            or purpose in _GENERIC_VIDEO_PURPOSES
+        ):
+            return "Markdown resource briefs are too generic."
+
+    for brief in animation_briefs:
+        if not isinstance(brief, dict):
+            return "Markdown resource briefs are too generic."
+        target_heading = _clean_text(brief.get("target_markdown_heading"))
+        visual_model = brief.get("visual_model")
+        visual_entities = (
+            visual_model.get("entities") if isinstance(visual_model, dict) else None
+        )
+        timeline = brief.get("timeline")
+        if (
+            not target_heading
+            or target_heading not in headings
+            or not _clean_text(brief.get("target_paragraph_summary"))
+            or _clean_text(brief.get("title")) in _GENERIC_ANIMATION_TEXTS
+            or _clean_text(brief.get("concept")) in _GENERIC_ANIMATION_TEXTS
+            or not _clean_text(brief.get("simulation_type"))
+            or not isinstance(visual_entities, list)
+            or len(visual_entities) < 2
+            or not isinstance(timeline, list)
+            or not timeline
+            or not _clean_text(brief.get("success_check"))
+        ):
+            return "Markdown resource briefs are too generic."
     return None
 
 
@@ -307,6 +369,7 @@ def _compose_llm_section_markdown(
             "parent_section_id": section.get("parent_section_id"),
             "title": title,
             "markdown": "\n\n".join(block for block in blocks if block.strip()),
+            "source_references": _source_references_for_section(section),
             "video_briefs": video_briefs,
             "animation_briefs": animation_briefs,
         }
@@ -340,6 +403,10 @@ def _markdown_data_from_full_document(raw_output: object, section: dict) -> dict
                     markdown_data["video_briefs"] = payload.get("video_briefs")
                 if "animation_briefs" in payload:
                     markdown_data["animation_briefs"] = payload.get("animation_briefs")
+                if "source_references" in payload:
+                    markdown_data["source_references"] = payload.get(
+                        "source_references"
+                    )
                 return markdown_data
     elif text.startswith("{") and text.endswith("}"):
         return markdown_data
@@ -495,9 +562,30 @@ def _normalize_markdown_video_briefs(section: dict, video_briefs: object) -> lis
             video_id = _clean_text(brief_data.get("video_id"))
             title = _clean_text(brief_data.get("title"))
             purpose = _clean_text(brief_data.get("purpose"))
-            if video_id and title and purpose:
+            target_markdown_heading = _clean_text(
+                brief_data.get("target_markdown_heading")
+            )
+            target_paragraph_summary = _clean_text(
+                brief_data.get("target_paragraph_summary")
+            )
+            search_terms = _text_items(brief_data.get("search_terms"))
+            if (
+                video_id
+                and title
+                and target_markdown_heading
+                and target_paragraph_summary
+                and len(search_terms) >= 3
+                and purpose
+            ):
                 normalized.append(
-                    {"video_id": video_id, "title": title, "purpose": purpose}
+                    {
+                        "video_id": video_id,
+                        "title": title,
+                        "target_markdown_heading": target_markdown_heading,
+                        "target_paragraph_summary": target_paragraph_summary,
+                        "search_terms": search_terms,
+                        "purpose": purpose,
+                    }
                 )
     if normalized:
         return normalized
@@ -519,17 +607,49 @@ def _normalize_markdown_animation_briefs(
             animation_id = _clean_text(brief_data.get("animation_id"))
             title = _clean_text(brief_data.get("title"))
             concept = _clean_text(brief_data.get("concept"))
-            if not animation_id or not title or not concept:
+            target_markdown_heading = _clean_text(
+                brief_data.get("target_markdown_heading")
+            )
+            target_paragraph_summary = _clean_text(
+                brief_data.get("target_paragraph_summary")
+            )
+            simulation_type = _clean_text(brief_data.get("simulation_type"))
+            visual_model = brief_data.get("visual_model")
+            timeline = brief_data.get("timeline")
+            layout = _clean_text(brief_data.get("layout"))
+            interaction = _clean_text(brief_data.get("interaction"))
+            success_check = _clean_text(brief_data.get("success_check"))
+            if (
+                not animation_id
+                or not title
+                or not target_markdown_heading
+                or not target_paragraph_summary
+                or not concept
+                or not simulation_type
+                or not isinstance(visual_model, dict)
+                or not isinstance(timeline, list)
+                or not timeline
+                or not layout
+                or not interaction
+                or not success_check
+            ):
                 continue
             visual_elements = _text_items(brief_data.get("visual_elements"))
             normalized.append(
                 {
                     "animation_id": animation_id,
                     "title": title,
+                    "target_markdown_heading": target_markdown_heading,
+                    "target_paragraph_summary": target_paragraph_summary,
                     "concept": concept,
+                    "simulation_type": simulation_type,
                     "visual_elements": visual_elements,
+                    "visual_model": visual_model,
+                    "timeline": timeline,
+                    "layout": layout,
                     "motion": _clean_text(brief_data.get("motion")),
-                    "space": _clean_text(brief_data.get("space")),
+                    "interaction": interaction,
+                    "success_check": success_check,
                     "placement_hint": _clean_text(brief_data.get("placement_hint")),
                 }
             )
@@ -552,6 +672,9 @@ def _generated_markdown_video_briefs(section: dict) -> list[dict]:
             {
                 "video_id": "video_1",
                 "title": f"{title}节点与指针讲解视频",
+                "target_markdown_heading": "核心概念",
+                "target_paragraph_summary": "解释单链表节点由 data 和 next 组成，next 指向下一个节点。",
+                "search_terms": ["单链表", "节点", "next 指针", "链式存储"],
                 "purpose": f"辅助理解「{title}」中节点、data 域、next 指针、头指针与尾节点 None 如何共同构成线性结构。",
             }
         ]
@@ -562,6 +685,9 @@ def _generated_markdown_video_briefs(section: dict) -> list[dict]:
         {
             "video_id": "video_1",
             "title": f"{primary_title}专项讲解视频",
+            "target_markdown_heading": "核心概念",
+            "target_paragraph_summary": f"解释「{title}」中{focus}的关键概念与练习任务关系。",
+            "search_terms": (focus_terms + [title, "教学讲解", "实践任务"])[:3],
             "purpose": f"帮助学习者围绕「{title}」理解{focus}，并把本节内容落到可验收任务。",
         }
     ]
@@ -581,15 +707,59 @@ def _generated_markdown_animation_briefs(section: dict) -> list[dict]:
             {
                 "animation_id": "anim_1",
                 "title": f"{title}节点指针串联动画",
+                "target_markdown_heading": "核心概念",
+                "target_paragraph_summary": "解释单链表节点由 data 和 next 组成，next 指向下一个节点。",
                 "concept": f"展示「{title}」中节点通过 next 指针串联，头指针指向首节点，尾节点 next 指向 None 的结构。",
+                "simulation_type": "data_structure_linked_list",
                 "visual_elements": [
                     "头指针",
                     "节点(data,next)",
                     "next 指针",
                     "尾节点 None",
                 ],
+                "visual_model": {
+                    "entities": [
+                        {"id": "head", "kind": "pointer", "label": "head"},
+                        {"id": "node_1", "kind": "node", "fields": ["data", "next"]},
+                        {"id": "node_2", "kind": "node", "fields": ["data", "next"]},
+                        {"id": "none", "kind": "terminal", "label": "None"},
+                    ],
+                    "relations": [
+                        {"from": "head", "to": "node_1", "kind": "points_to"},
+                        {
+                            "from": "node_1.next",
+                            "to": "node_2",
+                            "kind": "points_to",
+                        },
+                        {
+                            "from": "node_2.next",
+                            "to": "none",
+                            "kind": "points_to",
+                        },
+                    ],
+                },
+                "timeline": [
+                    {"step": 1, "action": "show", "target": "head"},
+                    {"step": 2, "action": "show", "target": "node_1"},
+                    {"step": 3, "action": "show", "target": "node_2"},
+                    {"step": 4, "action": "connect", "from": "head", "to": "node_1"},
+                    {
+                        "step": 5,
+                        "action": "connect",
+                        "from": "node_1.next",
+                        "to": "node_2",
+                    },
+                    {
+                        "step": 6,
+                        "action": "connect",
+                        "from": "node_2.next",
+                        "to": "none",
+                    },
+                ],
+                "layout": "head 在最左侧，两个节点水平排列，None 位于尾节点右侧。",
                 "motion": "头指针先出现，节点依次通过 transform 从左到右进入，next 指针连线按顺序绘制，尾节点 None 最后淡入。",
-                "space": "正文宽度 100%，高度 320px。",
+                "interaction": "点击节点高亮 data 域与 next 域，点击指针显示指向目标。",
+                "success_check": "学习者能指出 head、node_1.next、node_2.next 分别指向什么。",
                 "placement_hint": "步骤讲解中第一次解释节点指针关系之后。",
             }
         ]
@@ -600,10 +770,31 @@ def _generated_markdown_animation_briefs(section: dict) -> list[dict]:
         {
             "animation_id": "anim_1",
             "title": f"{primary}流程动画",
+            "target_markdown_heading": "步骤讲解",
+            "target_paragraph_summary": f"展示「{title}」如何围绕{visual_text}从输入材料推进到验收证据。",
             "concept": f"展示「{title}」如何围绕{visual_text}从输入材料、处理步骤推进到验收证据。",
+            "simulation_type": "concept_process_flow",
             "visual_elements": visual_elements,
+            "visual_model": {
+                "entities": [
+                    {"id": "input", "kind": "source", "label": "输入材料"},
+                    {"id": "process", "kind": "process", "label": "处理步骤"},
+                    {"id": "evidence", "kind": "checkpoint", "label": "验收证据"},
+                ],
+                "relations": [
+                    {"from": "input", "to": "process", "kind": "feeds"},
+                    {"from": "process", "to": "evidence", "kind": "produces"},
+                ],
+            },
+            "timeline": [
+                {"step": 1, "action": "show", "target": "input"},
+                {"step": 2, "action": "advance", "target": "process"},
+                {"step": 3, "action": "connect", "from": "process", "to": "evidence"},
+            ],
+            "layout": "从左到右排列输入材料、处理步骤和验收证据。",
             "motion": "关键节点依次通过 opacity 淡入，并只用 transform 表现轻微位移。",
-            "space": "正文宽度 100%，高度 320px。",
+            "interaction": "点击节点显示对应的正文段落依据。",
+            "success_check": "学习者能按动画顺序复述本节从输入到验收的过程。",
             "placement_hint": "练习任务之前。",
         }
     ]
@@ -617,6 +808,7 @@ def _generated_markdown_seed_data(section: dict) -> dict:
         "parent_section_id": section.get("parent_section_id"),
         "title": title,
         "markdown": "",
+        "source_references": _source_references_for_section(section),
         "video_briefs": _generated_markdown_video_briefs(section),
         "animation_briefs": _generated_markdown_animation_briefs(section),
     }
@@ -624,6 +816,10 @@ def _generated_markdown_seed_data(section: dict) -> dict:
 
 def _normalize_markdown_resources(markdown_data: dict, section: dict) -> dict:
     normalized = dict(markdown_data)
+    source_references = normalized.get("source_references")
+    if not isinstance(source_references, list) or not source_references:
+        source_references = _source_references_for_section(section)
+    normalized["source_references"] = source_references
     markdown = _clean_text(normalized.get("markdown"))
     if not markdown:
         return normalized
@@ -886,6 +1082,9 @@ async def run_section_markdown_agent(
             "title": _clean_text(section.get("title"))
             or _clean_text(markdown_data.get("title")),
             "markdown": cleaned_markdown,
+            "source_references": markdown_data.get("source_references")
+            if isinstance(markdown_data.get("source_references"), list)
+            else _source_references_for_section(section),
             "video_briefs": video_briefs if isinstance(video_briefs, list) else [],
             "animation_briefs": animation_briefs
             if isinstance(animation_briefs, list)
