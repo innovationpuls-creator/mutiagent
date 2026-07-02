@@ -206,6 +206,31 @@ def test_intake_generation_input_declares_downstream_order_and_resource_boundary
     assert "每门课程的 purpose 必须说明教材小节覆盖的具体学习边界" in generation_input
 
 
+def test_intake_prompt_uses_outline_summaries_without_full_textbook_content() -> None:
+    payload = _build_intake_generation_input(
+        {"year_learning_paths": {}},
+        "AI 应用开发",
+        _profile(),
+        None,
+        {
+            "textbooks": [
+                {
+                    "textbook_id": "textbook-ai-web",
+                    "title": "AI 应用开发项目教程",
+                    "outline_summary": [
+                        {"section_id": "1.1", "title": "功能边界"},
+                    ],
+                }
+            ],
+            "gap_id": None,
+        },
+    )
+
+    assert "prompt_budget_applied" in payload
+    assert "evidence_text" not in payload
+    assert "这段教材正文不能进入课程草案输入" not in payload
+
+
 def test_intake_generation_input_requires_complete_profile() -> None:
     with pytest.raises(ValueError, match="profile is not complete"):
         _build_intake_generation_input(

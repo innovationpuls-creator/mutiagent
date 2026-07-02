@@ -700,6 +700,28 @@ def test_build_analysis_inputs_declare_resource_agent_handoff_requirements() -> 
         )
 
 
+def test_course_knowledge_prompt_uses_section_ids_titles_and_summaries() -> None:
+    query = _build_analysis_input(
+        _course_outline_target(),
+        _complete_profile(),
+        {
+            "year_3": {
+                "current_learning_course": {
+                    "grade_id": "year_3",
+                    "course_node_id": "year_3_course_1",
+                },
+                "grade_plans": {"year_3": {"course_nodes": [_course_outline_target()]}},
+            }
+        },
+    )
+    course_input = _json_block_after_label(query, "当前课程输入")
+
+    assert "prompt_budget_applied" in query
+    assert isinstance(course_input, dict)
+    assert "source_outline_section_ids" in course_input
+    assert "evidence_text" not in query
+
+
 def test_build_analysis_input_includes_real_source_content_lengths(
     tmp_path: Path,
 ) -> None:

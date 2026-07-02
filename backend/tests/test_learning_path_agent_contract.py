@@ -762,6 +762,27 @@ def test_build_analysis_input_declares_downstream_resource_agent_order() -> None
     assert "路径课程的 source_outline_section_ids 必须传递给大纲智能体" in query
 
 
+def test_learning_path_prompt_declares_prompt_budget_metadata() -> None:
+    payload = _build_analysis_input(
+        _complete_profile(),
+        "year_3",
+        "数据结构",
+        "",
+        [],
+        _confirmed_intake(
+            learning_topic="数据结构",
+            course_titles=[
+                "复杂度分析与线性结构基础",
+                "树与递归基础",
+                "查找排序与哈希",
+                "图结构与综合项目",
+            ],
+        ),
+    )
+
+    assert "prompt_budget_applied" in payload
+
+
 def test_build_local_learning_path_rejects_unbound_fallback_generation() -> None:
     with pytest.raises(ValueError, match="已确认课程草案"):
         _build_local_learning_path(

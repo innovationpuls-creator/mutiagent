@@ -467,29 +467,17 @@ def test_course_knowledge_section_rejects_more_than_seven_source_sections() -> N
 
 
 def test_section_markdown_normalizes_string_visual_elements_from_llm() -> None:
+    animation_brief = _simulation_animation_brief()
+    animation_brief["visual_elements"] = "目标卡片、任务卡片、验收标准卡片"
+
     output = SectionMarkdownOutput(
         section_id="1.1",
         parent_section_id="1",
         title="学习目标",
         markdown=_complete_markdown(),
-        video_briefs=[
-            {
-                "video_id": "video_1",
-                "title": "学习目标导入视频",
-                "purpose": "帮助学习者理解功能边界与验收标准",
-            }
-        ],
-        animation_briefs=[
-            {
-                "animation_id": "anim_1",
-                "title": "目标动画",
-                "concept": "展示学习目标如何落到验收标准",
-                "visual_elements": "目标卡片、任务卡片、验收标准卡片",
-                "motion": "依次淡入",
-                "space": "正文宽度",
-                "placement_hint": "练习任务之后",
-            }
-        ],
+        source_references=[_structured_source_reference()],
+        video_briefs=[_paragraph_bound_video_brief()],
+        animation_briefs=[animation_brief],
     )
 
     assert output.animation_briefs[0].visual_elements == [
@@ -871,22 +859,24 @@ def test_section_markdown_rejects_placeholder_id_mismatch() -> None:
 
 
 def test_section_animation_brief_normalizes_visual_elements_and_motion_steps() -> None:
-    output = SectionAnimationBriefOutput(
-        animation_id="anim_1",
-        title="接口调用流程动画",
-        concept="展示输入如何经过校验后进入异步 LLM 调用",
-        visual_elements=[
-            {"element": "User Input Card", "content": "{ query: '...' }"},
-            {"element": "Validation Box", "content": "Check Syntax (Sync)"},
-            {"element": "LLM Cloud Icon", "content": "Generate Answer (Async)"},
-        ],
-        motion=[
-            "Data packet moves from User Input Card to Validation Box.",
-            "Then it waits at the LLM Cloud Icon before returning the answer.",
-        ],
-        space="正文宽度",
-        placement_hint="步骤讲解之后",
+    payload = _simulation_animation_brief()
+    payload.update(
+        {
+            "title": "接口调用流程动画",
+            "concept": "展示输入如何经过校验后进入异步 LLM 调用",
+            "visual_elements": [
+                {"element": "User Input Card", "content": "{ query: '...' }"},
+                {"element": "Validation Box", "content": "Check Syntax (Sync)"},
+                {"element": "LLM Cloud Icon", "content": "Generate Answer (Async)"},
+            ],
+            "motion": [
+                "Data packet moves from User Input Card to Validation Box.",
+                "Then it waits at the LLM Cloud Icon before returning the answer.",
+            ],
+        }
     )
+
+    output = SectionAnimationBriefOutput(**payload)
 
     assert output.visual_elements == [
         "User Input Card：{ query: '...' }",
@@ -900,17 +890,20 @@ def test_section_animation_brief_normalizes_visual_elements_and_motion_steps() -
 
 
 def test_section_animation_brief_normalizes_structured_space() -> None:
-    output = SectionAnimationBriefOutput(
-        animation_id="anim_1",
-        title="检查点流程动画",
-        concept="展示运行证据如何被保存",
-        visual_elements=["用户输入", "Agent", "日志"],
-        motion="节点依次淡入",
-        space={"width": "600px", "height": "400px"},
-        placement_hint={"after": "练习任务"},
+    payload = _simulation_animation_brief()
+    payload.update(
+        {
+            "title": "检查点流程动画",
+            "concept": "展示运行证据如何被保存",
+            "visual_elements": ["用户输入", "Agent", "日志"],
+            "layout": {"width": "600px", "height": "400px"},
+            "placement_hint": {"after": "练习任务"},
+        }
     )
 
-    assert output.space == '{"width": "600px", "height": "400px"}'
+    output = SectionAnimationBriefOutput(**payload)
+
+    assert output.layout == '{"width": "600px", "height": "400px"}'
     assert output.placement_hint == '{"after": "练习任务"}'
 
 

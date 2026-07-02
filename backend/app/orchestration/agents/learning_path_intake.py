@@ -24,6 +24,7 @@ from app.orchestration.agents.prompts import LEARNING_PATH_INTAKE_AGENT_SYSTEM_P
 from app.orchestration.agents.utils import extract_last_tool_call_id
 from app.orchestration.grade_contract import grade_year_from_current_grade
 from app.orchestration.guards import require_profile_for_intake
+from app.orchestration.prompt_budget import apply_prompt_budget
 from app.orchestration.state import OrchestrationState
 from app.services.conversation_session_service import (
     load_or_create_session,
@@ -326,7 +327,7 @@ def _build_intake_generation_input(
 ) -> str:
     require_profile_for_intake({"profile": profile})
     confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
-    return "\n".join(
+    query = "\n".join(
         [
             "请根据以下上下文生成课程草案 JSON。",
             f"用户最新输入：{query}",
@@ -354,6 +355,11 @@ def _build_intake_generation_input(
             "- 不要输出 confirmed；用户确认由系统单独处理。",
             "- 不要输出自然语言解释，只输出结构化对象。",
         ]
+    )
+    budget = apply_prompt_budget(query, phase="intake")
+    return (
+        f"{budget.text}\n\n"
+        f"prompt_budget_applied={str(budget.prompt_budget_applied).lower()}"
     )
 
 

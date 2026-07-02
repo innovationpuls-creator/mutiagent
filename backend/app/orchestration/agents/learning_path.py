@@ -26,6 +26,7 @@ from app.orchestration.grade_contract import (
     unsupported_current_grade_error,
 )
 from app.orchestration.guards import require_confirmed_intake_for_learning_path
+from app.orchestration.prompt_budget import apply_prompt_budget
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
@@ -543,7 +544,7 @@ def _build_analysis_input(
 ) -> str:
     require_confirmed_intake_for_learning_path({"learning_path_intake": intake})
     intake_course_lines = "\n".join(_intake_course_lines(intake))
-    return (
+    query = (
         f"请为 {grade_year} 生成「{learning_topic}」的学习路径。\n\n"
         "输出前先完成以下分析：\n"
         "1. 判断用户当前阶段、目标导向、时间约束与关键短板。\n"
@@ -568,6 +569,11 @@ def _build_analysis_input(
         f"学习主题：{learning_topic}\n"
         f"具体要求：{requirements or '无'}\n"
         f"{_format_progress_snapshots(progress_snapshots)}"
+    )
+    budget = apply_prompt_budget(query, phase="path")
+    return (
+        f"{budget.text}\n\n"
+        f"prompt_budget_applied={str(budget.prompt_budget_applied).lower()}"
     )
 
 

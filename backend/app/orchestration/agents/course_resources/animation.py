@@ -32,6 +32,7 @@ from app.orchestration.agents.course_resources.common import (
 )
 from app.orchestration.agents.models import SectionHtmlAnimationOutput
 from app.orchestration.agents.prompts import SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT
+from app.orchestration.prompt_budget import apply_prompt_budget
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
@@ -338,7 +339,12 @@ def _animation_input(state: OrchestrationState, outline: dict, section: dict) ->
             section_markdown = value
 
     animation_briefs = section_markdown.get("animation_briefs")
-    context = _resource_context(state, outline, section)
+    context = _resource_context(
+        state,
+        outline,
+        section,
+        include_textbook_evidence=False,
+    )
     payload = {
         **context,
         "parent_section": _parent_section(outline, section),
@@ -348,6 +354,19 @@ def _animation_input(state: OrchestrationState, outline: dict, section: dict) ->
         if isinstance(animation_briefs, list)
         else [],
     }
+    raw_query = (
+        "请为输入小节的 animation_briefs 生成可嵌入 HTML 动画片段。\n\n"
+        f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
+    )
+    budget = apply_prompt_budget(
+        raw_query,
+        phase="animation",
+        protected_fragments=[
+            _clean_text(section.get("source_textbook_id")),
+            "、".join(_text_items(section.get("source_section_ids"))),
+        ],
+    )
+    payload["prompt_budget_applied"] = budget.prompt_budget_applied
     return (
         "请为输入小节的 animation_briefs 生成可嵌入 HTML 动画片段。\n\n"
         f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
@@ -370,7 +389,12 @@ def _animation_repair_input(
             section_markdown = value
 
     animation_briefs = section_markdown.get("animation_briefs")
-    context = _resource_context(state, outline, section)
+    context = _resource_context(
+        state,
+        outline,
+        section,
+        include_textbook_evidence=False,
+    )
     payload = {
         **context,
         "parent_section": _parent_section(outline, section),

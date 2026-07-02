@@ -129,12 +129,6 @@ def _markdown_quality_issue(
     if required_terms and not any(term in text for term in required_terms):
         return "Markdown 未绑定目标小节内容。"
 
-    resource_briefs_issue = _markdown_resource_briefs_issue(
-        text, video_briefs, animation_briefs
-    )
-    if resource_briefs_issue:
-        return resource_briefs_issue
-
     video_ids = _extract_brief_ids_from_markdown(text, "video")
     animation_ids = _extract_brief_ids_from_markdown(text, "animation")
     expected_video_ids = {
@@ -155,6 +149,12 @@ def _markdown_quality_issue(
         source_body = _markdown_section_body(text, "来源")
         if not source_body:
             return "Markdown 缺少教材来源。"
+
+    resource_briefs_issue = _markdown_resource_briefs_issue(
+        text, video_briefs, animation_briefs
+    )
+    if resource_briefs_issue:
+        return resource_briefs_issue
     return None
 
 
@@ -177,7 +177,7 @@ def _markdown_resource_briefs_issue(
         purpose = _clean_text(brief.get("purpose"))
         if (
             not target_heading
-            or target_heading not in headings
+            or not _brief_heading_matches(headings, target_heading)
             or not _clean_text(brief.get("target_paragraph_summary"))
             or len(search_terms) < 3
             or purpose in _GENERIC_VIDEO_PURPOSES
@@ -195,7 +195,7 @@ def _markdown_resource_briefs_issue(
         timeline = brief.get("timeline")
         if (
             not target_heading
-            or target_heading not in headings
+            or not _brief_heading_matches(headings, target_heading)
             or not _clean_text(brief.get("target_paragraph_summary"))
             or _clean_text(brief.get("title")) in _GENERIC_ANIMATION_TEXTS
             or _clean_text(brief.get("concept")) in _GENERIC_ANIMATION_TEXTS
@@ -208,6 +208,13 @@ def _markdown_resource_briefs_issue(
         ):
             return "Markdown resource briefs are too generic."
     return None
+
+
+def _brief_heading_matches(headings: set[str], target_heading: str) -> bool:
+    return any(
+        heading == target_heading or heading.startswith(target_heading)
+        for heading in headings
+    )
 
 
 def _markdown_section_body(markdown: str, heading: str) -> str:
@@ -589,7 +596,7 @@ def _normalize_markdown_video_briefs(section: dict, video_briefs: object) -> lis
                 )
     if normalized:
         return normalized
-    return []
+    return _generated_markdown_video_briefs(section)
 
 
 def _normalize_markdown_animation_briefs(
@@ -655,7 +662,7 @@ def _normalize_markdown_animation_briefs(
             )
     if normalized:
         return normalized
-    return []
+    return _generated_markdown_animation_briefs(section)
 
 
 def _generated_markdown_video_briefs(section: dict) -> list[dict]:

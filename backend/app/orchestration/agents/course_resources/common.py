@@ -18,6 +18,7 @@ from app.orchestration.agents.models import (
     SectionVideoSearchOutput,
 )
 from app.orchestration.guards import require_section_source_for_markdown
+from app.orchestration.prompt_budget import apply_prompt_budget
 from app.services.course_knowledge_service import upsert_user_course_knowledge_outline
 from app.services.knowledge_base_service import (
     get_textbook_evidence_pack,
@@ -678,7 +679,13 @@ def _rewrite_resource_placeholders(
     return rewritten
 
 
-def _resource_context(state: dict[str, Any], outline: dict, section: dict) -> dict:
+def _resource_context(
+    state: dict[str, Any],
+    outline: dict,
+    section: dict,
+    *,
+    include_textbook_evidence: bool = True,
+) -> dict:
     profile = state.get("profile")
     if isinstance(profile, dict):
         confirmed = profile.get("confirmed_info")
@@ -688,13 +695,14 @@ def _resource_context(state: dict[str, Any], outline: dict, section: dict) -> di
             slim_profile["summary_text"] = summary.strip()
     else:
         slim_profile = {}
-    textbook_evidence_pack = _textbook_evidence_pack(outline, section)
-    return {
+    context = {
         "profile": slim_profile,
         "year_learning_paths": _year_learning_paths_context(state, outline, section),
         "course_knowledge": _chapter_course_knowledge_context(outline, section),
-        "textbook_evidence_pack": textbook_evidence_pack,
     }
+    if include_textbook_evidence:
+        context["textbook_evidence_pack"] = _textbook_evidence_pack(outline, section)
+    return context
 
 
 def _textbook_evidence_pack(outline: dict, section: dict) -> dict:
@@ -775,7 +783,7 @@ def _markdown_input(state: dict[str, Any], outline: dict, section: dict) -> str:
         "video_briefs": [],
         "animation_briefs": [],
     }
-    query = (
+    raw_query = (
         "请基于输入大纲、关联学习路径与用户画像，为此小节生成完整的 Markdown 教学设计初稿。"
         "必须严格采用 JSON 输出格式。\n\n"
         "教材证据包是本节唯一的正文事实来源，必须优先依据其中的 evidence_text、sections、total_chars 生成内容。\n"
@@ -800,6 +808,40 @@ def _markdown_input(state: dict[str, Any], outline: dict, section: dict) -> str:
 
     profile = state.get("profile")
     profile_summary = _profile_summary_for_prompt(profile)
+    if profile_summary:
+        raw_query = f"{raw_query}\n\n{profile_summary}"
+
+    budget = apply_prompt_budget(
+        raw_query,
+        phase="markdown",
+        protected_fragments=[
+            _clean_text(section.get("source_textbook_id")),
+            "、".join(_text_items(section.get("source_section_ids"))),
+        ],
+    )
+    payload["prompt_budget_applied"] = budget.prompt_budget_applied
+    query = (
+        "请基于输入大纲、关联学习路径与用户画像，为此小节生成完整的 Markdown 教学设计初稿。"
+        "必须严格采用 JSON 输出格式。\n\n"
+        "教材证据包是本节唯一的正文事实来源，必须优先依据其中的 evidence_text、sections、total_chars 生成内容。\n"
+        "不要只根据章节标题写摘要式内容，也不要脱离教材正文自行补充事实。\n\n"
+        "字段约定：\n"
+        "- section_id: 小节ID字符串 (必须等于输入中的 target_section.section_id)\n"
+        "- markdown: 完整的教学文档正文 (支持标准 Markdown 语法，使用各级标题建立教学结构)\n"
+        "- video_briefs: 数组。每个小节建议规划 1-2 个重难点视频或拓展视频。每个元素为包含 video_id (BV...-video 或 拼写符合 [A-Za-z0-9_.-]+)、title (说明想要讲解的概念) 的字典。\n"
+        '- animation_briefs: 数组。规划 1-2 个核心逻辑交互式动效。每个元素为包含 animation_id、title (动效演示主题，如"单链表反转") 的字典。\n\n'
+        "教学内容必备章节格式：\n"
+        "## 学习目标\n(写出明确的学习与能力目标，建议使用有序列表)\n\n"
+        "## 核心概念\n(讲解核心概念，配有通俗的比喻或表格说明)\n\n"
+        "## 步骤讲解\n(详细的推演或实现步骤。必须包含 Markdown 表格或 fenced code block 作为核心教学支架)\n\n"
+        "## 练习任务\n(为了实现学习目标，设计的一个独立实践任务。提示：请在此章节正文开头前放置视频/动画占位符)\n\n"
+        "## 检查标准\n(提供自测和交付验收单，必须提供至少 4 条 `- [ ]` 的清单格式)\n\n"
+        "关于占位符要求：\n"
+        "你必须在正文适当的位置写入视频占位符 `<!-- video:id=xxx -->` 引导学生观看；"
+        "并在练习任务前写入交互动效占位符 `<!-- animation:id=yyy -->` 引导实践。"
+        "占位符中引用的 id 必须与 video_briefs 或 animation_briefs 中的定义完全一致。\n\n"
+        f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
+    )
     if profile_summary:
         query = f"{query}\n\n{profile_summary}"
 
@@ -1431,7 +1473,7 @@ def _normalize_markdown_video_briefs(section: dict, video_briefs: object) -> lis
     if normalized:
         return normalized
 
-    return []
+    return _generated_markdown_video_briefs(section)
 
 
 def _normalize_markdown_animation_briefs(
@@ -1499,7 +1541,7 @@ def _normalize_markdown_animation_briefs(
     if normalized:
         return normalized
 
-    return []
+    return _generated_markdown_animation_briefs(section)
 
 
 def _generated_markdown_video_briefs(section: dict) -> list[dict]:

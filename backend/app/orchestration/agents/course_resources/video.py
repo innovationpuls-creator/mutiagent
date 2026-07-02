@@ -30,6 +30,7 @@ from app.orchestration.agents.course_resources.common import (
     _text_items,
     _tool_args,
 )
+from app.orchestration.prompt_budget import apply_prompt_budget
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
@@ -1179,13 +1180,31 @@ def _video_input(state: OrchestrationState, outline: dict, section: dict) -> str
         if isinstance(section_markdown, dict):
             target_markdowns[section_id] = section_markdown
 
-    context = _resource_context(state, outline, section)
+    context = _resource_context(
+        state,
+        outline,
+        section,
+        include_textbook_evidence=False,
+    )
     payload = {
         **context,
         "parent_section": _parent_section(outline, section),
         "target_section": section,
         "section_markdowns": target_markdowns,
     }
+    raw_query = (
+        "请为输入小节联网搜索可直接打开的视频教程资源。\n\n"
+        f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
+    )
+    budget = apply_prompt_budget(
+        raw_query,
+        phase="video",
+        protected_fragments=[
+            _clean_text(section.get("source_textbook_id")),
+            "、".join(_text_items(section.get("source_section_ids"))),
+        ],
+    )
+    payload["prompt_budget_applied"] = budget.prompt_budget_applied
     return (
         "请为输入小节联网搜索可直接打开的视频教程资源。\n\n"
         f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
@@ -1207,7 +1226,12 @@ def _video_repair_input(
         if isinstance(section_markdown, dict):
             target_markdowns[section_id] = section_markdown
 
-    context = _resource_context(state, outline, section)
+    context = _resource_context(
+        state,
+        outline,
+        section,
+        include_textbook_evidence=False,
+    )
     payload = {
         **context,
         "parent_section": _parent_section(outline, section),

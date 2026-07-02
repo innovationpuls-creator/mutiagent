@@ -26,6 +26,7 @@ from app.orchestration.agents.utils import (
     extract_last_tool_call_id,
 )
 from app.orchestration.guards import require_course_source_for_course_knowledge
+from app.orchestration.prompt_budget import apply_prompt_budget
 from app.orchestration.state import OrchestrationState
 from app.services.knowledge_base_service import (
     get_textbook_section_binding_context,
@@ -790,7 +791,7 @@ def _build_analysis_input(
     )
     compact_profile = _profile_input_payload(profile)
 
-    return (
+    query = (
         "请为以下课程生成详细的章节大纲。\n\n"
         "只使用下面与大纲规划直接相关的信息。当前课程名称必须与"
         "当前课程输入里的 course_name 完全一致。\n"
@@ -812,6 +813,18 @@ def _build_analysis_input(
         f"同年级课程顺序：{json.dumps(course_sequence, ensure_ascii=False, indent=2)}\n"
         f"学习者输入：{json.dumps(compact_profile, ensure_ascii=False, indent=2)}"
     )
+    budget = apply_prompt_budget(
+        query,
+        phase="outline",
+        protected_fragments=[
+            compact_course["source_textbook_id"],
+            "、".join(compact_course["source_outline_section_ids"]),
+        ],
+    )
+    return (
+        f"{budget.text}\n\n"
+        f"prompt_budget_applied={str(budget.prompt_budget_applied).lower()}"
+    )
 
 
 def _build_year_analysis_input(
@@ -829,7 +842,7 @@ def _build_year_analysis_input(
         payload["is_current"] = payload["course_id"] == current_course_id
         compact_courses.append(payload)
 
-    return (
+    query = (
         "请一次性为当前年级的全部课程生成详细章节大纲。\n\n"
         "你必须利用全年课程顺序、课程之间的承接关系和学习者画像"
         "统一设计每门课的大纲。"
@@ -863,6 +876,19 @@ def _build_year_analysis_input(
         f"{json.dumps(compact_courses, ensure_ascii=False, indent=2)}\n"
         "学习者输入："
         f"{json.dumps(_profile_input_payload(profile), ensure_ascii=False, indent=2)}"
+    )
+    protected_fragments = []
+    for course in compact_courses:
+        protected_fragments.append(course["source_textbook_id"])
+        protected_fragments.append("、".join(course["source_outline_section_ids"]))
+    budget = apply_prompt_budget(
+        query,
+        phase="outline",
+        protected_fragments=protected_fragments,
+    )
+    return (
+        f"{budget.text}\n\n"
+        f"prompt_budget_applied={str(budget.prompt_budget_applied).lower()}"
     )
 
 
