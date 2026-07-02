@@ -37,6 +37,10 @@ from app.orchestration.state import OrchestrationState
 logger = logging.getLogger(__name__)
 
 
+def _raw_animation_text(value: object) -> str:
+    return str(value).strip()
+
+
 def _deterministic_animation_html(
     animation_id: str,
     title: str,
@@ -192,6 +196,74 @@ def _deterministic_animation_data(
     return animations
 
 
+def _html_contains_visual_entity(html_text: str, entity: dict) -> bool:
+    entity_id = _raw_animation_text(entity.get("id"))
+    label = _raw_animation_text(entity.get("label"))
+    fields = _text_items(entity.get("fields"))
+    if entity_id and (
+        f'data-entity-id="{entity_id}"' in html_text
+        or f"data-entity-id='{entity_id}'" in html_text
+        or entity_id in html_text
+    ):
+        return True
+    if label and label in html_text:
+        return True
+    return bool(fields and all(field in html_text for field in fields))
+
+
+def _html_contains_visual_relation(html_text: str, relation: dict) -> bool:
+    source = _raw_animation_text(relation.get("from"))
+    target = _raw_animation_text(relation.get("to"))
+    if source and target and source in html_text and target in html_text:
+        return True
+    return "line" in html_text or "connector" in html_text or "arrow" in html_text
+
+
+def _animation_simulation_issue(html_text: str, brief: dict) -> str | None:
+    visual_model = brief.get("visual_model")
+    if not isinstance(visual_model, dict):
+        return "动画 brief 缺少 visual_model。"
+    entities = visual_model.get("entities")
+    if not isinstance(entities, list) or not entities:
+        return "动画 brief 缺少 visual_model.entities。"
+    if not all(
+        isinstance(entity, dict) and _html_contains_visual_entity(html_text, entity)
+        for entity in entities
+    ):
+        return "动画 HTML 未实现 visual_model.entities。"
+    relations = visual_model.get("relations")
+    if isinstance(relations, list) and relations:
+        if not all(
+            isinstance(relation, dict)
+            and _html_contains_visual_relation(html_text, relation)
+            for relation in relations
+        ):
+            return "动画 HTML 未实现 visual_model.relations。"
+    timeline = brief.get("timeline")
+    if not isinstance(timeline, list) or not timeline:
+        return "动画 brief 缺少 timeline。"
+    if (
+        "data-step" not in html_text
+        and "data-timeline" not in html_text
+        and "setInterval" not in html_text
+    ):
+        return "动画 HTML 未实现 timeline 或步骤状态。"
+    if _clean_text(brief.get("simulation_type")) == "data_structure_linked_list":
+        required_terms = ("head", "data", "next", "None")
+        if not all(
+            term in html_text or (term == "head" and "头指针" in html_text)
+            for term in required_terms
+        ):
+            return "链表动画缺少头指针、data、next 或 None。"
+        if (
+            "line" not in html_text
+            and "connector" not in html_text
+            and "arrow" not in html_text
+        ):
+            return "链表动画缺少指针连线。"
+    return None
+
+
 def _normalized_animation_quality_issue(
     animations: list[dict],
     animation_briefs: object,
@@ -213,6 +285,11 @@ def _normalized_animation_quality_issue(
     }
     if expected_ids and animation_ids != expected_ids:
         return "动画资源未完整绑定 brief。"
+    briefs_by_id = {
+        _clean_text(brief.get("animation_id")): brief
+        for brief in animation_briefs
+        if isinstance(brief, dict) and _clean_text(brief.get("animation_id"))
+    }
 
     brief_terms: list[str] = [_clean_text(section.get("title"))]
     if isinstance(animation_briefs, list):
@@ -240,6 +317,14 @@ def _normalized_animation_quality_issue(
             return "动画 HTML 使用了 HEX/RGB/HSL 硬编码颜色。"
         if brief_terms and not any(term in html_text for term in brief_terms):
             return "动画 HTML 未体现 brief 内容。"
+        brief = briefs_by_id.get(
+            _clean_text(animation.get("animation_id"))
+            or _clean_text(animation.get("brief_id"))
+        )
+        if isinstance(brief, dict):
+            simulation_issue = _animation_simulation_issue(html_text, brief)
+            if simulation_issue:
+                return simulation_issue
     return None
 
 

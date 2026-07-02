@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -1848,8 +1849,6 @@ def test_find_verified_video_from_search_uses_youtube_when_bilibili_has_no_verif
     assert len(verified) == 1
     assert verified[0]["url"] == "https://www.youtube.com/watch?v=w6HDiP5eHt0"
 
-
-import asyncio
 
 from sqlmodel import Session
 
@@ -4743,7 +4742,7 @@ def test_run_section_video_search_agent_accepts_section_topic_match_without_cour
     assert videos[0]["url"] == "https://example.com/langgraph-state"
 
 
-def test_run_section_video_search_agent_falls_back_when_verified_search_stays_empty(
+def test_run_section_video_search_agent_returns_unavailable_when_verified_search_stays_empty(
     tmp_path, monkeypatch
 ) -> None:
     class RecordingLlm:
@@ -4811,12 +4810,93 @@ def test_run_section_video_search_agent_falls_back_when_verified_search_stays_em
 
     assert "error" not in result
     section_video = result["course_knowledge"]["section_video_links"]["1.1"]
-    assert section_video["fallback_reason"] == "视频资源为空或未绑定 brief。"
-    videos = section_video["videos"]
-    assert videos[0]["brief_id"] == "video_1"
-    assert videos[0]["url"].startswith("https://search.bilibili.com/video?keyword=")
-    assert videos[0]["cover_status"] == "fallback"
-    assert videos[0]["source"] == "Bilibili 搜索兜底"
+    assert section_video["status"] == "unavailable"
+    assert section_video["videos"] == []
+    assert (
+        section_video["failure_reason"]
+        == "未找到合格视频：视频资源为空或未绑定 brief。"
+    )
+
+
+def test_video_search_no_match_returns_unavailable_without_hard_error(
+    monkeypatch,
+) -> None:
+    from app.orchestration.agents.course_resources.video import (
+        run_section_video_search_agent,
+    )
+
+    outline = _outline()
+    outline["sections"][1].update(
+        {
+            "source_textbook_id": "textbook-data-structures",
+            "source_textbook_title": "数据结构教程",
+            "source_section_ids": ["2.3"],
+            "source_section_titles": ["单链表"],
+            "source_content_chars": 842,
+        }
+    )
+    outline["section_markdowns"] = {
+        "1.1": {
+            "section_id": "1.1",
+            "parent_section_id": "1",
+            "title": "学习目标",
+            "markdown": _complete_section_markdown("1.1", "学习目标"),
+            "source_references": [
+                {
+                    "textbook_id": "textbook-data-structures",
+                    "textbook_title": "数据结构教程",
+                    "section_id": "2.3",
+                    "section_title": "单链表",
+                    "evidence_summary": "依据链表教材内容生成。",
+                    "content_char_count": 842,
+                }
+            ],
+            "video_briefs": [
+                {
+                    "video_id": "video_1",
+                    "title": "单链表节点与指针讲解视频",
+                    "target_markdown_heading": "核心概念",
+                    "target_paragraph_summary": "解释节点和 next 指针关系。",
+                    "search_terms": ["单链表", "节点", "next 指针"],
+                    "purpose": "辅助理解节点和指针关系。",
+                }
+            ],
+            "animation_briefs": [],
+        }
+    }
+
+    async def no_verified_videos(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources._find_verified_video_from_search",
+        no_verified_videos,
+    )
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources.video._persist_outline",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources.video._resource_context",
+        lambda *_args, **_kwargs: {},
+    )
+
+    result = asyncio.run(
+        run_section_video_search_agent(
+            {
+                "user_id": "user-1",
+                "course_knowledge": outline,
+                "course_resource_plan": {"target_section_ids": ["1.1"]},
+            },
+            llm=None,
+        )
+    )
+
+    assert "error" not in result
+    value = result["course_knowledge"]["section_video_links"]["1.1"]
+    assert value["status"] == "unavailable"
+    assert value["videos"] == []
+    assert "未找到合格视频" in value["failure_reason"]
 
 
 def test_run_section_video_search_agent_rejects_missing_textbook_evidence(
@@ -6506,6 +6586,89 @@ def test_animation_quality_gate_rejects_hex_and_rgb_colors() -> None:
     assert "HEX/RGB" in issue
 
 
+def _linked_list_animation_brief() -> dict:
+    return {
+        "animation_id": "anim_1",
+        "title": "单链表节点指针串联动画",
+        "target_markdown_heading": "步骤讲解",
+        "target_paragraph_summary": "解释节点、next 指针和 None 终点。",
+        "concept": "单链表的节点与指针关系",
+        "simulation_type": "data_structure_linked_list",
+        "visual_elements": ["头指针", "节点(data,next)", "next 指针", "尾节点 None"],
+        "visual_model": {
+            "entities": [
+                {"id": "head", "kind": "pointer", "label": "head"},
+                {"id": "node_1", "kind": "node", "fields": ["data", "next"]},
+                {"id": "node_2", "kind": "node", "fields": ["data", "next"]},
+                {"id": "none", "kind": "terminal", "label": "None"},
+            ],
+            "relations": [
+                {"from": "head", "to": "node_1", "kind": "points_to"},
+                {"from": "node_1.next", "to": "node_2", "kind": "points_to"},
+                {"from": "node_2.next", "to": "none", "kind": "points_to"},
+            ],
+        },
+        "timeline": [
+            {"step": 1, "action": "show_entity", "target": "head"},
+            {"step": 2, "action": "show_entity", "target": "node_1"},
+            {"step": 3, "action": "connect", "from": "head", "to": "node_1"},
+        ],
+        "layout": "横向链式结构",
+        "motion": "节点通过 transform 进入，指针线通过 opacity 出现。",
+        "interaction": "点击步骤按钮切换。",
+        "success_check": [
+            "DOM 中包含头指针",
+            "DOM 中包含 next 指针",
+            "DOM 中包含 None",
+        ],
+        "placement_hint": "步骤讲解之后",
+    }
+
+
+def test_animation_quality_rejects_text_only_html_for_linked_list() -> None:
+    issue = _normalized_animation_quality_issue(
+        [
+            {
+                "animation_id": "anim_1",
+                "html": '<!doctype html><html><head><meta charset="utf-8"></head><body><section class="section-animation"><style>@media (prefers-reduced-motion: reduce){.section-animation *{opacity: 1 !important;transform: none !important;}}</style><div class="animation-context">单链表说明</div><p>节点通过指针连接。</p></section></body></html>',
+            }
+        ],
+        [_linked_list_animation_brief()],
+        {"title": "单链表"},
+    )
+
+    assert issue == "动画 HTML 未实现 visual_model.entities。"
+
+
+def test_animation_quality_accepts_linked_list_simulation_html() -> None:
+    html = """<!doctype html><html><head><meta charset="utf-8"></head><body>
+    <section class="section-animation">
+    <style>
+    :root{--line:oklch(70% 0.1 240);}
+    @media (prefers-reduced-motion: reduce){.section-animation *{opacity: 1 !important;transform: none !important;}}
+    </style>
+    <div class="animation-context">单链表节点通过 next 指针串联，尾节点指向 None。</div>
+    <svg data-timeline="linked-list">
+      <g data-entity-id="head"><text>head 头指针</text></g>
+      <g data-entity-id="node_1"><text>data</text><text>next</text></g>
+      <g data-entity-id="node_2"><text>data</text><text>next</text></g>
+      <g data-entity-id="none"><text>None</text></g>
+      <line data-relation-from="head" data-relation-to="node_1"></line>
+      <line data-relation-from="node_1.next" data-relation-to="node_2"></line>
+      <line data-relation-from="node_2.next" data-relation-to="none"></line>
+    </svg>
+    <button data-step="1">1</button><button data-step="2">2</button>
+    </section></body></html>"""
+
+    issue = _normalized_animation_quality_issue(
+        [{"animation_id": "anim_1", "html": html}],
+        [_linked_list_animation_brief()],
+        {"title": "单链表"},
+    )
+
+    assert issue is None
+
+
 def test_compose_section_content_downgrades_missing_video_and_animation() -> None:
     section_markdown = {
         "section_id": "1.1",
@@ -6536,6 +6699,52 @@ def test_compose_section_content_downgrades_missing_video_and_animation() -> Non
     assert composed["blocks"][1]["status"] == "unavailable"
     assert composed["blocks"][2]["type"] == "animation"
     assert composed["blocks"][2]["status"] == "unavailable"
+
+
+def test_compose_preserves_source_references_and_unavailable_video_status() -> None:
+    section_markdown = {
+        "section_id": "1.1",
+        "parent_section_id": "1",
+        "title": "单链表",
+        "markdown": _complete_section_markdown("1.1", "单链表"),
+        "source_references": [
+            {
+                "textbook_id": "textbook-data-structures",
+                "textbook_title": "数据结构教程",
+                "section_id": "2.3",
+                "section_title": "单链表",
+                "evidence_summary": "依据链表教材内容生成。",
+                "content_char_count": 842,
+            }
+        ],
+        "video_briefs": [
+            {
+                "video_id": "video_1",
+                "title": "单链表节点视频",
+                "target_markdown_heading": "核心概念",
+                "target_paragraph_summary": "解释节点与 next 指针。",
+                "search_terms": ["单链表", "节点", "next 指针"],
+                "purpose": "辅助理解节点与 next 指针。",
+            }
+        ],
+        "animation_briefs": [],
+    }
+
+    composed = _compose_section_content(
+        section_markdown,
+        {
+            "status": "unavailable",
+            "failure_reason": "未找到合格视频",
+            "videos": [],
+        },
+        {"animations": []},
+    )
+
+    assert composed["source_references"][0]["textbook_id"] == "textbook-data-structures"
+    video_blocks = [block for block in composed["blocks"] if block["type"] == "video"]
+    assert video_blocks[0]["status"] == "unavailable"
+    assert video_blocks[0]["failure_reason"] == "未找到合格视频"
+    assert composed["markdown"] == section_markdown["markdown"]
 
 
 def test_run_with_retries_retries_three_times_then_returns_fallback() -> None:

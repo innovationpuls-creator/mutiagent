@@ -932,6 +932,20 @@ def test_section_video_search_allows_missing_top_level_query_fields_from_llm() -
     assert output.videos[0].brief_id == "video_1"
 
 
+def test_section_video_search_output_allows_unavailable_with_failure_reason() -> None:
+    output = SectionVideoSearchOutput(
+        section_id="2.3",
+        query="单链表 节点 next 指针",
+        status="unavailable",
+        failure_reason="未找到同时包含 单链表、节点、next 指针 的公开视频结果。",
+        videos=[],
+    )
+
+    assert output.status == "unavailable"
+    assert output.failure_reason.startswith("未找到")
+    assert output.videos == []
+
+
 def test_section_html_animation_allows_missing_top_level_and_item_title_from_llm() -> (
     None
 ):

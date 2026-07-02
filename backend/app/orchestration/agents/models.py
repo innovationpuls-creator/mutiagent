@@ -1079,16 +1079,17 @@ class SectionVideoItemOutput(BaseModel):
 class SectionVideoSearchOutput(BaseModel):
     section_id: str = Field(default="", description="小节 ID")
     query: str = Field(default="", description="实际搜索查询")
+    status: Literal["available", "unavailable"] = Field(default="available")
+    failure_reason: str = Field(default="")
     videos: list[SectionVideoItemOutput] = Field(default_factory=list)
 
-    @field_validator("videos")
-    @classmethod
-    def require_videos(
-        cls, value: list[SectionVideoItemOutput]
-    ) -> list[SectionVideoItemOutput]:
-        if not value:
-            raise ValueError("videos must contain at least one item")
-        return value
+    @model_validator(mode="after")
+    def validate_status_payload(self) -> "SectionVideoSearchOutput":
+        if self.status == "available" and not self.videos:
+            raise ValueError("available video output must contain at least one item")
+        if self.status == "unavailable" and not self.failure_reason.strip():
+            raise ValueError("unavailable video output must include failure_reason")
+        return self
 
 
 class SectionHtmlAnimationItemOutput(BaseModel):

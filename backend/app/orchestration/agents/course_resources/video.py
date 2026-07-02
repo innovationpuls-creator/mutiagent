@@ -1385,22 +1385,16 @@ async def run_section_video_search_agent(
                 target_section_id,
                 quality_issue,
             )
-            fallback_videos = _fallback_videos_for_briefs(
-                video_briefs, section, outline
-            )
-            if fallback_videos:
-                return target_section_id, {
-                    "user_id": state.get("user_id", ""),
-                    "section_id": target_section_id,
-                    "parent_section_id": section.get("parent_section_id"),
-                    "title": _section_title(outline, section),
-                    "query": query,
-                    "videos": fallback_videos,
-                    "generated_at": _now_iso(),
-                    "fallback_reason": quality_issue,
-                }
             return target_section_id, {
-                "error": f"{target_section_id} 视频资源质量不合格。"
+                "user_id": state.get("user_id", ""),
+                "section_id": target_section_id,
+                "parent_section_id": section.get("parent_section_id"),
+                "title": _section_title(outline, section),
+                "query": query,
+                "status": "unavailable",
+                "failure_reason": f"未找到合格视频：{quality_issue}",
+                "videos": [],
+                "generated_at": _now_iso(),
             }
 
         return target_section_id, {
@@ -1409,6 +1403,8 @@ async def run_section_video_search_agent(
             "parent_section_id": section.get("parent_section_id"),
             "title": _section_title(outline, section),
             "query": query,
+            "status": "available",
+            "failure_reason": "",
             "videos": videos,
             "generated_at": _now_iso(),
         }

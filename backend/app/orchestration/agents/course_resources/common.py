@@ -1043,6 +1043,15 @@ def _video_by_brief_id(video_links: dict) -> dict[str, dict]:
     return result
 
 
+def _video_failure_by_brief_id(
+    video_links: dict, video_briefs: dict[str, dict]
+) -> dict[str, str]:
+    if _clean_text(video_links.get("status")) != "unavailable":
+        return {}
+    failure_reason = _clean_text(video_links.get("failure_reason"))
+    return {brief_id: failure_reason for brief_id in video_briefs}
+
+
 def _animation_by_brief_id(animation_data: dict) -> dict[str, dict]:
     animations = animation_data.get("animations")
     if not isinstance(animations, list):
@@ -1074,6 +1083,7 @@ def _video_block(brief_id: str, brief: dict, video: dict | None) -> dict:
         "title": _clean_text(brief.get("title")) or video_title,
         "purpose": _clean_text(brief.get("purpose")),
         "status": "available" if isinstance(video, dict) else "unavailable",
+        "failure_reason": _clean_text(brief.get("failure_reason")),
         "videos": [video] if isinstance(video, dict) else [],
     }
 
@@ -1104,6 +1114,7 @@ def _compose_section_content(
         section_markdown.get("animation_briefs"), "animation_id"
     )
     videos = _video_by_brief_id(video_links)
+    video_failures = _video_failure_by_brief_id(video_links, video_briefs)
     animations = _animation_by_brief_id(animation_data)
 
     blocks: list[dict] = []
@@ -1114,7 +1125,12 @@ def _compose_section_content(
         if match.group("kind") == "video":
             blocks.append(
                 _video_block(
-                    brief_id, video_briefs.get(brief_id, {}), videos.get(brief_id)
+                    brief_id,
+                    {
+                        **video_briefs.get(brief_id, {}),
+                        "failure_reason": video_failures.get(brief_id, ""),
+                    },
+                    videos.get(brief_id),
                 )
             )
         else:
@@ -1133,6 +1149,7 @@ def _compose_section_content(
         "parent_section_id": section_markdown.get("parent_section_id"),
         "title": _clean_text(section_markdown.get("title")),
         "markdown": markdown,
+        "source_references": section_markdown.get("source_references", []),
         "blocks": blocks,
         "generated_at": _now_iso(),
     }
