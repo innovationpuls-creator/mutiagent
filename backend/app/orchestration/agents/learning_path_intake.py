@@ -23,6 +23,7 @@ from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.agents.prompts import LEARNING_PATH_INTAKE_AGENT_SYSTEM_PROMPT
 from app.orchestration.agents.utils import extract_last_tool_call_id
 from app.orchestration.grade_contract import grade_year_from_current_grade
+from app.orchestration.guards import require_profile_for_intake
 from app.orchestration.state import OrchestrationState
 from app.services.conversation_session_service import (
     load_or_create_session,
@@ -323,6 +324,7 @@ def _build_intake_generation_input(
     existing_intake: dict | None,
     knowledge_context: dict,
 ) -> str:
+    require_profile_for_intake({"profile": profile})
     confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
     return "\n".join(
         [

@@ -272,6 +272,19 @@ def test_markdown_input_includes_textbook_evidence_pack(tmp_path) -> None:
     assert "验收标准正文来自知识库" in payload
 
 
+def test_markdown_input_requires_section_source_binding() -> None:
+    outline = _outline()
+    section = _section_by_id(outline, "1.1")
+    assert section is not None
+
+    with pytest.raises(ValueError, match="section source binding is incomplete"):
+        _markdown_input(
+            {"profile": _profile(), "year_learning_paths": _year_learning_paths()},
+            outline,
+            section,
+        )
+
+
 def test_section_markdown_system_prompt_matches_full_document_generation() -> None:
     assert "完整 Markdown 文档" in SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT
     assert "禁止输出完整 Markdown 文档" not in SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT
@@ -513,6 +526,11 @@ def test_resource_agent_inputs_keep_only_current_chapter_context() -> None:
         "profile": _profile(),
         "year_learning_paths": year_learning_paths,
     }
+    outline["sections"][1]["source_textbook_id"] = "textbook-ai-web"
+    outline["sections"][1]["source_textbook_title"] = "AI 应用开发项目教程"
+    outline["sections"][1]["source_section_ids"] = ["1.1"]
+    outline["sections"][1]["source_section_titles"] = ["功能边界"]
+    outline["sections"][1]["source_content_chars"] = 1200
     section = _section_by_id(outline, "1.1")
     assert section is not None
 

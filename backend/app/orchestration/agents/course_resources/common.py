@@ -17,6 +17,7 @@ from app.orchestration.agents.models import (
     SectionMarkdownOutput,
     SectionVideoSearchOutput,
 )
+from app.orchestration.guards import require_section_source_for_markdown
 from app.services.course_knowledge_service import upsert_user_course_knowledge_outline
 from app.services.knowledge_base_service import (
     get_textbook_evidence_pack,
@@ -719,6 +720,7 @@ def _current_learning_course_context(state: dict[str, Any], outline: dict) -> di
 
 
 def _markdown_input(state: dict[str, Any], outline: dict, section: dict) -> str:
+    require_section_source_for_markdown(section)
     context = _resource_context(state, outline, section)
     payload = {
         **context,

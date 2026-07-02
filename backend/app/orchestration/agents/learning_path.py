@@ -25,6 +25,7 @@ from app.orchestration.grade_contract import (
     is_supported_current_grade,
     unsupported_current_grade_error,
 )
+from app.orchestration.guards import require_confirmed_intake_for_learning_path
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
@@ -540,6 +541,7 @@ def _build_analysis_input(
     progress_snapshots: list[dict[str, object]],
     intake: dict,
 ) -> str:
+    require_confirmed_intake_for_learning_path({"learning_path_intake": intake})
     intake_course_lines = "\n".join(_intake_course_lines(intake))
     return (
         f"请为 {grade_year} 生成「{learning_topic}」的学习路径。\n\n"

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pytest
 from langchain_core.messages import HumanMessage
 from sqlmodel import Session, select
 
@@ -203,6 +204,17 @@ def test_intake_generation_input_declares_downstream_order_and_resource_boundary
         in generation_input
     )
     assert "每门课程的 purpose 必须说明教材小节覆盖的具体学习边界" in generation_input
+
+
+def test_intake_generation_input_requires_complete_profile() -> None:
+    with pytest.raises(ValueError, match="profile is not complete"):
+        _build_intake_generation_input(
+            {"profile": {"type": "collecting"}},
+            "AI 应用开发",
+            {"type": "collecting"},
+            None,
+            {"textbooks": [], "gap_id": None},
+        )
 
 
 def test_run_intake_agent_creates_data_structure_draft(tmp_path: Path) -> None:

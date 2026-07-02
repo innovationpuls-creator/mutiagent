@@ -302,6 +302,27 @@ def _json_block_after_label(text: str, label: str) -> object:
     return json.loads(match.group("body"))
 
 
+def test_build_analysis_input_requires_course_source_binding() -> None:
+    course = _course_outline_target()
+    course.pop("source_textbook_id")
+
+    with pytest.raises(ValueError, match="course source binding is incomplete"):
+        _build_analysis_input(course, _complete_profile(), None)
+
+
+def test_build_year_analysis_input_requires_each_course_source_binding() -> None:
+    course = _course_outline_target()
+    course["source_outline_section_ids"] = []
+
+    with pytest.raises(ValueError, match="course source binding is incomplete"):
+        _build_year_analysis_input(
+            "year_3",
+            [course],
+            "year_3_course_1",
+            _complete_profile(),
+        )
+
+
 def test_select_course_for_outline_uses_current_learning_course() -> None:
     path = {
         "current_learning_course": {
@@ -562,6 +583,9 @@ def test_build_analysis_input_uses_compact_course_and_profile_fields() -> None:
             "knowledge_relations": [{"from": "a", "to": "b"}],
             "downstream_resource_direction_ids": ["resource_1"],
             "acceptance_criteria": ["完成一个可运行的 AI 功能模块并接入 Web 应用"],
+            "source_textbook_id": SOURCE_TEXTBOOK_ID,
+            "source_textbook_title": SOURCE_TEXTBOOK_TITLE,
+            "source_outline_section_ids": DEFAULT_SOURCE_SECTION_IDS,
         },
         _complete_profile(),
         {

@@ -563,6 +563,24 @@ def test_learning_path_prompt_mentions_json_output() -> None:
     assert "必须且只能输出 3 门课程" not in LEARNING_PATH_AGENT_SYSTEM_PROMPT
 
 
+def test_build_analysis_input_requires_confirmed_intake() -> None:
+    intake = _confirmed_intake()
+    intake["status"] = "draft"
+
+    with pytest.raises(
+        ValueError,
+        match="learning_path_intake.status is not confirmed",
+    ):
+        _build_analysis_input(
+            _complete_profile(),
+            "year_3",
+            "数据结构",
+            "",
+            [],
+            intake,
+        )
+
+
 def test_build_learning_path_from_plan_preserves_confirmed_course_source_binding() -> (
     None
 ):

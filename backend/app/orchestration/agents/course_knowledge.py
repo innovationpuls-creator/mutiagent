@@ -25,6 +25,7 @@ from app.orchestration.agents.utils import (
     extract_last_tool_call_args,
     extract_last_tool_call_id,
 )
+from app.orchestration.guards import require_course_source_for_course_knowledge
 from app.orchestration.state import OrchestrationState
 from app.services.knowledge_base_service import (
     get_textbook_section_binding_context,
@@ -780,6 +781,7 @@ def _build_analysis_input(
     latest_grade_year: str = "",
     source_section_contexts: dict[str, list[dict[str, object]]] | None = None,
 ) -> str:
+    require_course_source_for_course_knowledge(selected_course)
     compact_course = _course_input_payload(selected_course, source_section_contexts)
     course_sequence = _same_grade_course_sequence(
         year_learning_paths,
@@ -821,6 +823,7 @@ def _build_year_analysis_input(
 ) -> str:
     compact_courses = []
     for index, course in enumerate(courses, start=1):
+        require_course_source_for_course_knowledge(course)
         payload = _course_input_payload(course, source_section_contexts)
         payload["order"] = index
         payload["is_current"] = payload["course_id"] == current_course_id
