@@ -6,6 +6,29 @@ from sqlmodel import Session, select
 
 from app.models import UserCourseKnowledgeOutline
 
+SECTION_GENERATED_ASSET_KEYS = (
+    "section_markdowns",
+    "section_composed_markdowns",
+    "section_video_links",
+    "section_html_animations",
+)
+SECTION_STRUCTURE_SIGNATURE_KEYS = (
+    "section_id",
+    "parent_section_id",
+    "depth",
+    "title",
+    "order_index",
+    "description",
+    "key_knowledge_points",
+)
+SECTION_SOURCE_SIGNATURE_KEYS = (
+    "source_textbook_id",
+    "source_textbook_title",
+    "source_section_ids",
+    "source_section_titles",
+    "source_content_chars",
+)
+
 
 def get_user_course_knowledge_outline(
     session: Session, user_uid: str, course_id: str
@@ -68,6 +91,37 @@ def get_latest_user_course_knowledge_outline(
     return row.outline_data
 
 
+def _section_signature(section: object) -> dict:
+    if not isinstance(section, dict):
+        return {}
+    return {
+        key: section.get(key)
+        for key in (*SECTION_STRUCTURE_SIGNATURE_KEYS, *SECTION_SOURCE_SIGNATURE_KEYS)
+    }
+
+
+def _outline_sections_signature(outline_data: object) -> list[dict]:
+    if not isinstance(outline_data, dict):
+        return []
+    sections = outline_data.get("sections")
+    if not isinstance(sections, list):
+        return []
+    return [_section_signature(section) for section in sections]
+
+
+def _outline_sections_changed(existing_outline: dict, next_outline: dict) -> bool:
+    return _outline_sections_signature(existing_outline) != _outline_sections_signature(
+        next_outline
+    )
+
+
+def _clear_section_generated_assets(outline_data: dict) -> dict:
+    cleaned = dict(outline_data)
+    for key in SECTION_GENERATED_ASSET_KEYS:
+        cleaned.pop(key, None)
+    return cleaned
+
+
 def upsert_user_course_knowledge_outline(
     session: Session,
     user_uid: str,
@@ -89,6 +143,8 @@ def upsert_user_course_knowledge_outline(
     else:
         row.grade_year = outline_data.get("grade_year", row.grade_year)
         row.course_name = outline_data.get("course_name", row.course_name)
+        if _outline_sections_changed(row.outline_data, outline_data):
+            outline_data = _clear_section_generated_assets(outline_data)
         row.outline_data = outline_data
         row.updated_at = now
     session.add(row)

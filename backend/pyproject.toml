@@ -16,6 +16,7 @@ dependencies = [
   "uvicorn[standard]>=0.30.0",
   "code-review-graph>=2.3.5",
   "python-multipart>=0.0.32",
+  "markitdown[docx,pdf]>=0.1.6",
 ]
 
 [project.optional-dependencies]
@@ -43,4 +44,3 @@ select = [
 ]
 fixable = ["ALL"]
 unfixable = []
-

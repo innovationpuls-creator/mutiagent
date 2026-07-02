@@ -27,6 +27,7 @@ from app.orchestration.agents.course_knowledge import (
     _normalize_generated_sections,
     _select_course_for_outline,
     _source_section_contexts_for_courses,
+    _try_db_outline_translation,
     run_course_knowledge_agent,
 )
 from app.orchestration.agents.models import (
@@ -43,6 +44,16 @@ from tests.postgres import postgresql_test_url
 
 SOURCE_TEXTBOOK_ID = "textbook-ai-web"
 SOURCE_TEXTBOOK_TITLE = "AI 应用开发项目教程"
+DEFAULT_SOURCE_SECTION_IDS = [
+    "1",
+    "1.1",
+    "1.2",
+    "1.3",
+    "2",
+    "2.1",
+    "2.2",
+    "2.3",
+]
 
 
 def _section_source_binding(section_id: str, title: str) -> dict:
@@ -117,6 +128,9 @@ def _course_outline_target(*, learning_sequence: list[str] | None = None) -> dic
         "knowledge_relations": [],
         "downstream_resource_direction_ids": [],
         "acceptance_criteria": ["完成一个可运行的 AI 功能模块并接入 Web 应用"],
+        "source_textbook_id": SOURCE_TEXTBOOK_ID,
+        "source_textbook_title": SOURCE_TEXTBOOK_TITLE,
+        "source_outline_section_ids": DEFAULT_SOURCE_SECTION_IDS,
     }
 
 
@@ -240,6 +254,27 @@ def _seed_published_textbook_sections(
             )
         session.commit()
     return engine
+
+
+def _add_default_source_material(session: Session) -> None:
+    session.add(enabled_source())
+    row = published_textbook(
+        textbook_id=SOURCE_TEXTBOOK_ID,
+        title=SOURCE_TEXTBOOK_TITLE,
+    )
+    row.outline = {}
+    session.add(row)
+    for index, section_id in enumerate(DEFAULT_SOURCE_SECTION_IDS, start=1):
+        session.add(
+            section(
+                textbook_id=SOURCE_TEXTBOOK_ID,
+                section_content_id=f"default-section-{section_id.replace('.', '-')}",
+                section_id=section_id,
+                title=f"教材小节 {section_id}",
+                content_zh=f"教材小节 {section_id} 的真实正文。",
+                order_index=index,
+            )
+        )
 
 
 def _course_tool_messages(course_id: str) -> list[AIMessage]:
@@ -603,6 +638,44 @@ def test_build_analysis_inputs_include_course_source_bindings() -> None:
         assert "不能新增未绑定来源" in payload
 
 
+def test_build_analysis_inputs_declare_resource_agent_handoff_requirements() -> None:
+    course = {
+        **_course_outline_target(),
+        "source_textbook_id": "textbook-data-structures",
+        "source_textbook_title": "数据结构教程",
+        "source_outline_section_ids": ["2.1", "2.2"],
+    }
+    query = _build_analysis_input(
+        course,
+        _complete_profile(),
+        {
+            "year_3": {
+                "current_learning_course": {
+                    "grade_id": "year_3",
+                    "course_node_id": "year_3_course_1",
+                },
+                "grade_plans": {"year_3": {"course_nodes": [course]}},
+            }
+        },
+    )
+    year_query = _build_year_analysis_input(
+        "year_3",
+        [course],
+        "year_3_course_1",
+        _complete_profile(),
+    )
+
+    for payload in (query, year_query):
+        assert (
+            "每个二级小节必须为后续 Markdown 教学、视频检索和 HTML 动画提供具体知识点"
+            in payload
+        )
+        assert "不得把小节写成总体性、模糊的资源主题" in payload
+        assert (
+            "Markdown 智能体必须使用本小节 source_section_ids 对应教材正文" in payload
+        )
+
+
 def test_build_analysis_input_includes_real_source_content_lengths(
     tmp_path: Path,
 ) -> None:
@@ -657,6 +730,58 @@ def test_build_analysis_input_includes_real_source_content_lengths(
             "content_char_count": 987,
         },
     ]
+
+
+def test_build_analysis_input_uses_english_original_source_content_lengths(
+    tmp_path: Path,
+) -> None:
+    engine = build_engine(postgresql_test_url(tmp_path, "course-source-english"))
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(enabled_source())
+        row = published_textbook(
+            textbook_id=SOURCE_TEXTBOOK_ID,
+            title=SOURCE_TEXTBOOK_TITLE,
+        )
+        row.language = "en"
+        row.translated_language = "zh"
+        row.outline = {"sections": [{"section_id": "1.1", "title": "教材小节 1.1"}]}
+        session.add(row)
+        session.add(
+            section(
+                textbook_id=SOURCE_TEXTBOOK_ID,
+                section_content_id="english-section-1-1",
+                section_id="1.1",
+                title="教材小节 1.1",
+                content_original="Agents act in environments.",
+                content_zh="",
+                order_index=1,
+            )
+        )
+        session.commit()
+
+    course = _course_with_source_sections(["1.1"])
+    source_contexts = _source_section_contexts_for_courses([course])
+    query = _build_analysis_input(
+        course,
+        _complete_profile(),
+        {
+            "year_3": {
+                "current_learning_course": {
+                    "grade_id": "year_3",
+                    "course_node_id": "year_3_course_1",
+                },
+                "grade_plans": {"year_3": {"course_nodes": [course]}},
+            }
+        },
+        source_section_contexts=source_contexts,
+    )
+    course_input = _json_block_after_label(query, "当前课程输入")
+
+    assert course_input["source_outline_sections"][0]["content_char_count"] == len(
+        "Agents act in environments."
+    )
 
 
 def test_normalize_course_outline_recomputes_source_content_chars_from_textbook(
@@ -715,6 +840,9 @@ def test_course_knowledge_output_contracts_show_required_source_fields() -> None
         assert '"source_section_ids"' in contract
         assert '"source_section_titles"' in contract
         assert '"source_content_chars"' in contract
+        assert "第一章：概念引入与直觉建立" not in contract
+        assert "生活中的类比分析" not in contract
+        assert "黄金法则应用" not in contract
 
 
 def test_course_knowledge_repair_input_requires_section_source_fields() -> None:
@@ -839,6 +967,7 @@ def test_upsert_outline_clears_section_generated_assets_when_outline_changes(
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
         )
+        _add_default_source_material(session)
         session.commit()
         upsert_user_course_knowledge_outline(session, "user-1", original_outline)
         row = upsert_user_course_knowledge_outline(session, "user-1", updated_outline)
@@ -909,6 +1038,7 @@ def test_upsert_outline_clears_section_generated_assets_when_content_plan_change
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
         )
+        _add_default_source_material(session)
         session.commit()
         upsert_user_course_knowledge_outline(session, "user-1", original_outline)
         row = upsert_user_course_knowledge_outline(session, "user-1", updated_outline)
@@ -1034,6 +1164,7 @@ def test_run_course_knowledge_agent_uses_structured_outline_and_persists(
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
         )
+        _add_default_source_material(session)
         session.commit()
 
     state = {
@@ -1073,6 +1204,11 @@ def test_run_course_knowledge_agent_uses_structured_outline_and_persists(
                                 "acceptance_criteria": [
                                     "完成一个可运行的 AI 功能模块并接入 Web 应用"
                                 ],
+                                "source_textbook_id": SOURCE_TEXTBOOK_ID,
+                                "source_textbook_title": SOURCE_TEXTBOOK_TITLE,
+                                "source_outline_section_ids": (
+                                    DEFAULT_SOURCE_SECTION_IDS
+                                ),
                             },
                         ],
                     },
@@ -1243,15 +1379,14 @@ def test_run_course_knowledge_agent_generates_all_grade_course_outlines_in_one_c
         def __or__(self, _other):
             return year_chain
 
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "course-knowledge-year-batch")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-year-batch"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
         )
+        _add_default_source_material(session)
         session.commit()
 
     state = {
@@ -1408,6 +1543,7 @@ def test_run_course_knowledge_agent_empty_course_id_generates_current_course_onl
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
         )
+        _add_default_source_material(session)
         session.commit()
 
     state = {
@@ -1493,6 +1629,7 @@ def test_run_course_knowledge_agent_rejects_incomplete_basic_profile(
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
         )
+        _add_default_source_material(session)
         session.commit()
 
     result = asyncio.run(
@@ -1570,6 +1707,7 @@ def test_run_course_knowledge_agent_returns_hard_error_after_json_output_failure
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
         )
+        _add_default_source_material(session)
         session.commit()
 
     state = {
@@ -1755,6 +1893,7 @@ def test_run_course_knowledge_agent_repairs_invalid_json_outline_once(
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
         )
+        _add_default_source_material(session)
         session.commit()
 
     state = {
@@ -1840,6 +1979,7 @@ def test_run_course_knowledge_agent_returns_hard_error_after_timeout(
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
         )
+        _add_default_source_material(session)
         session.commit()
 
     state = {
@@ -1974,15 +2114,14 @@ def test_run_course_knowledge_agent_normalizes_partial_json_outline(
             return PartialOutlineChain()
 
     captured: dict[str, object] = {}
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "course-knowledge-normalize")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-normalize"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
         )
+        _add_default_source_material(session)
         session.commit()
 
     module = __import__(
@@ -2038,6 +2177,13 @@ def test_run_course_knowledge_agent_normalizes_partial_json_outline(
                                             "acceptance_criteria": [
                                                 "完成一个可运行的 AI 功能模块并接入 Web 应用"
                                             ],
+                                            "source_textbook_id": SOURCE_TEXTBOOK_ID,
+                                            "source_textbook_title": (
+                                                SOURCE_TEXTBOOK_TITLE
+                                            ),
+                                            "source_outline_section_ids": (
+                                                DEFAULT_SOURCE_SECTION_IDS
+                                            ),
                                         },
                                         {
                                             "course_node_id": "year_3_course_2",
@@ -2069,6 +2215,13 @@ def test_run_course_knowledge_agent_normalizes_partial_json_outline(
                                             "acceptance_criteria": [
                                                 "项目支持真实用户流程与部署演示"
                                             ],
+                                            "source_textbook_id": SOURCE_TEXTBOOK_ID,
+                                            "source_textbook_title": (
+                                                SOURCE_TEXTBOOK_TITLE
+                                            ),
+                                            "source_outline_section_ids": (
+                                                DEFAULT_SOURCE_SECTION_IDS
+                                            ),
                                         },
                                     ],
                                 },
@@ -2101,9 +2254,7 @@ def test_run_course_knowledge_agent_bypasses_llm_if_textbook_mapped(
 ) -> None:
     from app.models import Textbook, TextbookSectionContent
 
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "course-knowledge-bypass-llm")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-bypass-llm"))
     set_engine(engine)
     init_db(engine)
 
@@ -2237,6 +2388,160 @@ def test_run_course_knowledge_agent_bypasses_llm_if_textbook_mapped(
     assert s2["source_content_chars"] == len(
         "配置Python开发环境是学习AI的第一步，推荐使用Anaconda。"
     )
+
+
+def test_db_outline_translation_uses_section_content_for_teaching_plan(
+    tmp_path: Path,
+) -> None:
+    from app.models import Textbook, TextbookSectionContent
+
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "course-knowledge-content-plan")
+    )
+    set_engine(engine)
+    init_db(engine)
+
+    with Session(engine) as session:
+        textbook = Textbook(
+            textbook_id="tb-content-plan",
+            source_id="src-1",
+            title="AI开发入门教程",
+            outline={
+                "chapters": [
+                    {
+                        "chapter_number": 1,
+                        "title": "第一章 AI开发入门",
+                        "sections": [
+                            {"section_id": "sec_1_1", "title": "1.1 什么是人工智能"}
+                        ],
+                    }
+                ]
+            },
+            student_availability_status="published",
+            outline_review_status="approved",
+            ingestion_status="completed",
+        )
+        session.add(textbook)
+        session.add(
+            TextbookSectionContent(
+                section_content_id="content-1",
+                textbook_id="tb-content-plan",
+                section_id="sec_1_1",
+                parent_section_id="1",
+                order_index=1,
+                title="1.1 什么是人工智能",
+                content_zh=(
+                    "人工智能是计算机科学的一个分支，旨在创造能够模拟人类智能的系统。"
+                    "学习本节时需要区分符号推理、机器学习和工程落地边界。"
+                ),
+            )
+        )
+        session.commit()
+
+        outline = _try_db_outline_translation(
+            session,
+            {
+                "course_node_id": "year_3_course_1",
+                "course_or_chapter_theme": "AI开发入门教程",
+                "grade_id": "year_3",
+                "source_textbook_id": "tb-content-plan",
+                "source_textbook_title": "AI开发入门教程",
+                "source_outline_section_ids": ["sec_1_1"],
+            },
+            "year_3",
+        )
+
+    assert outline is not None
+    child = outline["sections"][1]
+    assert "模拟人类智能的系统" in child["description"]
+    assert "什么是人工智能知识点" not in child["key_knowledge_points"]
+    assert any("计算机科学" in point for point in child["key_knowledge_points"])
+    assert any("工程落地边界" in point for point in child["key_knowledge_points"])
+
+
+def test_db_outline_translation_supports_flat_sections_with_bound_ids(
+    tmp_path: Path,
+) -> None:
+    from app.models import Textbook, TextbookSectionContent
+
+    engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-flat-db"))
+    set_engine(engine)
+    init_db(engine)
+
+    with Session(engine) as session:
+        textbook = Textbook(
+            textbook_id="tb-flat-sections",
+            source_id="src-1",
+            title="数据结构教程",
+            outline={
+                "sections": [
+                    {"section_id": "1.1", "title": "复杂度分析"},
+                    {"section_id": "1.2", "title": "数组与列表"},
+                    {"section_id": "2.1", "title": "树结构"},
+                ]
+            },
+            student_availability_status="published",
+            outline_review_status="approved",
+            ingestion_status="completed",
+        )
+        session.add(textbook)
+        session.add(
+            TextbookSectionContent(
+                section_content_id="content-1-1",
+                textbook_id="tb-flat-sections",
+                section_id="1.1",
+                parent_section_id="1",
+                order_index=1,
+                title="复杂度分析",
+                content_zh="复杂度分析用于判断算法在输入规模增长时的时间和空间开销。",
+            )
+        )
+        session.add(
+            TextbookSectionContent(
+                section_content_id="content-1-2",
+                textbook_id="tb-flat-sections",
+                section_id="1.2",
+                parent_section_id="1",
+                order_index=2,
+                title="数组与列表",
+                content_zh="数组与列表是线性结构基础，需要比较索引访问和插入删除成本。",
+            )
+        )
+        session.add(
+            TextbookSectionContent(
+                section_content_id="content-2-1",
+                textbook_id="tb-flat-sections",
+                section_id="2.1",
+                parent_section_id="2",
+                order_index=3,
+                title="树结构",
+                content_zh="树结构用于表达层次关系。",
+            )
+        )
+        session.commit()
+
+        outline = _try_db_outline_translation(
+            session,
+            {
+                "course_node_id": "year_3_course_1",
+                "course_or_chapter_theme": "复杂度分析与线性结构基础",
+                "grade_id": "year_3",
+                "source_textbook_id": "tb-flat-sections",
+                "source_textbook_title": "数据结构教程",
+                "source_outline_section_ids": ["1.1", "1.2"],
+            },
+            "year_3",
+        )
+
+    assert outline is not None
+    assert [section["section_id"] for section in outline["sections"]] == [
+        "1",
+        "1.1",
+        "1.2",
+    ]
+    assert outline["sections"][0]["source_section_ids"] == ["1.1", "1.2"]
+    assert "树结构" not in json.dumps(outline, ensure_ascii=False)
+    assert "索引访问和插入删除成本" in outline["sections"][2]["description"]
 
 
 def test_run_course_knowledge_agent_fallback_title_mapping(

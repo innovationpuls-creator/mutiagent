@@ -12,7 +12,7 @@ import re
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # ── Profile Agent ────────────────────────────────────────────────────────
 
@@ -48,6 +48,7 @@ ResourceType = Literal[
 DifficultyLevel = Literal["入门", "基础", "中级", "高级"]
 GoalType = Literal["考试", "课程学习", "项目实践", "能力提升", "就业准备", "其他"]
 REQUIRED_GRADE_PLAN_KEYS = frozenset({"year_1", "year_2", "year_3", "year_4"})
+MAX_SOURCE_SECTION_COUNT = 7
 _PROFILE_STRING_FIELDS = (
     "current_grade",
     "major",
@@ -170,16 +171,30 @@ class ProfileSessionOutput(BaseModel):
 
 
 class LearningPathIntakeCourseOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(description="课程名称")
     purpose: str = Field(description="课程安排目的")
+    source_textbook_id: str = Field(description="绑定教材 ID")
+    source_textbook_title: str = Field(description="绑定教材标题")
+    source_outline_section_ids: list[str] = Field(
+        min_length=1,
+        max_length=MAX_SOURCE_SECTION_COUNT,
+        description="绑定教材目录小节 ID",
+    )
 
-    @field_validator("title", "purpose")
+    @field_validator("title", "purpose", "source_textbook_id", "source_textbook_title")
     @classmethod
     def require_text(cls, value: str, info) -> str:
         text = str(value).strip()
         if not text:
             raise ValueError(f"{info.field_name} must not be empty")
         return text
+
+    @field_validator("source_outline_section_ids")
+    @classmethod
+    def require_source_outline_section_ids(cls, value: list[str]) -> list[str]:
+        return _require_text_list(value, "source_outline_section_ids")
 
 
 class LearningPathIntakeOutput(BaseModel):
@@ -190,7 +205,7 @@ class LearningPathIntakeOutput(BaseModel):
     grade_year: GradeId = Field(description="目标年级 ID")
     grade_name: str = Field(description="目标年级名称")
     learning_topic: str = Field(description="学习方向")
-    courses: list[LearningPathIntakeCourseOutput] = Field(min_length=4, max_length=10)
+    courses: list[LearningPathIntakeCourseOutput] = Field(min_length=4, max_length=8)
     recommendation_reasons: list[str] = Field(min_length=1, description="简短推荐依据")
     user_modification_summary: str = Field(default="")
     risk_warnings: list[str] = Field(default_factory=list)
@@ -221,7 +236,7 @@ class LearningPathIntakeDraftOutput(BaseModel):
     grade_year: str = Field(description="目标年级 ID 或用户自然年级表达")
     grade_name: str = Field(description="目标年级名称")
     learning_topic: str = Field(description="学习方向")
-    courses: list[LearningPathIntakeCourseOutput] = Field(min_length=4, max_length=10)
+    courses: list[LearningPathIntakeCourseOutput] = Field(min_length=4, max_length=8)
     recommendation_reasons: list[str] = Field(min_length=1, description="简短推荐依据")
     user_modification_summary: str = Field(default="")
     risk_warnings: list[str] = Field(default_factory=list)
@@ -346,7 +361,7 @@ class LearningPathPlanOutput(BaseModel):
         default="", min_length=1, description="当前最具体的下一步动作"
     )
     course_specs: list[LearningPathCourseSpecOutput] = Field(
-        min_length=4, max_length=10, description="按先后顺序排列的课程"
+        min_length=4, max_length=8, description="按先后顺序排列的课程"
     )
 
 
@@ -407,9 +422,21 @@ class ChapterNodeOutput(BaseModel):
 class CourseNodeOutput(BaseModel):
     """课程节点。"""
 
+    model_config = ConfigDict(extra="forbid")
+
     course_node_id: str = Field(description="课程节点 ID")
     grade_id: GradeId = Field(description="所属年级 ID")
     course_or_chapter_theme: str = Field(description="课程或章节主题")
+    source_textbook_id: str = Field(description="绑定教材 ID")
+    source_textbook_title: str = Field(description="绑定教材标题")
+    source_outline_section_ids: list[str] = Field(
+        min_length=1,
+        max_length=MAX_SOURCE_SECTION_COUNT,
+        description="绑定教材目录小节 ID",
+    )
+    course_stage_plan: list[str] = Field(
+        min_length=1, description="课程阶段计划，按学习顺序排列"
+    )
     time_arrangement: TimeArrangementOutput = Field(description="时间安排")
     course_goal: str = Field(description="课程目标")
     prerequisite_node_ids: list[str] = Field(description="前置节点 ID")
@@ -421,6 +448,22 @@ class CourseNodeOutput(BaseModel):
     knowledge_relations: list[KnowledgeRelationOutput] = Field(description="知识关系")
     downstream_resource_direction_ids: list[str] = Field(description="后续资源方向 ID")
     acceptance_criteria: list[str] = Field(description="验收标准")
+
+    @field_validator(
+        "course_node_id",
+        "course_or_chapter_theme",
+        "source_textbook_id",
+        "source_textbook_title",
+        "course_goal",
+    )
+    @classmethod
+    def require_text(cls, value: str, info) -> str:
+        return _required_text(value, info.field_name)
+
+    @field_validator("source_outline_section_ids", "course_stage_plan")
+    @classmethod
+    def require_text_list(cls, value: list[str], info) -> list[str]:
+        return _require_text_list(value, info.field_name)
 
 
 class GradePlanOutput(BaseModel):
@@ -546,7 +589,8 @@ class LearningPathResultOutput(BaseModel):
         first_course = current_courses[0]
         if first_course.progress_state not in {"in_progress", "completed"}:
             raise ValueError(
-                "current_learning_course.progress_state must be in_progress or completed"
+                "current_learning_course.progress_state must be in_progress "
+                "or completed"
             )
         if self.current_learning_course != first_course:
             self.current_learning_course = first_course
@@ -564,6 +608,8 @@ YearLearningPathOutput = LearningPathResultOutput
 class SectionItem(BaseModel):
     """章节/小节 — 详版定义。"""
 
+    model_config = ConfigDict(extra="forbid")
+
     section_id: str = Field(description="节 ID，如 1, 1.1, 1.1.1")
     parent_section_id: str | None = Field(description="父节 ID，顶层为 null")
     depth: int = Field(ge=1, le=4, description="层级深度 1-4")
@@ -573,10 +619,51 @@ class SectionItem(BaseModel):
     key_knowledge_points: list[str] = Field(
         min_length=1, description="章节内由课程大纲智能体设计的核心知识点"
     )
+    source_textbook_id: str = Field(description="绑定教材 ID")
+    source_textbook_title: str = Field(description="绑定教材标题")
+    source_section_ids: list[str] = Field(
+        min_length=1,
+        description="绑定教材小节 ID",
+    )
+    source_section_titles: list[str] = Field(
+        min_length=1,
+        description="绑定教材小节标题",
+    )
+    source_content_chars: int = Field(ge=0, description="绑定教材正文字符数")
+
+    @field_validator(
+        "section_id", "title", "source_textbook_id", "source_textbook_title"
+    )
+    @classmethod
+    def require_text(cls, value: str, info) -> str:
+        return _required_text(value, info.field_name)
+
+    @field_validator(
+        "key_knowledge_points", "source_section_ids", "source_section_titles"
+    )
+    @classmethod
+    def require_text_list(cls, value: list[str], info) -> list[str]:
+        return _require_text_list(value, info.field_name)
+
+    @model_validator(mode="after")
+    def validate_source_sections_length(self) -> "SectionItem":
+        if self.depth > 1:
+            if len(self.source_section_ids) > MAX_SOURCE_SECTION_COUNT:
+                raise ValueError(
+                    f"二级及以下章节最多绑定 {MAX_SOURCE_SECTION_COUNT} 个教材小节。"
+                )
+            if len(self.source_section_titles) > MAX_SOURCE_SECTION_COUNT:
+                raise ValueError(
+                    f"二级及以下章节最多绑定 {MAX_SOURCE_SECTION_COUNT} "
+                    "个教材小节标题。"
+                )
+        return self
 
 
 class CourseKnowledgeOutput(BaseModel):
     """课程大纲 — 详版。"""
+
+    model_config = ConfigDict(extra="forbid")
 
     course_id: str = Field(description="课程 ID")
     course_name: str = Field(description="课程名称")
@@ -621,6 +708,18 @@ def _required_text(value: str, field_name: str) -> str:
     return text
 
 
+def _require_text_list(value: list[str], field_name: str) -> list[str]:
+    if not value:
+        raise ValueError(f"{field_name} must not be empty")
+    normalized: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if not text:
+            raise ValueError(f"{field_name} must not contain empty items")
+        normalized.append(text)
+    return normalized
+
+
 def _placeholder_ids(markdown: str, kind: str) -> set[str]:
     return {
         match.group("id")
@@ -632,6 +731,40 @@ def _placeholder_ids(markdown: str, kind: str) -> set[str]:
 def _has_markdown_heading(markdown: str, heading: str) -> bool:
     pattern = rf"^##\s+{re.escape(heading)}\s*$"
     return bool(re.search(pattern, markdown, re.MULTILINE))
+
+
+def _markdown_heading_body(markdown: str, heading: str) -> str:
+    heading_pattern = re.compile(rf"^##\s+{re.escape(heading)}\s*$")
+    next_heading_pattern = re.compile(r"^##\s+\S")
+    lines = markdown.splitlines()
+    for index, line in enumerate(lines):
+        if not heading_pattern.match(line):
+            continue
+        body_lines = []
+        for body_line in lines[index + 1 :]:
+            if next_heading_pattern.match(body_line):
+                break
+            body_lines.append(body_line)
+        return "\n".join(body_lines).strip()
+    return ""
+
+
+def _has_unique_terminal_markdown_level_two_heading(
+    markdown: str, heading: str
+) -> bool:
+    heading_pattern = re.compile(rf"^##\s+{re.escape(heading)}\s*$")
+    level_two_heading_pattern = re.compile(r"^##\s+\S")
+    level_two_headings = [
+        line for line in markdown.splitlines() if level_two_heading_pattern.match(line)
+    ]
+    matching_headings = [
+        line for line in level_two_headings if heading_pattern.match(line)
+    ]
+    return (
+        len(matching_headings) == 1
+        and bool(level_two_headings)
+        and bool(heading_pattern.match(level_two_headings[-1]))
+    )
 
 
 class SectionAnimationBriefOutput(BaseModel):
@@ -649,7 +782,7 @@ class SectionAnimationBriefOutput(BaseModel):
 
     @field_validator("visual_elements", mode="before")
     @classmethod
-    def normalize_visual_elements(cls, value: object) -> object:
+    def normalize_visual_elements(cls, value: object) -> object:  # noqa: C901
         if isinstance(value, str):
             text = value.strip()
             return [text] if text else []
@@ -725,6 +858,8 @@ class SectionVideoBriefOutput(BaseModel):
 
 
 class SectionMarkdownOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     section_id: str = Field(description="小节 ID")
     parent_section_id: str | None = Field(description="父章节 ID")
     title: str = Field(description="小节标题")
@@ -757,8 +892,17 @@ class SectionMarkdownOutput(BaseModel):
         ]
         if missing_headings:
             raise ValueError(
-                f"markdown missing required teaching headings: {', '.join(missing_headings)}"
+                "markdown missing required teaching headings: "
+                f"{', '.join(missing_headings)}"
             )
+        if not _has_markdown_heading(self.markdown, "来源"):
+            raise ValueError("markdown missing required source heading: 来源")
+        if not _has_unique_terminal_markdown_level_two_heading(self.markdown, "来源"):
+            raise ValueError(
+                "markdown source footer must be the final level two heading"
+            )
+        if not _markdown_heading_body(self.markdown, "来源"):
+            raise ValueError("markdown source footer must not be empty")
 
         video_ids = {brief.video_id for brief in self.video_briefs}
         animation_ids = {brief.animation_id for brief in self.animation_briefs}
@@ -770,7 +914,8 @@ class SectionMarkdownOutput(BaseModel):
             )
         if markdown_animation_ids != animation_ids:
             raise ValueError(
-                "markdown animation placeholders must exactly match animation_briefs.animation_id"
+                "markdown animation placeholders must exactly match "
+                "animation_briefs.animation_id"
             )
         return self
 

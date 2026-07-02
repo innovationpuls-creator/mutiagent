@@ -1,4 +1,4 @@
-"""LLM singleton factory — initialized once at import time, reused across all requests."""
+"""LLM singleton factory reused across requests."""
 
 from __future__ import annotations
 
@@ -18,12 +18,15 @@ _MODEL = os.getenv("LLM_MODEL", "gpt-4o")
 
 _SUPERVISOR_TIMEOUT = 30
 _WORKER_TIMEOUT = 180
+_TRANSLATION_TIMEOUT = int(os.getenv("LLM_TRANSLATION_TIMEOUT", "45"))
 _WORKER_MAX_TOKENS = 8192
+_TRANSLATION_MAX_TOKENS = int(os.getenv("LLM_TRANSLATION_MAX_TOKENS", "4096"))
 
 _supervisor_llm: ChatOpenAI | None = None
 _worker_llm: ChatOpenAI | None = None
 _thinking_worker_llm: ChatOpenAI | None = None
 _search_worker_llm: ChatOpenAI | None = None
+_translation_llm: ChatOpenAI | None = None
 
 
 def _build(
@@ -31,6 +34,8 @@ def _build(
     *,
     enable_thinking: bool,
     enable_search: bool = False,
+    streaming: bool = True,
+    max_tokens: int | None = None,
     max_retries: int = 1,
 ) -> ChatOpenAI:
     extra_body = {"enable_thinking": enable_thinking}
@@ -50,10 +55,12 @@ def _build(
         model=_MODEL,
         temperature=0.7,
         timeout=timeout,
-        max_tokens=_WORKER_MAX_TOKENS if timeout == _WORKER_TIMEOUT else None,
+        max_tokens=max_tokens
+        if max_tokens is not None
+        else (_WORKER_MAX_TOKENS if timeout == _WORKER_TIMEOUT else None),
         max_retries=max_retries,
-        streaming=True,
-        model_kwargs={"extra_body": extra_body},
+        streaming=streaming,
+        extra_body=extra_body,
     )
 
 
@@ -92,3 +99,21 @@ def get_search_worker_llm() -> ChatOpenAI:
         )
         logger.info("Search worker LLM initialized (timeout=%ds)", _WORKER_TIMEOUT)
     return _search_worker_llm
+
+
+def get_translation_llm() -> ChatOpenAI:
+    """Return the cached textbook translation LLM."""
+    global _translation_llm
+    if _translation_llm is None:
+        _translation_llm = _build(
+            _TRANSLATION_TIMEOUT,
+            enable_thinking=False,
+            streaming=False,
+            max_tokens=_TRANSLATION_MAX_TOKENS,
+            max_retries=0,
+        )
+        logger.info(
+            "Translation LLM initialized (timeout=%ds)",
+            _TRANSLATION_TIMEOUT,
+        )
+    return _translation_llm

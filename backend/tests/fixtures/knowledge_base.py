@@ -81,14 +81,16 @@ def textbook(
     ingestion_status: str = "not_started",
     outline_review_status: str = "unreviewed",
     student_availability_status: str = "draft",
+    language: str = "en",
+    translated_language: str = "zh",
 ) -> Textbook:
     return Textbook(
         textbook_id=textbook_id,
         source_id=source_id,
         title=title,
         original_title="Linear Algebra",
-        language="en",
-        translated_language="zh",
+        language=language,
+        translated_language=translated_language,
         description=description,
         tags=tags or [],
         download_url="https://example.test/book.pdf",
@@ -180,6 +182,7 @@ def section(
     section_id: str,
     title: str = "小节",
     content_zh: str,
+    content_original: str = "",
     order_index: int = 1,
     parent_section_id: str | None = None,
     original_title: str = "",
@@ -193,6 +196,7 @@ def section(
         order_index=order_index,
         title=title,
         original_title=original_title,
+        content_original=content_original or content_zh,
         content_zh=content_zh,
         content_char_count=(
             len(content_zh) if content_char_count is None else content_char_count
@@ -208,6 +212,7 @@ def section_payload(row: TextbookSectionContent) -> dict[str, object]:
         "order_index": row.order_index,
         "title": row.title,
         "original_title": row.original_title,
+        "content_original": row.content_original,
         "content_zh": row.content_zh,
         "content_char_count": row.content_char_count,
     }

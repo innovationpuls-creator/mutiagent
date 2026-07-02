@@ -554,6 +554,11 @@ def _build_analysis_input(
         "不要输出完整知识图谱或章节明细。\n\n"
         "已确认课程草案是正式学习路径的边界，不能扩展到用户没有确认的方向：\n"
         "课程标题和来源绑定必须来自已确认课程草案，模型不得替换教材来源。\n"
+        "resource_generation_contract 必须声明下游顺序："
+        "course_knowledge_agent -> section_markdown_agent -> "
+        "section_video_search_agent -> section_html_animation_agent。\n"
+        "路径课程的 source_outline_section_ids 必须传递给大纲智能体，"
+        "再由大纲小节传递给 Markdown、视频检索和 HTML 动画智能体。\n"
         f"{json.dumps(intake, ensure_ascii=False, indent=2)}\n"
         f"已确认课程顺序：\n{intake_course_lines}\n\n"
         f"用户画像关键信息：{json.dumps(profile, ensure_ascii=False, indent=2)}\n"
@@ -1040,7 +1045,12 @@ def _build_learning_path_from_course_specs(
             ],
         },
         "resource_generation_contract": {
-            "downstream_agents": ["learning_resource_agent"],
+            "downstream_agents": [
+                "course_knowledge_agent",
+                "section_markdown_agent",
+                "section_video_search_agent",
+                "section_html_animation_agent",
+            ],
             "resource_directions": resource_directions,
         },
         "dynamic_update_contract": {

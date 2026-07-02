@@ -341,6 +341,12 @@ def _build_intake_generation_input(
             "- 每门课程的 source_textbook_id、source_textbook_title、"
             "source_outline_section_ids 必须来自已发布知识库教材上下文。",
             "- 已发布知识库教材上下文不包含教材正文，不要编造教材正文。",
+            "- 课程顺序会被正式学习路径智能体严格继承；"
+            "请把 courses 按用户真正应该学习的先后顺序输出。",
+            "- source_outline_section_ids 会继续传递给大纲、Markdown、"
+            "视频和动画智能体，不能绑定到与课程目的无关的教材小节。",
+            "- 每门课程的 purpose 必须说明教材小节覆盖的具体学习边界，"
+            "便于后续大纲与 Markdown 资源生成。",
             "- 课程必须与用户目标、年级、基础、偏好和每周时间匹配。",
             "- 如果用户自然表达了修改方向，要吸收修改并输出新的 draft。",
             "- 不要输出 confirmed；用户确认由系统单独处理。",
@@ -423,7 +429,7 @@ def _bind_fallback_course_sources(
 
     bound_courses: list[dict[str, object]] = []
     for index, course in enumerate(courses):
-        source = source_bindings[index % len(source_bindings)]
+        source = _source_binding_for_course(course, source_bindings, index)
         bound_courses.append({**course, **source})
     return bound_courses
 
@@ -461,40 +467,179 @@ def _source_bindings_from_knowledge_context(
         outline_summary = textbook.get("outline_summary")
         if not textbook_id or not title or not isinstance(outline_summary, list):
             continue
-        section_ids = [
-            str(section.get("section_id", "")).strip()
-            for section in outline_summary
-            if isinstance(section, dict) and str(section.get("section_id", "")).strip()
-        ]
-        if not section_ids:
+        sections = _outline_sections_from_textbook(textbook)
+        if not sections:
             continue
         bindings.append(
             {
                 "source_textbook_id": textbook_id,
                 "source_textbook_title": title,
-                "source_outline_section_ids": section_ids[:1],
+                "source_outline_sections": sections,
+                "source_outline_section_ids": [sections[0]["section_id"]],
             }
         )
     return bindings
+
+
+def _outline_sections_from_textbook(textbook: dict) -> list[dict[str, str]]:
+    outline_summary = textbook.get("outline_summary")
+    if not isinstance(outline_summary, list):
+        return []
+    sections: list[dict[str, str]] = []
+    for section in outline_summary:
+        if not isinstance(section, dict):
+            continue
+        section_id = str(section.get("section_id", "")).strip()
+        title = str(section.get("title", "")).strip()
+        if section_id and title:
+            sections.append({"section_id": section_id, "title": title})
+    return sections
+
+
+def _source_binding_for_course(
+    course: dict[str, str],
+    source_bindings: list[dict[str, object]],
+    course_index: int,
+) -> dict[str, object]:
+    course_text = " ".join(
+        str(course.get(key, "")).strip() for key in ("title", "purpose")
+    )
+    best_source, best_section_id = _best_source_section_for_course(
+        course_text, source_bindings
+    )
+    if best_source is None:
+        best_source = source_bindings[course_index % len(source_bindings)]
+        best_section_id = _first_source_section_id(best_source)
+
+    selected_section_id = best_section_id or _first_source_section_id(best_source)
+
+    return {
+        "source_textbook_id": best_source["source_textbook_id"],
+        "source_textbook_title": best_source["source_textbook_title"],
+        "source_outline_section_ids": [selected_section_id],
+    }
+
+
+def _best_source_section_for_course(
+    course_text: str,
+    source_bindings: list[dict[str, object]],
+) -> tuple[dict[str, object] | None, str]:
+    best_source: dict[str, object] | None = None
+    best_section_id = ""
+    best_score = -1
+    for source in source_bindings:
+        for section in _outline_sections_from_source_binding(source):
+            score = _section_match_score(course_text, section["title"])
+            if score > best_score:
+                best_source = source
+                best_section_id = section["section_id"]
+                best_score = score
+    return best_source, best_section_id
+
+
+def _outline_sections_from_source_binding(
+    source: dict[str, object],
+) -> list[dict[str, str]]:
+    sections = source.get("source_outline_sections")
+    if isinstance(sections, list) and sections:
+        return [
+            {"section_id": str(section["section_id"]), "title": str(section["title"])}
+            for section in sections
+            if isinstance(section, dict)
+            and str(section.get("section_id", "")).strip()
+            and str(section.get("title", "")).strip()
+        ]
+    first_section_id = _first_source_section_id(source)
+    return [{"section_id": first_section_id, "title": ""}] if first_section_id else []
+
+
+def _first_source_section_id(source: dict[str, object]) -> str:
+    section_ids = source.get("source_outline_section_ids")
+    if isinstance(section_ids, list) and section_ids:
+        return str(section_ids[0]).strip()
+    return ""
+
+
+def _section_match_score(course_text: str, section_title: str) -> int:
+    course_key = _match_key(course_text)
+    section_key = _match_key(section_title)
+    if not course_key or not section_key:
+        return 0
+    score = 0
+    if section_key in course_key:
+        score += 100
+    if course_key in section_key:
+        score += 80
+    section_terms = _match_terms(section_key)
+    for term in section_terms:
+        if term in course_key:
+            score += len(term) * 5
+    course_terms = _match_terms(course_key)
+    score += len(set(course_terms) & set(section_terms)) * 3
+    return score
+
+
+def _match_key(value: object) -> str:
+    return "".join(ch.lower() for ch in str(value) if ch.isalnum())
+
+
+def _match_terms(value: str) -> list[str]:
+    if len(value) <= 2:
+        return [value] if value else []
+    terms = [value[index : index + 2] for index in range(len(value) - 1)]
+    terms.extend(value[index : index + 3] for index in range(len(value) - 2))
+    return terms
 
 
 def _require_intake_courses_from_knowledge_context(
     intake: dict,
     knowledge_context: dict,
 ) -> None:
-    allowed_textbook_ids = {
-        str(textbook.get("textbook_id", "")).strip()
-        for textbook in knowledge_context.get("textbooks", [])
-        if isinstance(textbook, dict)
-    }
-    if not allowed_textbook_ids:
+    allowed_sections_by_textbook_id = _allowed_sections_by_textbook_id(
+        knowledge_context
+    )
+    if not allowed_sections_by_textbook_id:
         raise ValueError("课程草案缺少已发布教材上下文。")
     for course in intake.get("courses", []):
         if not isinstance(course, dict):
             raise ValueError("课程草案课程格式无效。")
         source_textbook_id = str(course.get("source_textbook_id", "")).strip()
-        if source_textbook_id not in allowed_textbook_ids:
+        if source_textbook_id not in allowed_sections_by_textbook_id:
             raise ValueError("课程草案教材来源不在已发布知识库上下文中。")
+        source_section_ids = _source_section_ids_from_course(course)
+        if not source_section_ids:
+            raise ValueError("课程草案缺少教材小节绑定。")
+        allowed_section_ids = allowed_sections_by_textbook_id[source_textbook_id]
+        has_unknown_section = any(
+            section_id not in allowed_section_ids for section_id in source_section_ids
+        )
+        if has_unknown_section:
+            raise ValueError("课程草案教材小节不在已发布知识库上下文中。")
+
+
+def _allowed_sections_by_textbook_id(knowledge_context: dict) -> dict[str, set[str]]:
+    textbooks = knowledge_context.get("textbooks", [])
+    if not isinstance(textbooks, list):
+        return {}
+    allowed_sections: dict[str, set[str]] = {}
+    for textbook in textbooks:
+        if not isinstance(textbook, dict):
+            continue
+        textbook_id = str(textbook.get("textbook_id", "")).strip()
+        if textbook_id:
+            allowed_sections[textbook_id] = {
+                section["section_id"]
+                for section in _outline_sections_from_textbook(textbook)
+            }
+    return allowed_sections
+
+
+def _source_section_ids_from_course(course: dict) -> list[str]:
+    return [
+        str(section_id).strip()
+        for section_id in course.get("source_outline_section_ids", [])
+        if str(section_id).strip()
+    ]
 
 
 def _source_bindings_from_existing_paths(

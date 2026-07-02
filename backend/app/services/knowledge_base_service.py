@@ -2,20 +2,22 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import Generator
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from hashlib import sha1
 from json import loads
+from time import monotonic
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from langchain_openai import OpenAIEmbeddings
-from sqlalchemy import text
+from sqlalchemy import func, or_, text
 from sqlmodel import Session, select
 
-from app.database import get_engine
 from app.models import (
     KnowledgeBaseIngestionJob,
     KnowledgeGap,
@@ -26,14 +28,17 @@ from app.models import (
     TextbookExtensionResource,
     TextbookSectionContent,
 )
-from app.orchestration.llm import get_search_worker_llm, get_worker_llm
+from app.orchestration.llm import get_search_worker_llm, get_translation_llm
 from app.schemas import (
     KnowledgeBaseAgentGapHit,
     KnowledgeBaseAgentResponse,
     KnowledgeBaseAgentTextbookHit,
     KnowledgeBaseSourceResult,
 )
-from app.services.document_parser_service import parse_textbook_source_to_sections
+from app.services.document_parser_service import (
+    DocumentParseError,
+    parse_textbook_source_to_sections,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +57,173 @@ _NOTICE_TYPE = "knowledge_gap_resolved"
 _NOTICE_ACTION = "regenerate_learning_path_intake"
 _SOURCE_RESULT_LIMIT = 5
 _SOURCE_TYPES = {"pdf", "html"}
+_TRANSLATION_CHUNK_CHAR_LIMIT = int(
+    os.getenv("TEXTBOOK_TRANSLATION_CHUNK_CHARS", "1800")
+)
+_TRANSLATION_CHUNK_MAX_ATTEMPTS = int(
+    os.getenv("TEXTBOOK_TRANSLATION_CHUNK_MAX_ATTEMPTS", "2")
+)
+_TRANSLATION_SECTION_MAX_WORKERS = int(
+    os.getenv("TEXTBOOK_TRANSLATION_SECTION_MAX_WORKERS", "6")
+)
+_TRANSLATION_JOB_TIMEOUT_SECONDS = int(
+    os.getenv("TEXTBOOK_TRANSLATION_JOB_TIMEOUT_SECONDS", "900")
+)
+_OPEN_TEXTBOOK_SOURCE_ROWS: tuple[dict[str, object], ...] = (
+    {
+        "topic_keywords": (
+            "数据结构",
+            "data structures",
+            "data structure",
+            "算法与数据结构",
+            "algorithms and data structures",
+        ),
+        "title": "Open Data Structures (Python Edition)",
+        "original_title": "Open Data Structures",
+        "language": "en",
+        "source_url": "https://opendatastructures.org/ods-python/",
+        "source_type": "html",
+        "provider_name": "Open Data Structures",
+        "description": (
+            "Open textbook covering arrays, linked lists, trees, hashing, "
+            "graphs, and sorting."
+        ),
+        "tags": ["数据结构", "算法", "Python"],
+        "parseability_score": 100,
+        "parseability_reason": (
+            "HTML textbook pages are accessible and can be converted by MarkItDown."
+        ),
+        "topic_summary": "覆盖数据结构课程的核心章节和小节正文。",
+    },
+    {
+        "topic_keywords": (
+            "数据结构",
+            "data structures",
+            "data structure",
+            "算法与数据结构",
+            "algorithms and data structures",
+        ),
+        "title": "Open Data Structures (Java Edition)",
+        "original_title": "Open Data Structures",
+        "language": "en",
+        "source_url": "https://opendatastructures.org/ods-java/",
+        "source_type": "html",
+        "provider_name": "Open Data Structures",
+        "description": (
+            "Open textbook covering data structures with Java-oriented examples."
+        ),
+        "tags": ["数据结构", "算法", "Java"],
+        "parseability_score": 98,
+        "parseability_reason": (
+            "HTML textbook pages are accessible and can be converted by MarkItDown."
+        ),
+        "topic_summary": "覆盖数据结构课程的核心章节和小节正文。",
+    },
+    {
+        "topic_keywords": (
+            "数据结构",
+            "data structures",
+            "data structure",
+            "算法与数据结构",
+            "algorithms and data structures",
+        ),
+        "title": "Open Data Structures (C++ Edition)",
+        "original_title": "Open Data Structures",
+        "language": "en",
+        "source_url": "https://opendatastructures.org/ods-cpp/",
+        "source_type": "html",
+        "provider_name": "Open Data Structures",
+        "description": (
+            "Open textbook covering data structures with C++-oriented examples."
+        ),
+        "tags": ["数据结构", "算法", "C++"],
+        "parseability_score": 96,
+        "parseability_reason": (
+            "HTML textbook pages are accessible and can be converted by MarkItDown."
+        ),
+        "topic_summary": "覆盖数据结构课程的核心章节和小节正文。",
+    },
+    {
+        "topic_keywords": (
+            "数据结构",
+            "data structures",
+            "data structure",
+            "算法与数据结构",
+            "algorithms and data structures",
+        ),
+        "title": "An Open Guide to Data Structures and Algorithms",
+        "original_title": "An Open Guide to Data Structures and Algorithms",
+        "language": "en",
+        "source_url": (
+            "https://pressbooks.palni.org/anopenguidetodatastructuresandalgorithms/"
+        ),
+        "source_type": "html",
+        "provider_name": "PALNI Pressbooks",
+        "description": (
+            "Open Pressbooks textbook covering algorithms, lists, trees, hashing, "
+            "queues, graphs, and dynamic programming."
+        ),
+        "tags": ["数据结构", "算法", "Open Textbook"],
+        "parseability_score": 94,
+        "parseability_reason": (
+            "HTML textbook chapters are accessible and can be converted by MarkItDown."
+        ),
+        "topic_summary": "覆盖算法分析、线性结构、树、散列、图等内容。",
+    },
+    {
+        "topic_keywords": (
+            "数据结构",
+            "data structures",
+            "data structure",
+            "算法与数据结构",
+            "algorithms and data structures",
+        ),
+        "title": "OpenDSA Data Structures and Algorithms Modules Collection",
+        "original_title": "OpenDSA Data Structures and Algorithms Modules Collection",
+        "language": "en",
+        "source_url": "https://opendsa-server.cs.vt.edu/ODSA/Books/Everything/html/",
+        "source_type": "html",
+        "provider_name": "OpenDSA",
+        "description": (
+            "OpenDSA HTML modules covering data structures and algorithms topics."
+        ),
+        "tags": ["数据结构", "算法", "OpenDSA"],
+        "parseability_score": 90,
+        "parseability_reason": (
+            "HTML module pages are accessible and can be converted by MarkItDown."
+        ),
+        "topic_summary": "覆盖数据结构与算法模块，适合补充检索和解析。",
+    },
+    {
+        "topic_keywords": (
+            "agent开发",
+            "agent 开发",
+            "智能体开发",
+            "ai agent",
+            "ai agents",
+            "computational agents",
+            "artificial intelligence agents",
+        ),
+        "title": "Artificial Intelligence: Foundations of Computational Agents",
+        "original_title": (
+            "Artificial Intelligence: Foundations of Computational Agents"
+        ),
+        "language": "en",
+        "source_url": "https://artint.info/3e/html/ArtInt3e.html",
+        "source_type": "html",
+        "provider_name": "Cambridge University Press",
+        "description": (
+            "Open textbook covering computational agents, reasoning, planning, "
+            "learning, and agent foundations."
+        ),
+        "tags": ["agent开发", "AI Agent", "人工智能"],
+        "parseability_score": 100,
+        "parseability_reason": (
+            "HTML textbook pages are accessible and can be converted by MarkItDown."
+        ),
+        "topic_summary": "覆盖智能体基础、知识表示、推理、规划与学习。",
+    },
+)
 _PLACEHOLDER_HOSTS = {
     "example.com",
     "example.org",
@@ -61,6 +233,27 @@ _PLACEHOLDER_HOSTS = {
     "127.0.0.1",
 }
 _TEXTBOOK_CONTENT_TYPES = ("application/pdf", "text/html")
+_NON_TEXTBOOK_SOURCE_MARKERS = (
+    "/docs/",
+    "/posts/",
+    "/short-courses/",
+    "docs.",
+    "github.com/",
+    "blog",
+    "short-courses",
+    "documentation",
+    "api reference",
+    "developer guide",
+    "development guide",
+    "user guide",
+    "开发指南",
+    "用户指南",
+    "官方开发指南",
+    "博客",
+    "课程介绍页",
+    "仓库",
+    "文档",
+)
 
 
 def create_knowledge_source(
@@ -188,6 +381,7 @@ def upsert_structured_textbook(
 
     for section in sections:
         section.textbook_id = textbook.textbook_id
+        _ensure_section_original_content(section)
         content_length = len(section.content_zh or "")
         if (
             section.content_char_count == 0
@@ -199,6 +393,11 @@ def upsert_structured_textbook(
     session.commit()
     session.refresh(stored_textbook)
     return stored_textbook
+
+
+def _ensure_section_original_content(section: TextbookSectionContent) -> None:
+    if not section.content_original:
+        section.content_original = section.content_zh
 
 
 def create_knowledge_base_ingestion_job(
@@ -230,6 +429,7 @@ def confirm_textbook_source_result(
     sources = list_admitted_knowledge_sources(session)
     if not sources:
         raise ValueError("缺少已准入教材来源。")
+    _ensure_source_result_parseable(source_result, max_linked_pages=8)
 
     source = sources[0]
     textbook = Textbook(
@@ -375,23 +575,93 @@ def fail_knowledge_base_ingestion_job(
     return job
 
 
-def translate_section_content_to_zh(content: str) -> str:
-    if not content.strip():
-        return ""
+def translate_section_content_to_zh(content: str, source_language: str = "") -> str:
+    """Translate parsed English textbook text section by section.
+
+    MarkItDown remains the only source of textbook structure and source text.
+    The model is only allowed to translate one parsed section into Chinese.
+    """
+    original_content = content.strip()
+    if not _textbook_language_requires_translation(source_language):
+        return original_content
+    if _contains_cjk_text(original_content):
+        return original_content
+
+    translated_chunks: list[str] = []
+    for chunk in _split_translation_chunks(
+        original_content,
+        _TRANSLATION_CHUNK_CHAR_LIMIT,
+    ):
+        translated = _translate_text_chunk_to_zh(chunk)
+        if not translated or not _contains_cjk_text(translated):
+            return original_content
+        translated_chunks.append(translated)
+    return "\n\n".join(translated_chunks).strip()
+
+
+def _translate_text_chunk_to_zh(content: str) -> str:
     prompt = (
-        "请将以下教材小节原文译写为适合中国大学生阅读的中文学习正文。"
-        "保留关键术语，不扩写教材之外的新内容。\n\n"
+        "请把下面教材小节原文片段翻译成简体中文。"
+        "必须忠实保留原文含义、代码、公式、列表和 Markdown 结构；"
+        "不得新增原文没有的知识点，不得写摘要，不得解释翻译过程。"
+        "\n\n教材小节原文片段：\n"
         f"{content}"
     )
-    try:
-        response = get_worker_llm().invoke(prompt)
-    except Exception as exc:
-        logger.warning("Section translation failed: %s", exc)
-        return content
-    translated = getattr(response, "content", "")
-    if isinstance(translated, str) and translated.strip():
-        return translated.strip()
-    return content
+    translated = ""
+    for attempt_index in range(max(1, _TRANSLATION_CHUNK_MAX_ATTEMPTS)):
+        try:
+            response = get_translation_llm().invoke(prompt)
+            translated = getattr(response, "content", "")
+            break
+        except Exception as exc:
+            logger.warning(
+                "Textbook section translation failed on attempt %s: %s",
+                attempt_index + 1,
+                exc,
+            )
+    else:
+        return ""
+    if not isinstance(translated, str):
+        return ""
+    translated = translated.strip()
+    if not translated or not _contains_cjk_text(translated):
+        return ""
+    return translated
+
+
+def _split_translation_chunks(content: str, chunk_char_limit: int) -> list[str]:
+    if chunk_char_limit <= 0 or len(content) <= chunk_char_limit:
+        return [content]
+
+    chunks: list[str] = []
+    current_parts: list[str] = []
+    current_length = 0
+    for raw_block in content.split("\n\n"):
+        block = raw_block.strip()
+        if not block:
+            continue
+        if len(block) > chunk_char_limit:
+            if current_parts:
+                chunks.append("\n\n".join(current_parts))
+                current_parts = []
+                current_length = 0
+            chunks.extend(
+                block[index : index + chunk_char_limit].strip()
+                for index in range(0, len(block), chunk_char_limit)
+                if block[index : index + chunk_char_limit].strip()
+            )
+            continue
+        next_length = current_length + len(block) + (2 if current_parts else 0)
+        if current_parts and next_length > chunk_char_limit:
+            chunks.append("\n\n".join(current_parts))
+            current_parts = [block]
+            current_length = len(block)
+            continue
+        current_parts.append(block)
+        current_length = next_length
+    if current_parts:
+        chunks.append("\n\n".join(current_parts))
+    return chunks or [content]
 
 
 def run_textbook_source_ingestion(
@@ -405,6 +675,17 @@ def run_textbook_source_ingestion(
             textbook.download_url,
             textbook.language,
         )
+        outline_sections = _outline_summary(outline)
+        if not outline_sections:
+            raise ValueError("教材解析失败：未提取到可校对大纲。")
+        missing_section_ids = [
+            section["section_id"]
+            for section in outline_sections
+            if not sections.get(section["section_id"], "").strip()
+        ]
+        if missing_section_ids:
+            raise ValueError("教材解析失败：未切分出完整小节正文。")
+
         textbook.outline = outline
         session.add(textbook)
 
@@ -417,26 +698,37 @@ def run_textbook_source_ingestion(
             session.delete(section)
         session.flush()
 
-        outline_sections = _outline_summary(outline)
+        content_by_section_id = _section_content_by_section_id_for_ingestion(
+            outline_sections,
+            sections,
+        )
+        prepared_sections: list[dict[str, str | int]] = []
         for index, section in enumerate(outline_sections, start=1):
             original_content = sections.get(section["section_id"], "")
-            if not original_content.strip():
-                continue
-            content_zh = (
-                translate_section_content_to_zh(original_content)
-                if textbook.language == "en"
-                else original_content
+            content_text = content_by_section_id.get(section["section_id"], "")
+            prepared_sections.append(
+                {
+                    "order_index": index,
+                    "section_id": section["section_id"],
+                    "title": section["title"],
+                    "content_original": original_content.strip(),
+                    "content_zh": content_text,
+                    "content_char_count": len(content_text),
+                }
             )
+
+        for section in prepared_sections:
             session.add(
                 TextbookSectionContent(
                     section_content_id=_new_id("section"),
                     textbook_id=textbook.textbook_id,
-                    section_id=section["section_id"],
-                    order_index=index,
-                    title=section["title"],
-                    original_title=section["title"],
-                    content_zh=content_zh,
-                    content_char_count=len(content_zh),
+                    section_id=str(section["section_id"]),
+                    order_index=int(section["order_index"]),
+                    title=str(section["title"]),
+                    original_title=str(section["title"]),
+                    content_original=str(section["content_original"]),
+                    content_zh=str(section["content_zh"]),
+                    content_char_count=int(section["content_char_count"]),
                 )
             )
 
@@ -445,6 +737,96 @@ def run_textbook_source_ingestion(
     except Exception as exc:
         session.rollback()
         return fail_knowledge_base_ingestion_job(session, job_id, str(exc))
+
+
+def _section_content_by_section_id_for_ingestion(
+    outline_sections: list[dict[str, str]],
+    sections: dict[str, str],
+) -> dict[str, str]:
+    return {
+        section["section_id"]: sections.get(section["section_id"], "").strip()
+        for section in outline_sections
+    }
+
+
+def _translate_english_sections_concurrently(
+    sections_to_translate: list[tuple[str, str]],
+    source_language: str,
+) -> dict[str, str]:
+    max_workers = max(
+        1,
+        min(_TRANSLATION_SECTION_MAX_WORKERS, len(sections_to_translate)),
+    )
+    timeout_seconds = max(1, _TRANSLATION_JOB_TIMEOUT_SECONDS)
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    future_by_section_id = {
+        executor.submit(
+            translate_section_content_to_zh,
+            original_content,
+            source_language,
+        ): section_id
+        for section_id, original_content in sections_to_translate
+    }
+    pending = set(future_by_section_id)
+    translated_by_section_id: dict[str, str] = {}
+    deadline = monotonic() + timeout_seconds
+    try:
+        while pending:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                for future in pending:
+                    future.cancel()
+                raise TimeoutError("英文教材中文译写超时。")
+            done, pending = wait(
+                pending,
+                timeout=remaining,
+                return_when=FIRST_COMPLETED,
+            )
+            if not done:
+                for future in pending:
+                    future.cancel()
+                raise TimeoutError("英文教材中文译写超时。")
+            for future in done:
+                section_id = future_by_section_id[future]
+                translated = future.result()
+                if not _contains_cjk_text(translated):
+                    raise ValueError("英文教材缺少中文译写正文。")
+                translated_by_section_id[section_id] = translated
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+    return translated_by_section_id
+
+
+def run_textbook_source_ingestion_for_textbook(
+    session: Session,
+    textbook_id: str,
+) -> KnowledgeBaseIngestionJob:
+    textbook = session.get(Textbook, textbook_id)
+    if textbook is None:
+        raise ValueError("教材不存在。")
+    running_job = session.exec(
+        select(KnowledgeBaseIngestionJob)
+        .where(
+            KnowledgeBaseIngestionJob.textbook_id == textbook_id,
+            KnowledgeBaseIngestionJob.job_type == "agent_organize",
+            KnowledgeBaseIngestionJob.status == "running",
+        )
+        .order_by(KnowledgeBaseIngestionJob.created_at.desc())
+    ).first()
+    if running_job is not None:
+        raise ValueError("教材整理任务正在运行。")
+
+    queued_job = session.exec(
+        select(KnowledgeBaseIngestionJob)
+        .where(
+            KnowledgeBaseIngestionJob.textbook_id == textbook_id,
+            KnowledgeBaseIngestionJob.job_type == "agent_organize",
+            KnowledgeBaseIngestionJob.status == "queued",
+        )
+        .order_by(KnowledgeBaseIngestionJob.created_at.desc())
+    ).first()
+    job = queued_job or create_knowledge_base_ingestion_job(session, textbook_id)
+    return run_textbook_source_ingestion(session, job.job_id)
 
 
 def publish_textbook(session: Session, textbook_id: str) -> Textbook:
@@ -457,15 +839,19 @@ def publish_textbook(session: Session, textbook_id: str) -> Textbook:
         raise ValueError("教材来源未通过准入校验。")
     if not _outline_has_named_section(textbook.outline):
         raise ValueError("教材缺少中文目录。")
-    if textbook.outline_review_status != "approved":
-        raise ValueError("教材目录未校对。")
     content_rows = _textbook_content_rows(session, textbook_id)
     if not _textbook_has_non_empty_content(content_rows):
         raise ValueError("教材缺少中文正文。")
     if not _textbook_has_complete_content(content_rows, textbook.outline):
         raise ValueError("教材缺少完整中文正文。")
+    if _textbook_requires_zh_translation(textbook) and not _textbook_has_zh_content(
+        content_rows,
+        textbook.outline,
+    ):
+        raise ValueError("英文教材缺少中文译写正文。")
 
     try:
+        textbook.outline_review_status = "approved"
         textbook.student_availability_status = "published"
         textbook.published_at = datetime.now(timezone.utc)
         session.add(textbook)
@@ -535,11 +921,12 @@ def get_textbook_evidence_pack(
     if order_indexes != list(range(order_indexes[0], order_indexes[0] + len(rows))):
         raise ValueError("教材小节必须连续。")
 
-    if any(not row.content_zh.strip() for row in ordered_sections):
+    evidence_texts = [_section_available_content(row) for row in ordered_sections]
+    if any(not text.strip() for text in evidence_texts):
         create_or_update_knowledge_gap(session, textbook_id)
         raise ValueError("证据包为空。")
 
-    total_chars = sum(len(row.content_zh or "") for row in ordered_sections)
+    total_chars = sum(len(text) for text in evidence_texts)
     if total_chars > _EVIDENCE_CHAR_LIMIT:
         raise ValueError("证据包超过 8000 个中文字符。")
 
@@ -551,7 +938,7 @@ def get_textbook_evidence_pack(
             for row in ordered_sections
         ],
         "total_chars": total_chars,
-        "evidence_text": "\n\n".join(row.content_zh for row in ordered_sections),
+        "evidence_text": "\n\n".join(evidence_texts),
     }
 
 
@@ -588,7 +975,7 @@ def get_textbook_section_binding_context(
             "title": row.title,
             "parent_section_id": row.parent_section_id,
             "order_index": row.order_index,
-            "content_char_count": len(row.content_zh or ""),
+            "content_char_count": len(_section_available_content(row)),
         }
         for row in ordered_rows
     ]
@@ -786,15 +1173,44 @@ def _get_ingestion_job_textbook(
 
 
 def _textbook_has_non_empty_content(rows: list[TextbookSectionContent]) -> bool:
-    return any(row.content_zh.strip() for row in rows)
+    return any(_section_available_content(row) for row in rows)
 
 
 def _textbook_has_complete_content(
     rows: list[TextbookSectionContent], outline: object
 ) -> bool:
-    content_section_ids = {row.section_id for row in rows if row.content_zh.strip()}
+    content_section_ids = {
+        row.section_id for row in rows if _section_available_content(row)
+    }
     leaf_section_ids = {row["section_id"] for row in _outline_leaf_summary(outline)}
     return bool(leaf_section_ids) and leaf_section_ids.issubset(content_section_ids)
+
+
+def _textbook_requires_zh_translation(textbook: Textbook) -> bool:
+    return False
+
+
+def _textbook_language_requires_translation(language: str) -> bool:
+    return language.strip().lower().startswith("en")
+
+
+def _textbook_has_zh_content(
+    rows: list[TextbookSectionContent], outline: object
+) -> bool:
+    rows_by_section_id = {row.section_id: row for row in rows}
+    for leaf in _outline_leaf_summary(outline):
+        row = rows_by_section_id.get(leaf["section_id"])
+        if row is None or not _contains_cjk_text(row.content_zh):
+            return False
+    return True
+
+
+def _contains_cjk_text(value: str) -> bool:
+    return bool(re.search(r"[\u3400-\u9fff]", value))
+
+
+def _section_available_content(row: TextbookSectionContent) -> str:
+    return (row.content_zh or row.content_original or "").strip()
 
 
 def textbook_covers_topic(textbook: Textbook, topic: str) -> bool:
@@ -949,147 +1365,6 @@ def _source_textbook_ids(value: object) -> list[str]:
     return list(dict.fromkeys(textbook_ids))
 
 
-async def generate_textbook_contents_task(
-    textbook_id: str,
-    job_id: str,
-    session_maker: object = None,
-) -> None:
-    engine = get_engine()
-    with Session(engine) as session:
-        job = session.get(KnowledgeBaseIngestionJob, job_id)
-        if job is None:
-            return
-
-        textbook = session.get(Textbook, textbook_id)
-        if textbook is None:
-            job.status = "failed"
-            job.finished_at = datetime.now(timezone.utc)
-            job.error_message = "教材不存在。"
-            session.add(job)
-            session.commit()
-            return
-
-        try:
-            job.status = "running"
-            job.started_at = datetime.now(timezone.utc)
-            session.add(job)
-            session.commit()
-
-            chapters = textbook.outline.get("chapters", [])
-            order_index = 0
-
-            for ch in chapters:
-                chapter_title = ch.get("title", "")
-                sections = ch.get("sections", [])
-                for sec in sections:
-                    section_id = sec.get("section_id")
-                    section_title = sec.get("title", "")
-
-                    existing = session.exec(
-                        select(TextbookSectionContent).where(
-                            TextbookSectionContent.textbook_id == textbook_id,
-                            TextbookSectionContent.section_id == section_id,
-                        )
-                    ).first()
-
-                    if not existing:
-                        llm = get_worker_llm()
-                        prompt = (
-                            f"你是一个专业的教材撰写专家。请为教材《{textbook.title}》的章节"
-                            f"《{chapter_title}》中的小节《{section_title}》撰写详细的教学正文。"
-                            "正文应包含理论讲解、代码示例、概念分析等，"
-                            "字数在 2000 到 5000 字之间。"
-                            "输出必须是纯 Markdown 格式。"
-                        )
-                        response = await llm.ainvoke(prompt)
-                        content = response.content
-
-                        section_content = TextbookSectionContent(
-                            section_content_id=f"content-{uuid4().hex}",
-                            textbook_id=textbook_id,
-                            section_id=section_id,
-                            title=section_title,
-                            content_zh=content,
-                            content_char_count=len(content),
-                            order_index=order_index,
-                        )
-                        session.add(section_content)
-                        session.commit()
-                    order_index += 1
-
-            job.status = "completed"
-            job.finished_at = datetime.now(timezone.utc)
-            session.add(job)
-            session.commit()
-
-        except Exception as exc:
-            job.status = "failed"
-            job.finished_at = datetime.now(timezone.utc)
-            job.error_message = str(exc)
-            session.add(job)
-            session.commit()
-
-
-def get_textbook_generation_progress(
-    session: Session,
-    textbook_id: str,
-) -> dict[str, object]:
-    textbook = session.get(Textbook, textbook_id)
-    if textbook is None:
-        raise ValueError("教材不存在。")
-
-    outline_sections = _outline_summary(textbook.outline)
-    total_sections = len(outline_sections)
-
-    section_contents = session.exec(
-        select(TextbookSectionContent).where(
-            TextbookSectionContent.textbook_id == textbook_id
-        )
-    ).all()
-
-    written_section_ids = {
-        sc.section_id
-        for sc in section_contents
-        if sc.content_zh and sc.content_zh.strip()
-    }
-
-    written_count = 0
-    for sec in outline_sections:
-        sec_id = sec.get("section_id")
-        if sec_id in written_section_ids:
-            written_count += 1
-
-    progress_percentage = (
-        (written_count / total_sections) * 100.0 if total_sections > 0 else 0.0
-    )
-
-    job = session.exec(
-        select(KnowledgeBaseIngestionJob)
-        .where(
-            KnowledgeBaseIngestionJob.textbook_id == textbook_id,
-            KnowledgeBaseIngestionJob.job_type == "aigc_generation",
-        )
-        .order_by(KnowledgeBaseIngestionJob.created_at.desc())
-    ).first()
-
-    status_val = job.status if job else "not_started"
-
-    current_section_title = ""
-    if status_val == "running":
-        for sec in outline_sections:
-            sec_id = sec.get("section_id")
-            if sec_id not in written_section_ids:
-                current_section_title = sec.get("title", "")
-                break
-
-    return {
-        "textbook_id": textbook_id,
-        "progress_percentage": progress_percentage,
-        "status": status_val,
-        "current_section_title": current_section_title,
-    }
-
-
 def get_embeddings_client() -> OpenAIEmbeddings:
     base_url = os.getenv("LLM_BASE_URL")
     api_key = os.getenv("LLM_API_KEY")
@@ -1217,12 +1492,20 @@ def search_real_textbook_sources(
     if limit <= 0:
         return []
 
-    raw_results = _search_real_textbook_sources_with_llm(topic, limit)
+    raw_results = [
+        *_search_known_open_textbook_sources(topic),
+        *_search_real_textbook_sources_with_llm(topic, limit),
+    ]
     source_results: list[KnowledgeBaseSourceResult] = []
     seen_urls: set[str] = set()
     for raw_result in raw_results:
         source_result = _normalize_source_result(raw_result)
-        if source_result is None or source_result.source_url in seen_urls:
+        if (
+            source_result is None
+            or source_result.source_url in seen_urls
+            or not _source_result_looks_like_textbook(source_result)
+            or not _source_result_is_parseable(source_result)
+        ):
             continue
         seen_urls.add(source_result.source_url)
         source_results.append(source_result)
@@ -1238,6 +1521,25 @@ def search_real_textbook_sources(
     for index, source_result in enumerate(limited_results):
         source_result.is_recommended = index == 0
     return limited_results
+
+
+def _search_known_open_textbook_sources(topic: str) -> list[dict[str, object]]:
+    normalized_topic = topic.strip().lower()
+    if not normalized_topic:
+        return []
+
+    rows: list[dict[str, object]] = []
+    for source_row in _OPEN_TEXTBOOK_SOURCE_ROWS:
+        raw_keywords = source_row.get("topic_keywords")
+        if not isinstance(raw_keywords, tuple):
+            continue
+        keywords = [keyword for keyword in raw_keywords if isinstance(keyword, str)]
+        if not any(keyword.lower() in normalized_topic for keyword in keywords):
+            continue
+        rows.append(
+            {key: value for key, value in source_row.items() if key != "topic_keywords"}
+        )
+    return rows
 
 
 def _search_real_textbook_sources_with_llm(
@@ -1311,6 +1613,63 @@ def _normalize_source_result(raw_result: object) -> KnowledgeBaseSourceResult | 
         parseability_reason=_clean_text(raw_result.get("parseability_reason")),
         topic_summary=_clean_text(raw_result.get("topic_summary")),
     )
+
+
+def _source_result_is_parseable(source_result: KnowledgeBaseSourceResult) -> bool:
+    try:
+        _ensure_source_result_parseable(source_result, max_linked_pages=8)
+    except (DocumentParseError, ValueError) as exc:
+        logger.info(
+            "Rejected textbook source %s because parsing failed: %s",
+            source_result.source_url,
+            exc,
+        )
+        return False
+    return True
+
+
+def _source_result_looks_like_textbook(
+    source_result: KnowledgeBaseSourceResult,
+) -> bool:
+    searchable_text = " ".join(
+        [
+            source_result.title,
+            source_result.original_title,
+            source_result.source_url,
+            source_result.provider_name,
+            source_result.description,
+            source_result.parseability_reason,
+            source_result.topic_summary,
+            *source_result.tags,
+        ]
+    ).lower()
+    return not any(
+        marker.lower() in searchable_text for marker in _NON_TEXTBOOK_SOURCE_MARKERS
+    )
+
+
+def _ensure_source_result_parseable(
+    source_result: KnowledgeBaseSourceResult,
+    *,
+    max_linked_pages: int,
+) -> None:
+    try:
+        outline, sections = parse_textbook_source_to_sections(
+            source_result.source_url,
+            source_result.language,
+            max_linked_pages=max_linked_pages,
+        )
+    except DocumentParseError as exc:
+        raise ValueError(f"教材来源解析失败：{exc}") from exc
+    outline_sections = _outline_summary(outline)
+    if not outline_sections:
+        raise ValueError("教材来源无法解析出可校对大纲。")
+    has_missing_content = any(
+        not sections.get(section["section_id"], "").strip()
+        for section in outline_sections
+    )
+    if has_missing_content:
+        raise ValueError("教材来源无法切分出完整小节正文。")
 
 
 def _parse_source_score(value: object) -> int:
@@ -1459,32 +1818,40 @@ def stream_knowledge_base_agent_events(
         gap_count=len(gap_count),
     )
     yield _agent_stream_event(
-        "textbook_search_started",
-        "正在按教材标题、简介和标签做精确匹配。",
+        "source_search_started",
+        "正在联网查找真实教材来源。",
     )
-    matched_textbooks = search_admin_textbooks(session, query, limit=5)
+    source_results = search_real_textbook_sources(query, limit=_SOURCE_RESULT_LIMIT)
     yield _agent_stream_event(
-        "textbook_search_completed",
-        "精确匹配完成。",
-        match_count=len(matched_textbooks),
+        "source_search_completed",
+        "真实教材来源查找完成。",
+        result_count=len(source_results),
     )
-    if not matched_textbooks:
-        yield _agent_stream_event(
-            "hybrid_search_started",
-            "未找到直接匹配，正在使用内容向量与目录信号扩展检索。",
-        )
-        matched_textbooks = hybrid_search_textbooks(session, query, limit=5)
-        yield _agent_stream_event(
-            "hybrid_search_completed",
-            "扩展检索完成。",
-            match_count=len(matched_textbooks),
-        )
-    textbook_hits = _textbook_hits_from_matches(session, matched_textbooks)
+
     yield _agent_stream_event(
-        "textbook_hits_ready",
-        "已整理教材命中结果。",
-        hit_count=len(textbook_hits),
+        "duplicate_check_started",
+        "正在进行本地知识库查重。",
     )
+    for result in source_results:
+        existing = session.exec(
+            select(Textbook).where(
+                or_(
+                    Textbook.download_url == result.source_url,
+                    func.lower(Textbook.title) == func.lower(result.title),
+                )
+            )
+        ).first()
+        if existing:
+            result.already_imported = True
+            result.textbook_id = existing.textbook_id
+
+    imported_count = sum(1 for r in source_results if r.already_imported)
+    yield _agent_stream_event(
+        "duplicate_check_completed",
+        "本地查重比对完成。",
+        imported_count=imported_count,
+    )
+
     yield _agent_stream_event(
         "gap_search_started",
         "正在检查未覆盖待办是否命中本轮主题。",
@@ -1495,53 +1862,42 @@ def stream_knowledge_base_agent_events(
         "待办检查完成。",
         hit_count=len(gap_hits),
     )
-    source_results: list[KnowledgeBaseSourceResult] = []
-    reply_parts = ["我按你的要求自动匹配了知识库。"]
-    selected_textbook_id = None
+
     selected_source_result_id = None
-    if textbook_hits:
-        selected_textbook_id = textbook_hits[0].textbook_id
-        reply_parts.append(f"当前最合适的主教材是《{textbook_hits[0].title}》。")
+    if source_results:
+        non_imported = [r for r in source_results if not r.already_imported]
+        if non_imported:
+            selected_source_result_id = non_imported[0].source_result_id
+        else:
+            selected_source_result_id = source_results[0].source_result_id
+
+    reply_parts = []
+    if source_results:
+        msg = (
+            f"我已联网为你查找到以下相关教材素材：共找到 {len(source_results)} "
+            f"个真实教材来源（其中 {imported_count} 个已入库）。"
+        )
+        reply_parts.append(msg)
         reply_parts.append(
-            "我先给你命中的教材："
-            + "、".join(f"《{hit.title}》" for hit in textbook_hits[:3])
-            + "。"
+            "你可以点击“确认解析”将新资源导入知识库，或直接“去查看”已入库教材。"
         )
     else:
-        yield _agent_stream_event(
-            "source_search_started",
-            "知识库内暂无命中，正在联网查找真实教材来源。",
+        reply_parts.append(
+            "我尝试联网查找真实教材来源，但没有拿到可用结果。请检查搜索服务配置。"
         )
-        source_results = search_real_textbook_sources(query, limit=_SOURCE_RESULT_LIMIT)
-        yield _agent_stream_event(
-            "source_search_completed",
-            "真实教材来源查找完成。",
-            result_count=len(source_results),
-        )
-        if source_results:
-            selected_source_result_id = source_results[0].source_result_id
-            reply_parts.append(f"找到 {len(source_results)} 个真实教材来源。")
-        else:
-            reply_parts.append(
-                "我尝试联网查找真实教材来源，但没有拿到可用结果。请检查搜索服务配置。"
-            )
-    if gap_hits and not textbook_hits:
+
+    if gap_hits:
         reply_parts.append(
             "仍然空着的方向有："
             + "、".join(f"“{hit.normalized_topic}”" for hit in gap_hits[:3])
             + "。"
         )
-    if textbook_hits:
-        reply_parts.append("你可以检查大纲，确认后发布当前教材。")
-    elif source_results:
-        reply_parts.append("你可以选择一个来源后再进入教材入库整理流程。")
-    else:
-        reply_parts.append("你可以补充一个更具体的教材名或检查搜索服务配置。")
+
     response = KnowledgeBaseAgentResponse(
         reply_text=" ".join(reply_parts),
-        selected_textbook_id=selected_textbook_id,
+        selected_textbook_id=None,
         selected_source_result_id=selected_source_result_id,
-        textbook_hits=textbook_hits,
+        textbook_hits=[],
         gap_hits=gap_hits[:5],
         source_results=source_results,
     )

@@ -543,7 +543,8 @@ def _source_section_contexts_for_courses(
             textbook_id = _clean_text(course.get("source_textbook_id"))
             section_ids = _string_list(course.get("source_outline_section_ids"))
             if not course_id or not textbook_id or not section_ids:
-                continue
+                raise ValueError("课程缺少已发布教材绑定。")
+            require_student_visible_textbooks(db_session, textbook_id)
             contexts[course_id] = get_textbook_section_binding_context(
                 db_session,
                 textbook_id,
@@ -580,14 +581,17 @@ def _apply_source_section_content_lengths(
         source_section_rows = [
             source_rows_by_id[section_id] for section_id in section_source_ids
         ]
-        _require_valid_source_section_group(source_section_rows)
+        depth = int(section.get("depth") or 1)
+        if depth > 1:
+            _require_valid_source_section_group(source_section_rows)
         source_content_chars = sum(
             int(row["content_char_count"]) for row in source_section_rows
         )
-        if source_content_chars > SOURCE_CONTENT_CHAR_LIMIT:
-            raise ValueError(
-                "source_content_chars 不能超过 8000，必须拆成多个学生端章节。"
-            )
+        if depth > 1:
+            if source_content_chars > SOURCE_CONTENT_CHAR_LIMIT:
+                raise ValueError(
+                    "source_content_chars 不能超过 8000，必须拆成多个学生端章节。"
+                )
 
         normalized_section = {
             **section,
@@ -798,6 +802,10 @@ def _build_analysis_input(
         "4. 再把分析结果映射成层级化章节大纲。\n"
         "5. sections[] 的 source_* 字段必须来自这些绑定教材小节，"
         "不能新增未绑定来源。\n\n"
+        "每个二级小节必须为后续 Markdown 教学、视频检索和 HTML 动画提供具体知识点；"
+        "不得把小节写成总体性、模糊的资源主题。"
+        "Markdown 智能体必须使用本小节 source_section_ids 对应教材正文，"
+        "视频和动画智能体必须服务某一段具体教学内容。\n\n"
         f"当前课程输入：{json.dumps(compact_course, ensure_ascii=False, indent=2)}\n"
         f"同年级课程顺序：{json.dumps(course_sequence, ensure_ascii=False, indent=2)}\n"
         f"学习者输入：{json.dumps(compact_profile, ensure_ascii=False, indent=2)}"
@@ -834,6 +842,10 @@ def _build_year_analysis_input(
         "条目直接当作章节。\n\n"
         "sections[] 的 source_* 字段必须来自这些绑定教材小节，"
         "不能新增未绑定来源。\n\n"
+        "每个二级小节必须为后续 Markdown 教学、视频检索和 HTML 动画提供具体知识点；"
+        "不得把小节写成总体性、模糊的资源主题。"
+        "Markdown 智能体必须使用本小节 source_section_ids 对应教材正文，"
+        "视频和动画智能体必须服务某一段具体教学内容。\n\n"
         "输出 JSON 顶层只包含 grade_year、year_summary、course_outlines。\n"
         "course_outlines 是数组；每项必须包含 course_id、"
         "personalization_summary、sections、learning_sequence、"
@@ -901,126 +913,11 @@ def _append_json_output_contract(query: str, output_contract: str) -> str:
 
 
 _SINGLE_COURSE_JSON_CONTRACT = """\
-单门课程 JSON 形状：
-{
-  "personalization_summary": "为什么这样安排这门课",
-  "sections": [
-    {
-      "section_id": "1",
-      "parent_section_id": null,
-      "depth": 1,
-      "title": "第一章：概念引入与直觉建立",
-      "order_index": 1,
-      "description": "这一章解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"],
-      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
-      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
-      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
-      "source_section_titles": ["绑定教材小节标题"],
-      "source_content_chars": 1200
-    },
-    {
-      "section_id": "1.1",
-      "parent_section_id": "1",
-      "depth": 2,
-      "title": "1.1 生活中的类比分析",
-      "order_index": 2,
-      "description": "这一小节解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"],
-      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
-      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
-      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
-      "source_section_titles": ["绑定教材小节标题"],
-      "source_content_chars": 1200
-    },
-    {
-      "section_id": "1.2",
-      "parent_section_id": "1",
-      "depth": 2,
-      "title": "1.2 核心定义与公式",
-      "order_index": 3,
-      "description": "这一小节解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"],
-      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
-      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
-      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
-      "source_section_titles": ["绑定教材小节标题"],
-      "source_content_chars": 1200
-    },
-    {
-      "section_id": "1.3",
-      "parent_section_id": "1",
-      "depth": 2,
-      "title": "1.3 边界情况与分析",
-      "order_index": 4,
-      "description": "这一小节解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"],
-      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
-      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
-      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
-      "source_section_titles": ["绑定教材小节标题"],
-      "source_content_chars": 1200
-    },
-    {
-      "section_id": "2",
-      "parent_section_id": null,
-      "depth": 1,
-      "title": "第二章：黄金法则应用",
-      "order_index": 5,
-      "description": "这一章解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"],
-      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
-      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
-      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
-      "source_section_titles": ["绑定教材小节标题"],
-      "source_content_chars": 1200
-    },
-    {
-      "section_id": "2.1",
-      "parent_section_id": "2",
-      "depth": 2,
-      "title": "2.1 法则基本步骤",
-      "order_index": 6,
-      "description": "这一小节解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"],
-      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
-      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
-      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
-      "source_section_titles": ["绑定教材小节标题"],
-      "source_content_chars": 1200
-    },
-    {
-      "section_id": "2.2",
-      "parent_section_id": "2",
-      "depth": 2,
-      "title": "2.2 实际场景应用",
-      "order_index": 7,
-      "description": "这一小节解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"],
-      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
-      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
-      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
-      "source_section_titles": ["绑定教材小节标题"],
-      "source_content_chars": 1200
-    },
-    {
-      "section_id": "2.3",
-      "parent_section_id": "2",
-      "depth": 2,
-      "title": "2.3 综合实战演练",
-      "order_index": 8,
-      "description": "这一小节解决什么问题",
-      "key_knowledge_points": ["具体知识点或能力点"],
-      "source_textbook_id": "必须来自当前课程输入 source_textbook_id",
-      "source_textbook_title": "必须来自当前课程输入 source_textbook_title",
-      "source_section_ids": ["必须来自当前课程输入 source_outline_section_ids"],
-      "source_section_titles": ["绑定教材小节标题"],
-      "source_content_chars": 1200
-    }
-  ],
-  "learning_sequence": ["第一章：面向用户的学习步骤", "第二章：面向用户的学习步骤"],
-  "total_estimated_hours": "预计总学时"
-}
+单门课程 JSON 字段：
+- personalization_summary: 字符串。
+- sections: 数组；每项必须包含 "section_id"、"parent_section_id"、"depth"、"title"、"order_index"、"description"、"key_knowledge_points"、"source_textbook_id"、"source_textbook_title"、"source_section_ids"、"source_section_titles"、"source_content_chars"。
+- learning_sequence: 字符串数组。
+- total_estimated_hours: 字符串。
 """
 
 
@@ -1169,6 +1066,151 @@ def _current_outline_from_generated(
     return outlines[0]
 
 
+def _translation_content_text(content_record: object | None) -> str:
+    if content_record is None:
+        return ""
+    return _clean_text(
+        getattr(content_record, "content_zh", "")
+        or getattr(content_record, "content_original", "")
+    )
+
+
+def _teaching_sentences_from_content(content_text: str) -> list[str]:
+    normalized = re.sub(r"\s+", " ", content_text).strip()
+    if not normalized:
+        return []
+    sentence_parts = [
+        part.strip()
+        for part in re.split(r"(?<=[。！？!?])\s*|[\r\n]+", normalized)
+        if part.strip()
+    ]
+    if not sentence_parts:
+        sentence_parts = [normalized]
+    return [part[:120] for part in sentence_parts if part]
+
+
+def _description_from_source_content(title: str, content_text: str) -> str:
+    sentences = _teaching_sentences_from_content(content_text)
+    if sentences:
+        return sentences[0]
+    return f"{title}说明。"
+
+
+def _knowledge_points_from_source_content(title: str, content_text: str) -> list[str]:
+    points: list[str] = []
+    for sentence in _teaching_sentences_from_content(content_text):
+        if sentence not in points:
+            points.append(sentence)
+        if len(points) >= 3:
+            break
+    if points:
+        return points
+    return [f"{title}重点"]
+
+
+def _chapter_description_from_child_sections(
+    chapter_title: str,
+    child_sections: list[dict],
+) -> str:
+    child_titles = [
+        _clean_text(section.get("title")) for section in child_sections if section
+    ]
+    child_titles = [title for title in child_titles if title]
+    if child_titles:
+        return f"围绕{chapter_title}，依次学习：" + "、".join(child_titles[:4]) + "。"
+    return f"{chapter_title}说明。"
+
+
+def _chapter_points_from_child_sections(
+    chapter_title: str,
+    child_sections: list[dict],
+) -> list[str]:
+    child_titles = [
+        _clean_text(section.get("title")) for section in child_sections if section
+    ]
+    points = [title for title in child_titles if title]
+    if points:
+        return points[:3]
+    return [f"{chapter_title}重点"]
+
+
+def _content_records_by_section_id(
+    db_session: Session,
+    textbook_id: str,
+) -> dict[str, object]:
+    from sqlmodel import select
+
+    from app.models import TextbookSectionContent
+
+    rows = db_session.exec(
+        select(TextbookSectionContent).where(
+            TextbookSectionContent.textbook_id == textbook_id
+        )
+    ).all()
+    return {str(row.section_id): row for row in rows}
+
+
+def _content_chars_for_record(content_record: object | None) -> int:
+    return len(_translation_content_text(content_record))
+
+
+def _flat_outline_sections_from_textbook(
+    outline_data: dict,
+    content_records: dict[str, object],
+    allowed_section_ids: list[str],
+) -> list[dict]:
+    raw_sections = outline_data.get("sections")
+    if not isinstance(raw_sections, list):
+        return []
+
+    allowed_set = set(allowed_section_ids)
+    title_by_id = {
+        _clean_text(section.get("section_id")): _clean_text(section.get("title"))
+        for section in raw_sections
+        if isinstance(section, dict) and _clean_text(section.get("section_id"))
+    }
+    groups: dict[str, list[dict]] = {}
+    group_order: list[str] = []
+    for section in raw_sections:
+        if not isinstance(section, dict):
+            continue
+        section_id = _clean_text(section.get("section_id"))
+        if not section_id:
+            continue
+        if allowed_set and section_id not in allowed_set:
+            continue
+        content_record = content_records.get(section_id)
+        parent_section_id = _clean_text(
+            section.get("parent_section_id")
+        ) or _clean_text(
+            getattr(content_record, "parent_section_id", "")
+            if content_record is not None
+            else ""
+        )
+        if not parent_section_id and "." in section_id:
+            parent_section_id = section_id.split(".", 1)[0]
+        if not parent_section_id:
+            parent_section_id = section_id
+        if parent_section_id not in group_order:
+            group_order.append(parent_section_id)
+        groups.setdefault(parent_section_id, []).append(section)
+
+    normalized_sections: list[dict] = []
+    for chapter_key in group_order:
+        child_sections = groups.get(chapter_key, [])
+        if not child_sections:
+            continue
+        chapter_title = title_by_id.get(chapter_key) or _chapter_label(chapter_key)
+        normalized_sections.append(
+            {
+                "chapter_number": chapter_key,
+                "title": chapter_title,
+                "sections": child_sections,
+            }
+        )
+    return normalized_sections
+
+
 def _try_db_outline_translation(
     db_session: Session,
     course: dict,
@@ -1176,7 +1218,7 @@ def _try_db_outline_translation(
 ) -> dict | None:
     from sqlmodel import select
 
-    from app.models import Textbook, TextbookSectionContent
+    from app.models import Textbook
 
     source_textbook_id = str(course.get("source_textbook_id") or "").strip()
     if not source_textbook_id or source_textbook_id == "None":
@@ -1203,14 +1245,32 @@ def _try_db_outline_translation(
         return None
 
     outline_data = textbook.outline
-    if not outline_data or "chapters" not in outline_data:
+    if not isinstance(outline_data, dict) or not outline_data:
         return None
 
-    chapters = outline_data.get("chapters") or []
+    content_records = _content_records_by_section_id(
+        db_session,
+        textbook.textbook_id,
+    )
+    allowed_section_ids = _string_list(course.get("source_outline_section_ids"))
+    allowed_set = set(allowed_section_ids)
+    if "chapters" in outline_data:
+        chapters = outline_data.get("chapters") or []
+    else:
+        chapters = _flat_outline_sections_from_textbook(
+            outline_data,
+            content_records,
+            allowed_section_ids,
+        )
+    if not chapters:
+        return None
+
     translated_sections = []
     total_chars = 0
 
     for ch in chapters:
+        if not isinstance(ch, dict):
+            continue
         ch_num = ch.get("chapter_number")
         ch_title = ch.get("title") or ""
         try:
@@ -1219,7 +1279,17 @@ def _try_db_outline_translation(
             ch_order_index = 1
 
         ch_sec_id = str(ch_num)
-        ch_sections = ch.get("sections") or []
+        ch_sections = [
+            section
+            for section in (ch.get("sections") or [])
+            if isinstance(section, dict)
+            and _clean_text(section.get("section_id"))
+            and (
+                not allowed_set or _clean_text(section.get("section_id")) in allowed_set
+            )
+        ]
+        if allowed_set and not ch_sections:
+            continue
         ch_source_ids = [
             str(s.get("section_id")).strip() for s in ch_sections if s.get("section_id")
         ]
@@ -1236,13 +1306,22 @@ def _try_db_outline_translation(
             "depth": 1,
             "title": ch_title,
             "order_index": ch_order_index,
-            "description": f"{ch_title}说明。",
-            "key_knowledge_points": [f"{ch_title}重点"],
+            "description": _chapter_description_from_child_sections(
+                ch_title,
+                ch_sections,
+            ),
+            "key_knowledge_points": _chapter_points_from_child_sections(
+                ch_title,
+                ch_sections,
+            ),
             "source_textbook_id": textbook.textbook_id,
             "source_textbook_title": textbook.title,
             "source_section_ids": ch_source_ids,
             "source_section_titles": ch_source_titles,
-            "source_content_chars": 0,
+            "source_content_chars": sum(
+                _content_chars_for_record(content_records.get(section_id))
+                for section_id in ch_source_ids
+            ),
         }
         translated_sections.append(chapter_item)
 
@@ -1250,13 +1329,9 @@ def _try_db_outline_translation(
             sec_id = str(sec.get("section_id")).strip()
             sec_title = str(sec.get("title")).strip()
 
-            stmt = select(TextbookSectionContent).where(
-                TextbookSectionContent.textbook_id == textbook.textbook_id,
-                TextbookSectionContent.section_id == sec_id,
-            )
-            content_record = db_session.exec(stmt).first()
-            content_zh = content_record.content_zh if content_record else ""
-            content_chars = len(content_zh)
+            content_record = content_records.get(sec_id)
+            content_text = _translation_content_text(content_record)
+            content_chars = len(content_text)
             total_chars += content_chars
 
             section_item = {
@@ -1265,8 +1340,14 @@ def _try_db_outline_translation(
                 "depth": 2,
                 "title": sec_title,
                 "order_index": idx + 1,
-                "description": f"{sec_title}说明。",
-                "key_knowledge_points": [f"{sec_title}知识点"],
+                "description": _description_from_source_content(
+                    sec_title,
+                    content_text,
+                ),
+                "key_knowledge_points": _knowledge_points_from_source_content(
+                    sec_title,
+                    content_text,
+                ),
                 "source_textbook_id": textbook.textbook_id,
                 "source_textbook_title": textbook.title,
                 "source_section_ids": [sec_id],

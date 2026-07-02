@@ -11,7 +11,7 @@ import pytest
 from sqlmodel import Session
 
 from app.database import build_engine, init_db, set_engine
-from app.models import UserYearLearningPath
+from app.models import User, UserYearLearningPath
 from app.orchestration.agents.learning_path import (
     _build_analysis_input,
     _build_learning_path_from_plan,
@@ -54,9 +54,9 @@ def _complete_profile(
             "constraints": "平时学习节奏，避免过高强度",
         },
         "defaulted_fields": [],
-        "question_md": "画像已生成，是否继续生成学习路径？",
+        "question_md": "画像已生成，是否进入学习路径草案智能体？",
         "question_box": {
-            "question": "画像已生成，下一步要继续生成学习路径吗？",
+            "question": "画像已生成，下一步要进入学习路径草案智能体吗？",
             "options": [],
         },
         "text": summary_text,
@@ -654,6 +654,53 @@ def test_build_learning_path_from_full_path_uses_intake_source_binding() -> None
         )
 
 
+def test_data_structure_learning_path_uses_confirmed_textbook_sections_over_model_sources() -> (
+    None
+):
+    intake = _confirmed_intake(
+        learning_topic="数据结构",
+        course_titles=[
+            "复杂度分析与线性结构基础",
+            "树与递归基础",
+            "查找排序与哈希",
+            "图结构与综合项目",
+        ],
+    )
+    intake["courses"][0]["source_textbook_id"] = "textbook-data-structures"
+    intake["courses"][0]["source_textbook_title"] = "数据结构教程"
+    intake["courses"][0]["source_outline_section_ids"] = ["1.1", "1.2"]
+
+    plan_data = _single_year_learning_path_payload(
+        "year_3",
+        "大三",
+        "完成数据结构基础训练",
+        [
+            "模型改写的复杂度课程",
+            "模型改写的树课程",
+            "模型改写的排序课程",
+            "模型改写的图课程",
+        ],
+    )
+    first_course = plan_data["grade_plans"]["year_3"]["course_nodes"][0]
+    first_course["source_textbook_id"] = "model-textbook"
+    first_course["source_textbook_title"] = "模型替换教材"
+    first_course["source_outline_section_ids"] = ["9.9"]
+
+    path = _build_learning_path_from_plan(
+        _complete_profile(),
+        grade_year="year_3",
+        learning_topic="数据结构",
+        plan_data=plan_data,
+        intake_courses=intake["courses"],
+    )
+
+    first_node = path["grade_plans"]["year_3"]["course_nodes"][0]
+    assert first_node["course_or_chapter_theme"] == "复杂度分析与线性结构基础"
+    assert first_node["source_textbook_id"] == "textbook-data-structures"
+    assert first_node["source_textbook_title"] == "数据结构教程"
+    assert first_node["source_outline_section_ids"] == ["1.1", "1.2"]
+
+
 def test_build_analysis_input_forbids_replacing_confirmed_textbook_sources() -> None:
     query = _build_analysis_input(
         _complete_profile(),
@@ -669,6 +716,32 @@ def test_build_analysis_input_forbids_replacing_confirmed_textbook_sources() -> 
 
     assert "课程标题和来源绑定必须来自已确认课程草案" in query
     assert "模型不得替换教材来源" in query
+
+
+def test_build_analysis_input_declares_downstream_resource_agent_order() -> None:
+    query = _build_analysis_input(
+        _complete_profile(),
+        "year_3",
+        "数据结构",
+        "",
+        [],
+        _confirmed_intake(
+            learning_topic="数据结构",
+            course_titles=[
+                "复杂度分析与线性结构基础",
+                "树与递归基础",
+                "查找排序与哈希",
+                "图结构与综合项目",
+            ],
+        ),
+    )
+
+    assert "resource_generation_contract 必须声明下游顺序" in query
+    assert (
+        "course_knowledge_agent -> section_markdown_agent -> "
+        "section_video_search_agent -> section_html_animation_agent"
+    ) in query
+    assert "路径课程的 source_outline_section_ids 必须传递给大纲智能体" in query
 
 
 def test_build_local_learning_path_rejects_unbound_fallback_generation() -> None:
@@ -782,6 +855,15 @@ def test_run_learning_path_agent_accepts_missing_desired_outcome_in_structured_p
     )
     set_engine(engine)
     init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            User(
+                uid="00000000-0000-0000-0000-000000000010",
+                username="课程用户",
+                identifier="learning-path-10@example.com",
+            )
+        )
+        session.commit()
 
     module = __import__(
         "app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"]
@@ -799,7 +881,7 @@ def test_run_learning_path_agent_accepts_missing_desired_outcome_in_structured_p
             run_learning_path_agent(
                 {
                     "user_id": "00000000-0000-0000-0000-000000000010",
-                    "query": "继续生成学习路径",
+                    "query": "进入学习路径草案智能体",
                     "profile": _complete_profile(),
                     "learning_path_intake": _confirmed_intake(
                         learning_topic="AI 应用开发",
@@ -848,7 +930,7 @@ def test_run_learning_path_agent_rejects_incomplete_basic_profile(
         run_learning_path_agent(
             {
                 "user_id": "00000000-0000-0000-0000-000000000099",
-                "query": "继续生成学习路径",
+                "query": "进入学习路径草案智能体",
                 "profile": {"type": "basic_profile", "summary_text": "旧画像摘要"},
                 "messages": [],
             },
@@ -879,7 +961,7 @@ def test_run_learning_path_agent_rejects_unsupported_postgraduate_grade(
         run_learning_path_agent(
             {
                 "user_id": "00000000-0000-0000-0000-000000000098",
-                "query": "继续生成学习路径",
+                "query": "进入学习路径草案智能体",
                 "profile": profile,
                 "messages": [],
             },
@@ -930,9 +1012,9 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_setup_fails(
                 "constraints": "平时学习节奏，避免过高强度",
             },
             "defaulted_fields": [],
-            "question_md": "画像已生成，是否继续生成学习路径？",
+            "question_md": "画像已生成，是否进入学习路径草案智能体？",
             "question_box": {
-                "question": "画像已生成，下一步要继续生成学习路径吗？",
+                "question": "画像已生成，下一步要进入学习路径草案智能体吗？",
                 "options": [],
             },
             "text": "【基础学习画像总结】大3软件工程，当前以AI 应用开发为主线，适合采用项目驱动学习。",
@@ -1009,7 +1091,7 @@ def test_run_learning_path_agent_returns_error_when_contract_validation_fails(
             run_learning_path_agent(
                 {
                     "user_id": "00000000-0000-0000-0000-000000000008",
-                    "query": "继续生成学习路径",
+                    "query": "进入学习路径草案智能体",
                     "profile": _complete_profile(),
                     "learning_path_intake": _confirmed_intake(
                         learning_topic="AI 应用开发",
@@ -1097,9 +1179,9 @@ def test_run_learning_path_agent_navigation_path_uses_user_topic_and_keeps_unkno
                 "constraints": "",
             },
             "defaulted_fields": [],
-            "question_md": "画像已生成，是否继续生成学习路径？",
+            "question_md": "画像已生成，是否进入学习路径草案智能体？",
             "question_box": {
-                "question": "画像已生成，下一步要继续生成学习路径吗？",
+                "question": "画像已生成，下一步要进入学习路径草案智能体吗？",
                 "options": [],
             },
             "text": "【基础学习画像总结】大三软件工程，目标是找工作，想学习vibecoding。",
@@ -1188,7 +1270,7 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_times_out(
             run_learning_path_agent(
                 {
                     "user_id": "00000000-0000-0000-0000-000000000006",
-                    "query": "继续生成学习路径",
+                    "query": "进入学习路径草案智能体",
                     "profile": _complete_profile(),
                     "learning_path_intake": _confirmed_intake(
                         learning_topic="AI 应用开发",
@@ -1327,6 +1409,13 @@ def test_run_learning_path_agent_refresh_query_uses_existing_progress_for_llm_an
     }
 
     with Session(engine) as session:
+        session.add(
+            User(
+                uid="00000000-0000-0000-0000-000000000004",
+                username="课程用户",
+                identifier="learning-path-4@example.com",
+            )
+        )
         upsert_year_learning_path(
             session,
             "00000000-0000-0000-0000-000000000004",
@@ -1453,6 +1542,13 @@ def test_run_learning_path_agent_new_grade_generation_includes_previous_year_pro
     }
 
     with Session(engine) as session:
+        session.add(
+            User(
+                uid="00000000-0000-0000-0000-000000000007",
+                username="课程用户",
+                identifier="learning-path-7@example.com",
+            )
+        )
         upsert_year_learning_path(
             session,
             "00000000-0000-0000-0000-000000000007",
@@ -1566,6 +1662,13 @@ def test_run_learning_path_agent_refresh_query_returns_error_when_structured_llm
     }
 
     with Session(engine) as session:
+        session.add(
+            User(
+                uid="00000000-0000-0000-0000-000000000005",
+                username="课程用户",
+                identifier="learning-path-5@example.com",
+            )
+        )
         upsert_year_learning_path(
             session,
             "00000000-0000-0000-0000-000000000005",

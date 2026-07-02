@@ -41,6 +41,45 @@ from app.orchestration.state import OrchestrationState
 logger = logging.getLogger(__name__)
 
 
+def _section_source_footer(section: dict) -> str:
+    textbook_title = _clean_text(section.get("source_textbook_title"))
+    section_ids = _text_items(section.get("source_section_ids"))
+    section_titles = _text_items(section.get("source_section_titles"))
+    if not textbook_title and not section_ids and not section_titles:
+        return ""
+
+    source_name = f"《{textbook_title}》" if textbook_title else "绑定教材"
+    section_parts: list[str] = []
+    for index, section_id in enumerate(section_ids):
+        title = section_titles[index] if index < len(section_titles) else ""
+        section_parts.append(f"{section_id} {title}".strip())
+    if not section_parts:
+        section_parts = section_titles
+    section_text = "、".join(section_parts) if section_parts else "当前小节绑定内容"
+    return f"## 来源\n- {source_name}：{section_text}。"
+
+
+def _section_has_textbook_binding(section: dict) -> bool:
+    return bool(
+        _clean_text(section.get("source_textbook_id"))
+        or _clean_text(section.get("source_textbook_title"))
+        or _text_items(section.get("source_section_ids"))
+        or _text_items(section.get("source_section_titles"))
+    )
+
+
+def _ensure_section_source_footer(markdown: str, section: dict) -> str:
+    text = _clean_text(markdown)
+    if not text or not _section_has_textbook_binding(section):
+        return text
+    if re.search(r"^##\s+来源\s*$", text, re.MULTILINE):
+        return text
+    footer = _section_source_footer(section)
+    if not footer:
+        return text
+    return f"{text.rstrip()}\n\n{footer}"
+
+
 def _markdown_teaching_depth_issue(markdown: str, section: dict) -> str | None:
     steps_body = _markdown_section_body(markdown, "步骤讲解")
     check_body = _markdown_section_body(markdown, "检查标准")
@@ -102,6 +141,10 @@ def _markdown_quality_issue(
         return "Markdown 视频占位符与 brief 不一致。"
     if not animation_ids or set(animation_ids) != expected_animation_ids:
         return "Markdown 动画占位符与 brief 不一致。"
+    if _section_has_textbook_binding(section):
+        source_body = _markdown_section_body(text, "来源")
+        if not source_body:
+            return "Markdown 缺少教材来源。"
     return None
 
 
@@ -254,6 +297,9 @@ def _compose_llm_section_markdown(
     blocks.append(
         f"## 检查标准\n{_normalize_checklist_body(section_bodies.get('检查标准'))}"
     )
+    source_footer = _section_source_footer(section)
+    if source_footer:
+        blocks.append(source_footer)
 
     normalized.update(
         {
@@ -266,6 +312,40 @@ def _compose_llm_section_markdown(
         }
     )
     return normalized
+
+
+def _markdown_data_from_full_document(raw_output: object, section: dict) -> dict:
+    markdown_data = _generated_markdown_seed_data(section)
+    text = _clean_text(
+        raw_output.content if hasattr(raw_output, "content") else raw_output
+    )
+    if not text:
+        return markdown_data
+
+    from app.orchestration.agents.course_resources.common import (
+        _extract_json_object_text,
+    )
+
+    json_text = _extract_json_object_text(text)
+    if json_text:
+        try:
+            payload = json.loads(json_text)
+        except json.JSONDecodeError:
+            payload = {}
+        if isinstance(payload, dict):
+            markdown_text = _clean_text(payload.get("markdown"))
+            if markdown_text:
+                markdown_data["markdown"] = markdown_text
+                if "video_briefs" in payload:
+                    markdown_data["video_briefs"] = payload.get("video_briefs")
+                if "animation_briefs" in payload:
+                    markdown_data["animation_briefs"] = payload.get("animation_briefs")
+                return markdown_data
+    elif text.startswith("{") and text.endswith("}"):
+        return markdown_data
+
+    markdown_data["markdown"] = _clean_text(_plain_markdown_text(text))
+    return markdown_data
 
 
 def _normalize_checklist_body(body: object) -> str:
@@ -363,7 +443,10 @@ def _scaffolded_markdown_section_body(section: dict, heading: str, body: str) ->
         return "\n".join(lines)
 
     if heading == "练习任务":
-        if text:
+        text_without_placeholders = re.sub(
+            r"<!--\s*(?:video|animation):id=[^>]+-->", "", text
+        ).strip()
+        if text_without_placeholders:
             return text
         return "\n".join(
             [
@@ -461,13 +544,25 @@ def _generated_markdown_video_briefs(section: dict) -> list[dict]:
         or _clean_text(section.get("section_id"))
         or "本节"
     )
+    source_titles = _text_items(section.get("source_section_titles"))
     knowledge_points = _text_items(section.get("key_knowledge_points"))
-    focus = "、".join(knowledge_points[:2]) or title
+    joined_terms = "".join([title, *source_titles, *knowledge_points])
+    if "链表" in joined_terms:
+        return [
+            {
+                "video_id": "video_1",
+                "title": f"{title}节点与指针讲解视频",
+                "purpose": f"辅助理解「{title}」中节点、data 域、next 指针、头指针与尾节点 None 如何共同构成线性结构。",
+            }
+        ]
+    focus_terms = source_titles[:3] or knowledge_points[:3] or [title]
+    focus = "、".join(focus_terms)
+    primary_title = focus_terms[0] if focus_terms else title
     return [
         {
             "video_id": "video_1",
-            "title": f"{title}导入视频",
-            "purpose": f"帮助学习者理解{focus}，并把本节内容落到可验收任务。",
+            "title": f"{primary_title}专项讲解视频",
+            "purpose": f"帮助学习者围绕「{title}」理解{focus}，并把本节内容落到可验收任务。",
         }
     ]
 
@@ -478,13 +573,34 @@ def _generated_markdown_animation_briefs(section: dict) -> list[dict]:
         or _clean_text(section.get("section_id"))
         or "本节"
     )
+    source_titles = _text_items(section.get("source_section_titles"))
     knowledge_points = _text_items(section.get("key_knowledge_points"))
-    visual_elements = knowledge_points[:3] or [title, "输入材料", "验收证据"]
+    joined_terms = "".join([title, *source_titles, *knowledge_points])
+    if "链表" in joined_terms:
+        return [
+            {
+                "animation_id": "anim_1",
+                "title": f"{title}节点指针串联动画",
+                "concept": f"展示「{title}」中节点通过 next 指针串联，头指针指向首节点，尾节点 next 指向 None 的结构。",
+                "visual_elements": [
+                    "头指针",
+                    "节点(data,next)",
+                    "next 指针",
+                    "尾节点 None",
+                ],
+                "motion": "头指针先出现，节点依次通过 transform 从左到右进入，next 指针连线按顺序绘制，尾节点 None 最后淡入。",
+                "space": "正文宽度 100%，高度 320px。",
+                "placement_hint": "步骤讲解中第一次解释节点指针关系之后。",
+            }
+        ]
+    visual_elements = source_titles[:3] or knowledge_points[:3] or [title]
+    primary = visual_elements[0] if visual_elements else title
+    visual_text = "、".join(visual_elements)
     return [
         {
             "animation_id": "anim_1",
-            "title": f"{title}流程动画",
-            "concept": f"展示{title}如何从输入材料、处理步骤推进到验收证据。",
+            "title": f"{primary}流程动画",
+            "concept": f"展示「{title}」如何围绕{visual_text}从输入材料、处理步骤推进到验收证据。",
             "visual_elements": visual_elements,
             "motion": "关键节点依次通过 opacity 淡入，并只用 transform 表现轻微位移。",
             "space": "正文宽度 100%，高度 320px。",
@@ -525,6 +641,7 @@ def _normalize_markdown_resources(markdown_data: dict, section: dict) -> dict:
 
     markdown = _normalize_markdown_heading_variants(markdown)
     markdown = _normalize_markdown_step_blocks(markdown)
+    markdown = _ensure_section_source_footer(markdown, section)
     markdown = _rewrite_resource_placeholders(
         markdown,
         "video",
@@ -647,9 +764,8 @@ async def run_section_markdown_agent(
             return target_section_id, existing_markdown
         markdown_data = _generated_markdown_seed_data(section)
 
-        async def generate_section_body(expansion_section: str) -> tuple[str, str]:
-            body = ""
-            section_issue = "请生成该教学点正文。"
+        async def generate_full_document() -> dict:
+            section_issue = "请生成完整 Markdown 教学文档。"
             for attempt in range(_MARKDOWN_SECTION_BODY_ATTEMPTS):
                 query = _markdown_expansion_input(
                     state,
@@ -657,7 +773,7 @@ async def run_section_markdown_agent(
                     section,
                     section_issue,
                     "",
-                    expansion_section,
+                    "完整文档",
                 )
                 try:
                     raw_body = await _invoke_markdown_expansion_chain(
@@ -667,41 +783,62 @@ async def run_section_markdown_agent(
                     )
                 except Exception as exc:
                     logger.warning(
-                        "Markdown section body generation failed for section %s / %s on attempt %s: %s: %r",
+                        "Markdown document generation failed for section %s on attempt %s: %s: %r",
                         target_section_id,
-                        expansion_section,
                         attempt + 1,
                         type(exc).__name__,
                         exc,
                     )
-                    section_issue = "章节正文生成失败或超时，请重新生成该教学点正文。"
+                    section_issue = "Markdown 文档生成失败或超时，请重新生成完整文档。"
                     continue
-                body = _section_body_from_expansion_text(raw_body, expansion_section)
-                issue = _markdown_section_body_issue(expansion_section, body)
+                generated_data = _markdown_data_from_full_document(raw_body, section)
+                generated_data = _normalize_markdown_resources(generated_data, section)
+                scaffolded_bodies = {
+                    heading: _scaffolded_markdown_section_body(
+                        section,
+                        heading,
+                        _markdown_section_body(
+                            _clean_text(generated_data.get("markdown")), heading
+                        ),
+                    )
+                    for heading in _REQUIRED_MARKDOWN_HEADING_TITLES
+                }
+                generated_data = _compose_llm_section_markdown(
+                    generated_data, section, scaffolded_bodies
+                )
+                generated_data = _normalize_markdown_resources(generated_data, section)
+                issue = cr_pkg._markdown_quality_issue(
+                    _clean_text(generated_data.get("markdown")),
+                    section,
+                    generated_data.get("video_briefs"),
+                    generated_data.get("animation_briefs"),
+                )
                 if not issue:
-                    return expansion_section, body
+                    return generated_data
                 logger.warning(
-                    "Markdown section body issue for section %s / %s on attempt %s: %s",
+                    "Markdown document issue for section %s on attempt %s: %s",
                     target_section_id,
-                    expansion_section,
                     attempt + 1,
                     issue,
                 )
                 section_issue = issue
-            scaffolded_body = _scaffolded_markdown_section_body(
-                section, expansion_section, body
-            )
-            return expansion_section, scaffolded_body
+            return {
+                "error": f"{target_section_id} Markdown 文档生成失败：{section_issue}"
+            }
 
-        body_results = await asyncio.gather(
-            *(
-                generate_section_body(heading)
-                for heading in _REQUIRED_MARKDOWN_HEADING_TITLES
-            )
-        )
+        markdown_data = await generate_full_document()
+        if _clean_text(markdown_data.get("error")):
+            return target_section_id, markdown_data
+
         section_bodies = {
-            heading: _scaffolded_markdown_section_body(section, heading, body)
-            for heading, body in body_results
+            heading: _scaffolded_markdown_section_body(
+                section,
+                heading,
+                _markdown_section_body(
+                    _clean_text(markdown_data.get("markdown")), heading
+                ),
+            )
+            for heading in _REQUIRED_MARKDOWN_HEADING_TITLES
         }
         body_issues = [
             issue
@@ -716,13 +853,10 @@ async def run_section_markdown_agent(
             return target_section_id, {
                 "error": f"{target_section_id} Markdown 教学点生成失败：{'；'.join(body_issues)}"
             }
-
         markdown_data = _compose_llm_section_markdown(
             markdown_data, section, section_bodies
         )
         markdown_data = _normalize_markdown_resources(markdown_data, section)
-        import app.orchestration.agents.course_resources as cr_pkg
-
         quality_issue = cr_pkg._markdown_quality_issue(
             _clean_text(markdown_data.get("markdown")),
             section,
@@ -746,6 +880,7 @@ async def run_section_markdown_agent(
             raw_markdown
         )
         return target_section_id, {
+            "user_id": state.get("user_id", ""),
             "section_id": target_section_id,
             "parent_section_id": section.get("parent_section_id"),
             "title": _clean_text(section.get("title"))
@@ -872,6 +1007,7 @@ async def run_section_markdown_agent(
 
     markdown_section_ids = list(section_markdowns.keys())
     return {
+        "user_id": state.get("user_id", ""),
         "course_knowledge": updated_outline,
         "course_resource_plan": {
             "course_id": updated_outline.get("course_id", ""),
@@ -909,15 +1045,16 @@ def _markdown_expansion_input(
         "existing_animation_placeholder_ids": animation_ids,
     }
     query = (
-        "请为 markdown_expansion_section 生成可直接放入完整教学文档的 Markdown 章节正文。"
-        "不要输出 JSON，不要输出章节标题，不要输出视频或动画占位符。"
+        "请为 target_section 生成完整 Markdown 教学文档。"
+        "markdown_expansion_section 固定为 完整文档。"
+        "不要输出 JSON，不要输出解释文字。"
         "教材证据包 (textbook_evidence_pack) 是本节唯一的正文事实来源，你必须优先且严格依据其中的真实内容生成内容，绝对不能脱离教材虚构事实或自行补充外部无关概念。\n"
         "补充内容必须绑定 target_section.title、target_section.description 和 target_section.key_knowledge_points，"
         "并结合 profile、year_learning_paths、course_knowledge 写成本小节专属教学内容。"
-        "如果 markdown_expansion_section 是 步骤讲解，必须包含 Markdown 表格或 fenced code block；"
-        "如果 markdown_expansion_section 是 检查标准，必须输出至少 4 条 `- [ ]` 可验收清单；"
-        "学习目标、练习任务请输出 450 到 800 个中文字释；"
-        "核心概念、步骤讲解请输出 650 到 1000 个中文字符。\n\n"
+        "文档必须包含 `## 学习目标`、`## 核心概念`、`## 步骤讲解`、`## 练习任务`、`## 检查标准`。"
+        "`## 步骤讲解` 必须包含 Markdown 表格或 fenced code block；"
+        "`## 检查标准` 必须输出至少 4 条 `- [ ]` 可验收清单；"
+        "必须包含 `<!-- video:id=video_1 -->` 和 `<!-- animation:id=anim_1 -->`。\n\n"
         f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )
 

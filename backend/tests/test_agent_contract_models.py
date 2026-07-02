@@ -191,7 +191,7 @@ def test_profile_session_output_requires_complete_confirmed_info() -> None:
         question_mode="question_box",
         confirmed_info=ConfirmedInfoOutput(**_confirmed_info()),
         defaulted_fields=["learning_stage"],
-        question_md="画像已生成，是否继续生成学习路径？",
+        question_md="画像已生成，是否进入学习路径草案智能体？",
         question_box={"question": "下一步做什么？", "options": []},
         text="【基础学习画像总结】大三软件工程 AI 方向。",
     )
@@ -227,11 +227,11 @@ def test_profile_session_output_defaults_sparse_question_box_options_from_llm() 
         question_mode="question_box",
         confirmed_info=ConfirmedInfoOutput(**_confirmed_info()),
         defaulted_fields=[],
-        question_md="画像已生成，是否继续生成学习路径？",
+        question_md="画像已生成，是否进入学习路径草案智能体？",
         question_box={
-            "question": "画像已生成，下一步要继续生成学习路径吗？",
+            "question": "画像已生成，下一步要进入学习路径草案智能体吗？",
             "options": [
-                {"label": "继续生成学习路径", "value": "continue_path"},
+                {"label": "进入学习路径草案智能体", "value": "continue_path"},
                 {"label": "修改画像方向", "value": "modify_profile"},
             ],
         },

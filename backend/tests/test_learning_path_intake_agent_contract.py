@@ -7,8 +7,12 @@ from langchain_core.messages import HumanMessage
 from sqlmodel import Session, select
 
 from app.database import build_engine, init_db, set_engine
-from app.models import KnowledgeGap
+from app.models import KnowledgeGap, User
 from app.orchestration.agents.learning_path_intake import (
+    _bind_fallback_course_sources,
+    _build_intake_generation_input,
+    _courses_for_topic,
+    _require_intake_courses_from_knowledge_context,
     is_intake_confirmation_query,
     is_intake_modification_query,
     latest_intake_from_state,
@@ -168,6 +172,39 @@ def test_intake_prompt_allows_required_statuses() -> None:
     assert "`risk_pending`" in LEARNING_PATH_INTAKE_AGENT_SYSTEM_PROMPT
 
 
+def test_intake_generation_input_declares_downstream_order_and_resource_boundary() -> (
+    None
+):
+    generation_input = _build_intake_generation_input(
+        {
+            "year_learning_paths": {},
+        },
+        "我想学习数据结构",
+        _profile(),
+        None,
+        {
+            "textbooks": [
+                {
+                    "textbook_id": "textbook-data-structures",
+                    "title": "数据结构教材",
+                    "sections": [
+                        {"section_id": "1.1", "title": "复杂度分析"},
+                        {"section_id": "2.1", "title": "单链表"},
+                    ],
+                }
+            ],
+            "gap_id": None,
+        },
+    )
+
+    assert "课程顺序会被正式学习路径智能体严格继承" in generation_input
+    assert (
+        "source_outline_section_ids 会继续传递给大纲、Markdown、视频和动画智能体"
+        in generation_input
+    )
+    assert "每门课程的 purpose 必须说明教材小节覆盖的具体学习边界" in generation_input
+
+
 def test_run_intake_agent_creates_data_structure_draft(tmp_path: Path) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "intake-draft"))
     set_engine(engine)
@@ -175,6 +212,9 @@ def test_run_intake_agent_creates_data_structure_draft(tmp_path: Path) -> None:
     fake_llm = _FakeIntakeLLM(_llm_intake_result())
 
     with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
         _seed_published_textbook_context(session)
         load_or_create_session(session, "session-intake-draft", "user-1")
 
@@ -183,7 +223,7 @@ def test_run_intake_agent_creates_data_structure_draft(tmp_path: Path) -> None:
             {
                 "user_id": "user-1",
                 "session_id": "session-intake-draft",
-                "query": "请根据我的基础画像生成学习路径。",
+                "query": "进入学习路径草案智能体",
                 "profile": _profile(),
                 "messages": [
                     HumanMessage(
@@ -227,6 +267,9 @@ def test_run_intake_agent_injects_published_textbook_context_without_body(
     fake_llm = _FakeIntakeLLM(_llm_intake_result())
 
     with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
         _seed_published_textbook_context(
             session,
             topic="数据结构",
@@ -240,7 +283,7 @@ def test_run_intake_agent_injects_published_textbook_context_without_body(
             {
                 "user_id": "user-1",
                 "session_id": "session-intake-kb-context",
-                "query": "请根据我的基础画像生成学习路径。",
+                "query": "进入学习路径草案智能体",
                 "profile": _profile(),
                 "messages": [],
             },
@@ -258,6 +301,69 @@ def test_run_intake_agent_injects_published_textbook_context_without_body(
     assert "content_zh" not in human_message.content
 
 
+def test_fallback_data_structure_courses_bind_matching_outline_sections() -> None:
+    knowledge_context = {
+        "textbooks": [
+            {
+                "textbook_id": "textbook-data-structures",
+                "title": "数据结构教材",
+                "outline_summary": [
+                    {"section_id": "1.1", "title": "复杂度分析与抽象数据类型"},
+                    {"section_id": "2.1", "title": "数组、链表、栈与队列"},
+                    {"section_id": "3.1", "title": "树结构与递归遍历"},
+                    {"section_id": "4.1", "title": "查找、排序与哈希"},
+                    {"section_id": "5.1", "title": "图结构与综合项目"},
+                ],
+            }
+        ],
+        "gap_id": None,
+    }
+
+    courses = _bind_fallback_course_sources(
+        _courses_for_topic("数据结构"),
+        {},
+        "year_3",
+        knowledge_context,
+    )
+
+    assert courses[0]["source_outline_section_ids"] == ["1.1"]
+    assert courses[1]["source_outline_section_ids"] == ["2.1"]
+    assert courses[2]["source_outline_section_ids"] == ["3.1"]
+    assert courses[3]["source_outline_section_ids"] == ["4.1"]
+    assert courses[4]["source_outline_section_ids"] == ["5.1"]
+
+
+def test_intake_normalization_rejects_unknown_outline_sections() -> None:
+    knowledge_context = {
+        "textbooks": [
+            {
+                "textbook_id": "textbook-data-structures",
+                "title": "数据结构教材",
+                "outline_summary": [
+                    {"section_id": "1.1", "title": "复杂度分析"},
+                    {"section_id": "2.1", "title": "线性结构"},
+                ],
+            }
+        ],
+        "gap_id": None,
+    }
+    intake = _llm_intake_result(
+        courses=[
+            _intake_course("错误小节绑定", "验证不存在的小节会被拒绝", "9.9"),
+            _intake_course("线性表", "继续学习线性结构", "2.1"),
+            _intake_course("树结构", "学习树", "2.1"),
+            _intake_course("图结构", "学习图", "2.1"),
+        ]
+    )
+
+    try:
+        _require_intake_courses_from_knowledge_context(intake, knowledge_context)
+    except ValueError as exc:
+        assert str(exc) == "课程草案教材小节不在已发布知识库上下文中。"
+    else:
+        raise AssertionError("课程草案必须拒绝不存在的教材小节绑定。")
+
+
 def test_run_intake_agent_returns_gap_without_draft_when_no_published_textbook(
     tmp_path: Path,
 ) -> None:
@@ -271,7 +377,7 @@ def test_run_intake_agent_returns_gap_without_draft_when_no_published_textbook(
             {
                 "user_id": "user-1",
                 "session_id": "session-intake-kb-gap",
-                "query": "请根据我的基础画像生成学习路径。",
+                "query": "进入学习路径草案智能体",
                 "profile": _profile(),
                 "messages": [],
             },
@@ -541,6 +647,9 @@ def test_run_intake_agent_detects_deletion_of_started_course_and_outlines(
     init_db(engine)
 
     with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
         _seed_published_textbook_context(session, topic="前端开发")
         # Create user outline
         session.add(

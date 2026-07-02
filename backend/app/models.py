@@ -352,6 +352,7 @@ class TextbookSectionContent(SQLModel, table=True):
     order_index: int = Field(default=0, index=True)
     title: str = Field(max_length=256)
     original_title: str = Field(default="", max_length=256)
+    content_original: str = Field(default="")
     content_zh: str = Field(default="")
     content_char_count: int = Field(default=0)
 

@@ -1,10 +1,11 @@
 """Contract tests for the course resource agent."""
 
-# ruff: noqa: E501
+# ruff: noqa: E501,E402
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -31,6 +32,9 @@ from app.orchestration.agents.course_resources import (
     _video_input,
     _video_repair_input,
     _video_search_queries,
+)
+from app.orchestration.agents.course_resources.common import (
+    SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT,
 )
 from app.orchestration.agents.prompts import SECTION_VIDEO_SEARCH_AGENT_SYSTEM_PROMPT
 from tests.postgres import postgresql_test_url
@@ -103,6 +107,84 @@ def _outline() -> dict:
     }
 
 
+def test_markdown_expansion_prompt_allows_english_evidence_but_requires_chinese_output() -> (
+    None
+):
+    assert "英文" in SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT
+    assert "evidence_text" in SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT
+    assert "中文" in SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT
+
+
+def test_markdown_quality_requires_source_footer_when_section_has_textbook_binding() -> (
+    None
+):
+    section = {
+        "section_id": "1.1",
+        "title": "复杂度分析",
+        "description": "判断算法开销。",
+        "key_knowledge_points": ["时间复杂度"],
+        "source_textbook_id": "textbook-data-structures",
+        "source_textbook_title": "数据结构教程",
+        "source_section_ids": ["1.1"],
+        "source_section_titles": ["复杂度分析"],
+    }
+    markdown = _complete_section_markdown("1.1", "复杂度分析").replace(
+        "\n\n## 来源\n- 《AI 应用开发项目教程》：1.1 复杂度分析。", ""
+    )
+
+    issue = _markdown_quality_issue(
+        markdown,
+        section,
+        [
+            {
+                "video_id": "video_1",
+                "title": "复杂度分析视频",
+                "purpose": "辅助理解时间复杂度。",
+            }
+        ],
+        [
+            {
+                "animation_id": "anim_1",
+                "title": "时间复杂度曲线动画",
+                "concept": "展示输入规模增长时操作次数如何变化。",
+                "visual_elements": ["输入规模", "操作次数", "增长趋势"],
+            }
+        ],
+    )
+
+    assert issue == "Markdown 缺少教材来源。"
+
+
+def test_generated_markdown_briefs_use_specific_data_structure_visual_plan() -> None:
+    from app.orchestration.agents.course_resources.common import (
+        _generated_markdown_seed_data,
+    )
+
+    section = {
+        "section_id": "2.3",
+        "title": "单链表",
+        "description": "讲解节点通过指针串联的线性结构。",
+        "key_knowledge_points": ["节点", "指针", "插入删除"],
+        "source_section_titles": ["链表的存储结构"],
+    }
+
+    seed_data = _generated_markdown_seed_data(section)
+
+    video_brief = seed_data["video_briefs"][0]
+    animation_brief = seed_data["animation_briefs"][0]
+    assert "单链表" in video_brief["title"]
+    assert "节点" in video_brief["purpose"]
+    assert "指针" in video_brief["purpose"]
+    assert animation_brief["title"] == "单链表节点指针串联动画"
+    assert animation_brief["visual_elements"] == [
+        "头指针",
+        "节点(data,next)",
+        "next 指针",
+        "尾节点 None",
+    ]
+    assert "节点通过 next 指针串联" in animation_brief["concept"]
+
+
 def test_course_resource_llm_timeouts_are_three_minutes() -> None:
     assert _RESOURCE_TIMEOUT_SECONDS == 180.0
     assert _MARKDOWN_TIMEOUT_SECONDS == 180.0
@@ -110,7 +192,56 @@ def test_course_resource_llm_timeouts_are_three_minutes() -> None:
     assert _ANIMATION_TIMEOUT_SECONDS == 180.0
 
 
-def test_markdown_input_includes_textbook_evidence_pack() -> None:
+def test_markdown_input_includes_textbook_evidence_pack(tmp_path) -> None:
+    from sqlmodel import Session
+
+    from app.database import build_engine, init_db, set_engine
+    from app.models import User
+    from tests.fixtures.knowledge_base import enabled_source, published_textbook
+    from tests.fixtures.knowledge_base import section as k_section
+
+    engine = build_engine(postgresql_test_url(tmp_path, "markdown-input-evidence"))
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.add(enabled_source(source_id="source-ai-web"))
+        textbook = published_textbook(
+            textbook_id="textbook-ai-web",
+            source_id="source-ai-web",
+            title="AI 应用开发项目教程",
+        )
+        textbook.outline = {
+            "sections": [
+                {"section_id": "1.1", "title": "功能边界"},
+                {"section_id": "1.2", "title": "验收标准"},
+            ]
+        }
+        session.add(textbook)
+        session.add(
+            k_section(
+                textbook_id="textbook-ai-web",
+                section_content_id="markdown-input-section-1-1",
+                section_id="1.1",
+                title="功能边界",
+                content_zh="功能边界正文来自知识库。",
+                order_index=1,
+            )
+        )
+        session.add(
+            k_section(
+                textbook_id="textbook-ai-web",
+                section_content_id="markdown-input-section-1-2",
+                section_id="1.2",
+                title="验收标准",
+                content_zh="验收标准正文来自知识库。",
+                order_index=2,
+            )
+        )
+        session.commit()
+
     outline = _outline()
     outline["source_textbook_id"] = "textbook-ai-web"
     outline["source_textbook_title"] = "AI 应用开发项目教程"
@@ -137,6 +268,15 @@ def test_markdown_input_includes_textbook_evidence_pack() -> None:
     assert '"source_section_ids"' in payload
     assert '"source_section_titles"' in payload
     assert '"source_content_chars"' in payload
+    assert "功能边界正文来自知识库" in payload
+    assert "验收标准正文来自知识库" in payload
+
+
+def test_section_markdown_system_prompt_matches_full_document_generation() -> None:
+    assert "完整 Markdown 文档" in SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT
+    assert "禁止输出完整 Markdown 文档" not in SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT
+    assert "禁止输出 `#` 或 `##` 标题" not in SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT
+    assert "禁止输出视频或动画占位符" not in SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT
 
 
 def test_invoke_resource_chain_parses_chat_message_content_before_model_dump() -> None:
@@ -1739,6 +1879,264 @@ def _complete_section_markdown(
     )
 
 
+def _complete_section_markdown_from_bodies(
+    section_id: str,
+    title: str,
+    section_bodies: dict[str, str],
+    video_id: str = "video_1",
+    animation_id: str = "anim_1",
+) -> str:
+    return "\n\n".join(
+        [
+            f"# {section_id} {title}",
+            f"## 学习目标\n{section_bodies['学习目标']}",
+            f"## 核心概念\n{section_bodies['核心概念']}",
+            f"## 步骤讲解\n{section_bodies['步骤讲解']}",
+            f"<!-- video:id={video_id} -->",
+            f"## 练习任务\n{section_bodies['练习任务']}",
+            f"<!-- animation:id={animation_id} -->",
+            f"## 检查标准\n{section_bodies['检查标准']}",
+        ]
+    )
+
+
+def test_data_structure_course_outline_and_markdown_use_bound_textbook_evidence(
+    tmp_path: Path,
+) -> None:
+    from langchain_core.messages import AIMessage
+
+    from app.models import Textbook, TextbookSectionContent
+    from app.orchestration.agents.course_knowledge import run_course_knowledge_agent
+
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "data-structure-outline-markdown")
+    )
+    set_engine(engine)
+    init_db(engine)
+
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.add(
+            Textbook(
+                textbook_id="textbook-data-structures",
+                source_id="source-data-structures",
+                title="数据结构教程",
+                outline={
+                    "sections": [
+                        {"section_id": "1.1", "title": "复杂度分析"},
+                        {"section_id": "1.2", "title": "数组与列表"},
+                        {"section_id": "2.1", "title": "树结构"},
+                    ]
+                },
+                student_availability_status="published",
+                outline_review_status="approved",
+                ingestion_status="completed",
+            )
+        )
+        session.add(
+            TextbookSectionContent(
+                section_content_id="ds-section-1-1",
+                textbook_id="textbook-data-structures",
+                section_id="1.1",
+                parent_section_id="1",
+                order_index=1,
+                title="复杂度分析",
+                content_zh="复杂度分析用于判断算法在输入规模增长时的时间和空间开销。",
+            )
+        )
+        session.add(
+            TextbookSectionContent(
+                section_content_id="ds-section-1-2",
+                textbook_id="textbook-data-structures",
+                section_id="1.2",
+                parent_section_id="1",
+                order_index=2,
+                title="数组与列表",
+                content_zh="数组与列表是线性结构基础，需要比较索引访问和插入删除成本。",
+            )
+        )
+        session.add(
+            TextbookSectionContent(
+                section_content_id="ds-section-2-1",
+                textbook_id="textbook-data-structures",
+                section_id="2.1",
+                parent_section_id="2",
+                order_index=3,
+                title="树结构",
+                content_zh="树结构用于表达层次关系。",
+            )
+        )
+        session.commit()
+
+    profile = {
+        "type": "basic_profile",
+        "summary_text": "大三软件工程，项目驱动学习，想补齐数据结构基础。",
+        "confirmed_info": {
+            "current_grade": "大三",
+            "major": "软件工程",
+            "learning_stage": "项目实践",
+            "has_clear_goal": "是",
+            "learning_method_preference": "项目驱动学习",
+            "learning_pace_preference": "按周推进",
+            "content_preference": ["文档", "代码实践"],
+            "need_guidance": "需要",
+            "knowledge_foundation": "有 Python 基础",
+            "strengths": "能完成小型功能",
+            "weaknesses": "复杂度分析不熟",
+            "experience": "做过课程项目",
+            "short_term_goal": "掌握复杂度与线性结构",
+            "long_term_goal": "形成算法工程基础",
+            "weekly_available_time": "每周 8 小时",
+            "constraints": "时间有限",
+        },
+    }
+    year_learning_paths = {
+        "year_3": {
+            "current_learning_course": {
+                "grade_id": "year_3",
+                "course_node_id": "year_3_course_1",
+            },
+            "grade_plans": {
+                "year_3": {
+                    "course_nodes": [
+                        {
+                            "course_node_id": "year_3_course_1",
+                            "course_or_chapter_theme": "复杂度分析与线性结构基础",
+                            "grade_id": "year_3",
+                            "course_goal": "掌握复杂度分析与数组列表基础",
+                            "time_arrangement": {
+                                "semester_scope": "上学期",
+                                "duration": "2 周",
+                                "pace_reason": "先补齐基础概念",
+                            },
+                            "key_points": ["复杂度分析", "数组与列表"],
+                            "difficult_points": ["空间开销", "插入删除成本"],
+                            "learning_sequence": ["复杂度分析", "数组与列表"],
+                            "prerequisite_node_ids": [],
+                            "chapter_nodes": [],
+                            "core_knowledge_points": [],
+                            "knowledge_relations": [],
+                            "downstream_resource_direction_ids": [],
+                            "acceptance_criteria": ["能比较常见线性结构操作成本"],
+                            "source_textbook_id": "textbook-data-structures",
+                            "source_textbook_title": "数据结构教程",
+                            "source_outline_section_ids": ["1.1", "1.2"],
+                        }
+                    ]
+                }
+            },
+        }
+    }
+
+    class ExplodingCourseLlm:
+        async def ainvoke(self, *args, **kwargs):
+            raise AssertionError("已发布教材映射应直接生成大纲，不应调用课程大纲 LLM。")
+
+    outline_result = asyncio.run(
+        run_course_knowledge_agent(
+            {
+                "user_id": "user-1",
+                "profile": profile,
+                "latest_grade_year": "year_3",
+                "year_learning_paths": year_learning_paths,
+                "messages": [],
+            },
+            ExplodingCourseLlm(),
+        )
+    )
+
+    assert "error" not in outline_result
+    outline = outline_result["course_knowledge"]
+    assert [section["section_id"] for section in outline["sections"]] == [
+        "1",
+        "1.1",
+        "1.2",
+    ]
+    assert "树结构" not in json.dumps(outline, ensure_ascii=False)
+    assert "时间和空间开销" in outline["sections"][1]["description"]
+    assert outline["sections"][2]["source_section_titles"] == ["数组与列表"]
+
+    captured_queries: list[str] = []
+
+    class MarkdownLlm:
+        pass
+
+    class MarkdownChain:
+        async def ainvoke(self, payload):
+            captured_queries.append(payload["query"])
+            parsed = _payload_from_query(payload["query"])
+            section_data = parsed["target_section"]
+            evidence_text = parsed["textbook_evidence_pack"]["evidence_text"]
+            return AIMessage(
+                content="\n\n".join(
+                    [
+                        f"# {section_data['section_id']} {section_data['title']}",
+                        f"## 学习目标\n围绕教材证据学习：{evidence_text}",
+                        "## 核心概念\n复杂度分析来自教材正文，关注输入规模增长后的资源开销。",
+                        (
+                            "## 步骤讲解\n"
+                            "| 步骤 | 输入材料 | 具体动作 | 产出物 | 验收方式 |\n"
+                            "| --- | --- | --- | --- | --- |\n"
+                            "| 复杂度判断 | 输入规模 | 比较时间开销和空间开销 | 成本说明 | 能解释增长趋势 |\n"
+                            "| 线性结构比较 | 数组与列表 | 对比索引访问和插入删除 | 操作成本表 | 能说清适用场景 |"
+                        ),
+                        "<!-- video:id=video_1 -->",
+                        "## 练习任务\n比较数组和列表在索引访问、插入删除上的成本。",
+                        "<!-- animation:id=anim_1 -->",
+                        "## 检查标准\n- [ ] 能说清时间开销\n- [ ] 能说清空间开销\n- [ ] 能比较索引访问\n- [ ] 能比较插入删除成本",
+                    ]
+                )
+            )
+
+    class MarkdownPrompt:
+        def __or__(self, _other):
+            return MarkdownChain()
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return MarkdownPrompt()
+
+    import app.orchestration.agents.course_resources as module
+
+    original_factory = module.ChatPromptTemplate
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        markdown_result = asyncio.run(
+            run_section_markdown_agent(
+                {
+                    "user_id": "user-1",
+                    "course_knowledge": outline,
+                    "profile": profile,
+                    "year_learning_paths": year_learning_paths,
+                    "messages": [],
+                },
+                MarkdownLlm(),
+                {
+                    "course_id": "year_3_course_1",
+                    "section_id": "1.1",
+                    "scope": "single_section",
+                },
+            )
+        )
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert "error" not in markdown_result
+    assert len(captured_queries) == 1
+    assert "复杂度分析用于判断算法" in captured_queries[0]
+    markdown = markdown_result["course_knowledge"]["section_markdowns"]["1.1"][
+        "markdown"
+    ]
+    assert "时间和空间开销" in markdown
+    video_brief = markdown_result["course_knowledge"]["section_markdowns"]["1.1"][
+        "video_briefs"
+    ][0]
+    assert "复杂度分析" in video_brief["title"]
+
+
 def _complete_markdown_output(section_id: str, title: str) -> SectionMarkdownOutput:
     return SectionMarkdownOutput(
         section_id=section_id,
@@ -1859,6 +2257,10 @@ def test_run_section_markdown_agent_writes_each_first_chapter_child_section(
                 "markdown_expansion_section"
             ]
             captured["sections"].append((section["section_id"], expansion_section))
+            if expansion_section == "完整文档":
+                return _complete_section_markdown(
+                    section["section_id"], section["title"]
+                )
             return section_bodies[expansion_section]
 
     class MarkdownPrompt:
@@ -1914,10 +2316,10 @@ def test_run_section_markdown_agent_writes_each_first_chapter_child_section(
     finally:
         module.ChatPromptTemplate = original_factory
 
-    assert len(captured["queries"]) == 15
-    assert captured["sections"].count(("1.1", "学习目标")) == 1
-    assert captured["sections"].count(("1.2", "核心概念")) == 1
-    assert captured["sections"].count(("1.3", "检查标准")) == 1
+    assert len(captured["queries"]) == 3
+    assert captured["sections"].count(("1.1", "完整文档")) == 1
+    assert captured["sections"].count(("1.2", "完整文档")) == 1
+    assert captured["sections"].count(("1.3", "完整文档")) == 1
     assert all('"profile"' in query for query in captured["queries"])
     assert all('"year_learning_paths"' in query for query in captured["queries"])
     assert all('"course_knowledge"' in query for query in captured["queries"])
@@ -1932,7 +2334,7 @@ def test_run_section_markdown_agent_writes_each_first_chapter_child_section(
     assert "<!-- animation:id=anim_1 -->" in first_markdown["markdown"]
     assert first_markdown["video_briefs"][0]["video_id"] == "video_1"
     assert first_markdown["animation_briefs"][0]["animation_id"] == "anim_1"
-    assert "学习目标" in first_markdown["animation_briefs"][0]["title"]
+    assert "功能边界" in first_markdown["animation_briefs"][0]["title"]
     assert set(result["course_knowledge"]["section_composed_markdowns"]) == {
         "1.1",
         "1.2",
@@ -2286,9 +2688,7 @@ def test_run_section_markdown_agent_accepts_loose_json_without_brief_metadata(
         def from_messages(_messages):
             return MarkdownPrompt()
 
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "section-markdown-loose-json")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-loose-json"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -2367,6 +2767,20 @@ def test_run_section_markdown_agent_generates_markdown_from_five_section_bodies_
             captured["queries"].append(payload["query"])
             captured["attempts"] += 1
             parsed = _payload_from_query(payload["query"])
+            if parsed["markdown_expansion_section"] == "完整文档":
+                section = parsed["target_section"]
+                return "\n\n".join(
+                    [
+                        f"# {section['section_id']} {section['title']}",
+                        f"## 学习目标\n{section_bodies['学习目标']}",
+                        f"## 核心概念\n{section_bodies['核心概念']}",
+                        f"## 步骤讲解\n{section_bodies['步骤讲解']}",
+                        "<!-- video:id=video_1 -->",
+                        f"## 练习任务\n{section_bodies['练习任务']}",
+                        "<!-- animation:id=anim_1 -->",
+                        f"## 检查标准\n{section_bodies['检查标准']}",
+                    ]
+                )
             return section_bodies[parsed["markdown_expansion_section"]]
 
     class MarkdownPrompt:
@@ -2425,7 +2839,7 @@ def test_run_section_markdown_agent_generates_markdown_from_five_section_bodies_
         module.ChatPromptTemplate = original_factory
 
     assert "error" not in result
-    assert captured["attempts"] == 5
+    assert captured["attempts"] == 1
     assert all("markdown_expansion_section" in query for query in captured["queries"])
     markdown = result["course_knowledge"]["section_markdowns"]["1.1"]["markdown"]
     assert "### 功能边界" in markdown
@@ -2523,6 +2937,11 @@ def test_run_section_markdown_agent_expands_short_markdown_with_llm_content(
                 for section_title, body in section_bodies.items():
                     if f'"markdown_expansion_section": "{section_title}"' in query:
                         return body
+                if '"markdown_expansion_section": "完整文档"' in query:
+                    section = _payload_from_query(query)["target_section"]
+                    return _complete_section_markdown_from_bodies(
+                        section["section_id"], section["title"], section_bodies
+                    )
                 return section_bodies["学习目标"]
             captured["markdown_calls"] += 1
             return SectionMarkdownOutput(
@@ -2570,9 +2989,7 @@ def test_run_section_markdown_agent_expands_short_markdown_with_llm_content(
         "active_expansions": 0,
         "max_active_expansions": 0,
     }
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "section-markdown-expansion")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-expansion"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -2617,8 +3034,8 @@ def test_run_section_markdown_agent_expands_short_markdown_with_llm_content(
 
     assert "error" not in result
     assert captured["markdown_calls"] == 0
-    assert captured["expansion_calls"] == 5
-    assert captured["max_active_expansions"] == 5
+    assert captured["expansion_calls"] == 1
+    assert captured["max_active_expansions"] == 1
     markdown = result["course_knowledge"]["section_markdowns"]["1.1"]["markdown"]
     assert "模型扩写内容会围绕 API 连通性测试" in markdown
     assert (
@@ -2687,6 +3104,11 @@ def test_run_section_markdown_agent_scaffolds_structural_markdown_gaps(
             captured["expansion_calls"] += 1
             query = payload["query"]
             expansion_section = _payload_from_query(query)["markdown_expansion_section"]
+            if expansion_section == "完整文档":
+                section = _payload_from_query(query)["target_section"]
+                return _complete_section_markdown_from_bodies(
+                    section["section_id"], section["title"], section_bodies
+                )
             return section_bodies[expansion_section]
 
     class MarkdownPrompt:
@@ -2896,6 +3318,11 @@ def test_run_section_markdown_agent_uses_backend_generated_resource_briefs(
             captured["queries"].append(payload["query"])
             captured["attempts"] += 1
             parsed = _payload_from_query(payload["query"])
+            if parsed["markdown_expansion_section"] == "完整文档":
+                section = parsed["target_section"]
+                return _complete_section_markdown_from_bodies(
+                    section["section_id"], section["title"], section_bodies
+                )
             return section_bodies[parsed["markdown_expansion_section"]]
 
     class MarkdownPrompt:
@@ -2954,7 +3381,7 @@ def test_run_section_markdown_agent_uses_backend_generated_resource_briefs(
         module.ChatPromptTemplate = original_factory
 
     assert "error" not in result
-    assert captured["attempts"] == 5
+    assert captured["attempts"] == 1
     markdown = result["course_knowledge"]["section_markdowns"]["1.1"]["markdown"]
     assert "<!-- video:id=video_1 -->" in markdown
     assert "<!-- animation:id=anim_1 -->" in markdown
@@ -3000,6 +3427,11 @@ def test_run_section_markdown_agent_generates_child_sections_concurrently(
                 expansion_section = _payload_from_query(payload["query"])[
                     "markdown_expansion_section"
                 ]
+                if expansion_section == "完整文档":
+                    section = _payload_from_query(payload["query"])["target_section"]
+                    return _complete_section_markdown(
+                        section["section_id"], section["title"]
+                    )
                 return section_bodies[expansion_section]
             finally:
                 captured["active"] -= 1
@@ -3014,9 +3446,7 @@ def test_run_section_markdown_agent_generates_child_sections_concurrently(
             return MarkdownPrompt()
 
     captured = {"schema": None, "active": 0, "max_active": 0}
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "section-markdown-concurrent")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-concurrent"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -3057,7 +3487,7 @@ def test_run_section_markdown_agent_generates_child_sections_concurrently(
     finally:
         module.ChatPromptTemplate = original_factory
 
-    assert captured["max_active"] == 15
+    assert captured["max_active"] == 3
     assert set(result["course_knowledge"]["section_markdowns"]) == {"1.1", "1.2", "1.3"}
 
 
@@ -3107,9 +3537,7 @@ def test_run_section_markdown_agent_returns_error_when_failed_section_cannot_be_
             return MarkdownPrompt()
 
     captured = {"schema": None, "attempts": {}}
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "section-markdown-batch-retry")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-batch-retry"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -3591,9 +4019,7 @@ def test_run_section_video_search_agent_retries_when_first_search_result_fails_q
         }
     }
     captured = {"schema": None, "queries": [], "attempts": 0, "search_attempts": 0}
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "section-video-quality-repair")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "section-video-quality-repair"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -4081,9 +4507,7 @@ def test_run_section_video_search_agent_accepts_course_specific_video_metadata(
             section["key_knowledge_points"] = ["向量数据库", "Embedding 原理"]
 
     captured = {"schema": None, "queries": [], "verified_search": 0}
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "section-video-course-topic")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "section-video-course-topic"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -4313,10 +4737,99 @@ def test_run_section_video_search_agent_falls_back_when_verified_search_stays_em
     assert videos[0]["source"] == "Bilibili 搜索兜底"
 
 
+def test_run_section_video_search_agent_rejects_missing_textbook_evidence(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from tests.fixtures.knowledge_base import enabled_source, published_textbook
+    from tests.fixtures.knowledge_base import section as k_section
+
+    class RecordingLlm:
+        pass
+
+    async def verified_search(_video_briefs, _section, _outline=None):
+        raise AssertionError("缺少教材证据时不应搜索视频。")
+
+    outline = _outline()
+    outline["sections"][1]["source_textbook_id"] = "textbook-video-missing-evidence"
+    outline["sections"][1]["source_textbook_title"] = "视频证据教材"
+    outline["sections"][1]["source_section_ids"] = ["9.9"]
+    outline["sections"][1]["source_section_titles"] = ["不存在的小节"]
+    outline["sections"][1]["source_content_chars"] = 100
+    outline["section_markdowns"] = {
+        "1.1": {
+            "section_id": "1.1",
+            "parent_section_id": "1",
+            "title": "学习目标",
+            "markdown": _complete_section_markdown("1.1", "学习目标"),
+            "video_briefs": [
+                {
+                    "video_id": "video_1",
+                    "title": "学习目标导入视频",
+                    "purpose": "帮助学习者建立功能边界与验收标准的直觉",
+                }
+            ],
+            "animation_briefs": [],
+            "generated_at": "2026-06-06T00:00:00Z",
+        }
+    }
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-video-missing-evidence")
+    )
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.add(enabled_source(source_id="source-video-evidence"))
+        tb = published_textbook(
+            textbook_id="textbook-video-missing-evidence",
+            source_id="source-video-evidence",
+            title="视频证据教材",
+        )
+        tb.outline = {"sections": [{"section_id": "1.1", "title": "存在的小节"}]}
+        session.add(tb)
+        session.add(
+            k_section(
+                textbook_id="textbook-video-missing-evidence",
+                section_content_id="video-existing-section",
+                section_id="1.1",
+                title="存在的小节",
+                content_zh="存在的小节正文。",
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+
+    monkeypatch.setattr(module, "_find_verified_video_from_search", verified_search)
+
+    result = asyncio.run(
+        run_section_video_search_agent(
+            {
+                "user_id": "user-1",
+                "course_knowledge": outline,
+                "course_resource_plan": {
+                    "course_id": "year_3_course_1",
+                    "target_section_ids": ["1.1"],
+                },
+                "messages": [],
+            },
+            RecordingLlm(),
+        )
+    )
+
+    assert result == {"error": "教材小节不存在。", "hard_error": True}
+
+
 from app.orchestration.agents.course_resources import run_section_html_animation_agent
 
 
 def test_run_section_html_animation_agent_uses_animation_briefs(tmp_path) -> None:
+    from tests.fixtures.knowledge_base import enabled_source, published_textbook
+    from tests.fixtures.knowledge_base import section as k_section
+
     class RecordingLlm:
         pass
 
@@ -4349,6 +4862,11 @@ def test_run_section_html_animation_agent_uses_animation_briefs(tmp_path) -> Non
             return AnimationPrompt()
 
     outline = _outline()
+    outline["sections"][1]["source_textbook_id"] = "textbook-animation-evidence"
+    outline["sections"][1]["source_textbook_title"] = "动画证据教材"
+    outline["sections"][1]["source_section_ids"] = ["1.1"]
+    outline["sections"][1]["source_section_titles"] = ["目标到验收标准"]
+    outline["sections"][1]["source_content_chars"] = 100
     outline["section_markdowns"] = {
         "1.1": {
             "section_id": "1.1",
@@ -4377,6 +4895,23 @@ def test_run_section_html_animation_agent_uses_animation_briefs(tmp_path) -> Non
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.add(enabled_source(source_id="source-animation-evidence"))
+        tb = published_textbook(
+            textbook_id="textbook-animation-evidence",
+            source_id="source-animation-evidence",
+            title="动画证据教材",
+        )
+        tb.outline = {"sections": [{"section_id": "1.1", "title": "目标到验收标准"}]}
+        session.add(tb)
+        session.add(
+            k_section(
+                textbook_id="textbook-animation-evidence",
+                section_content_id="animation-evidence-section",
+                section_id="1.1",
+                title="目标到验收标准",
+                content_zh="动画证据正文来自知识库，描述学习目标如何收敛为验收标准。",
+            )
         )
         session.add(
             UserCourseKnowledgeOutline(
@@ -4418,6 +4953,7 @@ def test_run_section_html_animation_agent_uses_animation_briefs(tmp_path) -> Non
     assert '"year_learning_paths"' in captured["queries"][0]
     assert '"course_knowledge"' in captured["queries"][0]
     assert '"animation_briefs"' in captured["queries"][0]
+    assert "动画证据正文来自知识库" in captured["queries"][0]
     assert '"每天 12 小时项目驱动"' in captured["queries"][0]
     assert "作品级 Agent 项目闭环" in captured["queries"][0]
     animations = result["course_knowledge"]["section_html_animations"]["1.1"][
@@ -4427,6 +4963,106 @@ def test_run_section_html_animation_agent_uses_animation_briefs(tmp_path) -> Non
     assert "section-animation" in animations[0]["html"]
     assert result["course_resource_result"]["markdown_count"] == 1
     assert result["response"].startswith("《AI 应用开发》的 1.1 教学内容已生成")
+
+
+def test_run_section_html_animation_agent_rejects_missing_textbook_evidence(
+    tmp_path,
+) -> None:
+    from tests.fixtures.knowledge_base import enabled_source, published_textbook
+    from tests.fixtures.knowledge_base import section as k_section
+
+    class RecordingLlm:
+        pass
+
+    class ExplodingPrompt:
+        def __or__(self, _other):
+            raise AssertionError("缺少教材证据时不应调用动画 LLM。")
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return ExplodingPrompt()
+
+    outline = _outline()
+    outline["sections"][1]["source_textbook_id"] = "textbook-animation-missing"
+    outline["sections"][1]["source_textbook_title"] = "动画缺证据教材"
+    outline["sections"][1]["source_section_ids"] = ["9.9"]
+    outline["sections"][1]["source_section_titles"] = ["不存在的小节"]
+    outline["sections"][1]["source_content_chars"] = 100
+    outline["section_markdowns"] = {
+        "1.1": {
+            "section_id": "1.1",
+            "parent_section_id": "1",
+            "title": "学习目标",
+            "markdown": "# 学习目标\n\n完整教学内容",
+            "video_briefs": [],
+            "animation_briefs": [
+                {
+                    "animation_id": "section-1-1-animation-1",
+                    "title": "目标到验收标准",
+                    "concept": "展示学习目标如何收敛为验收标准",
+                    "visual_elements": ["学习目标", "验收标准", "完成证据"],
+                    "motion": "节点依次淡入",
+                    "space": "正文宽度",
+                    "placement_hint": "核心概念之后",
+                }
+            ],
+            "generated_at": "2026-06-06T00:00:00Z",
+        }
+    }
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-animation-missing-evidence")
+    )
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.add(enabled_source(source_id="source-animation-missing"))
+        tb = published_textbook(
+            textbook_id="textbook-animation-missing",
+            source_id="source-animation-missing",
+            title="动画缺证据教材",
+        )
+        tb.outline = {"sections": [{"section_id": "1.1", "title": "存在的小节"}]}
+        session.add(tb)
+        session.add(
+            k_section(
+                textbook_id="textbook-animation-missing",
+                section_content_id="animation-existing-section",
+                section_id="1.1",
+                title="存在的小节",
+                content_zh="存在的小节正文。",
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+
+    original_factory = module.ChatPromptTemplate
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(
+            run_section_html_animation_agent(
+                {
+                    "user_id": "user-1",
+                    "course_knowledge": outline,
+                    "profile": _profile(),
+                    "year_learning_paths": _year_learning_paths(),
+                    "course_resource_plan": {
+                        "course_id": "year_3_course_1",
+                        "target_section_ids": ["1.1"],
+                    },
+                    "messages": [],
+                },
+                RecordingLlm(),
+            )
+        )
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert result == {"error": "教材小节不存在。", "hard_error": True}
 
 
 def test_run_section_html_animation_agent_accepts_plain_html_model_output(
@@ -4477,9 +5113,7 @@ def test_run_section_html_animation_agent_accepts_plain_html_model_output(
         }
     }
     captured = {"queries": []}
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "section-animation-plain-html")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "section-animation-plain-html"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -4600,9 +5234,7 @@ def test_run_section_html_animation_agent_generates_chapter_sections_concurrentl
         }
 
     captured = {"queries": [], "inflight": 0, "max_inflight": 0}
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "section-animation-concurrent")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "section-animation-concurrent"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -4862,6 +5494,7 @@ def test_resource_agents_reuse_existing_markdown_and_video_but_fail_when_animati
 
 from app.orchestration.agents.course_resources import (
     _extract_brief_ids_from_markdown,
+    _generated_markdown_seed_data,
     _normalize_animation_html,
     _normalize_markdown_resources,
     _requires_specific_video_brief_match,
@@ -4882,6 +5515,28 @@ def test_extract_brief_ids_from_markdown_reads_video_and_animation_ids() -> None
 
     assert _extract_brief_ids_from_markdown(markdown, "video") == ["video_1"]
     assert _extract_brief_ids_from_markdown(markdown, "animation") == ["anim_1"]
+
+
+def test_generated_markdown_seed_briefs_prefer_source_section_titles() -> None:
+    section = {
+        "section_id": "1.1",
+        "parent_section_id": "1",
+        "depth": 2,
+        "title": "学习目标",
+        "description": "学习目标来自教材正文。",
+        "key_knowledge_points": ["目标说明"],
+        "source_section_titles": ["复杂度分析", "数组与列表"],
+    }
+
+    seed = _generated_markdown_seed_data(section)
+
+    video_brief = seed["video_briefs"][0]
+    animation_brief = seed["animation_briefs"][0]
+    assert "复杂度分析" in video_brief["title"]
+    assert "数组与列表" in video_brief["purpose"]
+    assert "学习目标导入视频" not in video_brief["title"]
+    assert "复杂度分析" in animation_brief["title"]
+    assert animation_brief["visual_elements"][:2] == ["复杂度分析", "数组与列表"]
 
 
 def test_normalize_markdown_resources_rewrites_placeholder_ids_to_brief_ids() -> None:
@@ -5764,7 +6419,141 @@ def test_stream_chapter_resource_generation_stops_when_video_step_fails() -> Non
     assert not any(event["event"] == "session_completed" for event in events)
 
 
-def test_stream_chapter_resource_generation_generates_bound_resources_for_each_child_section(
+def test_stream_chapter_resource_generation_reports_agent_phases_in_order() -> None:
+    import app.orchestration.agents.course_resources as module
+
+    outline = _outline()
+    call_order: list[str] = []
+
+    async def markdown_agent(state, _llm, explicit_args=None):
+        call_order.append("markdown")
+        next_outline = dict(outline)
+        next_outline["section_markdowns"] = {
+            section_id: {
+                "section_id": section_id,
+                "parent_section_id": "1",
+                "title": _section_by_id(outline, section_id)["title"],
+                "markdown": _complete_section_markdown(
+                    section_id, _section_by_id(outline, section_id)["title"]
+                ),
+                "video_briefs": [
+                    {
+                        "video_id": "video_1",
+                        "title": f"{section_id} 具体视频",
+                        "purpose": f"辅助理解 {section_id} 的具体概念。",
+                    }
+                ],
+                "animation_briefs": [
+                    {
+                        "animation_id": "anim_1",
+                        "title": f"{section_id} 具体动画",
+                        "concept": f"展示 {section_id} 的具体结构变化。",
+                        "visual_elements": ["输入", "处理", "输出"],
+                        "motion": "节点依次淡入。",
+                        "space": "正文宽度 100%，高度 320px。",
+                        "placement_hint": "步骤讲解之后。",
+                    }
+                ],
+            }
+            for section_id in ["1.1", "1.2", "1.3"]
+        }
+        return {
+            "course_knowledge": next_outline,
+            "course_resource_plan": {
+                "course_id": "year_3_course_1",
+                "target_section_ids": ["1.1", "1.2", "1.3"],
+                "markdown_section_ids": ["1.1", "1.2", "1.3"],
+                "video_section_ids": [],
+                "animation_section_ids": [],
+            },
+        }
+
+    async def video_agent(state, _search_llm, explicit_args=None):
+        call_order.append("video")
+        next_outline = dict(state["course_knowledge"])
+        next_outline["section_video_links"] = {
+            section_id: {"section_id": section_id, "videos": []}
+            for section_id in ["1.1", "1.2", "1.3"]
+        }
+        next_plan = dict(state["course_resource_plan"])
+        next_plan["video_section_ids"] = ["1.1", "1.2", "1.3"]
+        return {"course_knowledge": next_outline, "course_resource_plan": next_plan}
+
+    async def animation_agent(state, _llm, explicit_args=None):
+        call_order.append("animation")
+        next_outline = dict(state["course_knowledge"])
+        next_outline["section_html_animations"] = {
+            section_id: {"section_id": section_id, "animations": []}
+            for section_id in ["1.1", "1.2", "1.3"]
+        }
+        next_plan = dict(state["course_resource_plan"])
+        next_plan["animation_section_ids"] = ["1.1", "1.2", "1.3"]
+        return {
+            "course_knowledge": next_outline,
+            "course_resource_plan": next_plan,
+            "course_resource_result": {
+                "course_id": "year_3_course_1",
+                "generated_section_ids": ["1.1", "1.2", "1.3"],
+                "markdown_count": 3,
+                "video_count": 0,
+                "animation_count": 0,
+            },
+        }
+
+    original_markdown_agent = module.run_section_markdown_agent
+    original_video_agent = module.run_section_video_search_agent
+    original_animation_agent = module.run_section_html_animation_agent
+    module.run_section_markdown_agent = markdown_agent
+    module.run_section_video_search_agent = video_agent
+    module.run_section_html_animation_agent = animation_agent
+    try:
+
+        async def collect_events():
+            return [
+                event
+                async for event in module.stream_chapter_resource_generation(
+                    {
+                        "user_id": "user-1",
+                        "session_id": "session-1",
+                        "course_knowledge": outline,
+                        "profile": {},
+                        "year_learning_paths": {},
+                    },
+                    object(),
+                    object(),
+                    course_id="year_3_course_1",
+                    chapter_section_id="1",
+                )
+            ]
+
+        events = asyncio.run(collect_events())
+    finally:
+        module.run_section_markdown_agent = original_markdown_agent
+        module.run_section_video_search_agent = original_video_agent
+        module.run_section_html_animation_agent = original_animation_agent
+
+    phase_events = [
+        (event.get("agent"), event.get("phase"), event.get("status"))
+        for event in events
+        if event.get("event") in {"agent_progress", "agent_result"}
+    ]
+    assert call_order == ["markdown", "video", "animation"]
+    assert ("section_markdown_agent", "markdown", "completed") in phase_events
+    assert ("section_video_search_agent", "video", "completed") in phase_events
+    assert ("section_html_animation_agent", "animation", "completed") in phase_events
+    markdown_completed_index = phase_events.index(
+        ("section_markdown_agent", "markdown", "completed")
+    )
+    video_completed_index = phase_events.index(
+        ("section_video_search_agent", "video", "completed")
+    )
+    animation_completed_index = phase_events.index(
+        ("section_html_animation_agent", "animation", "completed")
+    )
+    assert markdown_completed_index < video_completed_index < animation_completed_index
+
+
+def test_stream_chapter_resource_generation_generates_bound_resources_for_each_child_section(  # noqa: C901
     tmp_path,
 ) -> None:
     import app.orchestration.agents.course_resources as module
@@ -5802,6 +6591,10 @@ def test_stream_chapter_resource_generation_generates_bound_resources_for_each_c
             section_id = section["section_id"]
             title = section["title"]
             if "markdown_expansion_section" in parsed:
+                if parsed["markdown_expansion_section"] == "完整文档":
+                    return _complete_section_markdown_from_bodies(
+                        section_id, title, markdown_bodies
+                    )
                 return markdown_bodies[parsed["markdown_expansion_section"]]
             if "section_markdowns" in parsed:
                 brief = parsed["section_markdowns"][section_id]["video_briefs"][0]
@@ -6044,9 +6837,7 @@ def test_stream_chapter_resource_generation_accepts_plain_markdown_and_html_outp
         ]
 
     outline = _outline()
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "section-stream-plain-output")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "section-stream-plain-output"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -6482,9 +7273,25 @@ def test_run_section_markdown_agent_injects_textbook_evidence_cag(tmp_path) -> N
     class MarkdownChain:
         async def ainvoke(self, payload):
             captured_queries.append(payload["query"])
-            expansion_section = _payload_from_query(payload["query"])[
-                "markdown_expansion_section"
-            ]
+            parsed = _payload_from_query(payload["query"])
+            expansion_section = parsed["markdown_expansion_section"]
+            if expansion_section == "完整文档":
+                section_data = parsed["target_section"]
+                section_id = section_data["section_id"]
+                title = section_data["title"]
+                evidence_text = parsed["textbook_evidence_pack"]["evidence_text"]
+                return "\n\n".join(
+                    [
+                        f"# {section_id} {title}",
+                        f"## 学习目标\n学习目标正文内容来自教材证据包事实：{evidence_text}",
+                        "## 核心概念\n### 特定章节标题\n核心概念解释来自教材证据包事实。",
+                        "## 步骤讲解\n步骤讲解正文内容来自教材证据包事实。\n\n```text\n步骤: 使用教材证据包\n输入: 特定章节标题\n输出: 教学文档\n```",
+                        "<!-- video:id=video_1 -->",
+                        "## 练习任务\n练习任务正文内容来自教材证据包事实。",
+                        "<!-- animation:id=anim_1 -->",
+                        "## 检查标准\n- [ ] 标准 1\n- [ ] 标准 2\n- [ ] 标准 3\n- [ ] 标准 4",
+                    ]
+                )
             return section_bodies[expansion_section]
 
     class MarkdownPrompt:
@@ -6583,10 +7390,98 @@ def test_run_section_markdown_agent_injects_textbook_evidence_cag(tmp_path) -> N
     finally:
         module.ChatPromptTemplate = original_factory
 
-    assert len(captured_queries) == 5
+    assert len(captured_queries) == 1
     for query in captured_queries:
         assert "这是真实存储于教材正文数据库中的特定中文教学段落" in query
         assert "textbook_evidence_pack" in query
         assert "evidence_text" in query
         assert "教材证据包" in query
         assert "真实内容" in query or "严格基于" in query or "唯一" in query
+
+
+def test_run_section_markdown_agent_rejects_missing_textbook_evidence(
+    tmp_path: Path,
+) -> None:
+    from tests.fixtures.knowledge_base import enabled_source, published_textbook
+    from tests.fixtures.knowledge_base import section as k_section
+
+    class RecordingLlm:
+        pass
+
+    class ExplodingPrompt:
+        def __or__(self, _other):
+            raise AssertionError("缺少教材证据时不应调用 LLM。")
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return ExplodingPrompt()
+
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-markdown-missing-evidence")
+    )
+    set_engine(engine)
+    init_db(engine)
+
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        textbook_id = "textbook-missing-evidence"
+        source_id = "source-missing-evidence"
+        session.add(enabled_source(source_id=source_id))
+        tb = published_textbook(
+            textbook_id=textbook_id,
+            source_id=source_id,
+            title="缺证据教材",
+        )
+        tb.outline = {
+            "sections": [
+                {"section_id": "1.1", "title": "存在的小节"},
+            ]
+        }
+        session.add(tb)
+        session.add(
+            k_section(
+                textbook_id=textbook_id,
+                section_content_id="section-existing-content-id",
+                section_id="1.1",
+                title="存在的小节",
+                content_zh="存在的小节正文。",
+            )
+        )
+        outline_data = _outline()
+        target_sec = outline_data["sections"][1]
+        target_sec["source_textbook_id"] = textbook_id
+        target_sec["source_textbook_title"] = "缺证据教材"
+        target_sec["source_section_ids"] = ["9.9"]
+        target_sec["source_section_titles"] = ["不存在的小节"]
+        target_sec["source_content_chars"] = 100
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+
+    original_factory = module.ChatPromptTemplate
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(
+            run_section_markdown_agent(
+                {
+                    "user_id": "user-1",
+                    "course_knowledge": outline_data,
+                    "profile": _profile(),
+                    "year_learning_paths": _year_learning_paths(),
+                    "messages": [],
+                },
+                RecordingLlm(),
+                {
+                    "course_id": "year_3_course_1",
+                    "section_id": "1.1",
+                    "scope": "single_section",
+                },
+            )
+        )
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert result == {"error": "教材小节不存在。", "hard_error": True}

@@ -36,21 +36,22 @@ _VIDEO_VERIFIED_QUERY_LIMIT = 6
 _SECTION_CONCURRENCY_LIMIT = 3
 
 SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT = """\
-你是课程 Markdown 章节正文扩写智能体。
+你是课程 Markdown 教学文档生成智能体。
 
-你只生成输入中 markdown_expansion_section 指定的单个章节正文。
+你只为输入中的 target_section 生成一份完整 Markdown 文档。
 禁止输出 JSON。
-禁止输出完整 Markdown 文档。
-禁止输出 `#` 或 `##` 标题。
-禁止输出视频或动画占位符。
+禁止输出解释性前后缀。
+必须输出 `#` 标题、`## 学习目标`、`## 核心概念`、`## 步骤讲解`、`## 练习任务`、`## 检查标准`。
+必须包含 `<!-- video:id=video_1 -->` 与 `<!-- animation:id=anim_1 -->`。
 
 你的输入中包含 `textbook_evidence_pack`，它保存了从数据库检索到的真实教材正文（包含 `evidence_text` 等字段）。
+`evidence_text` 可能是中文正文，也可能是英文教材原文。
 你必须严格基于 `textbook_evidence_pack` 提供的教材正文内容来生成本节所有的 Markdown 内容（如概念定义、公式、代码片段、原理解释等），绝对不能脱离教材虚构无关事实或引入无关的外部概念。
+最终 Markdown 正文必须使用中文表达；如果 evidence_text 是英文，只能把它作为教材事实来源来理解和转写，不能直接整段照搬英文原文。
 
 内容必须绑定 target_section.title、target_section.description 和 target_section.key_knowledge_points。
-如果 markdown_expansion_section 是 步骤讲解，必须包含 Markdown 表格或 fenced code block。
-如果 markdown_expansion_section 是 检查标准，必须输出至少 4 条 `- [ ]` 可验收清单。
-其他章节输出可直接拼入教学文档的 Markdown 正文。
+`## 步骤讲解` 必须包含 Markdown 表格或 fenced code block。
+`## 检查标准` 必须输出至少 4 条 `- [ ]` 可验收清单。
 
 如果输入中包含【用户画像摘要】，你必须在正文末尾另起一行，以 `<!-- recommendation_reason: ... -->` 格式输出推荐理由。
 推荐理由必须具体引用画像中的 1-2 个维度（如薄弱点、学习风格、内容偏好），说明为什么这个章节内容适合该用户。
@@ -679,25 +680,26 @@ def _textbook_evidence_pack(outline: dict, section: dict) -> dict:
                 db_session, source_textbook_id, section_ids
             )
         except Exception as exc:
-            if str(exc) == "教材未发布。":
-                raise
             logger.warning(
                 "Failed to load textbook evidence pack for textbook %s: %s",
                 source_textbook_id,
                 exc,
             )
-            return {}
+            raise
 
     evidence_sections = evidence_pack.get("sections")
     if not isinstance(evidence_sections, list):
         evidence_sections = []
+    evidence_text = _clean_text(evidence_pack.get("evidence_text"))
+    if not evidence_text:
+        raise ValueError("证据包为空。")
 
     return {
         "textbook_id": evidence_pack.get("textbook_id", source_textbook_id),
         "title": evidence_pack.get("title", source_textbook_title),
         "sections": evidence_sections,
         "total_chars": evidence_pack.get("total_chars", 0),
-        "evidence_text": evidence_pack.get("evidence_text", ""),
+        "evidence_text": evidence_text,
     }
 
 
@@ -1246,7 +1248,10 @@ def _normalize_markdown_heading_variants(markdown: str) -> str:
         is_heading = bool(re.match(r"^#{2,6}\s+", stripped))
         is_bold_title = bool(re.match(r"^\*\*.+\*\*\s*(?:[：:].*)?$", stripped))
         is_plain_required_title = any(
-            stripped.startswith(title) for title in _REQUIRED_MARKDOWN_HEADING_TITLES
+            stripped == title
+            or stripped.startswith(f"{title}：")
+            or stripped.startswith(f"{title}:")
+            for title in _REQUIRED_MARKDOWN_HEADING_TITLES
         )
         if is_heading or is_bold_title or is_plain_required_title:
             replacement = _normalize_markdown_heading_line(stripped)
@@ -1255,6 +1260,19 @@ def _normalize_markdown_heading_variants(markdown: str) -> str:
 
 
 def _normalize_markdown_step_blocks(markdown: str) -> str:
+    def ensure_table_header(body: str) -> str:
+        lines = body.splitlines()
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if re.match(r"^\|\s*-{3,}", stripped):
+                lines.insert(
+                    index, "| 步骤 | 输入材料 | 具体动作 | 产出物 | 验收方式 |"
+                )
+            break
+        return "\n".join(lines)
+
     heading_pattern = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
     matches = list(heading_pattern.finditer(markdown))
     for index, match in enumerate(matches):
@@ -1274,6 +1292,7 @@ def _normalize_markdown_step_blocks(markdown: str) -> str:
         )
 
         if _STEP_MARKER_PATTERN.search(cleaned_body):
+            cleaned_body = ensure_table_header(cleaned_body)
             return f"{markdown[:start]}{cleaned_body}\n\n{markdown[end:].lstrip()}"
 
         blocks = [
@@ -1300,7 +1319,7 @@ def _normalize_markdown_step_blocks(markdown: str) -> str:
             )
             step_index += 1
 
-        normalized_body = "\n\n".join(normalized_blocks)
+        normalized_body = ensure_table_header("\n\n".join(normalized_blocks))
         return f"{markdown[:start]}{normalized_body}\n\n{markdown[end:].lstrip()}"
     return markdown
 
@@ -1371,13 +1390,25 @@ def _generated_markdown_video_briefs(section: dict) -> list[dict]:
         or _clean_text(section.get("section_id"))
         or "本节"
     )
+    source_titles = _text_items(section.get("source_section_titles"))
     knowledge_points = _text_items(section.get("key_knowledge_points"))
-    focus = "、".join(knowledge_points[:2]) or title
+    joined_terms = "".join([title, *source_titles, *knowledge_points])
+    if "链表" in joined_terms:
+        return [
+            {
+                "video_id": "video_1",
+                "title": f"{title}节点与指针讲解视频",
+                "purpose": f"辅助理解「{title}」中节点、data 域、next 指针、头指针与尾节点 None 如何共同构成线性结构。",
+            }
+        ]
+    focus_terms = source_titles[:3] or knowledge_points[:3] or [title]
+    focus = "、".join(focus_terms)
+    primary_title = focus_terms[0] if focus_terms else title
     return [
         {
             "video_id": "video_1",
-            "title": f"{title}导入视频",
-            "purpose": f"帮助学习者理解{focus}，并把本节内容落到可验收任务。",
+            "title": f"{primary_title}专项讲解视频",
+            "purpose": f"帮助学习者围绕「{title}」理解{focus}，并把本节内容落到可验收任务。",
         }
     ]
 
@@ -1388,13 +1419,34 @@ def _generated_markdown_animation_briefs(section: dict) -> list[dict]:
         or _clean_text(section.get("section_id"))
         or "本节"
     )
+    source_titles = _text_items(section.get("source_section_titles"))
     knowledge_points = _text_items(section.get("key_knowledge_points"))
-    visual_elements = knowledge_points[:3] or [title, "输入材料", "验收证据"]
+    joined_terms = "".join([title, *source_titles, *knowledge_points])
+    if "链表" in joined_terms:
+        return [
+            {
+                "animation_id": "anim_1",
+                "title": f"{title}节点指针串联动画",
+                "concept": f"展示「{title}」中节点通过 next 指针串联，头指针指向首节点，尾节点 next 指向 None 的结构。",
+                "visual_elements": [
+                    "头指针",
+                    "节点(data,next)",
+                    "next 指针",
+                    "尾节点 None",
+                ],
+                "motion": "头指针先出现，节点依次通过 transform 从左到右进入，next 指针连线按顺序绘制，尾节点 None 最后淡入。",
+                "space": "正文宽度 100%，高度 320px。",
+                "placement_hint": "步骤讲解中第一次解释节点指针关系之后。",
+            }
+        ]
+    visual_elements = source_titles[:3] or knowledge_points[:3] or [title]
+    primary = visual_elements[0] if visual_elements else title
+    visual_text = "、".join(visual_elements)
     return [
         {
             "animation_id": "anim_1",
-            "title": f"{title}流程动画",
-            "concept": f"展示{title}如何从输入材料、处理步骤推进到验收证据。",
+            "title": f"{primary}流程动画",
+            "concept": f"展示「{title}」如何围绕{visual_text}从输入材料、处理步骤推进到验收证据。",
             "visual_elements": visual_elements,
             "motion": "关键节点依次通过 opacity 淡入，并只用 transform 表现轻微位移。",
             "space": "正文宽度 100%，高度 320px。",
