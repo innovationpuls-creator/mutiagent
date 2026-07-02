@@ -43,13 +43,15 @@ SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT = """\
 你只为输入中的 target_section 生成一份完整 Markdown 文档。
 禁止输出 JSON。
 禁止输出解释性前后缀。
-必须输出 `#` 标题、`## 学习目标`、`## 核心概念`、`## 步骤讲解`、`## 练习任务`、`## 检查标准`。
+必须输出 `#` 标题、`## 学习目标`、`## 核心概念`、`## 步骤讲解`、`## 练习任务`、`## 检查标准`、`## 来源`。
 必须包含 `<!-- video:id=video_1 -->` 与 `<!-- animation:id=anim_1 -->`。
 
 你的输入中包含 `textbook_evidence_pack`，它保存了从数据库检索到的真实教材正文（包含 `evidence_text` 等字段）。
 `evidence_text` 可能是中文正文，也可能是英文教材原文。
 你必须严格基于 `textbook_evidence_pack` 提供的教材正文内容来生成本节所有的 Markdown 内容（如概念定义、公式、代码片段、原理解释等），绝对不能脱离教材虚构无关事实或引入无关的外部概念。
 最终 Markdown 正文必须使用中文表达；如果 evidence_text 是英文，只能把它作为教材事实来源来理解和转写，不能直接整段照搬英文原文。
+最终 Markdown 必须是教学文档，不是预习材料、导读、摘要、课前预览或课程宣传页。
+`## 来源` 必须列出教材名、教材小节 ID 和小节标题，不能只写“来自教材”。
 
 内容必须绑定 target_section.title、target_section.description 和 target_section.key_knowledge_points。
 `## 步骤讲解` 必须包含 Markdown 表格或 fenced code block。
@@ -790,15 +792,18 @@ def _markdown_input(state: dict[str, Any], outline: dict, section: dict) -> str:
         "不要只根据章节标题写摘要式内容，也不要脱离教材正文自行补充事实。\n\n"
         "字段约定：\n"
         "- section_id: 小节ID字符串 (必须等于输入中的 target_section.section_id)\n"
-        "- markdown: 完整的教学文档正文 (支持标准 Markdown 语法，使用各级标题建立教学结构)\n"
-        "- video_briefs: 数组。每个小节建议规划 1-2 个重难点视频或拓展视频。每个元素为包含 video_id (BV...-video 或 拼写符合 [A-Za-z0-9_.-]+)、title (说明想要讲解的概念) 的字典。\n"
-        '- animation_briefs: 数组。规划 1-2 个核心逻辑交互式动效。每个元素为包含 animation_id、title (动效演示主题，如"单链表反转") 的字典。\n\n'
+        "- source_references: 数组。每条必须来自 textbook_evidence_pack.sections 或 target_section.source_* 字段，包含教材 ID、小节 ID、标题和证据摘要。\n"
+        "- markdown: 完整教学文档正文，不是预习材料、导读、摘要、课前预览或课程宣传页；必须包含教材来源引用。\n"
+        "- video_briefs: 数组。每个元素必须包含 video_id、title、target_markdown_heading、target_paragraph_summary、search_terms、purpose。target_paragraph_summary 必须说明视频服务哪一段正文，search_terms 至少 3 个且来自教材正文、目标小节或正文段落。\n"
+        "- animation_briefs: 数组。每个元素必须包含 animation_id、title、target_markdown_heading、target_paragraph_summary、concept、simulation_type、visual_elements、visual_model、timeline、layout、motion、interaction、success_check、placement_hint。\n"
+        "- animation_briefs 是 HTML 动画智能体的完整施工图。visual_model.entities 必须列出真实可视对象，visual_model.relations 必须列出对象关系，timeline 必须列出分步展示动作；链表等数据结构必须规划成结构模拟，不得规划成文字说明动画。\n\n"
         "教学内容必备章节格式：\n"
         "## 学习目标\n(写出明确的学习与能力目标，建议使用有序列表)\n\n"
         "## 核心概念\n(讲解核心概念，配有通俗的比喻或表格说明)\n\n"
         "## 步骤讲解\n(详细的推演或实现步骤。必须包含 Markdown 表格或 fenced code block 作为核心教学支架)\n\n"
         "## 练习任务\n(为了实现学习目标，设计的一个独立实践任务。提示：请在此章节正文开头前放置视频/动画占位符)\n\n"
         "## 检查标准\n(提供自测和交付验收单，必须提供至少 4 条 `- [ ]` 的清单格式)\n\n"
+        "## 来源\n(列出教材名、教材小节 ID 和小节标题)\n\n"
         "关于占位符要求：\n"
         "你必须在正文适当的位置写入视频占位符 `<!-- video:id=xxx -->` 引导学生观看；"
         "并在练习任务前写入交互动效占位符 `<!-- animation:id=yyy -->` 引导实践。"
@@ -827,15 +832,18 @@ def _markdown_input(state: dict[str, Any], outline: dict, section: dict) -> str:
         "不要只根据章节标题写摘要式内容，也不要脱离教材正文自行补充事实。\n\n"
         "字段约定：\n"
         "- section_id: 小节ID字符串 (必须等于输入中的 target_section.section_id)\n"
-        "- markdown: 完整的教学文档正文 (支持标准 Markdown 语法，使用各级标题建立教学结构)\n"
-        "- video_briefs: 数组。每个小节建议规划 1-2 个重难点视频或拓展视频。每个元素为包含 video_id (BV...-video 或 拼写符合 [A-Za-z0-9_.-]+)、title (说明想要讲解的概念) 的字典。\n"
-        '- animation_briefs: 数组。规划 1-2 个核心逻辑交互式动效。每个元素为包含 animation_id、title (动效演示主题，如"单链表反转") 的字典。\n\n'
+        "- source_references: 数组。每条必须来自 textbook_evidence_pack.sections 或 target_section.source_* 字段，包含教材 ID、小节 ID、标题和证据摘要。\n"
+        "- markdown: 完整教学文档正文，不是预习材料、导读、摘要、课前预览或课程宣传页；必须包含教材来源引用。\n"
+        "- video_briefs: 数组。每个元素必须包含 video_id、title、target_markdown_heading、target_paragraph_summary、search_terms、purpose。target_paragraph_summary 必须说明视频服务哪一段正文，search_terms 至少 3 个且来自教材正文、目标小节或正文段落。\n"
+        "- animation_briefs: 数组。每个元素必须包含 animation_id、title、target_markdown_heading、target_paragraph_summary、concept、simulation_type、visual_elements、visual_model、timeline、layout、motion、interaction、success_check、placement_hint。\n"
+        "- animation_briefs 是 HTML 动画智能体的完整施工图。visual_model.entities 必须列出真实可视对象，visual_model.relations 必须列出对象关系，timeline 必须列出分步展示动作；链表等数据结构必须规划成结构模拟，不得规划成文字说明动画。\n\n"
         "教学内容必备章节格式：\n"
         "## 学习目标\n(写出明确的学习与能力目标，建议使用有序列表)\n\n"
         "## 核心概念\n(讲解核心概念，配有通俗的比喻或表格说明)\n\n"
         "## 步骤讲解\n(详细的推演或实现步骤。必须包含 Markdown 表格或 fenced code block 作为核心教学支架)\n\n"
         "## 练习任务\n(为了实现学习目标，设计的一个独立实践任务。提示：请在此章节正文开头前放置视频/动画占位符)\n\n"
         "## 检查标准\n(提供自测和交付验收单，必须提供至少 4 条 `- [ ]` 的清单格式)\n\n"
+        "## 来源\n(列出教材名、教材小节 ID 和小节标题)\n\n"
         "关于占位符要求：\n"
         "你必须在正文适当的位置写入视频占位符 `<!-- video:id=xxx -->` 引导学生观看；"
         "并在练习任务前写入交互动效占位符 `<!-- animation:id=yyy -->` 引导实践。"

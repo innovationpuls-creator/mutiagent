@@ -161,6 +161,83 @@ def _deterministic_animation_html(
     )
 
 
+def _deterministic_linked_list_animation_html(
+    animation_id: str,
+    title: str,
+    concept: str,
+) -> str:
+    clean_title = _clean_text(title) or "单链表节点指针串联动画"
+    clean_concept = _clean_text(concept) or "单链表节点通过 next 指针依次串联。"
+    return (
+        '<!doctype html><html><head><meta charset="utf-8"></head><body>'
+        '<section class="section-animation">'
+        "<style>"
+        ":root{--space-sm:8px;--space-md:16px;--space-lg:24px;"
+        "--surface:oklch(96% 0.02 92);--panel:oklch(100% 0 0 / 0.9);"
+        "--text:oklch(28% 0.04 245);--muted:oklch(48% 0.03 245);"
+        "--accent:oklch(64% 0.13 238);--line:oklch(62% 0.11 238);"
+        "--shadow-sm:0 2px 4px oklch(0% 0 0 / 0.04),0 12px 28px oklch(20% 0.03 240 / 0.08);}"
+        "@media (prefers-color-scheme: dark){:root{--surface:oklch(16% 0.01 240);"
+        "--panel:oklch(22% 0.015 240 / 0.9);--text:oklch(92% 0.01 240);"
+        "--muted:oklch(68% 0.02 240);--accent:oklch(72% 0.12 238);"
+        "--line:oklch(74% 0.1 238);--shadow-sm:0 2px 4px oklch(0% 0 0 / 0.25),0 14px 30px oklch(0% 0 0 / 0.38);}}"
+        ".section-animation{font-family:'LXGW WenKai',serif;background:var(--surface);"
+        "color:var(--text);padding:var(--space-lg);border-radius:16px;"
+        "box-shadow:var(--shadow-sm);overflow:hidden;}"
+        ".animation-title{font-size:20px;font-weight:500;margin:0 0 var(--space-sm);}"
+        ".animation-context{color:var(--muted);line-height:1.7;margin-bottom:var(--space-md);}"
+        ".linked-list-stage{width:100%;min-height:260px;}"
+        ".node-card{fill:var(--panel);stroke:var(--line);stroke-width:2;}"
+        ".field-divider{stroke:var(--line);stroke-width:1.5;}"
+        ".pointer-line{stroke:var(--accent);stroke-width:3;fill:none;marker-end:url(#arrow);"
+        "opacity:0;transform:translateX(-10px);animation:show-pointer 1s ease forwards;}"
+        ".pointer-line:nth-of-type(2){animation-delay:.35s}.pointer-line:nth-of-type(3){animation-delay:.7s}"
+        ".node-group{opacity:0;transform:translateY(10px);animation:show-node .8s ease forwards;}"
+        ".node-group:nth-of-type(2){animation-delay:.2s}.node-group:nth-of-type(3){animation-delay:.45s}"
+        ".step-controls{display:flex;gap:var(--space-sm);flex-wrap:wrap;margin-top:var(--space-md);}"
+        ".step-controls button{border:1px solid var(--line);background:var(--panel);"
+        "color:var(--text);border-radius:10px;padding:var(--space-sm) var(--space-md);"
+        "font-family:inherit;cursor:pointer;transition:transform .25s ease,opacity .25s ease;}"
+        ".step-controls button:hover{transform:translateY(-1px);}"
+        "@keyframes show-node{to{opacity:1;transform:translateY(0)}}"
+        "@keyframes show-pointer{to{opacity:1;transform:translateX(0)}}"
+        "@media (prefers-reduced-motion: reduce){.section-animation *{animation:none !important;"
+        "transition:none !important;opacity: 1 !important;transform: none !important;}}"
+        "</style>"
+        f'<h3 class="animation-title">{html.escape(clean_title)}</h3>'
+        f'<div class="animation-context">{html.escape(clean_concept)} 观察 head 如何指向第一个节点，节点的 next 字段如何串联到 None。</div>'
+        f'<svg class="linked-list-stage" data-timeline="linked-list-{html.escape(animation_id)}" viewBox="0 0 760 260" role="img" aria-label="单链表节点与 next 指针模拟">'
+        '<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">'
+        '<path d="M0,0 L0,6 L9,3 z" fill="oklch(64% 0.13 238)"></path></marker></defs>'
+        '<g data-entity-id="head" class="node-group" data-step="1">'
+        '<text x="35" y="118" fill="currentColor">head</text>'
+        '<circle cx="90" cy="112" r="8" fill="oklch(64% 0.13 238)"></circle></g>'
+        '<g data-entity-id="node_1" class="node-group" data-step="2">'
+        '<rect class="node-card" x="170" y="72" width="150" height="82" rx="10"></rect>'
+        '<line class="field-divider" x1="245" y1="72" x2="245" y2="154"></line>'
+        '<text x="192" y="105" fill="currentColor">data</text><text x="265" y="105" fill="currentColor">next</text>'
+        '<text x="205" y="136" fill="currentColor">A</text></g>'
+        '<g data-entity-id="node_2" class="node-group" data-step="3">'
+        '<rect class="node-card" x="420" y="72" width="150" height="82" rx="10"></rect>'
+        '<line class="field-divider" x1="495" y1="72" x2="495" y2="154"></line>'
+        '<text x="442" y="105" fill="currentColor">data</text><text x="515" y="105" fill="currentColor">next</text>'
+        '<text x="455" y="136" fill="currentColor">B</text></g>'
+        '<g data-entity-id="none" class="node-group" data-step="4">'
+        '<text x="650" y="118" fill="currentColor">None</text></g>'
+        '<line class="pointer-line" data-relation-from="head" data-relation-to="node_1" x1="98" y1="112" x2="165" y2="112"></line>'
+        '<line class="pointer-line" data-relation-from="node_1.next" data-relation-to="node_2" x1="320" y1="112" x2="415" y2="112"></line>'
+        '<line class="pointer-line" data-relation-from="node_2.next" data-relation-to="none" x1="570" y1="112" x2="640" y2="112"></line>'
+        "</svg>"
+        '<div class="step-controls">'
+        '<button data-step="1">1 head 定位</button>'
+        '<button data-step="2">2 节点 A</button>'
+        '<button data-step="3">3 next 串联</button>'
+        '<button data-step="4">4 None 终点</button>'
+        "</div>"
+        "</section></body></html>"
+    )
+
+
 def _deterministic_animation_data(
     animation_briefs: object, section: dict
 ) -> list[dict]:
@@ -180,18 +257,24 @@ def _deterministic_animation_data(
         )
         concept = _clean_text(brief.get("concept")) or f"展示{title}的关键步骤。"
         visual_elements = _text_items(brief.get("visual_elements"))
+        if _clean_text(brief.get("simulation_type")) == "data_structure_linked_list":
+            html_text = _deterministic_linked_list_animation_html(
+                animation_id,
+                title,
+                concept,
+            )
+        else:
+            html_text = __import__(
+                "app.orchestration.agents.course_resources",
+                fromlist=["_deterministic_animation_html"],
+            )._deterministic_animation_html(
+                animation_id, title, concept, visual_elements
+            )
         animations.append(
             {
                 "animation_id": animation_id,
                 "title": title,
-                "html": (
-                    __import__(
-                        "app.orchestration.agents.course_resources",
-                        fromlist=["_deterministic_animation_html"],
-                    )._deterministic_animation_html(
-                        animation_id, title, concept, visual_elements
-                    )
-                ),
+                "html": html_text,
             }
         )
     return animations
@@ -354,9 +437,15 @@ def _animation_input(state: OrchestrationState, outline: dict, section: dict) ->
         if isinstance(animation_briefs, list)
         else [],
     }
+    instruction = (
+        "请为输入小节的 animation_briefs 生成可嵌入 HTML 动画片段。\n"
+        "你必须实现 animation_briefs 中的 visual_model.entities、"
+        "visual_model.relations 和 timeline。\n"
+        "禁止做成文字卡片轮播、PPT 式说明、只有中文解释段落的动画。\n"
+        "链表必须画出 head、节点 data/next 字段、next 指针连线、None 终点和步骤状态。"
+    )
     raw_query = (
-        "请为输入小节的 animation_briefs 生成可嵌入 HTML 动画片段。\n\n"
-        f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
+        f"{instruction}\n\n输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )
     budget = apply_prompt_budget(
         raw_query,
@@ -367,10 +456,7 @@ def _animation_input(state: OrchestrationState, outline: dict, section: dict) ->
         ],
     )
     payload["prompt_budget_applied"] = budget.prompt_budget_applied
-    return (
-        "请为输入小节的 animation_briefs 生成可嵌入 HTML 动画片段。\n\n"
-        f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
-    )
+    return f"{instruction}\n\n输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
 
 
 def _animation_repair_input(
@@ -412,6 +498,9 @@ def _animation_repair_input(
         "必须包含中文 animation-context；颜色只能使用 OKLCH 或 CSS 变量，禁止 HEX/RGB/HSL；"
         "可见性兜底必须包含 opacity: 1 !important 和 transform: none !important；"
         "动效只能改变 transform 与 opacity，并提供 prefers-reduced-motion 降级。\n\n"
+        "你必须实现 animation_briefs 中的 visual_model.entities、visual_model.relations 和 timeline。"
+        "禁止做成文字卡片轮播、PPT 式说明、只有中文解释段落的动画。"
+        "链表必须画出 head、节点 data/next 字段、next 指针连线、None 终点和步骤状态。\n\n"
         f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )
 

@@ -109,6 +109,9 @@ def _markdown_quality_issue(
     text = _clean_text(markdown)
     if any(marker in text for marker in _LOW_QUALITY_MARKERS):
         return "Markdown 含旧兜底内容。"
+    preview_markers = ("预习", "导读", "课前预览", "学习前准备", "先浏览")
+    if any(marker in text for marker in preview_markers):
+        return "Markdown 必须是教学文档，不得写成预习或导读材料。"
     required_headings = (
         "## 学习目标",
         "## 核心概念",

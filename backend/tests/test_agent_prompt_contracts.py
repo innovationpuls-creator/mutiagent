@@ -4,6 +4,7 @@ from app.orchestration.agents.prompts import (
     COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT,
     LEARNING_PATH_AGENT_SYSTEM_PROMPT,
     LEARNING_PATH_INTAKE_AGENT_SYSTEM_PROMPT,
+    SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT,
     SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT,
     SUPERVISOR_BASE_PROMPT,
 )
@@ -92,6 +93,14 @@ def test_course_knowledge_prompt_requires_bound_textbook_sections() -> None:
     )
 
 
+def test_course_knowledge_prompt_requires_chinese_student_facing_outline() -> None:
+    _assert_contains(COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT, "学生端章节标题必须使用中文")
+    _assert_contains(
+        COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT,
+        "英文教材标题不得原样作为 sections[].title",
+    )
+
+
 def test_section_markdown_prompt_requires_textbook_evidence_pack() -> None:
     _assert_contains(
         SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT,
@@ -105,3 +114,43 @@ def test_section_markdown_prompt_requires_textbook_evidence_pack() -> None:
         SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT,
         "不得脱离 evidence_text 自行补充事实",
     )
+
+
+def test_section_markdown_prompt_is_teaching_document_not_preview() -> None:
+    _assert_contains(
+        SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT,
+        "教学文档 + 教材来源引用",
+    )
+    _assert_contains(SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT, "不是预习材料")
+    _assert_contains(SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT, "source_references")
+    _assert_contains(SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT, "target_paragraph_summary")
+    _assert_contains(SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT, "visual_model")
+    _assert_contains(SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT, "timeline")
+    _assert_contains(SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT, "success_check")
+    prompt_without_allowed_phrase = SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT.replace(
+        "不是预习材料",
+        "",
+    )
+    assert "预习" not in prompt_without_allowed_phrase
+
+
+def test_html_animation_prompt_requires_simulation_not_text_slides() -> None:
+    _assert_contains(
+        SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT,
+        "只负责把 animation_briefs 写成可运行 HTML",
+    )
+    _assert_contains(SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT, "不得重新解释教学含义")
+    _assert_contains(
+        SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT,
+        "visual_model.entities",
+    )
+    _assert_contains(
+        SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT,
+        "visual_model.relations",
+    )
+    _assert_contains(SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT, "timeline")
+    _assert_contains(SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT, "禁止做成文字卡片轮播")
+    _assert_contains(SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT, "链表")
+    _assert_contains(SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT, "head")
+    _assert_contains(SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT, "next")
+    _assert_contains(SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT, "None")

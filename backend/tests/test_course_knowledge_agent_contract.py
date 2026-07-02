@@ -2505,6 +2505,85 @@ def test_db_outline_translation_uses_section_content_for_teaching_plan(
     assert any("工程落地边界" in point for point in child["key_knowledge_points"])
 
 
+def test_db_outline_translation_outputs_chinese_student_titles_for_english_outline(
+    tmp_path: Path,
+) -> None:
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "english-outline-chinese-title")
+    )
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(enabled_source())
+        row = published_textbook(
+            textbook_id=SOURCE_TEXTBOOK_ID,
+            title=SOURCE_TEXTBOOK_TITLE,
+        )
+        row.language = "en"
+        row.translated_language = "zh"
+        row.outline = {
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "Linked Lists",
+                    "sections": [
+                        {"section_id": "1.1", "title": "Node and Pointer Structure"},
+                        {"section_id": "1.2", "title": "Insertion and Deletion"},
+                    ],
+                }
+            ]
+        }
+        session.add(row)
+        session.add(
+            section(
+                textbook_id=SOURCE_TEXTBOOK_ID,
+                section_content_id="linked-list-1-1",
+                section_id="1.1",
+                title="Node and Pointer Structure",
+                content_original=(
+                    "A linked list stores elements in nodes. Each node contains "
+                    "data and a pointer to the next node."
+                ),
+                content_zh="链表把元素存储在节点中。每个节点包含数据域和指向下一个节点的指针。",
+                order_index=1,
+            )
+        )
+        session.add(
+            section(
+                textbook_id=SOURCE_TEXTBOOK_ID,
+                section_content_id="linked-list-1-2",
+                section_id="1.2",
+                title="Insertion and Deletion",
+                content_original=(
+                    "Insertion and deletion update links between neighboring nodes."
+                ),
+                content_zh="插入和删除操作会更新相邻节点之间的链接关系。",
+                order_index=2,
+            )
+        )
+        session.commit()
+
+        outline = _try_db_outline_translation(
+            session,
+            {
+                "course_node_id": "year_3_course_1",
+                "course_or_chapter_theme": "数据结构",
+                "grade_id": "year_3",
+                "source_textbook_id": SOURCE_TEXTBOOK_ID,
+                "source_textbook_title": SOURCE_TEXTBOOK_TITLE,
+                "source_outline_section_ids": ["1.1", "1.2"],
+            },
+            "year_3",
+        )
+
+    assert outline is not None
+    titles = [item["title"] for item in outline["sections"]]
+    assert "Linked Lists" not in titles
+    assert "Node and Pointer Structure" not in titles
+    assert any("链表" in title for title in titles)
+    assert all(any("\u4e00" <= char <= "\u9fff" for char in title) for title in titles)
+
+
 def test_db_outline_translation_supports_flat_sections_with_bound_ids(
     tmp_path: Path,
 ) -> None:

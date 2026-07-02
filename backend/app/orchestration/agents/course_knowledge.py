@@ -1137,6 +1137,31 @@ def _knowledge_points_from_source_content(title: str, content_text: str) -> list
     return [f"{title}重点"]
 
 
+def _contains_chinese_text(value: object) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in str(value or ""))
+
+
+def _student_facing_chinese_title(
+    raw_title: str,
+    content_text: str,
+    fallback: str,
+) -> str:
+    clean_title = _clean_text(raw_title)
+    if _contains_chinese_text(clean_title):
+        return clean_title
+
+    text = _clean_text(content_text)
+    if "链表" in text and ("节点" in text or "指针" in text):
+        if "插入" in text or "删除" in text:
+            return "链表的插入与删除"
+        return "链表的节点与指针结构"
+    if "向量" in text or "嵌入" in text:
+        return "向量表示与语义检索"
+    if "复杂度" in text:
+        return "复杂度分析"
+    return fallback
+
+
 def _chapter_description_from_child_sections(
     chapter_title: str,
     child_sections: list[dict],
@@ -1328,20 +1353,47 @@ def _try_db_outline_translation(
         if not ch_source_ids:
             ch_source_ids = [ch_sec_id]
             ch_source_titles = [ch_title]
+        chapter_content_text = "。".join(
+            _translation_content_text(content_records.get(section_id))
+            for section_id in ch_source_ids
+        )
+        chapter_topic = _student_facing_chinese_title(
+            str(ch_title),
+            chapter_content_text,
+            f"教材第 {ch_order_index} 章核心内容",
+        )
+        chapter_display_title = (
+            chapter_topic
+            if chapter_topic.startswith("第")
+            else f"第{ch_order_index}章：{chapter_topic}"
+        )
+        ch_display_sections = [
+            {
+                **section,
+                "title": _student_facing_chinese_title(
+                    str(section.get("title") or ""),
+                    _translation_content_text(
+                        content_records.get(_clean_text(section.get("section_id")))
+                    ),
+                    f"{_clean_text(section.get('section_id'))} 教材小节",
+                ),
+            }
+            for section in ch_sections
+        ]
 
         chapter_item = {
             "section_id": ch_sec_id,
             "parent_section_id": None,
             "depth": 1,
-            "title": ch_title,
+            "title": chapter_display_title,
             "order_index": ch_order_index,
             "description": _chapter_description_from_child_sections(
-                ch_title,
-                ch_sections,
+                chapter_display_title,
+                ch_display_sections,
             ),
             "key_knowledge_points": _chapter_points_from_child_sections(
-                ch_title,
-                ch_sections,
+                chapter_display_title,
+                ch_display_sections,
             ),
             "source_textbook_id": textbook.textbook_id,
             "source_textbook_title": textbook.title,
@@ -1362,19 +1414,24 @@ def _try_db_outline_translation(
             content_text = _translation_content_text(content_record)
             content_chars = len(content_text)
             total_chars += content_chars
+            display_sec_title = _student_facing_chinese_title(
+                sec_title,
+                content_text,
+                f"{sec_id} 教材小节",
+            )
 
             section_item = {
                 "section_id": sec_id,
                 "parent_section_id": ch_sec_id,
                 "depth": 2,
-                "title": sec_title,
+                "title": display_sec_title,
                 "order_index": idx + 1,
                 "description": _description_from_source_content(
-                    sec_title,
+                    display_sec_title,
                     content_text,
                 ),
                 "key_knowledge_points": _knowledge_points_from_source_content(
-                    sec_title,
+                    display_sec_title,
                     content_text,
                 ),
                 "source_textbook_id": textbook.textbook_id,

@@ -415,6 +415,14 @@ def test_markdown_input_includes_textbook_evidence_pack(tmp_path) -> None:
     assert '"source_content_chars"' in payload
     assert "功能边界正文来自知识库" in payload
     assert "验收标准正文来自知识库" in payload
+    assert "source_references" in payload
+    assert "target_paragraph_summary" in payload
+    assert "visual_model.entities" in payload
+    assert "visual_model.relations" in payload
+    assert "timeline" in payload
+    assert "success_check" in payload
+    assert "完整施工图" in payload
+    assert "文字说明动画" in payload
 
 
 def test_markdown_input_requires_section_source_binding() -> None:
@@ -6684,6 +6692,76 @@ def _linked_list_animation_brief() -> dict:
     }
 
 
+def test_markdown_quality_rejects_preview_or_prep_document_wording() -> None:
+    markdown = _complete_section_markdown("1.1", "单链表").replace(
+        "## 学习目标",
+        "## 学习目标\n本节是课前预览材料，帮助你先浏览链表内容。\n\n## 学习目标",
+        1,
+    )
+
+    issue = _markdown_quality_issue(
+        markdown,
+        {
+            "section_id": "1.1",
+            "title": "单链表",
+            "description": "讲解节点通过指针串联的线性结构。",
+            "key_knowledge_points": ["节点", "指针", "None"],
+            "source_textbook_id": "textbook-data-structures",
+            "source_textbook_title": "数据结构教程",
+            "source_section_ids": ["2.3"],
+            "source_section_titles": ["单链表"],
+        },
+        _valid_markdown_video_briefs("单链表"),
+        _valid_markdown_animation_briefs("单链表"),
+    )
+
+    assert issue == "Markdown 必须是教学文档，不得写成预习或导读材料。"
+
+
+def test_animation_input_tells_agent_to_implement_visual_model_not_explain_text() -> (
+    None
+):
+    outline = _outline()
+    outline["sections"][1].update(
+        {
+            "source_textbook_id": "textbook-data-structures",
+            "source_textbook_title": "数据结构教程",
+            "source_section_ids": ["2.3"],
+            "source_section_titles": ["单链表"],
+            "source_content_chars": 842,
+        }
+    )
+    outline["section_markdowns"] = {
+        "1.1": {
+            "section_id": "1.1",
+            "parent_section_id": "1",
+            "title": "单链表",
+            "markdown": _complete_section_markdown("1.1", "单链表"),
+            "source_references": [
+                {
+                    "textbook_id": "textbook-data-structures",
+                    "textbook_title": "数据结构教程",
+                    "section_id": "2.3",
+                    "section_title": "单链表",
+                    "evidence_summary": "依据链表教材内容生成。",
+                    "content_char_count": 842,
+                }
+            ],
+            "video_briefs": _valid_markdown_video_briefs("单链表"),
+            "animation_briefs": [_linked_list_animation_brief()],
+        }
+    }
+    section = _section_by_id(outline, "1.1")
+    assert section is not None
+
+    query = _animation_input({"profile": _profile()}, outline, section)
+
+    assert "visual_model.entities" in query
+    assert "visual_model.relations" in query
+    assert "timeline" in query
+    assert "禁止做成文字卡片轮播" in query
+
+
 def test_video_and_animation_inputs_do_not_receive_full_textbook_evidence() -> None:
     outline = _outline()
     outline["sections"][1].update(
@@ -6849,6 +6927,32 @@ def test_animation_quality_accepts_linked_list_simulation_html() -> None:
     )
 
     assert issue is None
+
+
+def test_linked_list_deterministic_animation_fallback_is_real_simulation() -> None:
+    from app.orchestration.agents.course_resources.animation import (
+        _deterministic_animation_data,
+    )
+
+    animations = _deterministic_animation_data(
+        [_linked_list_animation_brief()],
+        {"title": "单链表"},
+    )
+
+    assert animations
+    html = animations[0]["html"]
+    assert 'data-entity-id="head"' in html
+    assert 'data-entity-id="node_1"' in html
+    assert 'data-relation-from="node_1.next"' in html
+    assert "None" in html
+    assert (
+        _normalized_animation_quality_issue(
+            animations,
+            [_linked_list_animation_brief()],
+            {"title": "单链表"},
+        )
+        is None
+    )
 
 
 def test_compose_section_content_downgrades_missing_video_and_animation() -> None:
