@@ -15,20 +15,27 @@ def test_llm_factories_split_worker_and_thinking_modes(monkeypatch) -> None:
     llm_module._supervisor_llm = None
     llm_module._worker_llm = None
     llm_module._thinking_worker_llm = None
+    llm_module._translation_llm = None
 
     supervisor = llm_module.get_supervisor_llm()
     worker = llm_module.get_worker_llm()
     thinking_worker = llm_module.get_thinking_worker_llm()
+    translation = llm_module.get_translation_llm()
 
     assert supervisor.kwargs["timeout"] == 30
     assert worker.kwargs["timeout"] == 180
     assert thinking_worker.kwargs["timeout"] == 180
+    assert translation.kwargs["timeout"] == 45
     assert supervisor.kwargs["max_tokens"] is None
     assert worker.kwargs["max_tokens"] == 8192
     assert thinking_worker.kwargs["max_tokens"] == 8192
+    assert translation.kwargs["max_tokens"] == 4096
+    assert translation.kwargs["streaming"] is False
+    assert translation.kwargs["max_retries"] == 0
     assert supervisor.kwargs["extra_body"]["enable_thinking"] is False
     assert worker.kwargs["extra_body"]["enable_thinking"] is False
     assert thinking_worker.kwargs["extra_body"]["enable_thinking"] is True
+    assert translation.kwargs["extra_body"]["enable_thinking"] is False
 
 
 def test_llm_factories_cache_instances(monkeypatch) -> None:
@@ -45,6 +52,7 @@ def test_llm_factories_cache_instances(monkeypatch) -> None:
     llm_module._supervisor_llm = None
     llm_module._worker_llm = None
     llm_module._thinking_worker_llm = None
+    llm_module._translation_llm = None
 
     first = llm_module.get_thinking_worker_llm()
     second = llm_module.get_thinking_worker_llm()

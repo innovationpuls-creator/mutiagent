@@ -14,7 +14,9 @@ import type {
 	KnowledgeGapAdmin,
 	KnowledgeSource,
 	Textbook,
+	TextbookSectionContent,
 } from "../../api/knowledgeBase";
+import { AdminTextbookInspector } from "./AdminTextbookInspector";
 
 export interface AdminKnowledgeBaseAgentEntry {
 	id: string;
@@ -26,6 +28,15 @@ export interface AdminKnowledgeBaseAgentEntry {
 	sourceResults: KnowledgeBaseSourceResult[];
 }
 
+export interface AdminKnowledgeBaseAgentStreamStep {
+	id: string;
+	event: string;
+	message: string;
+	timestamp: string;
+	meta: string;
+	status: "running" | "success" | "error";
+}
+
 interface AdminKnowledgeBaseAgentProps {
 	isBusy: boolean;
 	sources: KnowledgeSource[];
@@ -34,6 +45,7 @@ interface AdminKnowledgeBaseAgentProps {
 	selectedTextbookId: string;
 	selectedTextbook: Textbook | null;
 	entries: AdminKnowledgeBaseAgentEntry[];
+	streamSteps: AdminKnowledgeBaseAgentStreamStep[];
 	lastResponse: KnowledgeBaseAgentResponse | null;
 	onSubmitMessage: (
 		message: string,
@@ -42,10 +54,12 @@ interface AdminKnowledgeBaseAgentProps {
 	onConfirmSourceResult: (
 		sourceResult: KnowledgeBaseSourceResult,
 	) => Promise<void>;
+	onOrganizeSelected: () => Promise<void>;
 	onPublishSelected: () => Promise<void>;
 	onUnpublishSelected: () => Promise<void>;
 	onDeleteSelected: () => Promise<void>;
 	onEditSelectedOutline: () => void;
+	selectedTextbookSections: TextbookSectionContent[];
 }
 
 function formatTime(value: string) {
@@ -54,6 +68,7 @@ function formatTime(value: string) {
 	return new Intl.DateTimeFormat("zh-CN", {
 		hour: "2-digit",
 		minute: "2-digit",
+		second: "2-digit",
 	}).format(date);
 }
 
@@ -90,6 +105,17 @@ function formatSourceCheckStatus(value: string) {
 	}
 }
 
+function formatSourceType(value: string) {
+	switch (value) {
+		case "pdf":
+			return "PDF";
+		case "html":
+			return "HTML open textbook";
+		default:
+			return value;
+	}
+}
+
 function formatGapStatus(value: string) {
 	switch (value) {
 		case "open":
@@ -107,45 +133,6 @@ function formatGapStatus(value: string) {
 	}
 }
 
-function formatIngestionStatus(value: string) {
-	switch (value) {
-		case "not_started":
-			return "待解析";
-		case "processing":
-			return "解析中";
-		case "failed":
-			return "解析失败";
-		case "ready_for_outline_review":
-			return "待检查大纲";
-		case "completed":
-			return "已完成";
-		default:
-			return "待解析";
-	}
-}
-
-function formatOutlineStatus(value: string) {
-	return value === "approved" ? "已确认" : "待确认";
-}
-
-function formatOutlineSummary(outline: unknown) {
-	if (!outline || typeof outline !== "object") return "暂无大纲";
-	const chapters = (outline as { chapters?: unknown }).chapters;
-	if (Array.isArray(chapters)) {
-		const sectionCount = chapters.reduce((total, chapter) => {
-			if (!chapter || typeof chapter !== "object") return total;
-			const sections = (chapter as { sections?: unknown }).sections;
-			return total + (Array.isArray(sections) ? sections.length : 0);
-		}, 0);
-		return `${chapters.length} 章 · ${sectionCount} 节`;
-	}
-	const sections = (outline as { sections?: unknown }).sections;
-	if (Array.isArray(sections)) {
-		return `${sections.length} 节`;
-	}
-	return "暂无大纲";
-}
-
 export function AdminKnowledgeBaseAgent({
 	isBusy,
 	sources,
@@ -154,17 +141,23 @@ export function AdminKnowledgeBaseAgent({
 	selectedTextbookId,
 	selectedTextbook,
 	entries,
+	streamSteps,
 	lastResponse,
 	onSubmitMessage,
 	onSelectTextbook,
 	onConfirmSourceResult,
+	onOrganizeSelected,
 	onPublishSelected,
 	onUnpublishSelected,
 	onDeleteSelected,
 	onEditSelectedOutline,
+	selectedTextbookSections,
 }: AdminKnowledgeBaseAgentProps) {
 	const [draft, setDraft] = useState("");
+	const [isResourcesExpanded, setIsResourcesExpanded] = useState(false);
 	const threadRef = useRef<HTMLDivElement>(null);
+	const lastTextbookHits = lastResponse?.textbook_hits ?? [];
+	const lastGapHits = lastResponse?.gap_hits ?? [];
 
 	useEffect(() => {
 		const thread = threadRef.current;
@@ -201,107 +194,94 @@ export function AdminKnowledgeBaseAgent({
 						<strong>{result.title}</strong>
 						<span>{result.is_recommended ? "推荐解析" : "可解析"}</span>
 					</div>
+					<div className="admin-kb-source-meta">
+						<span>原始语言：{result.language || "未知"}</span>
+						<span>来源类型：{formatSourceType(result.source_type)}</span>
+					</div>
+					<a
+						className="admin-kb-source-url"
+						href={result.source_url}
+						target="_blank"
+						rel="noreferrer"
+					>
+						{result.source_url}
+					</a>
 					<p>
 						{result.topic_summary || result.description || "可作为教材来源"}
 					</p>
-					<button
-						type="button"
-						className="admin-primary-action"
-						disabled={isBusy}
-						onClick={() => void onConfirmSourceResult(result)}
-						aria-label={`确认解析 ${result.title}`}
-					>
-						<span>确认解析</span>
-					</button>
+					{result.parseability_reason ? (
+						<p className="admin-kb-source-parseability">
+							{result.parseability_reason}
+						</p>
+					) : null}
+					{result.already_imported ? (
+						<button
+							type="button"
+							className="admin-secondary-action"
+							onClick={() =>
+								result.textbook_id && onSelectTextbook(result.textbook_id)
+							}
+							aria-label={`去查看已入库教材 ${result.title}`}
+						>
+							<span>已入库 (去查看)</span>
+						</button>
+					) : (
+						<button
+							type="button"
+							className="admin-primary-action"
+							disabled={isBusy}
+							onClick={() => void onConfirmSourceResult(result)}
+							aria-label={`确认解析 ${result.title}`}
+						>
+							<span>确认解析</span>
+						</button>
+					)}
 				</article>
 			))}
 		</div>
 	);
 
+	const renderStreamSteps = () => (
+		<section className="admin-kb-stream-panel" aria-label="实时反馈">
+			<div className="admin-kb-rail-head">
+				<div>
+					<p className="admin-kicker">stream</p>
+					<h3>实时反馈</h3>
+				</div>
+			</div>
+			<div className="admin-kb-stream-list">
+				{streamSteps.length > 0 ? (
+					streamSteps.map((step) => (
+						<article
+							className={`admin-kb-stream-step is-${step.status}`}
+							key={step.id}
+						>
+							<div className="admin-kb-stream-dot" aria-hidden="true" />
+							<div>
+								<div className="admin-kb-rail-title">
+									<strong>{step.message}</strong>
+									<time>{formatTime(step.timestamp)}</time>
+								</div>
+								{step.meta ? <small>{step.meta}</small> : null}
+							</div>
+						</article>
+					))
+				) : (
+					<p className="admin-kb-empty">发送消息后显示实时步骤。</p>
+				)}
+			</div>
+		</section>
+	);
+
 	return (
-		<section className="admin-kb-workbench" aria-label="管理员对话工作台">
-			<header className="admin-kb-workbench-header">
-				<div className="admin-kb-workbench-summary">
-					<p className="admin-kicker">admin / knowledge base</p>
-					<h2>管理员知识库 Agent 工作台</h2>
-				</div>
-				<div className="admin-kb-workbench-status">
-					<span>{sources.length} 个来源</span>
-					<span>{textbooks.length} 本教材</span>
-					<span>{gaps.length} 个待办</span>
-				</div>
-			</header>
-
-			<div className="admin-kb-workbench-grid">
-				<aside className="admin-kb-rail" aria-label="来源和待办">
-					<section className="admin-kb-rail-panel">
-						<div className="admin-kb-rail-head">
-							<div>
-								<p className="admin-kicker">sources</p>
-								<h3>来源状态</h3>
-							</div>
-						</div>
-						<div className="admin-kb-rail-list">
-							{sources.length > 0 ? (
-								sources.map((source) => (
-									<article
-										className="admin-kb-rail-card"
-										key={source.source_id}
-									>
-										<div className="admin-kb-rail-title">
-											<strong>{source.name}</strong>
-											<span>
-												{source.status === "enabled" ? "启用" : "停用"}
-											</span>
-										</div>
-										<small>
-											下载 {formatSourceCheckStatus(source.download_status)} ·
-											解析 {formatSourceCheckStatus(source.parse_status)} · 人工{" "}
-											{formatSourceCheckStatus(source.human_review_status)}
-										</small>
-									</article>
-								))
-							) : (
-								<p className="admin-kb-empty">无来源。</p>
-							)}
-						</div>
-					</section>
-
-					<section className="admin-kb-rail-panel">
-						<div className="admin-kb-rail-head">
-							<div>
-								<p className="admin-kicker">gaps</p>
-								<h3>未覆盖待办</h3>
-							</div>
-						</div>
-						<div className="admin-kb-rail-list">
-							{gaps.length > 0 ? (
-								gaps.slice(0, 6).map((gap) => (
-									<article className="admin-kb-rail-card" key={gap.gap_id}>
-										<div className="admin-kb-rail-title">
-											<strong>{gap.normalized_topic}</strong>
-											<span>{formatGapStatus(gap.status)}</span>
-										</div>
-										<p>{gap.student_goal_summaries[0] || "无摘要"}</p>
-										<small>
-											触发 {gap.trigger_count} 次 · 关注 {gap.follow_count} 人
-										</small>
-									</article>
-								))
-							) : (
-								<p className="admin-kb-empty">无待办。</p>
-							)}
-						</div>
-					</section>
-				</aside>
-
-				<section className="admin-kb-dialogue" aria-label="管理员对话">
-					<header className="admin-kb-dialogue-head">
-						<div>
-							<p className="admin-kicker">agent</p>
-							<h3>对话</h3>
-						</div>
-					</header>
+		<section className="admin-kb-workspace" aria-label="管理员对话工作台">
+			<div className="admin-kb-layout">
+				{/* 左侧：智能对话工作台 */}
+				<section className="admin-kb-left-panel" aria-label="对话工作台">
+					<div className="admin-kb-panel-header">
+						<h3>💬 AI 知识库助手</h3>
+						<p>通过对话导入教材、解析大纲或关联未覆盖的知识点</p>
+					</div>
 
 					<div
 						className="admin-kb-thread"
@@ -315,10 +295,10 @@ export function AdminKnowledgeBaseAgent({
 								className={`admin-kb-bubble ${entry.role === "user" ? "is-user" : "is-agent"}`}
 							>
 								<div className="admin-kb-bubble-meta">
-									<strong>{entry.role === "user" ? "管理员" : "agent"}</strong>
+									<strong>{entry.role === "user" ? "管理员" : "Agent"}</strong>
 									<time>{formatTime(entry.timestamp)}</time>
 								</div>
-								<p>{entry.content}</p>
+								<p className="admin-kb-bubble-content">{entry.content}</p>
 								{entry.role === "assistant" && entry.textbookHits.length > 0 ? (
 									<div className="admin-kb-hit-strip">
 										{entry.textbookHits.map((hit) => (
@@ -330,7 +310,7 @@ export function AdminKnowledgeBaseAgent({
 											>
 												<strong>{hit.title}</strong>
 												<span>
-													{formatStatus(hit.student_availability_status)} ·
+													{formatStatus(hit.student_availability_status)} ·{" "}
 													{hit.reason || hit.source_name}
 												</span>
 											</button>
@@ -342,22 +322,20 @@ export function AdminKnowledgeBaseAgent({
 									: null}
 							</article>
 						))}
+						{renderStreamSteps()}
 					</div>
 
 					<form className="admin-kb-composer" onSubmit={handleSubmit}>
-						<label
-							className="admin-kb-composer-label"
-							htmlFor="admin-kb-message"
-						>
-							<span>消息</span>
+						<label className="sr-only" htmlFor="admin-kb-message">
+							消息
 						</label>
 						<textarea
 							id="admin-kb-message"
 							value={draft}
 							onChange={(event) => setDraft(event.target.value)}
 							onKeyDown={handleKeyDown}
-							placeholder="直接说你的教材"
-							rows={4}
+							placeholder="直接说你的教材，或描述待对齐的内容..."
+							rows={3}
 						/>
 						<div className="admin-kb-composer-actions">
 							<button
@@ -370,140 +348,154 @@ export function AdminKnowledgeBaseAgent({
 							</button>
 						</div>
 					</form>
+
+					{/* 底部折叠式数据源与待办抽屉 */}
+					<div className="admin-kb-resources-drawer">
+						<button
+							type="button"
+							className={`admin-kb-drawer-toggle ${isResourcesExpanded ? "is-active" : ""}`}
+							onClick={() => setIsResourcesExpanded(!isResourcesExpanded)}
+							aria-expanded={isResourcesExpanded}
+						>
+							<span className="admin-kb-drawer-title">
+								📚 <span>来源状态</span>与<span>未覆盖待办</span>
+							</span>
+							<span className="admin-kb-drawer-count">
+								{sources.length} 来源 · {gaps.length} 待办
+							</span>
+							<span className="admin-kb-drawer-chevron">
+								{isResourcesExpanded ? "▲" : "▼"}
+							</span>
+						</button>
+						{isResourcesExpanded && (
+							<div className="admin-kb-drawer-content">
+								<div className="admin-kb-drawer-grid">
+									<section className="admin-kb-drawer-section">
+										<h4>数据源状态 ({sources.length})</h4>
+										<div className="admin-kb-drawer-list">
+											{sources.length > 0 ? (
+												sources.map((source) => (
+													<div
+														className="admin-kb-drawer-card"
+														key={source.source_id}
+													>
+														<div className="admin-kb-drawer-card-title">
+															<strong>{source.name}</strong>
+															<span
+																className={`status-pill is-${source.status}`}
+															>
+																{source.status === "enabled" ? "启用" : "停用"}
+															</span>
+														</div>
+														<small>
+															下载{" "}
+															{formatSourceCheckStatus(source.download_status)}{" "}
+															· 解析{" "}
+															{formatSourceCheckStatus(source.parse_status)} ·
+															人工{" "}
+															{formatSourceCheckStatus(
+																source.human_review_status,
+															)}
+														</small>
+													</div>
+												))
+											) : (
+												<p className="admin-kb-drawer-empty">无数据源</p>
+											)}
+										</div>
+									</section>
+
+									<section className="admin-kb-drawer-section">
+										<h4>未覆盖待办 ({gaps.length})</h4>
+										<div className="admin-kb-drawer-list">
+											{gaps.length > 0 ? (
+												gaps.slice(0, 6).map((gap) => (
+													<div
+														className="admin-kb-drawer-card"
+														key={gap.gap_id}
+													>
+														<div className="admin-kb-drawer-card-title">
+															<strong>{gap.normalized_topic}</strong>
+															<span className="status-pill">
+																{formatGapStatus(gap.status)}
+															</span>
+														</div>
+														<p>{gap.student_goal_summaries[0] || "无摘要"}</p>
+														<small>
+															触发 {gap.trigger_count} 次 · 关注{" "}
+															{gap.follow_count} 人
+														</small>
+													</div>
+												))
+											) : (
+												<p className="admin-kb-drawer-empty">无待办事项</p>
+											)}
+										</div>
+									</section>
+								</div>
+							</div>
+						)}
+					</div>
 				</section>
 
-				<aside className="admin-kb-inspector" aria-label="结果和教材详情">
-					<section className="admin-kb-rail-panel">
-						<div className="admin-kb-rail-head">
-							<div>
-								<p className="admin-kicker">matches</p>
-								<h3>本轮结果</h3>
-							</div>
-						</div>
-						<div className="admin-kb-rail-list">
-							{lastResponse ? (
-								<>
-									{lastResponse.textbook_hits.length > 0 ? (
-										lastResponse.textbook_hits.map((hit) => (
+				{/* 右侧：教材大纲与资源详情审查面板 */}
+				<section className="admin-kb-right-panel" aria-label="详情审查面板">
+					<div className="admin-kb-panel-header">
+						<h3>📖 教材与解析详情</h3>
+						<p>查看教材大纲与管理操作 (已录入 {textbooks.length} 本教材)</p>
+					</div>
+
+					<div className="admin-kb-inspector-content">
+						{/* 命中的匹配结果 */}
+						{lastResponse &&
+							(lastTextbookHits.length > 0 || lastGapHits.length > 0) && (
+								<div className="admin-kb-matches-section">
+									<h4>🎯 本轮智能匹配结果</h4>
+									<div className="admin-kb-rail-list">
+										{lastTextbookHits.map((hit) => (
 											<button
 												key={hit.textbook_id}
 												type="button"
 												className={`admin-kb-match ${hit.textbook_id === selectedTextbookId ? "is-active" : ""}`}
 												onClick={() => onSelectTextbook(hit.textbook_id)}
-												aria-label={`命中教材 ${hit.title}`}
+												aria-label={`选中教材 ${hit.title}`}
 											>
-												<div className="admin-kb-rail-title">
+												<div className="admin-kb-match-header">
 													<strong>{hit.title}</strong>
-													<span>
+													<span className="status-badge">
 														{formatStatus(hit.student_availability_status)}
 													</span>
 												</div>
 												<p>{hit.reason || hit.source_name}</p>
 											</button>
-										))
-									) : (
-										<p className="admin-kb-empty">无直接命中。</p>
-									)}
-									{lastResponse.gap_hits.length > 0 ? (
-										<div className="admin-kb-gap-block">
-											{lastResponse.gap_hits.map((gap) => (
-												<article
-													className="admin-kb-rail-card"
-													key={gap.gap_id}
-												>
-													<div className="admin-kb-rail-title">
-														<strong>{gap.normalized_topic}</strong>
-														<span>{formatGapStatus(gap.status)}</span>
-													</div>
-													<p>{gap.reason || "缺口命中"}</p>
-												</article>
-											))}
-										</div>
-									) : null}
-								</>
-							) : (
-								<p className="admin-kb-empty">无结果。</p>
-							)}
-						</div>
-					</section>
-
-					<section className="admin-kb-rail-panel">
-						<div className="admin-kb-rail-head">
-							<div>
-								<p className="admin-kicker">detail</p>
-								<h3>当前教材</h3>
-							</div>
-						</div>
-						{selectedTextbook ? (
-							<div className="admin-kb-detail">
-								<strong>{selectedTextbook.title}</strong>
-								<p>
-									{selectedTextbook.description ||
-										selectedTextbook.original_title ||
-										"暂无简介"}
-								</p>
-								<div className="admin-kb-detail-grid">
-									<span>
-										整理{" "}
-										{formatIngestionStatus(selectedTextbook.ingestion_status)}
-									</span>
-									<span>
-										大纲{" "}
-										{formatOutlineStatus(
-											selectedTextbook.outline_review_status,
-										)}
-									</span>
-									<span>
-										发布{" "}
-										{formatStatus(selectedTextbook.student_availability_status)}
-									</span>
-								</div>
-								<div className="admin-kb-detail-actions">
-									<button
-										type="button"
-										className="admin-primary-action"
-										disabled={isBusy}
-										onClick={() => void onPublishSelected()}
-									>
-										<span>发布当前教材</span>
-									</button>
-									<button
-										type="button"
-										className="admin-secondary-action"
-										disabled={isBusy}
-										onClick={() => void onUnpublishSelected()}
-									>
-										<span>下架</span>
-									</button>
-									<button
-										type="button"
-										className="admin-secondary-action"
-										disabled={isBusy}
-										onClick={onEditSelectedOutline}
-									>
-										<span>编辑大纲</span>
-									</button>
-									<button
-										type="button"
-										className="admin-danger-action"
-										disabled={isBusy}
-										onClick={() => void onDeleteSelected()}
-									>
-										<span>删除</span>
-									</button>
-								</div>
-								{selectedTextbook.outline && (
-									<div className="admin-kb-detail-list">
-										<p className="admin-kb-detail-list-label">大纲</p>
-										<p>{formatOutlineSummary(selectedTextbook.outline)}</p>
+										))}
+										{lastGapHits.map((gap) => (
+											<div className="admin-kb-match-gap-card" key={gap.gap_id}>
+												<div className="admin-kb-match-header">
+													<strong>{gap.normalized_topic}</strong>
+													<span className="status-badge">
+														{formatGapStatus(gap.status)}
+													</span>
+												</div>
+												<p>{gap.reason || "缺口匹配成功"}</p>
+											</div>
+										))}
 									</div>
-								)}
-							</div>
-						) : (
-							<p className="admin-kb-empty">无教材。</p>
-						)}
-					</section>
-				</aside>
+								</div>
+							)}
+
+						<AdminTextbookInspector
+							selectedTextbook={selectedTextbook}
+							selectedTextbookSections={selectedTextbookSections}
+							isBusy={isBusy}
+							onOrganizeSelected={onOrganizeSelected}
+							onPublishSelected={onPublishSelected}
+							onUnpublishSelected={onUnpublishSelected}
+							onDeleteSelected={onDeleteSelected}
+							onEditSelectedOutline={onEditSelectedOutline}
+						/>
+					</div>
+				</section>
 			</div>
 		</section>
 	);

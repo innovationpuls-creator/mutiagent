@@ -491,6 +491,7 @@ export interface SessionMessage {
 	question_box: QuestionBox;
 	question_form?: QuestionForm | null;
 	text: string;
+	gap_id?: string | null;
 }
 
 export type MessageRole = "user" | "assistant" | "system";

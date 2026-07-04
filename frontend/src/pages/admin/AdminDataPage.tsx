@@ -1,7 +1,5 @@
-import { motion, useReducedMotion } from "framer-motion";
 import { Database, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	type AdminAccountApi,
 	adminApi as defaultAdminApi,
@@ -23,12 +21,6 @@ interface AdminDataPageProps {
 	adminApi?: AdminAccountApi;
 	adminDataApi?: typeof defaultAdminDataApi;
 }
-
-const adminRoutes = [
-	{ label: "账号管理", path: "/admin/accounts", hint: "用户账号管理" },
-	{ label: "人培方案", path: "/admin/programs", hint: "上传与发布人培方案" },
-	{ label: "数据管理", path: "/admin/data", hint: "学习数据与人培方案管理" },
-];
 
 const tabs: { value: DataTab; label: string }[] = [
 	{ value: "overview", label: "概览" },
@@ -62,7 +54,6 @@ export function AdminDataPage({
 	adminDataApi = defaultAdminDataApi,
 }: AdminDataPageProps) {
 	const { token, user } = useAuth();
-	const reduceMotion = useReducedMotion();
 	const [activeTab, setActiveTab] = useState<DataTab>("overview");
 	const [overview, setOverview] = useState<DataOverview | null>(null);
 	const [cohorts, setCohorts] = useState<DataCohort[]>([]);
@@ -76,7 +67,7 @@ export function AdminDataPage({
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const loadData = async () => {
+	const loadData = useCallback(async () => {
 		if (!token) return;
 		setBusy(true);
 		setError(null);
@@ -100,11 +91,11 @@ export function AdminDataPage({
 		} finally {
 			setBusy(false);
 		}
-	};
+	}, [adminApi, adminDataApi, token]);
 
 	useEffect(() => {
 		void loadData();
-	}, [token]);
+	}, [loadData]);
 
 	useEffect(() => {
 		if (!token || !selectedUid) {
@@ -185,116 +176,75 @@ export function AdminDataPage({
 	};
 
 	return (
-		<motion.main
-			className="admin-page"
-			initial={reduceMotion ? false : { opacity: 0, y: 16 }}
-			animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-			transition={
-				reduceMotion ? undefined : { duration: 0.76, ease: [0.25, 1, 0.5, 1] }
-			}
-		>
-			<div className="admin-ambient-sun" aria-hidden="true" />
-			<div className="admin-paper-canvas" aria-hidden="true" />
-			<section className="admin-shell" aria-labelledby="admin-data-title">
-				<nav className="admin-menu" aria-label="管理员菜单">
-					<NavLink
-						className="admin-logo-area"
-						to="/admin/accounts"
-						aria-label="回到后台首页"
+		<>
+			<header className="admin-header">
+				<div>
+					<p className="admin-kicker">data</p>
+					<h1 id="admin-data-title">数据管理</h1>
+				</div>
+				<div className="admin-header-actions">
+					<button
+						className="admin-secondary-action"
+						type="button"
+						onClick={() => void loadData()}
+						disabled={busy}
 					>
-						<span className="admin-logo-pebble" aria-hidden="true">
-							<img src="/logo.png" alt="" className="admin-logo-img" />
-						</span>
-						<span className="admin-logo-brand">one-tree</span>
-					</NavLink>
-					<span className="admin-menu-links">
-						{adminRoutes.map((route) => (
-							<NavLink
-								key={route.path}
-								to={route.path}
-								className={({ isActive }) =>
-									`admin-menu-link ${isActive ? "active" : ""}`
-								}
-								title={route.hint}
-							>
-								{route.label}
-							</NavLink>
-						))}
-					</span>
-					<span className="admin-user-chip">{user?.username ?? "管理员"}</span>
-				</nav>
+						<Database aria-hidden="true" />
+						<span>刷新数据</span>
+					</button>
+				</div>
+			</header>
 
-				<header className="admin-header">
-					<div>
-						<p className="admin-kicker">// data</p>
-						<h1 id="admin-data-title">数据管理</h1>
-					</div>
-					<div className="admin-header-actions">
-						<button
-							className="admin-secondary-action"
-							type="button"
-							onClick={() => void loadData()}
-							disabled={busy}
-						>
-							<Database aria-hidden="true" />
-							<span>刷新数据</span>
-						</button>
-					</div>
-				</header>
-
-				<section className="admin-data-tabs" aria-label="数据管理分类">
-					{tabs.map((tab) => (
-						<button
-							key={tab.value}
-							type="button"
-							className={`admin-data-tab ${activeTab === tab.value ? "active" : ""}`}
-							onClick={() => setActiveTab(tab.value)}
-						>
-							{tab.label}
-						</button>
-					))}
-				</section>
-
-				{activeTab !== "overview" ? (
-					<label className="admin-data-search">
-						<span>筛选</span>
-						<input
-							value={query}
-							onChange={(event) => setQuery(event.target.value)}
-							placeholder="输入学校、专业、班级或教师"
-						/>
-					</label>
-				) : null}
-
-				{error ? <p className="admin-error">{error}</p> : null}
-
-				{activeTab === "overview" ? (
-					<OverviewPanel overview={overview} />
-				) : null}
-				{activeTab === "cohorts" ? (
-					<CohortPanel
-						cohorts={filteredCohorts}
-						busy={busy}
-						onDeleteProgram={deleteProgram}
-					/>
-				) : null}
-				{activeTab === "programs" ? (
-					<ProgramPanel programs={filteredPrograms} />
-				) : null}
-				{activeTab === "learning" || activeTab === "sessions" ? (
-					<LearningDataPanel
-						accounts={accounts}
-						selectedUid={selectedUid}
-						selectedAccount={selectedAccount}
-						learningData={learningData}
-						mode={activeTab}
-						busy={busy}
-						onSelect={setSelectedUid}
-						onDelete={() => void deleteSelectedLearningData()}
-					/>
-				) : null}
+			<section className="admin-data-tabs" aria-label="数据管理分类">
+				{tabs.map((tab) => (
+					<button
+						key={tab.value}
+						type="button"
+						className={`admin-data-tab ${activeTab === tab.value ? "active" : ""}`}
+						onClick={() => setActiveTab(tab.value)}
+					>
+						{tab.label}
+					</button>
+				))}
 			</section>
-		</motion.main>
+
+			{activeTab !== "overview" ? (
+				<label className="admin-data-search">
+					<span>筛选</span>
+					<input
+						value={query}
+						onChange={(event) => setQuery(event.target.value)}
+						placeholder="输入学校、专业、班级或教师"
+					/>
+				</label>
+			) : null}
+
+			{error ? <p className="admin-error">{error}</p> : null}
+
+			{activeTab === "overview" ? <OverviewPanel overview={overview} /> : null}
+			{activeTab === "cohorts" ? (
+				<CohortPanel
+					cohorts={filteredCohorts}
+					busy={busy}
+					onDeleteProgram={deleteProgram}
+				/>
+			) : null}
+			{activeTab === "programs" ? (
+				<ProgramPanel programs={filteredPrograms} />
+			) : null}
+			{activeTab === "learning" || activeTab === "sessions" ? (
+				<LearningDataPanel
+					accounts={accounts}
+					selectedUid={selectedUid}
+					selectedAccount={selectedAccount}
+					learningData={learningData}
+					mode={activeTab}
+					busy={busy}
+					onSelect={setSelectedUid}
+					onDelete={() => void deleteSelectedLearningData()}
+				/>
+			) : null}
+		</>
 	);
 }
 

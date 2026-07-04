@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { useAiWidget } from "../../context/AiWidgetContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { AiGreetingInput } from "./AiGreetingInput";
@@ -76,7 +76,12 @@ export function GlobalAiWidget() {
 			return;
 		}
 
-		if (hasPendingSproutInitOverlay() || url.pathname === "/sprout") {
+		if (hasPendingSproutInitOverlay()) {
+			return;
+		}
+
+		if (url.pathname === "/sprout") {
+			setWidgetState("CENTER_INPUT");
 			return;
 		}
 

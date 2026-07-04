@@ -43,6 +43,7 @@ def run_schema_upgrades(engine: Engine) -> None:
         _normalize_knowledge_gap_notice_action_payloads(connection)
         _ensure_knowledge_base_check_constraints(connection)
         _ensure_knowledge_base_unique_constraints(connection)
+        _upgrade_textbook_section_content_original_column(connection)
         _recalculate_knowledge_gap_follow_counts(connection)
         _upgrade_user_role_column(connection)
         _migrate_teachers_to_admins(connection)
@@ -178,6 +179,29 @@ def _ensure_knowledge_base_unique_constraints(connection: Any) -> None:
                     f"UNIQUE ({columns})"
                 )
             )
+
+
+def _upgrade_textbook_section_content_original_column(connection: Any) -> None:
+    inspector = inspect(connection)
+    table_name = TextbookSectionContent.__tablename__
+    if not inspector.has_table(table_name):
+        return
+
+    columns = {column["name"] for column in inspector.get_columns(table_name)}
+    if "content_original" not in columns:
+        connection.execute(
+            text(
+                f"ALTER TABLE {table_name} "
+                "ADD COLUMN content_original TEXT NOT NULL DEFAULT ''"
+            )
+        )
+    connection.execute(
+        text(
+            f"UPDATE {table_name} "
+            "SET content_original = content_zh "
+            "WHERE content_original = '' AND content_zh <> ''"
+        )
+    )
 
 
 def _merge_duplicate_knowledge_gaps(connection: Any) -> None:

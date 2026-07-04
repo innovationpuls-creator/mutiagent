@@ -4,21 +4,95 @@ import {
 	type AdminKnowledgeBaseApi,
 	adminKnowledgeBaseApi as defaultKnowledgeBaseApi,
 	type KnowledgeBaseAgentResponse,
+	type KnowledgeBaseAgentStreamEvent,
+	type KnowledgeBaseIngestionJob,
 	type KnowledgeBaseSourceResult,
 	type KnowledgeGapAdmin,
 	type KnowledgeSource,
 	type Textbook,
+	type TextbookSectionContent,
 } from "../../api/knowledgeBase";
 import { useAuth } from "../../contexts/AuthContext";
 import {
 	AdminKnowledgeBaseAgent,
 	type AdminKnowledgeBaseAgentEntry,
+	type AdminKnowledgeBaseAgentStreamStep,
 } from "./AdminKnowledgeBaseAgent";
+import { AdminTextbookBrowser } from "./AdminTextbookBrowser";
 import { OutlineEditor } from "./OutlineEditor";
 import "./admin.css";
 
 interface AdminKnowledgeBasePageProps {
 	knowledgeBaseApi?: AdminKnowledgeBaseApi;
+}
+
+function formatStreamEventName(event: string): string {
+	switch (event) {
+		case "started":
+			return "已收到管理员消息。";
+		case "context_loaded":
+			return "已读取知识库现状。";
+		case "textbook_search_started":
+			return "正在做教材精确匹配。";
+		case "textbook_search_completed":
+			return "教材精确匹配完成。";
+		case "hybrid_search_started":
+			return "正在扩展检索教材内容。";
+		case "hybrid_search_completed":
+			return "扩展检索完成。";
+		case "textbook_hits_ready":
+			return "已整理教材命中结果。";
+		case "gap_search_started":
+			return "正在检查未覆盖待办。";
+		case "gap_search_completed":
+			return "待办检查完成。";
+		case "source_search_started":
+			return "正在联网查找真实教材来源。";
+		case "source_search_completed":
+			return "真实教材来源查找完成。";
+		case "reply_ready":
+			return "已生成管理员回复。";
+		case "completed":
+			return "本轮已完成。";
+		case "error":
+			return "处理失败。";
+		default:
+			return event;
+	}
+}
+
+function formatStreamEventMeta(event: KnowledgeBaseAgentStreamEvent): string {
+	const parts: string[] = [];
+	if (
+		typeof event.source_count === "number" ||
+		typeof event.textbook_count === "number" ||
+		typeof event.gap_count === "number"
+	) {
+		parts.push(
+			`${event.source_count ?? 0} 个来源 · ${event.textbook_count ?? 0} 本教材 · ${event.gap_count ?? 0} 个待办`,
+		);
+	}
+	if (typeof event.match_count === "number") {
+		parts.push(`匹配 ${event.match_count} 本教材`);
+	}
+	if (typeof event.hit_count === "number") {
+		parts.push(`命中 ${event.hit_count} 条`);
+	}
+	if (typeof event.result_count === "number") {
+		parts.push(`找到 ${event.result_count} 个来源`);
+	}
+	if (typeof event.reply_length === "number") {
+		parts.push(`回复 ${event.reply_length} 字`);
+	}
+	if (typeof event.normalized_length === "number") {
+		parts.push(`输入 ${event.normalized_length} 字`);
+	}
+	return parts.join(" · ");
+}
+
+function assertIngestionJobSucceeded(job: KnowledgeBaseIngestionJob): void {
+	if (job.status !== "failed") return;
+	throw new Error(job.error_message || "教材整理失败");
 }
 
 export function AdminKnowledgeBasePage({
@@ -28,8 +102,15 @@ export function AdminKnowledgeBasePage({
 	const [sources, setSources] = useState<KnowledgeSource[]>([]);
 	const [textbooks, setTextbooks] = useState<Textbook[]>([]);
 	const [gaps, setGaps] = useState<KnowledgeGapAdmin[]>([]);
+	const [textbookSections, setTextbookSections] = useState<
+		TextbookSectionContent[]
+	>([]);
 	const [selectedTextbookId, setSelectedTextbookId] = useState("");
+	const [activeTab, setActiveTab] = useState<"agent" | "browser">("agent");
 	const [entries, setEntries] = useState<AdminKnowledgeBaseAgentEntry[]>([]);
+	const [streamSteps, setStreamSteps] = useState<
+		AdminKnowledgeBaseAgentStreamStep[]
+	>([]);
 	const [lastResponse, setLastResponse] =
 		useState<KnowledgeBaseAgentResponse | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -40,6 +121,11 @@ export function AdminKnowledgeBasePage({
 		textbooks.find((textbook) => textbook.textbook_id === selectedTextbookId) ??
 		textbooks[0] ??
 		null;
+	const selectedTextbookSections = selectedTextbook
+		? textbookSections.filter(
+				(section) => section.textbook_id === selectedTextbook.textbook_id,
+			)
+		: [];
 
 	const replaceTextbook = useCallback((nextTextbook: Textbook) => {
 		setTextbooks((current) =>
@@ -76,6 +162,28 @@ export function AdminKnowledgeBasePage({
 		}
 	}, [knowledgeBaseApi, token]);
 
+	const appendStreamStep = useCallback(
+		(event: KnowledgeBaseAgentStreamEvent) => {
+			setStreamSteps((current) => {
+				const nextStep: AdminKnowledgeBaseAgentStreamStep = {
+					id: `${Date.now()}-${current.length}-${event.event}`,
+					event: event.event,
+					message: event.message || formatStreamEventName(event.event),
+					timestamp: new Date().toISOString(),
+					meta: formatStreamEventMeta(event),
+					status:
+						event.event === "error"
+							? "error"
+							: event.event === "completed"
+								? "success"
+								: "running",
+				};
+				return [...current, nextStep].slice(-3);
+			});
+		},
+		[],
+	);
+
 	const submitAgentMessage = useCallback(
 		async (message: string) => {
 			if (!token) return null;
@@ -91,8 +199,11 @@ export function AdminKnowledgeBasePage({
 				sourceResults: [],
 			};
 			setEntries((current) => [...current, userEntry]);
+			setStreamSteps([]);
 			try {
-				const response = await knowledgeBaseApi.runAgent(token, message);
+				const response = knowledgeBaseApi.streamAgent
+					? await knowledgeBaseApi.streamAgent(token, message, appendStreamStep)
+					: await knowledgeBaseApi.runAgent(token, message);
 				setLastResponse(response);
 				setEntries((current) => [
 					...current,
@@ -142,7 +253,7 @@ export function AdminKnowledgeBasePage({
 				setBusy(false);
 			}
 		},
-		[knowledgeBaseApi, token],
+		[appendStreamStep, knowledgeBaseApi, token],
 	);
 
 	const confirmSourceResult = useCallback(
@@ -157,6 +268,11 @@ export function AdminKnowledgeBasePage({
 				);
 				setTextbooks((current) => [response.textbook, ...current]);
 				setSelectedTextbookId(response.textbook.textbook_id);
+				const job = await knowledgeBaseApi.runIngestionJob(
+					token,
+					response.job.job_id,
+				);
+				assertIngestionJobSucceeded(job);
 				await loadKnowledgeBase();
 			} catch (confirmError) {
 				setError(
@@ -168,6 +284,26 @@ export function AdminKnowledgeBasePage({
 		},
 		[knowledgeBaseApi, loadKnowledgeBase, token],
 	);
+
+	const organizeSelected = useCallback(async () => {
+		if (!token || !selectedTextbook) return;
+		setBusy(true);
+		setError(null);
+		try {
+			const job = await knowledgeBaseApi.organizeTextbook(
+				token,
+				selectedTextbook.textbook_id,
+			);
+			assertIngestionJobSucceeded(job);
+			await loadKnowledgeBase();
+		} catch (organizeError) {
+			setError(
+				organizeError instanceof Error ? organizeError.message : "教材整理失败",
+			);
+		} finally {
+			setBusy(false);
+		}
+	}, [knowledgeBaseApi, loadKnowledgeBase, selectedTextbook, token]);
 
 	const handleSaveOutline = async (outlineData: unknown) => {
 		if (!token || !selectedTextbook) return;
@@ -259,6 +395,32 @@ export function AdminKnowledgeBasePage({
 		void loadKnowledgeBase();
 	}, [loadKnowledgeBase]);
 
+	useEffect(() => {
+		if (!token || !selectedTextbook) {
+			setTextbookSections([]);
+			return;
+		}
+		let isCurrent = true;
+		knowledgeBaseApi
+			.listTextbookSections(token, selectedTextbook.textbook_id)
+			.then((sections) => {
+				if (!isCurrent) return;
+				setTextbookSections(sections);
+			})
+			.catch((sectionError) => {
+				if (!isCurrent) return;
+				setTextbookSections([]);
+				setError(
+					sectionError instanceof Error
+						? sectionError.message
+						: "教材正文加载失败",
+				);
+			});
+		return () => {
+			isCurrent = false;
+		};
+	}, [knowledgeBaseApi, selectedTextbook, token]);
+
 	if (isEditingOutline && selectedTextbook) {
 		return (
 			<>
@@ -266,7 +428,7 @@ export function AdminKnowledgeBasePage({
 					<div>
 						<p className="admin-kicker">outline</p>
 						<h1 id="admin-knowledge-title">
-							《{selectedTextbook.title}》大纲微调
+							《{selectedTextbook.title}》教材大纲与正文
 						</h1>
 					</div>
 					<div className="admin-header-actions">
@@ -283,7 +445,11 @@ export function AdminKnowledgeBasePage({
 
 				{error ? <p className="admin-error">{error}</p> : null}
 
-				<OutlineEditor textbook={selectedTextbook} onSave={handleSaveOutline} />
+				<OutlineEditor
+					textbook={selectedTextbook}
+					sections={selectedTextbookSections}
+					onSave={handleSaveOutline}
+				/>
 			</>
 		);
 	}
@@ -294,6 +460,28 @@ export function AdminKnowledgeBasePage({
 				<div>
 					<p className="admin-kicker">knowledge-base</p>
 					<h1 id="admin-knowledge-title">知识库</h1>
+					
+					{/* Tabs */}
+					<div className="admin-kb-tabs" role="tablist">
+						<button
+							role="tab"
+							aria-selected={activeTab === "agent"}
+							className={`admin-kb-tab ${activeTab === "agent" ? "is-active" : ""}`}
+							type="button"
+							onClick={() => setActiveTab("agent")}
+						>
+							💬 AI 智能助理
+						</button>
+						<button
+							role="tab"
+							aria-selected={activeTab === "browser"}
+							className={`admin-kb-tab ${activeTab === "browser" ? "is-active" : ""}`}
+							type="button"
+							onClick={() => setActiveTab("browser")}
+						>
+							📚 教材库浏览
+						</button>
+					</div>
 				</div>
 				<div className="admin-header-actions">
 					<button
@@ -312,7 +500,7 @@ export function AdminKnowledgeBasePage({
 							disabled={busy}
 							onClick={() => setIsEditingOutline(true)}
 						>
-							<span>编辑当前大纲</span>
+							<span>查看教材</span>
 						</button>
 					) : null}
 				</div>
@@ -320,29 +508,54 @@ export function AdminKnowledgeBasePage({
 
 			{error ? <p className="admin-error">{error}</p> : null}
 
-			<AdminKnowledgeBaseAgent
-				isBusy={busy}
-				sources={sources}
-				textbooks={textbooks}
-				gaps={gaps.filter((gap) => gap.status !== "closed")}
-				selectedTextbookId={selectedTextbookId}
-				selectedTextbook={selectedTextbook}
-				entries={entries}
-				lastResponse={lastResponse}
-				onSubmitMessage={submitAgentMessage}
-				onSelectTextbook={(textbookId) => setSelectedTextbookId(textbookId)}
-				onConfirmSourceResult={confirmSourceResult}
-				onPublishSelected={publishSelected}
-				onUnpublishSelected={async () => {
-					if (!selectedTextbook) return;
-					await unpublishTextbook(selectedTextbook);
-				}}
-				onDeleteSelected={async () => {
-					if (!selectedTextbook) return;
-					await deleteTextbook(selectedTextbook);
-				}}
-				onEditSelectedOutline={() => setIsEditingOutline(true)}
-			/>
+			{activeTab === "agent" ? (
+				<AdminKnowledgeBaseAgent
+					isBusy={busy}
+					sources={sources}
+					textbooks={textbooks}
+					gaps={gaps.filter((gap) => gap.status !== "closed")}
+					selectedTextbookId={selectedTextbookId}
+					selectedTextbook={selectedTextbook}
+					entries={entries}
+					streamSteps={streamSteps}
+					lastResponse={lastResponse}
+					onSubmitMessage={submitAgentMessage}
+					onSelectTextbook={(textbookId) => setSelectedTextbookId(textbookId)}
+					onConfirmSourceResult={confirmSourceResult}
+					onOrganizeSelected={organizeSelected}
+					onPublishSelected={publishSelected}
+					onUnpublishSelected={async () => {
+						if (!selectedTextbook) return;
+						await unpublishTextbook(selectedTextbook);
+					}}
+					onDeleteSelected={async () => {
+						if (!selectedTextbook) return;
+						await deleteTextbook(selectedTextbook);
+					}}
+					onEditSelectedOutline={() => setIsEditingOutline(true)}
+					selectedTextbookSections={selectedTextbookSections}
+				/>
+			) : (
+				<AdminTextbookBrowser
+					textbooks={textbooks}
+					selectedTextbookId={selectedTextbookId}
+					selectedTextbook={selectedTextbook}
+					selectedTextbookSections={selectedTextbookSections}
+					isBusy={busy}
+					onSelectTextbook={(textbookId) => setSelectedTextbookId(textbookId)}
+					onOrganizeSelected={organizeSelected}
+					onPublishSelected={publishSelected}
+					onUnpublishSelected={async () => {
+						if (!selectedTextbook) return;
+						await unpublishTextbook(selectedTextbook);
+					}}
+					onDeleteSelected={async () => {
+						if (!selectedTextbook) return;
+						await deleteTextbook(selectedTextbook);
+					}}
+					onEditSelectedOutline={() => setIsEditingOutline(true)}
+				/>
+			)}
 		</>
 	);
 }

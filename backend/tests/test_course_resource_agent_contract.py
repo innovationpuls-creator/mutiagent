@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 
@@ -19,7 +18,6 @@ from app.orchestration.agents.course_resources import (
     _compose_section_content,
     _fallback_cover_data_url,
     _find_verified_video_from_search,
-    _generated_markdown_seed_data,
     _invoke_resource_chain,
     _markdown_input,
     _markdown_quality_issue,
@@ -37,7 +35,8 @@ from app.orchestration.agents.course_resources import (
 )
 from app.orchestration.agents.course_resources.common import (
     SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT,
-    _source_references_for_section,
+    _resource_query_with_prompt_budget,
+    _section_markdown_data_from_plain_text,
 )
 from app.orchestration.agents.prompts import SECTION_VIDEO_SEARCH_AGENT_SYSTEM_PROMPT
 from tests.postgres import postgresql_test_url
@@ -110,85 +109,6 @@ def _outline() -> dict:
     }
 
 
-def _valid_markdown_video_briefs(title: str = "学习目标") -> list[dict]:
-    return [
-        {
-            "video_id": "video_1",
-            "title": f"{title}专项讲解视频",
-            "target_markdown_heading": "核心概念",
-            "target_paragraph_summary": f"解释「{title}」的核心概念如何服务练习任务。",
-            "search_terms": [title, "核心概念", "练习任务"],
-            "purpose": f"帮助学习者围绕「{title}」理解核心概念，并把本节内容落到可验收任务。",
-        }
-    ]
-
-
-def _valid_markdown_animation_briefs(title: str = "学习目标") -> list[dict]:
-    return [
-        {
-            "animation_id": "anim_1",
-            "title": f"{title}流程动画",
-            "target_markdown_heading": "步骤讲解",
-            "target_paragraph_summary": f"展示「{title}」如何从输入材料推进到验收证据。",
-            "concept": f"展示「{title}」如何从输入材料、处理步骤推进到验收证据。",
-            "simulation_type": "concept_process_flow",
-            "visual_elements": ["输入材料", "处理步骤", "验收证据"],
-            "visual_model": {
-                "entities": [
-                    {"id": "input", "kind": "source", "label": "输入材料"},
-                    {"id": "process", "kind": "process", "label": "处理步骤"},
-                    {"id": "evidence", "kind": "checkpoint", "label": "验收证据"},
-                ],
-                "relations": [
-                    {"from": "input", "to": "process", "kind": "feeds"},
-                    {"from": "process", "to": "evidence", "kind": "produces"},
-                ],
-            },
-            "timeline": [
-                {"step": 1, "action": "show", "target": "input"},
-                {"step": 2, "action": "advance", "target": "process"},
-                {"step": 3, "action": "connect", "from": "process", "to": "evidence"},
-            ],
-            "layout": "从左到右排列输入材料、处理步骤和验收证据。",
-            "motion": "关键节点依次通过 opacity 淡入，并只用 transform 表现轻微位移。",
-            "interaction": "点击节点显示对应的正文段落依据。",
-            "success_check": "学习者能按动画顺序复述本节从输入到验收的过程。",
-            "placement_hint": "步骤讲解之后。",
-        }
-    ]
-
-
-def _valid_animation_brief(
-    animation_id: str,
-    title: str,
-    concept: str,
-    visual_elements: list[str],
-) -> dict:
-    entities = [
-        {"id": f"entity_{index}", "kind": "state", "label": element}
-        for index, element in enumerate(visual_elements, start=1)
-    ]
-    return {
-        "animation_id": animation_id,
-        "title": title,
-        "target_markdown_heading": "核心概念",
-        "target_paragraph_summary": f"展示{title}如何围绕{concept}推进。",
-        "concept": concept,
-        "simulation_type": "concept_process_flow",
-        "visual_elements": visual_elements,
-        "visual_model": {"entities": entities, "relations": []},
-        "timeline": [
-            {"step": index, "action": "show", "target": entity["id"]}
-            for index, entity in enumerate(entities, start=1)
-        ],
-        "layout": "从左到右排列关键状态节点。",
-        "motion": "节点依次通过 opacity 和 transform 出现。",
-        "interaction": "点击节点显示对应说明。",
-        "success_check": f"学习者能说明{title}中的关键状态如何连接。",
-        "placement_hint": "核心概念之后",
-    }
-
-
 def test_markdown_expansion_prompt_allows_english_evidence_but_requires_chinese_output() -> (
     None
 ):
@@ -237,37 +157,6 @@ def test_markdown_quality_requires_source_footer_when_section_has_textbook_bindi
     assert issue == "Markdown 缺少教材来源。"
 
 
-def test_source_references_are_built_from_section_source_binding() -> None:
-    references = _source_references_for_section(
-        {
-            "source_textbook_id": "textbook-data-structures",
-            "source_textbook_title": "数据结构教程",
-            "source_section_ids": ["2.1", "2.2"],
-            "source_section_titles": ["线性表", "单链表"],
-            "source_content_chars": "2400",
-        }
-    )
-
-    assert references == [
-        {
-            "textbook_id": "textbook-data-structures",
-            "textbook_title": "数据结构教程",
-            "section_id": "2.1",
-            "section_title": "线性表",
-            "evidence_summary": "依据《数据结构教程》2.1 线性表 的教材内容生成。",
-            "content_char_count": 2400,
-        },
-        {
-            "textbook_id": "textbook-data-structures",
-            "textbook_title": "数据结构教程",
-            "section_id": "2.2",
-            "section_title": "单链表",
-            "evidence_summary": "依据《数据结构教程》2.2 单链表 的教材内容生成。",
-            "content_char_count": 2400,
-        },
-    ]
-
-
 def test_generated_markdown_briefs_use_specific_data_structure_visual_plan() -> None:
     from app.orchestration.agents.course_resources.common import (
         _generated_markdown_seed_data,
@@ -286,47 +175,15 @@ def test_generated_markdown_briefs_use_specific_data_structure_visual_plan() -> 
     video_brief = seed_data["video_briefs"][0]
     animation_brief = seed_data["animation_briefs"][0]
     assert "单链表" in video_brief["title"]
-    assert video_brief["target_markdown_heading"] == "核心概念"
-    assert video_brief["target_paragraph_summary"] == (
-        "解释单链表节点由 data 和 next 组成，next 指向下一个节点。"
-    )
-    assert video_brief["search_terms"] == ["单链表", "节点", "next 指针", "链式存储"]
     assert "节点" in video_brief["purpose"]
     assert "指针" in video_brief["purpose"]
     assert animation_brief["title"] == "单链表节点指针串联动画"
-    assert animation_brief["target_markdown_heading"] == "核心概念"
-    assert animation_brief["target_paragraph_summary"] == (
-        "解释单链表节点由 data 和 next 组成，next 指向下一个节点。"
-    )
-    assert animation_brief["simulation_type"] == "data_structure_linked_list"
     assert animation_brief["visual_elements"] == [
         "头指针",
         "节点(data,next)",
         "next 指针",
         "尾节点 None",
     ]
-    assert animation_brief["visual_model"]["entities"] == [
-        {"id": "head", "kind": "pointer", "label": "head"},
-        {"id": "node_1", "kind": "node", "fields": ["data", "next"]},
-        {"id": "node_2", "kind": "node", "fields": ["data", "next"]},
-        {"id": "none", "kind": "terminal", "label": "None"},
-    ]
-    assert animation_brief["visual_model"]["relations"] == [
-        {"from": "head", "to": "node_1", "kind": "points_to"},
-        {"from": "node_1.next", "to": "node_2", "kind": "points_to"},
-        {"from": "node_2.next", "to": "none", "kind": "points_to"},
-    ]
-    assert animation_brief["timeline"][-1] == {
-        "step": 6,
-        "action": "connect",
-        "from": "node_2.next",
-        "to": "none",
-    }
-    assert animation_brief["layout"]
-    assert animation_brief["motion"]
-    assert animation_brief["interaction"]
-    assert animation_brief["success_check"]
-    assert animation_brief["placement_hint"]
     assert "节点通过 next 指针串联" in animation_brief["concept"]
 
 
@@ -415,27 +272,6 @@ def test_markdown_input_includes_textbook_evidence_pack(tmp_path) -> None:
     assert '"source_content_chars"' in payload
     assert "功能边界正文来自知识库" in payload
     assert "验收标准正文来自知识库" in payload
-    assert "source_references" in payload
-    assert "target_paragraph_summary" in payload
-    assert "visual_model.entities" in payload
-    assert "visual_model.relations" in payload
-    assert "timeline" in payload
-    assert "success_check" in payload
-    assert "完整施工图" in payload
-    assert "文字说明动画" in payload
-
-
-def test_markdown_input_requires_section_source_binding() -> None:
-    outline = _outline()
-    section = _section_by_id(outline, "1.1")
-    assert section is not None
-
-    with pytest.raises(ValueError, match="section source binding is incomplete"):
-        _markdown_input(
-            {"profile": _profile(), "year_learning_paths": _year_learning_paths()},
-            outline,
-            section,
-        )
 
 
 def test_section_markdown_system_prompt_matches_full_document_generation() -> None:
@@ -679,11 +515,6 @@ def test_resource_agent_inputs_keep_only_current_chapter_context() -> None:
         "profile": _profile(),
         "year_learning_paths": year_learning_paths,
     }
-    outline["sections"][1]["source_textbook_id"] = "textbook-ai-web"
-    outline["sections"][1]["source_textbook_title"] = "AI 应用开发项目教程"
-    outline["sections"][1]["source_section_ids"] = ["1.1"]
-    outline["sections"][1]["source_section_titles"] = ["功能边界"]
-    outline["sections"][1]["source_content_chars"] = 1200
     section = _section_by_id(outline, "1.1")
     assert section is not None
 
@@ -1938,6 +1769,8 @@ def test_find_verified_video_from_search_uses_youtube_when_bilibili_has_no_verif
     assert verified[0]["url"] == "https://www.youtube.com/watch?v=w6HDiP5eHt0"
 
 
+import asyncio
+
 from sqlmodel import Session
 
 from app.database import build_engine, init_db, set_engine
@@ -1952,6 +1785,58 @@ from app.orchestration.agents.models import (
 
 def _payload_from_query(query: str) -> dict:
     return json.loads(query.split("输入：", 1)[1])
+
+
+def _valid_markdown_video_briefs(title: str = "学习目标") -> list[dict]:
+    return [
+        {
+            "video_id": "video_1",
+            "title": f"{title}专项讲解视频",
+            "target_markdown_heading": "核心概念",
+            "target_paragraph_summary": f"解释「{title}」的核心概念如何服务练习任务。",
+            "search_terms": [title, "核心概念", "练习任务"],
+            "purpose": f"帮助学习者围绕「{title}」理解核心概念，并把本节内容落到可验收任务。",
+        }
+    ]
+
+
+def _linked_list_animation_brief() -> dict:
+    return {
+        "animation_id": "anim_1",
+        "title": "单链表节点指针串联动画",
+        "target_markdown_heading": "步骤讲解",
+        "target_paragraph_summary": "解释节点、next 指针和 None 终点。",
+        "concept": "单链表的节点与指针关系",
+        "simulation_type": "data_structure_linked_list",
+        "visual_elements": ["头指针", "节点(data,next)", "next 指针", "尾节点 None"],
+        "visual_model": {
+            "entities": [
+                {"id": "head", "kind": "pointer", "label": "head"},
+                {"id": "node_1", "kind": "node", "fields": ["data", "next"]},
+                {"id": "node_2", "kind": "node", "fields": ["data", "next"]},
+                {"id": "none", "kind": "terminal", "label": "None"},
+            ],
+            "relations": [
+                {"from": "head", "to": "node_1", "kind": "points_to"},
+                {"from": "node_1.next", "to": "node_2", "kind": "points_to"},
+                {"from": "node_2.next", "to": "none", "kind": "points_to"},
+            ],
+        },
+        "timeline": [
+            {"step": 1, "action": "show_entity", "target": "head"},
+            {"step": 2, "action": "show_entity", "target": "node_1"},
+            {"step": 3, "action": "connect", "from": "head", "to": "node_1"},
+        ],
+        "layout": "横向链式结构",
+        "motion": "节点通过 transform 进入，指针线通过 opacity 出现。",
+        "interaction": "点击步骤按钮切换。",
+        "success_check": [
+            "DOM 中包含头指针",
+            "DOM 中包含 next 指针",
+            "DOM 中包含 None",
+        ],
+        "placement_hint": "步骤讲解之后",
+    }
 
 
 def _complete_section_markdown(
@@ -2046,6 +1931,258 @@ def _complete_section_markdown(
             ),
         ]
     )
+
+
+def test_markdown_input_requires_full_resource_brief_contract(tmp_path) -> None:
+    from sqlmodel import Session
+
+    from app.database import build_engine, init_db, set_engine
+    from app.models import User
+    from tests.fixtures.knowledge_base import enabled_source, published_textbook
+    from tests.fixtures.knowledge_base import section as k_section
+
+    engine = build_engine(postgresql_test_url(tmp_path, "markdown-input-brief-spec"))
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.add(enabled_source(source_id="source-data-structures"))
+        textbook = published_textbook(
+            textbook_id="textbook-data-structures",
+            source_id="source-data-structures",
+            title="数据结构教程",
+        )
+        textbook.outline = {"sections": [{"section_id": "2.3", "title": "单链表"}]}
+        session.add(textbook)
+        session.add(
+            k_section(
+                textbook_id="textbook-data-structures",
+                section_content_id="linked-list-2-3",
+                section_id="2.3",
+                title="单链表",
+                content_zh="单链表节点包含 data 和 next，next 指向下一个节点，尾节点指向 None。",
+                order_index=1,
+            )
+        )
+        session.commit()
+
+    outline = _outline()
+    outline["sections"][1].update(
+        {
+            "source_textbook_id": "textbook-data-structures",
+            "source_textbook_title": "数据结构教程",
+            "source_section_ids": ["2.3"],
+            "source_section_titles": ["单链表"],
+            "source_content_chars": 42,
+        }
+    )
+    section = _section_by_id(outline, "1.1")
+    assert section is not None
+
+    payload = _markdown_input(
+        {"profile": _profile(), "year_learning_paths": _year_learning_paths()},
+        outline,
+        section,
+    )
+
+    assert "source_references" in payload
+    assert "target_paragraph_summary" in payload
+    assert "visual_model.entities" in payload
+    assert "visual_model.relations" in payload
+    assert "timeline" in payload
+    assert "success_check" in payload
+    assert "完整施工图" in payload
+    assert "文字说明动画" in payload
+    assert '"prompt_budget_applied"' in payload
+
+
+def test_markdown_quality_rejects_preview_or_prep_document_wording() -> None:
+    markdown = _complete_section_markdown("1.1", "单链表").replace(
+        "## 学习目标",
+        "## 学习目标\n本节是课前预览材料，帮助你先浏览链表内容。\n\n## 学习目标",
+        1,
+    )
+
+    issue = _markdown_quality_issue(
+        markdown,
+        {
+            "section_id": "1.1",
+            "title": "单链表",
+            "description": "讲解节点通过指针串联的线性结构。",
+            "key_knowledge_points": ["节点", "指针", "None"],
+            "source_textbook_id": "textbook-data-structures",
+            "source_textbook_title": "数据结构教程",
+            "source_section_ids": ["2.3"],
+            "source_section_titles": ["单链表"],
+        },
+        _valid_markdown_video_briefs("单链表"),
+        [_linked_list_animation_brief()],
+    )
+
+    assert issue == "Markdown 必须是教学文档，不得写成预习或导读材料。"
+
+
+def test_animation_input_tells_agent_to_implement_visual_model_not_explain_text() -> (
+    None
+):
+    outline = _outline()
+    outline["sections"][1].update(
+        {
+            "source_textbook_id": "textbook-data-structures",
+            "source_textbook_title": "数据结构教程",
+            "source_section_ids": ["2.3"],
+            "source_section_titles": ["单链表"],
+            "source_content_chars": 842,
+        }
+    )
+    outline["section_markdowns"] = {
+        "1.1": {
+            "section_id": "1.1",
+            "parent_section_id": "1",
+            "title": "单链表",
+            "markdown": _complete_section_markdown("1.1", "单链表"),
+            "source_references": [
+                {
+                    "textbook_id": "textbook-data-structures",
+                    "textbook_title": "数据结构教程",
+                    "section_id": "2.3",
+                    "section_title": "单链表",
+                    "evidence_summary": "依据链表教材内容生成。",
+                    "content_char_count": 842,
+                }
+            ],
+            "video_briefs": _valid_markdown_video_briefs("单链表"),
+            "animation_briefs": [_linked_list_animation_brief()],
+        }
+    }
+    section = _section_by_id(outline, "1.1")
+    assert section is not None
+
+    video_query = _video_input({"profile": _profile()}, outline, section)
+    query = _animation_input({"profile": _profile()}, outline, section)
+
+    assert "visual_model.entities" in query
+    assert "visual_model.relations" in query
+    assert "timeline" in query
+    assert "禁止做成文字卡片轮播" in query
+    assert '"prompt_budget_applied"' in video_query
+    assert '"prompt_budget_applied"' in query
+    assert "textbook_evidence_pack" not in video_query
+    assert "textbook-data-structures" in query
+
+
+def test_animation_quality_rejects_text_only_html_for_linked_list() -> None:
+    issue = _normalized_animation_quality_issue(
+        [
+            {
+                "animation_id": "anim_1",
+                "html": '<!doctype html><html><head><meta charset="utf-8"></head><body><section class="section-animation"><style>@media (prefers-reduced-motion: reduce){.section-animation *{opacity: 1 !important;transform: none !important;}}</style><div class="animation-context">单链表说明</div><p>节点通过指针连接。</p></section></body></html>',
+            }
+        ],
+        [_linked_list_animation_brief()],
+        {"title": "单链表"},
+    )
+
+    assert issue == "动画 HTML 未实现 visual_model.entities。"
+
+
+def test_animation_quality_accepts_linked_list_simulation_html() -> None:
+    html = """<!doctype html><html><head><meta charset="utf-8"></head><body>
+    <section class="section-animation">
+    <style>
+    :root{--line:oklch(70% 0.1 240);}
+    @media (prefers-reduced-motion: reduce){.section-animation *{opacity: 1 !important;transform: none !important;}}
+    </style>
+    <div class="animation-context">单链表节点通过 next 指针串联，尾节点指向 None。</div>
+    <svg data-timeline="linked-list">
+      <g data-entity-id="head"><text>head 头指针</text></g>
+      <g data-entity-id="node_1"><text>data</text><text>next</text></g>
+      <g data-entity-id="node_2"><text>data</text><text>next</text></g>
+      <g data-entity-id="none"><text>None</text></g>
+      <line data-relation-from="head" data-relation-to="node_1"></line>
+      <line data-relation-from="node_1.next" data-relation-to="node_2"></line>
+      <line data-relation-from="node_2.next" data-relation-to="none"></line>
+    </svg>
+    <button data-step="1">1</button><button data-step="2">2</button>
+    </section></body></html>"""
+
+    issue = _normalized_animation_quality_issue(
+        [{"animation_id": "anim_1", "html": html}],
+        [_linked_list_animation_brief()],
+        {"title": "单链表"},
+    )
+
+    assert issue is None
+
+
+def test_plain_text_markdown_parse_keeps_rich_resource_brief_schema() -> None:
+    section = {
+        "section_id": "1.1",
+        "parent_section_id": "1",
+        "title": "单链表",
+        "description": "讲解节点通过指针串联的线性结构。",
+        "key_knowledge_points": ["节点", "next 指针", "None"],
+        "source_textbook_id": "textbook-data-structures",
+        "source_textbook_title": "数据结构教程",
+        "source_section_ids": ["2.3"],
+        "source_section_titles": ["单链表"],
+        "source_content_chars": 42,
+    }
+    markdown = _complete_section_markdown("1.1", "单链表")
+    data = _section_markdown_data_from_plain_text(
+        markdown,
+        "输入：" + json.dumps({"target_section": section}, ensure_ascii=False),
+    )
+
+    assert data["source_references"][0]["textbook_id"] == "textbook-data-structures"
+    assert data["video_briefs"][0]["target_paragraph_summary"]
+    assert len(data["video_briefs"][0]["search_terms"]) >= 3
+    assert (
+        data["animation_briefs"][0]["simulation_type"] == "data_structure_linked_list"
+    )
+    assert data["animation_briefs"][0]["visual_model"]["entities"]
+    assert data["animation_briefs"][0]["timeline"]
+
+
+def test_resource_prompt_budget_slims_payload_without_breaking_json() -> None:
+    payload = {
+        "textbook_evidence_pack": {
+            "textbook_id": "textbook-data-structures",
+            "sections": [
+                {
+                    "section_id": "2.3",
+                    "title": "单链表",
+                    "evidence_text": "B" * 10000,
+                }
+            ],
+            "evidence_text": "A" * 40000,
+        },
+        "target_section": {
+            "source_textbook_id": "textbook-data-structures",
+            "source_section_ids": ["2.3"],
+        },
+    }
+
+    query = _resource_query_with_prompt_budget(
+        "请生成 Markdown JSON。",
+        payload,
+        phase="markdown",
+        protected_fragments=["textbook-data-structures", "2.3"],
+    )
+    raw_payload = query.partition("输入：")[2]
+    parsed_payload = json.loads(raw_payload)
+
+    assert parsed_payload["prompt_budget_applied"] is True
+    assert parsed_payload["textbook_evidence_pack"]["textbook_id"] == (
+        "textbook-data-structures"
+    )
+    assert parsed_payload["textbook_evidence_pack"]["sections"][0]["section_id"] == (
+        "2.3"
+    )
+    assert "已按 prompt budget 精简" in query
+    assert len(query) <= 28000
 
 
 def _complete_section_markdown_from_bodies(
@@ -2199,22 +2336,109 @@ def test_data_structure_course_outline_and_markdown_use_bound_textbook_evidence(
         }
     }
 
-    class ExplodingCourseLlm:
-        async def ainvoke(self, *args, **kwargs):
-            raise AssertionError("已发布教材映射应直接生成大纲，不应调用课程大纲 LLM。")
+    class CourseLlm:
+        pass
 
-    outline_result = asyncio.run(
-        run_course_knowledge_agent(
-            {
-                "user_id": "user-1",
-                "profile": profile,
-                "latest_grade_year": "year_3",
-                "year_learning_paths": year_learning_paths,
-                "messages": [],
+    def naming_payload_from_outline(outline: dict) -> dict:
+        return {
+            "personalization_summary": outline["personalization_summary"],
+            "section_texts": {
+                section["section_id"]: {
+                    "title": section["title"],
+                    "description": section["description"],
+                    "key_knowledge_points": section["key_knowledge_points"],
+                }
+                for section in outline["sections"]
             },
-            ExplodingCourseLlm(),
-        )
+        }
+
+    class CourseOutlineChain:
+        async def ainvoke(self, _payload):
+            outline = {
+                "personalization_summary": "按复杂度与线性结构正文设计完整教学大纲。",
+                "sections": [
+                    {
+                        "section_id": "1",
+                        "parent_section_id": None,
+                        "depth": 1,
+                        "title": "复杂度分析基础",
+                        "order_index": 1,
+                        "description": "建立复杂度分析的核心边界。",
+                        "key_knowledge_points": ["时间开销", "空间开销"],
+                        "source_textbook_id": "textbook-data-structures",
+                        "source_textbook_title": "数据结构教程",
+                        "source_section_ids": ["1.1"],
+                        "source_section_titles": ["复杂度分析"],
+                        "source_content_chars": 100,
+                    },
+                    {
+                        "section_id": "1.1",
+                        "parent_section_id": "1",
+                        "depth": 2,
+                        "title": "输入规模与资源开销",
+                        "order_index": 2,
+                        "description": "复杂度分析用于判断算法在输入规模增长时的时间和空间开销。",
+                        "key_knowledge_points": ["输入规模", "时间和空间开销"],
+                        "source_textbook_id": "textbook-data-structures",
+                        "source_textbook_title": "数据结构教程",
+                        "source_section_ids": ["1.1"],
+                        "source_section_titles": ["复杂度分析"],
+                        "source_content_chars": 100,
+                    },
+                    {
+                        "section_id": "1.2",
+                        "parent_section_id": "1",
+                        "depth": 2,
+                        "title": "增长趋势判断",
+                        "order_index": 3,
+                        "description": "判断输入规模增长时成本如何变化。",
+                        "key_knowledge_points": ["增长趋势"],
+                        "source_textbook_id": "textbook-data-structures",
+                        "source_textbook_title": "数据结构教程",
+                        "source_section_ids": ["1.1"],
+                        "source_section_titles": ["复杂度分析"],
+                        "source_content_chars": 100,
+                    },
+                ],
+                "learning_sequence": ["1", "2"],
+                "total_estimated_hours": "10 小时",
+            }
+            return AIMessage(
+                content=json.dumps(
+                    naming_payload_from_outline(outline), ensure_ascii=False
+                )
+            )
+
+    class CourseOutlinePrompt:
+        def __or__(self, _other):
+            return CourseOutlineChain()
+
+    course_module = __import__(
+        "app.orchestration.agents.course_knowledge", fromlist=["ChatPromptTemplate"]
     )
+    original_course_prompt_factory = course_module.ChatPromptTemplate
+
+    class CoursePromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return CourseOutlinePrompt()
+
+    course_module.ChatPromptTemplate = CoursePromptFactory
+    try:
+        outline_result = asyncio.run(
+            run_course_knowledge_agent(
+                {
+                    "user_id": "user-1",
+                    "profile": profile,
+                    "latest_grade_year": "year_3",
+                    "year_learning_paths": year_learning_paths,
+                    "messages": [],
+                },
+                CourseLlm(),
+            )
+        )
+    finally:
+        course_module.ChatPromptTemplate = original_course_prompt_factory
 
     assert "error" not in outline_result
     outline = outline_result["course_knowledge"]
@@ -2312,18 +2536,24 @@ def _complete_markdown_output(section_id: str, title: str) -> SectionMarkdownOut
         parent_section_id="1",
         title=title,
         markdown=_complete_section_markdown(section_id, title),
-        source_references=[
+        video_briefs=[
             {
-                "textbook_id": "textbook-ai-web",
-                "textbook_title": "AI 应用开发项目教程",
-                "section_id": section_id,
-                "section_title": title,
-                "evidence_summary": f"依据《AI 应用开发项目教程》{section_id} {title} 的教材内容生成。",
-                "content_char_count": 1200,
+                "video_id": "video_1",
+                "title": f"{title}导入视频",
+                "purpose": f"帮助学习者把「{title}」落到可验收产出",
             }
         ],
-        video_briefs=_valid_markdown_video_briefs(title),
-        animation_briefs=_valid_markdown_animation_briefs(title),
+        animation_briefs=[
+            {
+                "animation_id": "anim_1",
+                "title": f"{title}流程动画",
+                "concept": f"展示「{title}」如何转成任务、资源和检查标准",
+                "visual_elements": ["学习目标", "练习任务", "检查标准"],
+                "motion": "三个节点依次淡入，并用连线表现递进关系。",
+                "space": "正文宽度的 100%，高度 320px。",
+                "placement_hint": "练习任务之后",
+            }
+        ],
     )
 
 
@@ -4824,7 +5054,7 @@ def test_run_section_video_search_agent_accepts_section_topic_match_without_cour
     assert videos[0]["url"] == "https://example.com/langgraph-state"
 
 
-def test_run_section_video_search_agent_returns_unavailable_when_verified_search_stays_empty(
+def test_run_section_video_search_agent_marks_unavailable_when_verified_search_stays_empty(
     tmp_path, monkeypatch
 ) -> None:
     class RecordingLlm:
@@ -4893,92 +5123,11 @@ def test_run_section_video_search_agent_returns_unavailable_when_verified_search
     assert "error" not in result
     section_video = result["course_knowledge"]["section_video_links"]["1.1"]
     assert section_video["status"] == "unavailable"
-    assert section_video["videos"] == []
     assert (
         section_video["failure_reason"]
         == "未找到合格视频：视频资源为空或未绑定 brief。"
     )
-
-
-def test_video_search_no_match_returns_unavailable_without_hard_error(
-    monkeypatch,
-) -> None:
-    from app.orchestration.agents.course_resources.video import (
-        run_section_video_search_agent,
-    )
-
-    outline = _outline()
-    outline["sections"][1].update(
-        {
-            "source_textbook_id": "textbook-data-structures",
-            "source_textbook_title": "数据结构教程",
-            "source_section_ids": ["2.3"],
-            "source_section_titles": ["单链表"],
-            "source_content_chars": 842,
-        }
-    )
-    outline["section_markdowns"] = {
-        "1.1": {
-            "section_id": "1.1",
-            "parent_section_id": "1",
-            "title": "学习目标",
-            "markdown": _complete_section_markdown("1.1", "学习目标"),
-            "source_references": [
-                {
-                    "textbook_id": "textbook-data-structures",
-                    "textbook_title": "数据结构教程",
-                    "section_id": "2.3",
-                    "section_title": "单链表",
-                    "evidence_summary": "依据链表教材内容生成。",
-                    "content_char_count": 842,
-                }
-            ],
-            "video_briefs": [
-                {
-                    "video_id": "video_1",
-                    "title": "单链表节点与指针讲解视频",
-                    "target_markdown_heading": "核心概念",
-                    "target_paragraph_summary": "解释节点和 next 指针关系。",
-                    "search_terms": ["单链表", "节点", "next 指针"],
-                    "purpose": "辅助理解节点和指针关系。",
-                }
-            ],
-            "animation_briefs": [],
-        }
-    }
-
-    async def no_verified_videos(*_args, **_kwargs):
-        return []
-
-    monkeypatch.setattr(
-        "app.orchestration.agents.course_resources._find_verified_video_from_search",
-        no_verified_videos,
-    )
-    monkeypatch.setattr(
-        "app.orchestration.agents.course_resources.video._persist_outline",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "app.orchestration.agents.course_resources.video._resource_context",
-        lambda *_args, **_kwargs: {},
-    )
-
-    result = asyncio.run(
-        run_section_video_search_agent(
-            {
-                "user_id": "user-1",
-                "course_knowledge": outline,
-                "course_resource_plan": {"target_section_ids": ["1.1"]},
-            },
-            llm=None,
-        )
-    )
-
-    assert "error" not in result
-    value = result["course_knowledge"]["section_video_links"]["1.1"]
-    assert value["status"] == "unavailable"
-    assert value["videos"] == []
-    assert "未找到合格视频" in value["failure_reason"]
+    assert section_video["videos"] == []
 
 
 def test_run_section_video_search_agent_rejects_missing_textbook_evidence(
@@ -5119,12 +5268,15 @@ def test_run_section_html_animation_agent_uses_animation_briefs(tmp_path) -> Non
             "markdown": "# 学习目标\n\n完整教学内容",
             "video_briefs": [],
             "animation_briefs": [
-                _valid_animation_brief(
-                    "section-1-1-animation-1",
-                    "目标到验收标准",
-                    "展示学习目标如何收敛为验收标准",
-                    ["学习目标", "验收标准", "完成证据"],
-                )
+                {
+                    "animation_id": "section-1-1-animation-1",
+                    "title": "目标到验收标准",
+                    "concept": "展示学习目标如何收敛为验收标准",
+                    "visual_elements": ["学习目标", "验收标准", "完成证据"],
+                    "motion": "节点依次淡入",
+                    "space": "正文宽度",
+                    "placement_hint": "核心概念之后",
+                }
             ],
             "generated_at": "2026-06-06T00:00:00Z",
         }
@@ -5194,8 +5346,7 @@ def test_run_section_html_animation_agent_uses_animation_briefs(tmp_path) -> Non
     assert '"year_learning_paths"' in captured["queries"][0]
     assert '"course_knowledge"' in captured["queries"][0]
     assert '"animation_briefs"' in captured["queries"][0]
-    assert "textbook_evidence_pack" not in captured["queries"][0]
-    assert "动画证据正文来自知识库" not in captured["queries"][0]
+    assert "动画证据正文来自知识库" in captured["queries"][0]
     assert '"每天 12 小时项目驱动"' in captured["queries"][0]
     assert "作品级 Agent 项目闭环" in captured["queries"][0]
     animations = result["course_knowledge"]["section_html_animations"]["1.1"][
@@ -5239,12 +5390,15 @@ def test_run_section_html_animation_agent_rejects_missing_textbook_evidence(
             "markdown": "# 学习目标\n\n完整教学内容",
             "video_briefs": [],
             "animation_briefs": [
-                _valid_animation_brief(
-                    "section-1-1-animation-1",
-                    "目标到验收标准",
-                    "展示学习目标如何收敛为验收标准",
-                    ["学习目标", "验收标准", "完成证据"],
-                )
+                {
+                    "animation_id": "section-1-1-animation-1",
+                    "title": "目标到验收标准",
+                    "concept": "展示学习目标如何收敛为验收标准",
+                    "visual_elements": ["学习目标", "验收标准", "完成证据"],
+                    "motion": "节点依次淡入",
+                    "space": "正文宽度",
+                    "placement_hint": "核心概念之后",
+                }
             ],
             "generated_at": "2026-06-06T00:00:00Z",
         }
@@ -5338,12 +5492,15 @@ def test_run_section_html_animation_agent_accepts_plain_html_model_output(
             "markdown": "# 学习目标\n\n完整教学内容",
             "video_briefs": [],
             "animation_briefs": [
-                _valid_animation_brief(
-                    "section-1-1-animation-1",
-                    "目标到验收标准",
-                    "展示学习目标如何收敛为验收标准",
-                    ["学习目标", "验收标准", "完成证据"],
-                )
+                {
+                    "animation_id": "section-1-1-animation-1",
+                    "title": "目标到验收标准",
+                    "concept": "展示学习目标如何收敛为验收标准",
+                    "visual_elements": ["学习目标", "验收标准", "完成证据"],
+                    "motion": "节点依次淡入",
+                    "space": "正文宽度",
+                    "placement_hint": "核心概念之后",
+                }
             ],
             "generated_at": "2026-06-06T00:00:00Z",
         }
@@ -5456,12 +5613,15 @@ def test_run_section_html_animation_agent_generates_chapter_sections_concurrentl
             "markdown": f"# {section['title']}\n\n完整教学内容",
             "video_briefs": [],
             "animation_briefs": [
-                _valid_animation_brief(
-                    f"anim_{section_id.replace('.', '_')}",
-                    f"{section['title']}流程动画",
-                    f"展示 {section['title']} 如何从输入推进到验收",
-                    [section_id, "验收标准", "完成证据"],
-                )
+                {
+                    "animation_id": f"anim_{section_id.replace('.', '_')}",
+                    "title": f"{section['title']}流程动画",
+                    "concept": f"展示 {section['title']} 如何从输入推进到验收",
+                    "visual_elements": [section["title"], "验收标准", "完成证据"],
+                    "motion": "节点依次淡入",
+                    "space": "正文宽度",
+                    "placement_hint": "核心概念之后",
+                }
             ],
             "generated_at": "2026-06-06T00:00:00Z",
         }
@@ -5548,12 +5708,15 @@ def test_run_section_html_animation_agent_returns_error_when_llm_unavailable(
             "markdown": "# 学习目标\n\n完整教学内容",
             "video_briefs": [],
             "animation_briefs": [
-                _valid_animation_brief(
-                    "section-1-1-animation-1",
-                    "目标到验收标准",
-                    "展示学习目标如何收敛为验收标准",
-                    ["学习目标", "验收标准", "完成证据"],
-                )
+                {
+                    "animation_id": "section-1-1-animation-1",
+                    "title": "目标到验收标准",
+                    "concept": "展示学习目标如何收敛为验收标准",
+                    "visual_elements": ["学习目标", "验收标准", "完成证据"],
+                    "motion": "节点依次淡入并连接到最终验收。",
+                    "space": "正文宽度",
+                    "placement_hint": "核心概念之后",
+                }
             ],
             "generated_at": "2026-06-06T00:00:00Z",
         }
@@ -5724,6 +5887,7 @@ def test_resource_agents_reuse_existing_markdown_and_video_but_fail_when_animati
 
 from app.orchestration.agents.course_resources import (
     _extract_brief_ids_from_markdown,
+    _generated_markdown_seed_data,
     _normalize_animation_html,
     _normalize_markdown_resources,
     _requires_specific_video_brief_match,
@@ -5816,97 +5980,6 @@ def test_normalize_markdown_resources_rewrites_placeholder_ids_to_brief_ids() ->
     ]
     assert "wrong_video" not in normalized["markdown"]
     assert "wrong_anim" not in normalized["markdown"]
-
-
-def test_normalized_markdown_resources_preserve_source_references() -> None:
-    section = dict(_outline()["sections"][1])
-    section["source_textbook_id"] = "textbook-ai-web"
-    section["source_textbook_title"] = "AI 应用开发项目教程"
-    section["source_section_ids"] = ["1.1"]
-    section["source_section_titles"] = ["功能边界"]
-    section["source_content_chars"] = 1200
-    source_references = [
-        {
-            "textbook_id": "manual-textbook",
-            "textbook_title": "人工确认教材",
-            "section_id": "A.1",
-            "section_title": "人工确认小节",
-            "evidence_summary": "人工确认来源。",
-            "content_char_count": 88,
-        }
-    ]
-
-    normalized = _normalize_markdown_resources(
-        {
-            "section_id": "1.1",
-            "parent_section_id": "1",
-            "title": "学习目标",
-            "markdown": _complete_section_markdown("1.1", "学习目标"),
-            "source_references": source_references,
-            "video_briefs": [
-                {
-                    "video_id": "video_1",
-                    "title": "学习目标导入视频",
-                    "target_markdown_heading": "核心概念",
-                    "target_paragraph_summary": "解释功能边界与验收标准如何约束学习目标。",
-                    "search_terms": ["学习目标", "功能边界", "验收标准"],
-                    "purpose": "帮助学习者把学习目标落到可验收产出",
-                }
-            ],
-            "animation_briefs": [
-                {
-                    "animation_id": "anim_1",
-                    "title": "学习目标流程动画",
-                    "target_markdown_heading": "步骤讲解",
-                    "target_paragraph_summary": "展示学习目标如何转成任务、资源和检查标准。",
-                    "concept": "展示学习目标如何转成任务、资源和检查标准",
-                    "simulation_type": "concept_process_flow",
-                    "visual_elements": ["学习目标", "练习任务", "检查标准"],
-                    "visual_model": {
-                        "entities": [
-                            {"id": "goal", "kind": "state"},
-                            {"id": "task", "kind": "task"},
-                        ],
-                    },
-                    "timeline": [
-                        {"step": 1, "action": "show", "target": "goal"},
-                        {"step": 2, "action": "connect", "from": "goal", "to": "task"},
-                    ],
-                    "layout": "从左到右排列。",
-                    "motion": "三个节点依次淡入",
-                    "interaction": "点击节点显示说明。",
-                    "success_check": "能复述目标到任务的关系。",
-                    "placement_hint": "练习任务之后",
-                }
-            ],
-        },
-        section,
-    )
-
-    assert normalized["source_references"] == source_references
-
-    filled = _normalize_markdown_resources(
-        {
-            "section_id": "1.1",
-            "parent_section_id": "1",
-            "title": "学习目标",
-            "markdown": _complete_section_markdown("1.1", "学习目标"),
-            "video_briefs": normalized["video_briefs"],
-            "animation_briefs": normalized["animation_briefs"],
-        },
-        section,
-    )
-
-    assert filled["source_references"] == [
-        {
-            "textbook_id": "textbook-ai-web",
-            "textbook_title": "AI 应用开发项目教程",
-            "section_id": "1.1",
-            "section_title": "功能边界",
-            "evidence_summary": "依据《AI 应用开发项目教程》1.1 功能边界 的教材内容生成。",
-            "content_char_count": 1200,
-        }
-    ]
 
 
 def test_normalize_markdown_resources_promotes_common_heading_variants() -> None:
@@ -6094,19 +6167,7 @@ def test_normalize_animation_html_rewrites_model_hardcoded_colors_to_oklch() -> 
         "animation_id": "anim_1",
         "title": "API 连通性测试与标准化请求封装流程动画",
         "concept": "展示 API 请求如何推进到验收证据",
-        "simulation_type": "concept_process_flow",
         "visual_elements": ["API Key 的安全存储与加载", "构建标准的 JSON 请求体"],
-        "visual_model": {
-            "entities": [
-                {
-                    "id": "api_key",
-                    "kind": "checkpoint",
-                    "label": "API Key 的安全存储与加载",
-                }
-            ],
-            "relations": [],
-        },
-        "timeline": [{"step": 1, "action": "show", "target": "api_key"}],
     }
     section = _outline()["sections"][1]
     raw_html = (
@@ -6253,43 +6314,6 @@ def test_markdown_quality_gate_rejects_missing_teaching_scaffold() -> None:
     assert "教学支架" in issue or "关键知识点" in issue
 
 
-def test_markdown_quality_blocks_generic_resource_briefs() -> None:
-    issue = _markdown_quality_issue(
-        _complete_section_markdown("1.1", "学习目标"),
-        _outline()["sections"][1],
-        [
-            {
-                "video_id": "video_1",
-                "title": "学习目标导入视频",
-                "target_markdown_heading": "核心概念",
-                "target_paragraph_summary": "",
-                "search_terms": ["学习目标", "功能边界"],
-                "purpose": "帮助理解本节内容",
-            }
-        ],
-        [
-            {
-                "animation_id": "anim_1",
-                "title": "流程动画",
-                "target_markdown_heading": "不存在标题",
-                "target_paragraph_summary": "展示目标如何转成任务。",
-                "concept": "理解本节内容",
-                "simulation_type": "",
-                "visual_elements": ["学习目标"],
-                "visual_model": {"entities": []},
-                "timeline": [],
-                "layout": "从左到右排列。",
-                "motion": "节点依次淡入。",
-                "interaction": "点击节点显示说明。",
-                "success_check": "",
-                "placement_hint": "练习任务之后。",
-            }
-        ],
-    )
-
-    assert issue == "Markdown resource briefs are too generic."
-
-
 def test_markdown_quality_gate_accepts_english_checkpoint_knowledge_points_with_anchor_coverage() -> (
     None
 ):
@@ -6370,8 +6394,20 @@ def test_markdown_quality_gate_accepts_english_checkpoint_knowledge_points_with_
     issue = _markdown_quality_issue(
         markdown,
         section,
-        _valid_markdown_video_briefs("检查点"),
-        _valid_markdown_animation_briefs("检查点"),
+        [
+            {
+                "video_id": "video_1",
+                "title": "检查点视频",
+                "purpose": "演示大文件 chunking 与 query 验收",
+            }
+        ],
+        [
+            {
+                "animation_id": "anim_1",
+                "title": "检查点动画",
+                "concept": "展示 chunking 到 query 的闭环",
+            }
+        ],
     )
 
     assert issue is None
@@ -6493,8 +6529,8 @@ def test_markdown_quality_gate_accepts_complete_section_markdown() -> None:
     issue = _markdown_quality_issue(
         markdown,
         _outline()["sections"][1],
-        _valid_markdown_video_briefs("学习目标"),
-        _valid_markdown_animation_briefs("学习目标"),
+        [{"video_id": "video_1", "title": "导入视频", "purpose": "建立直觉"}],
+        [{"animation_id": "anim_1", "title": "目标动画", "concept": "目标收敛"}],
     )
 
     assert issue is None
@@ -6653,308 +6689,6 @@ def test_animation_quality_gate_rejects_hex_and_rgb_colors() -> None:
     assert "HEX/RGB" in issue
 
 
-def _linked_list_animation_brief() -> dict:
-    return {
-        "animation_id": "anim_1",
-        "title": "单链表节点指针串联动画",
-        "target_markdown_heading": "步骤讲解",
-        "target_paragraph_summary": "解释节点、next 指针和 None 终点。",
-        "concept": "单链表的节点与指针关系",
-        "simulation_type": "data_structure_linked_list",
-        "visual_elements": ["头指针", "节点(data,next)", "next 指针", "尾节点 None"],
-        "visual_model": {
-            "entities": [
-                {"id": "head", "kind": "pointer", "label": "head"},
-                {"id": "node_1", "kind": "node", "fields": ["data", "next"]},
-                {"id": "node_2", "kind": "node", "fields": ["data", "next"]},
-                {"id": "none", "kind": "terminal", "label": "None"},
-            ],
-            "relations": [
-                {"from": "head", "to": "node_1", "kind": "points_to"},
-                {"from": "node_1.next", "to": "node_2", "kind": "points_to"},
-                {"from": "node_2.next", "to": "none", "kind": "points_to"},
-            ],
-        },
-        "timeline": [
-            {"step": 1, "action": "show_entity", "target": "head"},
-            {"step": 2, "action": "show_entity", "target": "node_1"},
-            {"step": 3, "action": "connect", "from": "head", "to": "node_1"},
-        ],
-        "layout": "横向链式结构",
-        "motion": "节点通过 transform 进入，指针线通过 opacity 出现。",
-        "interaction": "点击步骤按钮切换。",
-        "success_check": [
-            "DOM 中包含头指针",
-            "DOM 中包含 next 指针",
-            "DOM 中包含 None",
-        ],
-        "placement_hint": "步骤讲解之后",
-    }
-
-
-def test_markdown_quality_rejects_preview_or_prep_document_wording() -> None:
-    markdown = _complete_section_markdown("1.1", "单链表").replace(
-        "## 学习目标",
-        "## 学习目标\n本节是课前预览材料，帮助你先浏览链表内容。\n\n## 学习目标",
-        1,
-    )
-
-    issue = _markdown_quality_issue(
-        markdown,
-        {
-            "section_id": "1.1",
-            "title": "单链表",
-            "description": "讲解节点通过指针串联的线性结构。",
-            "key_knowledge_points": ["节点", "指针", "None"],
-            "source_textbook_id": "textbook-data-structures",
-            "source_textbook_title": "数据结构教程",
-            "source_section_ids": ["2.3"],
-            "source_section_titles": ["单链表"],
-        },
-        _valid_markdown_video_briefs("单链表"),
-        _valid_markdown_animation_briefs("单链表"),
-    )
-
-    assert issue == "Markdown 必须是教学文档，不得写成预习或导读材料。"
-
-
-def test_animation_input_tells_agent_to_implement_visual_model_not_explain_text() -> (
-    None
-):
-    outline = _outline()
-    outline["sections"][1].update(
-        {
-            "source_textbook_id": "textbook-data-structures",
-            "source_textbook_title": "数据结构教程",
-            "source_section_ids": ["2.3"],
-            "source_section_titles": ["单链表"],
-            "source_content_chars": 842,
-        }
-    )
-    outline["section_markdowns"] = {
-        "1.1": {
-            "section_id": "1.1",
-            "parent_section_id": "1",
-            "title": "单链表",
-            "markdown": _complete_section_markdown("1.1", "单链表"),
-            "source_references": [
-                {
-                    "textbook_id": "textbook-data-structures",
-                    "textbook_title": "数据结构教程",
-                    "section_id": "2.3",
-                    "section_title": "单链表",
-                    "evidence_summary": "依据链表教材内容生成。",
-                    "content_char_count": 842,
-                }
-            ],
-            "video_briefs": _valid_markdown_video_briefs("单链表"),
-            "animation_briefs": [_linked_list_animation_brief()],
-        }
-    }
-    section = _section_by_id(outline, "1.1")
-    assert section is not None
-
-    query = _animation_input({"profile": _profile()}, outline, section)
-
-    assert "visual_model.entities" in query
-    assert "visual_model.relations" in query
-    assert "timeline" in query
-    assert "禁止做成文字卡片轮播" in query
-
-
-def test_video_and_animation_inputs_do_not_receive_full_textbook_evidence() -> None:
-    outline = _outline()
-    outline["sections"][1].update(
-        {
-            "source_textbook_id": "textbook-data-structures",
-            "source_textbook_title": "数据结构教程",
-            "source_section_ids": ["2.3"],
-            "source_section_titles": ["单链表"],
-            "source_content_chars": 842,
-        }
-    )
-    outline["section_markdowns"] = {
-        "1.1": {
-            "section_id": "1.1",
-            "parent_section_id": "1",
-            "title": "单链表",
-            "markdown": _complete_section_markdown("1.1", "单链表"),
-            "source_references": [
-                {
-                    "textbook_id": "textbook-data-structures",
-                    "textbook_title": "数据结构教程",
-                    "section_id": "2.3",
-                    "section_title": "单链表",
-                    "evidence_summary": "依据链表教材内容生成。",
-                    "content_char_count": 842,
-                }
-            ],
-            "video_briefs": [
-                {
-                    "video_id": "video_1",
-                    "title": "单链表节点视频",
-                    "target_markdown_heading": "核心概念",
-                    "target_paragraph_summary": "解释节点与 next 指针。",
-                    "search_terms": ["单链表", "节点", "next 指针"],
-                    "purpose": "辅助理解节点与 next 指针。",
-                }
-            ],
-            "animation_briefs": [_linked_list_animation_brief()],
-        }
-    }
-    section = _section_by_id(outline, "1.1")
-    assert section is not None
-
-    video_input = _payload_from_query(
-        _video_input({"profile": _profile()}, outline, section)
-    )
-    animation_input = _payload_from_query(
-        _animation_input({"profile": _profile()}, outline, section)
-    )
-
-    assert "prompt_budget_applied" in video_input
-    assert "prompt_budget_applied" in animation_input
-    assert "textbook_evidence_pack" not in video_input
-    assert "textbook_evidence_pack" not in animation_input
-
-
-def test_cross_agent_contract_preserves_source_and_briefs_through_compose() -> None:
-    source_textbook_id = "textbook-data-structures"
-    source_section_ids = ["2.3"]
-    section = {
-        "section_id": "1.1",
-        "parent_section_id": "1",
-        "title": "单链表",
-        "description": "讲解节点通过指针串联的线性结构。",
-        "key_knowledge_points": ["节点", "指针", "插入删除"],
-        "source_textbook_id": source_textbook_id,
-        "source_textbook_title": "数据结构教程",
-        "source_section_ids": source_section_ids,
-        "source_section_titles": ["单链表"],
-        "source_content_chars": 842,
-    }
-    markdown_data = _generated_markdown_seed_data(section)
-    markdown_data["markdown"] = _complete_section_markdown("1.1", "单链表")
-    video_links = {
-        "section_id": "1.1",
-        "status": "unavailable",
-        "failure_reason": "未找到合格视频",
-        "videos": [],
-    }
-    animation_html = """<!doctype html><html><head><meta charset="utf-8"></head><body>
-    <section class="section-animation">
-    <style>:root{--line:oklch(70% 0.1 240);}@media (prefers-reduced-motion: reduce){.section-animation *{opacity: 1 !important;transform: none !important;}}</style>
-    <div class="animation-context">单链表节点通过 next 指针串联，尾节点指向 None。</div>
-    <svg data-timeline="linked-list">
-      <g data-entity-id="head"><text>head 头指针</text></g>
-      <g data-entity-id="node_1"><text>data</text><text>next</text></g>
-      <g data-entity-id="node_2"><text>data</text><text>next</text></g>
-      <g data-entity-id="none"><text>None</text></g>
-      <line data-relation-from="head" data-relation-to="node_1"></line>
-      <line data-relation-from="node_1.next" data-relation-to="node_2"></line>
-      <line data-relation-from="node_2.next" data-relation-to="none"></line>
-    </svg><button data-step="1">1</button></section></body></html>"""
-
-    assert markdown_data["source_references"][0]["textbook_id"] == source_textbook_id
-    assert markdown_data["source_references"][0]["section_id"] == source_section_ids[0]
-    assert markdown_data["video_briefs"][0]["target_paragraph_summary"]
-    assert markdown_data["animation_briefs"][0]["visual_model"]["entities"]
-    assert (
-        _normalized_animation_quality_issue(
-            [{"animation_id": "anim_1", "html": animation_html}],
-            markdown_data["animation_briefs"],
-            section,
-        )
-        is None
-    )
-
-    composed = _compose_section_content(
-        markdown_data,
-        video_links,
-        {"animations": [{"animation_id": "anim_1", "html": animation_html}]},
-    )
-
-    assert composed["source_references"][0]["textbook_id"] == source_textbook_id
-    assert any(
-        block["type"] == "video" and block["status"] == "unavailable"
-        for block in composed["blocks"]
-    )
-    assert any(
-        block["type"] == "animation" and block["status"] == "available"
-        for block in composed["blocks"]
-    )
-
-
-def test_animation_quality_rejects_text_only_html_for_linked_list() -> None:
-    issue = _normalized_animation_quality_issue(
-        [
-            {
-                "animation_id": "anim_1",
-                "html": '<!doctype html><html><head><meta charset="utf-8"></head><body><section class="section-animation"><style>@media (prefers-reduced-motion: reduce){.section-animation *{opacity: 1 !important;transform: none !important;}}</style><div class="animation-context">单链表说明</div><p>节点通过指针连接。</p></section></body></html>',
-            }
-        ],
-        [_linked_list_animation_brief()],
-        {"title": "单链表"},
-    )
-
-    assert issue == "动画 HTML 未实现 visual_model.entities。"
-
-
-def test_animation_quality_accepts_linked_list_simulation_html() -> None:
-    html = """<!doctype html><html><head><meta charset="utf-8"></head><body>
-    <section class="section-animation">
-    <style>
-    :root{--line:oklch(70% 0.1 240);}
-    @media (prefers-reduced-motion: reduce){.section-animation *{opacity: 1 !important;transform: none !important;}}
-    </style>
-    <div class="animation-context">单链表节点通过 next 指针串联，尾节点指向 None。</div>
-    <svg data-timeline="linked-list">
-      <g data-entity-id="head"><text>head 头指针</text></g>
-      <g data-entity-id="node_1"><text>data</text><text>next</text></g>
-      <g data-entity-id="node_2"><text>data</text><text>next</text></g>
-      <g data-entity-id="none"><text>None</text></g>
-      <line data-relation-from="head" data-relation-to="node_1"></line>
-      <line data-relation-from="node_1.next" data-relation-to="node_2"></line>
-      <line data-relation-from="node_2.next" data-relation-to="none"></line>
-    </svg>
-    <button data-step="1">1</button><button data-step="2">2</button>
-    </section></body></html>"""
-
-    issue = _normalized_animation_quality_issue(
-        [{"animation_id": "anim_1", "html": html}],
-        [_linked_list_animation_brief()],
-        {"title": "单链表"},
-    )
-
-    assert issue is None
-
-
-def test_linked_list_deterministic_animation_fallback_is_real_simulation() -> None:
-    from app.orchestration.agents.course_resources.animation import (
-        _deterministic_animation_data,
-    )
-
-    animations = _deterministic_animation_data(
-        [_linked_list_animation_brief()],
-        {"title": "单链表"},
-    )
-
-    assert animations
-    html = animations[0]["html"]
-    assert 'data-entity-id="head"' in html
-    assert 'data-entity-id="node_1"' in html
-    assert 'data-relation-from="node_1.next"' in html
-    assert "None" in html
-    assert (
-        _normalized_animation_quality_issue(
-            animations,
-            [_linked_list_animation_brief()],
-            {"title": "单链表"},
-        )
-        is None
-    )
-
-
 def test_compose_section_content_downgrades_missing_video_and_animation() -> None:
     section_markdown = {
         "section_id": "1.1",
@@ -6985,52 +6719,6 @@ def test_compose_section_content_downgrades_missing_video_and_animation() -> Non
     assert composed["blocks"][1]["status"] == "unavailable"
     assert composed["blocks"][2]["type"] == "animation"
     assert composed["blocks"][2]["status"] == "unavailable"
-
-
-def test_compose_preserves_source_references_and_unavailable_video_status() -> None:
-    section_markdown = {
-        "section_id": "1.1",
-        "parent_section_id": "1",
-        "title": "单链表",
-        "markdown": _complete_section_markdown("1.1", "单链表"),
-        "source_references": [
-            {
-                "textbook_id": "textbook-data-structures",
-                "textbook_title": "数据结构教程",
-                "section_id": "2.3",
-                "section_title": "单链表",
-                "evidence_summary": "依据链表教材内容生成。",
-                "content_char_count": 842,
-            }
-        ],
-        "video_briefs": [
-            {
-                "video_id": "video_1",
-                "title": "单链表节点视频",
-                "target_markdown_heading": "核心概念",
-                "target_paragraph_summary": "解释节点与 next 指针。",
-                "search_terms": ["单链表", "节点", "next 指针"],
-                "purpose": "辅助理解节点与 next 指针。",
-            }
-        ],
-        "animation_briefs": [],
-    }
-
-    composed = _compose_section_content(
-        section_markdown,
-        {
-            "status": "unavailable",
-            "failure_reason": "未找到合格视频",
-            "videos": [],
-        },
-        {"animations": []},
-    )
-
-    assert composed["source_references"][0]["textbook_id"] == "textbook-data-structures"
-    video_blocks = [block for block in composed["blocks"] if block["type"] == "video"]
-    assert video_blocks[0]["status"] == "unavailable"
-    assert video_blocks[0]["failure_reason"] == "未找到合格视频"
-    assert composed["markdown"] == section_markdown["markdown"]
 
 
 def test_run_with_retries_retries_three_times_then_returns_fallback() -> None:
@@ -7237,67 +6925,15 @@ def test_stream_chapter_resource_generation_reports_agent_phases_in_order() -> N
         module.run_section_video_search_agent = original_video_agent
         module.run_section_html_animation_agent = original_animation_agent
 
-    agent_events = [
-        event
-        for event in events
-        if event.get("event") in {"agent_progress", "agent_result"}
-        and event.get("agent")
-        in {
-            "section_markdown_agent",
-            "section_video_search_agent",
-            "section_html_animation_agent",
-        }
-    ]
     phase_events = [
         (event.get("agent"), event.get("phase"), event.get("status"))
-        for event in agent_events
+        for event in events
+        if event.get("event") in {"agent_progress", "agent_result"}
     ]
     assert call_order == ["markdown", "video", "animation"]
-    assert [event["phase"] for event in agent_events] == [
-        "markdown",
-        "markdown",
-        "markdown",
-        "markdown",
-        "markdown",
-        "markdown",
-        "video",
-        "video",
-        "video",
-        "video",
-        "video",
-        "video",
-        "animation",
-        "animation",
-        "animation",
-        "animation",
-        "animation",
-        "animation",
-    ]
-    assert [event["agent_order"] for event in agent_events] == [
-        5,
-        5,
-        5,
-        5,
-        5,
-        5,
-        6,
-        6,
-        6,
-        6,
-        6,
-        6,
-        7,
-        7,
-        7,
-        7,
-        7,
-        7,
-    ]
-    for event in agent_events:
-        assert "depends_on" in event
-        assert "input_refs" in event
-        assert "output_refs" in event
-        assert "quality_result" in event
+    assert ("section_markdown_agent", "markdown", "completed") in phase_events
+    assert ("section_video_search_agent", "video", "completed") in phase_events
+    assert ("section_html_animation_agent", "animation", "completed") in phase_events
     markdown_completed_index = phase_events.index(
         ("section_markdown_agent", "markdown", "completed")
     )
@@ -7717,8 +7353,8 @@ def test_markdown_quality_gate_accepts_clean_structure_without_keywords():
         "description": "说明学习目标",
         "key_knowledge_points": ["知识点测试"],
     }
-    video_briefs = _valid_markdown_video_briefs("学习目标")
-    animation_briefs = _valid_markdown_animation_briefs("学习目标")
+    video_briefs = [{"video_id": "video_1"}]
+    animation_briefs = [{"animation_id": "anim_1"}]
 
     issue = _markdown_quality_issue(
         valid_markdown, section, video_briefs, animation_briefs

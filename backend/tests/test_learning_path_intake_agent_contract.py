@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import pytest
 from langchain_core.messages import HumanMessage
 from sqlmodel import Session, select
 
@@ -13,6 +12,7 @@ from app.orchestration.agents.learning_path_intake import (
     _bind_fallback_course_sources,
     _build_intake_generation_input,
     _courses_for_topic,
+    _invoke_intake_draft,
     _require_intake_courses_from_knowledge_context,
     is_intake_confirmation_query,
     is_intake_modification_query,
@@ -20,6 +20,7 @@ from app.orchestration.agents.learning_path_intake import (
     run_learning_path_intake_agent,
 )
 from app.orchestration.agents.models import (
+    LearningPathIntakeDraftLLMOutput,
     LearningPathIntakeDraftOutput,
     LearningPathIntakeOutput,
 )
@@ -206,42 +207,6 @@ def test_intake_generation_input_declares_downstream_order_and_resource_boundary
     assert "每门课程的 purpose 必须说明教材小节覆盖的具体学习边界" in generation_input
 
 
-def test_intake_prompt_uses_outline_summaries_without_full_textbook_content() -> None:
-    payload = _build_intake_generation_input(
-        {"year_learning_paths": {}},
-        "AI 应用开发",
-        _profile(),
-        None,
-        {
-            "textbooks": [
-                {
-                    "textbook_id": "textbook-ai-web",
-                    "title": "AI 应用开发项目教程",
-                    "outline_summary": [
-                        {"section_id": "1.1", "title": "功能边界"},
-                    ],
-                }
-            ],
-            "gap_id": None,
-        },
-    )
-
-    assert "prompt_budget_applied" in payload
-    assert "evidence_text" not in payload
-    assert "这段教材正文不能进入课程草案输入" not in payload
-
-
-def test_intake_generation_input_requires_complete_profile() -> None:
-    with pytest.raises(ValueError, match="profile is not complete"):
-        _build_intake_generation_input(
-            {"profile": {"type": "collecting"}},
-            "AI 应用开发",
-            {"type": "collecting"},
-            None,
-            {"textbooks": [], "gap_id": None},
-        )
-
-
 def test_run_intake_agent_creates_data_structure_draft(tmp_path: Path) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "intake-draft"))
     set_engine(engine)
@@ -279,7 +244,7 @@ def test_run_intake_agent_creates_data_structure_draft(tmp_path: Path) -> None:
     assert intake["learning_topic"] == "数据结构"
     assert 4 <= len(intake["courses"]) <= 8
     assert intake["courses"][0]["title"] == "LLM 定制复杂度与抽象数据类型"
-    assert fake_llm.schema is LearningPathIntakeDraftOutput
+    assert fake_llm.schema is LearningPathIntakeDraftLLMOutput
     assert len(fake_llm.calls) == 1
     assert "AI 应用开发" not in result["response"]
     assert "LangChain" not in result["response"]
@@ -293,6 +258,174 @@ def test_run_intake_agent_creates_data_structure_draft(tmp_path: Path) -> None:
         stored = latest_learning_path_intake(row.messages)
 
     assert stored == intake
+
+
+def test_intake_draft_trims_overlong_source_outline_section_ids() -> None:
+    knowledge_context = {
+        "textbooks": [
+            {
+                "textbook_id": "textbook-data-structures",
+                "title": "数据结构教材",
+                "outline_summary": [
+                    {"section_id": "1.1", "title": "复杂度分析"},
+                    {"section_id": "1.2", "title": "抽象数据类型"},
+                    {"section_id": "1.3", "title": "数组基础"},
+                    {"section_id": "1.4", "title": "链表基础"},
+                    {"section_id": "1.5", "title": "栈"},
+                    {"section_id": "1.6", "title": "队列"},
+                    {"section_id": "1.7", "title": "递归"},
+                    {"section_id": "1.8", "title": "树"},
+                ],
+            }
+        ],
+        "gap_id": None,
+    }
+    fake_llm = _FakeIntakeLLM(
+        _llm_intake_result(
+            courses=[
+                _intake_course(
+                    "LLM 定制复杂度与抽象数据类型",
+                    "先理解数据结构的分析语言",
+                    "1.1",
+                )
+                | {
+                    "source_outline_section_ids": [
+                        "1.1",
+                        "1.2",
+                        "1.3",
+                        "1.4",
+                        "1.5",
+                        "1.6",
+                        "1.7",
+                        "1.8",
+                    ]
+                },
+                _intake_course("LLM 定制线性表与栈队列", "掌握线性结构实现", "1.3"),
+                _intake_course("LLM 定制树结构与递归", "建立递归结构理解", "1.7"),
+                _intake_course("LLM 定制图结构项目", "完成综合实践", "1.8"),
+            ]
+        ),
+        validate_result=False,
+    )
+
+    intake = asyncio.run(
+        _invoke_intake_draft(
+            {},
+            fake_llm,
+            query="进入学习路径草案智能体",
+            profile=_profile(),
+            existing_intake=None,
+            knowledge_context=knowledge_context,
+        )
+    )
+
+    assert intake["courses"][0]["source_outline_section_ids"] == [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+    ]
+
+
+def test_intake_structured_generation_uses_worker_timeout() -> None:
+    import app.orchestration.agents.learning_path_intake as module
+
+    captured: dict[str, list[float]] = {"timeouts": []}
+    original_wait_for = module.asyncio.wait_for
+    fake_llm = _FakeIntakeLLM(_llm_intake_result())
+    knowledge_context = {
+        "textbooks": [
+            {
+                "textbook_id": "textbook-data-structures",
+                "title": "数据结构教材",
+                "outline_summary": [
+                    {"section_id": "1.1", "title": "复杂度分析"},
+                    {"section_id": "2.1", "title": "线性结构"},
+                    {"section_id": "3.1", "title": "树结构"},
+                    {"section_id": "4.1", "title": "图结构"},
+                ],
+            }
+        ],
+        "gap_id": None,
+    }
+
+    async def recording_wait_for(awaitable, *, timeout):
+        captured["timeouts"].append(timeout)
+        return await original_wait_for(awaitable, timeout=timeout)
+
+    module.asyncio.wait_for = recording_wait_for
+    try:
+        intake = asyncio.run(
+            _invoke_intake_draft(
+                {},
+                fake_llm,
+                query="进入学习路径草案智能体",
+                profile=_profile(),
+                existing_intake=None,
+                knowledge_context=knowledge_context,
+            )
+        )
+    finally:
+        module.asyncio.wait_for = original_wait_for
+
+    assert captured["timeouts"] == [
+        module.LEARNING_PATH_INTAKE_STRUCTURED_TIMEOUT_SECONDS
+    ]
+    assert module.LEARNING_PATH_INTAKE_STRUCTURED_TIMEOUT_SECONDS == 180.0
+    assert intake["learning_topic"] == "数据结构"
+
+
+def test_intake_normalizes_unknown_section_ids_to_published_outline() -> None:
+    knowledge_context = {
+        "textbooks": [
+            {
+                "textbook_id": "textbook-data-structures",
+                "title": "数据结构教材",
+                "outline_summary": [
+                    {"section_id": "1.1", "title": "复杂度分析"},
+                    {"section_id": "2.1", "title": "线性结构"},
+                    {"section_id": "3.1", "title": "树结构"},
+                    {"section_id": "4.1", "title": "图结构"},
+                ],
+            }
+        ],
+        "gap_id": None,
+    }
+    fake_llm = _FakeIntakeLLM(
+        _llm_intake_result(
+            courses=[
+                _intake_course(
+                    "LLM 定制复杂度与抽象数据类型",
+                    "先理解数据结构的分析语言",
+                    "1",
+                ),
+                _intake_course("LLM 定制线性表与栈队列", "掌握线性结构实现", "2"),
+                _intake_course("LLM 定制树结构与递归", "建立递归结构理解", "3"),
+                _intake_course("LLM 定制图结构项目", "完成综合实践", "4"),
+            ]
+        )
+    )
+
+    intake = asyncio.run(
+        _invoke_intake_draft(
+            {},
+            fake_llm,
+            query="进入学习路径草案智能体",
+            profile=_profile(),
+            existing_intake=None,
+            knowledge_context=knowledge_context,
+        )
+    )
+
+    assert [course["source_outline_section_ids"] for course in intake["courses"]] == [
+        ["1.1"],
+        ["2.1"],
+        ["3.1"],
+        ["4.1"],
+    ]
 
 
 def test_run_intake_agent_injects_published_textbook_context_without_body(

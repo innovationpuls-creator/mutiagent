@@ -228,6 +228,72 @@ class LearningPathIntakeOutput(BaseModel):
         return value
 
 
+class LearningPathIntakeDraftCourseLLMOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(description="课程名称")
+    purpose: str = Field(description="课程安排目的")
+    source_textbook_id: str = Field(description="绑定教材 ID")
+    source_textbook_title: str = Field(description="绑定教材标题")
+    source_outline_section_ids: list[str] = Field(
+        min_length=1,
+        description="绑定教材目录小节 ID",
+    )
+
+    @field_validator("title", "purpose", "source_textbook_id", "source_textbook_title")
+    @classmethod
+    def require_text(cls, value: str, info) -> str:
+        text = str(value).strip()
+        if not text:
+            raise ValueError(f"{info.field_name} must not be empty")
+        return text
+
+    @field_validator("source_outline_section_ids")
+    @classmethod
+    def require_source_outline_section_ids(cls, value: list[str]) -> list[str]:
+        return _require_text_list(value, "source_outline_section_ids")
+
+
+class LearningPathIntakeDraftLLMOutput(BaseModel):
+    type: Literal["learning_path_intake"] = Field(default="learning_path_intake")
+    status: Literal["draft", "confirmed", "risk_pending"] = Field(
+        description="课程草案状态"
+    )
+    grade_year: str = Field(description="目标年级 ID 或用户自然年级表达")
+    grade_name: str = Field(description="目标年级名称")
+    learning_topic: str = Field(description="学习方向")
+    courses: list[LearningPathIntakeDraftCourseLLMOutput] = Field(
+        min_length=4, max_length=8
+    )
+    recommendation_reasons: list[str] = Field(min_length=1, description="简短推荐依据")
+    user_modification_summary: str = Field(default="")
+    risk_warnings: list[str] = Field(default_factory=list)
+    requires_second_confirmation: bool = Field(default=False)
+
+    @field_validator("grade_year", mode="before")
+    @classmethod
+    def normalize_grade_year_input(cls, value: object) -> object:
+        if isinstance(value, int):
+            return str(value)
+        return value
+
+    @field_validator("grade_year", "grade_name", "learning_topic")
+    @classmethod
+    def require_text(cls, value: str, info) -> str:
+        text = str(value).strip()
+        if not text:
+            raise ValueError(f"{info.field_name} must not be empty")
+        return text
+
+    @field_validator("recommendation_reasons", "risk_warnings", mode="before")
+    @classmethod
+    def normalize_text_list(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+        return value
+
+
 class LearningPathIntakeDraftOutput(BaseModel):
     type: Literal["learning_path_intake"] = Field(default="learning_path_intake")
     status: Literal["draft", "confirmed", "risk_pending"] = Field(
@@ -768,13 +834,11 @@ def _has_unique_terminal_markdown_level_two_heading(
 
 
 class SectionSourceReferenceOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     textbook_id: str = Field(description="教材 ID")
     textbook_title: str = Field(description="教材标题")
     section_id: str = Field(description="教材小节 ID")
     section_title: str = Field(description="教材小节标题")
-    evidence_summary: str = Field(description="教材证据摘要")
+    evidence_summary: str = Field(description="教材依据摘要")
     content_char_count: int = Field(ge=0, description="教材正文字符数")
 
     @field_validator(
@@ -792,8 +856,8 @@ class SectionSourceReferenceOutput(BaseModel):
 class AnimationVisualEntityOutput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    id: str = Field(description="视觉实体 ID")
-    kind: str = Field(description="视觉实体类型")
+    id: str = Field(description="视觉对象 ID")
+    kind: str = Field(description="视觉对象类型")
 
     @field_validator("id", "kind")
     @classmethod
@@ -815,49 +879,44 @@ class AnimationVisualRelationOutput(BaseModel):
 
 
 class AnimationVisualModelOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    entities: list[AnimationVisualEntityOutput] = Field(
-        min_length=1, description="视觉实体列表"
-    )
-    relations: list[AnimationVisualRelationOutput] = Field(
-        default_factory=list, description="视觉关系列表"
-    )
+    entities: list[AnimationVisualEntityOutput] = Field(min_length=1)
+    relations: list[AnimationVisualRelationOutput] = Field(default_factory=list)
 
 
 class AnimationTimelineStepOutput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    step: int = Field(ge=1, description="时间线步骤序号")
-    action: str = Field(description="时间线动作")
-    target: str | None = Field(default=None, description="动作目标")
+    step: int = Field(ge=1)
+    action: str = Field(description="动作类型")
+    target: str = Field(default="", description="动作目标")
 
     @field_validator("action")
     @classmethod
-    def require_text_field(cls, value: str, info) -> str:
-        return _required_text(value, info.field_name)
+    def require_action(cls, value: str) -> str:
+        return _required_text(value, "action")
 
 
 class SectionAnimationBriefOutput(BaseModel):
     animation_id: str = Field(description="动画 ID")
     title: str = Field(description="动画标题")
-    target_markdown_heading: str = Field(description="绑定 Markdown 二级标题")
-    target_paragraph_summary: str = Field(description="绑定正文段落摘要")
+    target_markdown_heading: str = Field(
+        default="", description="服务的 Markdown 二级标题"
+    )
+    target_paragraph_summary: str = Field(default="", description="服务的正文段落摘要")
     concept: str = Field(description="需要动画解释的概念")
-    simulation_type: str = Field(description="模拟类型")
+    simulation_type: str = Field(default="", description="模拟类型")
     visual_elements: list[str] = Field(
         default_factory=list, description="动画中必须出现的视觉元素"
     )
-    visual_model: AnimationVisualModelOutput = Field(description="视觉模型")
-    timeline: list[AnimationTimelineStepOutput] = Field(
-        min_length=1, description="动画时间线"
-    )
-    layout: str = Field(description="布局说明")
+    visual_model: AnimationVisualModelOutput | None = None
+    timeline: list[AnimationTimelineStepOutput] = Field(default_factory=list)
+    layout: str = Field(default="", description="布局要求")
     motion: str = Field(
         default="", description="动画如何运动，包含节奏、方向与状态变化"
     )
-    interaction: str = Field(description="交互说明")
-    success_check: str = Field(description="动画验收标准")
+    interaction: str = Field(default="", description="交互要求")
+    success_check: list[str] = Field(default_factory=list, description="成功检查")
+    space: str = Field(default="", description="动画空间尺寸或页面占位要求")
     placement_hint: str = Field(default="", description="建议插入位置")
 
     @field_validator("visual_elements", mode="before")
@@ -893,10 +952,13 @@ class SectionAnimationBriefOutput(BaseModel):
         return value
 
     @field_validator(
+        "target_markdown_heading",
+        "target_paragraph_summary",
+        "simulation_type",
         "layout",
         "motion",
         "interaction",
-        "success_check",
+        "space",
         "placement_hint",
         mode="before",
     )
@@ -918,19 +980,7 @@ class SectionAnimationBriefOutput(BaseModel):
             return json.dumps(value, ensure_ascii=False)
         return value
 
-    @field_validator(
-        "animation_id",
-        "title",
-        "target_markdown_heading",
-        "target_paragraph_summary",
-        "concept",
-        "simulation_type",
-        "layout",
-        "motion",
-        "interaction",
-        "success_check",
-        "placement_hint",
-    )
+    @field_validator("animation_id", "title", "concept")
     @classmethod
     def require_text_field(cls, value: str, info) -> str:
         return _required_text(value, info.field_name)
@@ -942,27 +992,42 @@ class SectionAnimationBriefOutput(BaseModel):
             raise ValueError("visual_elements must not be empty")
         return value
 
-    @field_validator("title", "concept")
+    @field_validator("success_check", mode="before")
     @classmethod
-    def reject_generic_text(cls, value: str, info) -> str:
-        text = value.strip()
-        if text in {"流程动画", "教学动画", "理解本节内容"}:
-            raise ValueError(f"{info.field_name} is too generic")
+    def normalize_success_check(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
         return value
 
     @model_validator(mode="after")
-    def require_visual_model_entities(self) -> "SectionAnimationBriefOutput":
-        if len(self.visual_model.entities) < 2:
-            raise ValueError("visual_model.entities must contain at least two items")
+    def validate_simulation_contract(self) -> "SectionAnimationBriefOutput":
+        has_simulation_fields = any(
+            [
+                self.target_markdown_heading,
+                self.target_paragraph_summary,
+                self.simulation_type,
+                self.timeline,
+                self.layout,
+                self.interaction,
+                self.success_check,
+            ]
+        )
+        if has_simulation_fields and self.visual_model is None:
+            raise ValueError("visual_model is required for simulation animation brief")
+        if self.visual_model is not None and not self.timeline:
+            raise ValueError("timeline is required for simulation animation brief")
         return self
 
 
 class SectionVideoBriefOutput(BaseModel):
     video_id: str = Field(description="视频 brief ID")
     title: str = Field(description="视频检索标题")
-    target_markdown_heading: str = Field(description="绑定 Markdown 二级标题")
-    target_paragraph_summary: str = Field(description="绑定正文段落摘要")
-    search_terms: list[str] = Field(min_length=3, description="视频检索关键词")
+    target_markdown_heading: str = Field(
+        default="", description="服务的 Markdown 二级标题"
+    )
+    target_paragraph_summary: str = Field(default="", description="服务的正文段落摘要")
+    search_terms: list[str] = Field(default_factory=list, description="检索关键词")
     purpose: str = Field(description="视频用途说明")
 
     @field_validator(
@@ -974,19 +1039,25 @@ class SectionVideoBriefOutput(BaseModel):
     )
     @classmethod
     def require_text_field(cls, value: str, info) -> str:
+        if info.field_name in {"target_markdown_heading", "target_paragraph_summary"}:
+            return str(value).strip()
         return _required_text(value, info.field_name)
 
     @field_validator("search_terms")
     @classmethod
     def require_search_terms(cls, value: list[str]) -> list[str]:
-        return _require_text_list(value, "search_terms")
+        if not value:
+            return []
+        terms = [_required_text(item, "search_terms") for item in value]
+        if len(terms) < 3:
+            raise ValueError("search_terms must contain at least three items")
+        return terms
 
-    @field_validator("purpose")
-    @classmethod
-    def reject_generic_purpose(cls, value: str) -> str:
-        if value.strip() in {"帮助理解本节内容", "辅助理解本节内容"}:
+    @model_validator(mode="after")
+    def reject_generic_purpose(self) -> "SectionVideoBriefOutput":
+        if self.purpose.strip() in {"帮助理解本节内容", "辅助理解本节内容"}:
             raise ValueError("video brief purpose is too generic")
-        return value
+        return self
 
 
 class SectionMarkdownOutput(BaseModel):
@@ -996,9 +1067,7 @@ class SectionMarkdownOutput(BaseModel):
     parent_section_id: str | None = Field(description="父章节 ID")
     title: str = Field(description="小节标题")
     markdown: str = Field(description="完整 Markdown 教学内容")
-    source_references: list[SectionSourceReferenceOutput] = Field(
-        min_length=1, description="结构化教材来源引用"
-    )
+    source_references: list[SectionSourceReferenceOutput] = Field(default_factory=list)
     video_briefs: list[SectionVideoBriefOutput] = Field(default_factory=list)
     animation_briefs: list[SectionAnimationBriefOutput] = Field(default_factory=list)
     recommendation_reason: str = Field(

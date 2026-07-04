@@ -24,13 +24,13 @@ from app.orchestration.agents.course_resources.common import (
     _parent_section,
     _persist_outline,
     _resource_context,
+    _resource_query_with_prompt_budget,
     _section_by_id,
     _section_title,
     _target_sections_for_scope,
     _text_items,
     _tool_args,
 )
-from app.orchestration.prompt_budget import apply_prompt_budget
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
@@ -1192,22 +1192,19 @@ def _video_input(state: OrchestrationState, outline: dict, section: dict) -> str
         "target_section": section,
         "section_markdowns": target_markdowns,
     }
-    raw_query = (
+    instruction = (
         "请为输入小节联网搜索可直接打开的视频教程资源。\n\n"
-        f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
+        "必须以 section_markdowns 中的 video_briefs 为检索计划："
+        "每个 brief 的 search_terms、target_paragraph_summary、purpose 都要进入查询判断。"
     )
-    budget = apply_prompt_budget(
-        raw_query,
+    return _resource_query_with_prompt_budget(
+        instruction,
+        payload,
         phase="video",
         protected_fragments=[
             _clean_text(section.get("source_textbook_id")),
             "、".join(_text_items(section.get("source_section_ids"))),
         ],
-    )
-    payload["prompt_budget_applied"] = budget.prompt_budget_applied
-    return (
-        "请为输入小节联网搜索可直接打开的视频教程资源。\n\n"
-        f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )
 
 
@@ -1240,7 +1237,7 @@ def _video_repair_input(
         "video_quality_issue": quality_issue,
         "previous_videos": previous_videos if isinstance(previous_videos, list) else [],
     }
-    return (
+    instruction = (
         "上一版视频资源未通过质量检查。请只基于同一个小节和 video_briefs 重新搜索视频资源。\n\n"
         "硬性要求：每条 videos.brief_id 必须等于对应 video_briefs.video_id；"
         "title 必须包含小节主题、关键知识点或 brief 目的中的具体词；"
@@ -1248,8 +1245,16 @@ def _video_repair_input(
         "禁止编造 BV 号、av 号、YouTube ID 或任何看似合法的 URL；"
         "如果使用 Bilibili，url 必须是 https://www.bilibili.com/video/BV... 形式的真实可见稿件页面，"
         "平台真实标题或简介必须体现当前小节主题；"
-        "不要返回课程首页、搜索页、泛泛合集首页、短链、缺少 BV 号的 Bilibili 页面或与当前小节无关的视频。\n\n"
-        f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
+        "不要返回课程首页、搜索页、泛泛合集首页、短链、缺少 BV 号的 Bilibili 页面或与当前小节无关的视频。"
+    )
+    return _resource_query_with_prompt_budget(
+        instruction,
+        payload,
+        phase="video",
+        protected_fragments=[
+            _clean_text(section.get("source_textbook_id")),
+            "、".join(_text_items(section.get("source_section_ids"))),
+        ],
     )
 
 

@@ -16,6 +16,11 @@ import React, {
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import {
+	fetchKnowledgeGapNotices,
+	followKnowledgeGap,
+	type KnowledgeGapNoticeRead,
+} from "../../api/knowledgeBase";
+import {
 	fetchSessionState,
 	isCourseKnowledgeStructuredCompletionContent,
 	isLearningPathStructuredCompletionContent,
@@ -499,6 +504,7 @@ export function AiGreetingInput({
 	const handleGeneratePathDraft = () => {
 		openWithDraft(buildLearningPathGenerationDraft());
 	};
+
 	const cardRef = useRef<HTMLDivElement>(null);
 	const [store, dispatch] = useReducer(chatReducer, initialChatStore);
 	const [inputValue, setInputValue] = useState("");
@@ -512,6 +518,9 @@ export function AiGreetingInput({
 	const [hiddenPathActionsMessageId, setHiddenPathActionsMessageId] = useState<
 		string | null
 	>(null);
+	const [knowledgeGapNotices, setKnowledgeGapNotices] = useState<
+		KnowledgeGapNoticeRead[]
+	>([]);
 
 	const runIdRef = useRef(0);
 	const startTimeRef = useRef<Record<string, number>>({});
@@ -526,6 +535,38 @@ export function AiGreetingInput({
 	const consumedPendingMessageIdRef = useRef<number | null>(null);
 	const resetConversationOnNextSendRef = useRef(false);
 	const leafCourseIdRef = useRef<string | null>(null);
+	const hasKnowledgeGapMessage = store.messages.some(
+		(message) => message.sessionMessage?.gap_id,
+	);
+
+	useEffect(() => {
+		if (
+			!token ||
+			widgetState !== "EXPANDED" ||
+			store.state !== "idle" ||
+			!store.currentSessionId ||
+			!hasKnowledgeGapMessage
+		) {
+			return;
+		}
+		let cancelled = false;
+		void fetchKnowledgeGapNotices(token)
+			.then((notices) => {
+				if (!cancelled) setKnowledgeGapNotices(notices);
+			})
+			.catch(() => {
+				if (!cancelled) setKnowledgeGapNotices([]);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [
+		store.currentSessionId,
+		hasKnowledgeGapMessage,
+		store.state,
+		token,
+		widgetState,
+	]);
 
 	const isPending = store.state === "connecting" || store.state === "streaming";
 	const aiMood =
@@ -559,12 +600,11 @@ export function AiGreetingInput({
 			(m) =>
 				Boolean(m.learningPath) ||
 				Boolean(
-					m.runTrace &&
-						m.runTrace.some(
-							(t) =>
-								t.agent === "learning_path_intake_agent" ||
-								t.agent === "learning_path_agent",
-						),
+					m.runTrace?.some(
+						(t) =>
+							t.agent === "learning_path_intake_agent" ||
+							t.agent === "learning_path_agent",
+					),
 				) ||
 				(m.role === "user" && m.content === buildLearningPathGenerationDraft()),
 		);
@@ -573,6 +613,14 @@ export function AiGreetingInput({
 		setHiddenPathActionsMessageId(latestLearningPathMessageId);
 		setWidgetState("WIDGET");
 		navigate("/branch", { state: { justGeneratedProfile: true } });
+	};
+
+	const latestKnowledgeGapNotice = Array.isArray(knowledgeGapNotices)
+		? (knowledgeGapNotices.find((notice) => notice.read_at === null) ?? null)
+		: null;
+
+	const handleNoticeAction = () => {
+		openWithDraft(buildLearningPathGenerationDraft());
 	};
 
 	const { persistSession, clearSessionFromUrl, clearPersistedSession } =
@@ -1180,6 +1228,14 @@ export function AiGreetingInput({
 					<ChatCard
 						message={message.sessionMessage}
 						onSendReply={isLatestInteractive ? sendMessage : undefined}
+						onFollowKnowledgeGap={
+							isLatestInteractive
+								? async (gapId: string) => {
+										if (!token) return;
+										await followKnowledgeGap(token, gapId);
+									}
+								: undefined
+						}
 						disabled={!isLatestInteractive || isPending}
 						partialData={message.partialData ?? null}
 						showPathGenerationCta={isLatestInteractive && !hasLearningOutput}
@@ -1293,6 +1349,20 @@ export function AiGreetingInput({
 											欢迎！告诉我你的年级、专业、学习目标或当前卡点，我会先整理基础画像，再生成可迭代的学习路径。
 										</div>
 									)}
+									{latestKnowledgeGapNotice && (
+										<div className="knowledge-notice-banner">
+											<div>
+												<h3>{latestKnowledgeGapNotice.title}</h3>
+												<p>{latestKnowledgeGapNotice.body}</p>
+											</div>
+											<button type="button" onClick={handleNoticeAction}>
+												{latestKnowledgeGapNotice.action_label ===
+												"重新生成学习路径"
+													? "重新生成课程草案"
+													: latestKnowledgeGapNotice.action_label}
+											</button>
+										</div>
+									)}
 
 									{store.messages.map((message, index) => {
 										const hasSubsequentUserMessage = store.messages
@@ -1333,7 +1403,7 @@ export function AiGreetingInput({
 												onClick={handleGeneratePathDraft}
 												type="button"
 											>
-												<span>确认并生成学习路径</span>
+												<span>进入学习路径草案智能体</span>
 												<span className="arrow">➔</span>
 											</button>
 										</div>
@@ -1481,7 +1551,18 @@ export function AiGreetingInput({
 									<section className="agent-panel-section">
 										<div className="agent-event-log">
 											{agentEvents.map((event, index) => (
-												<p key={`${event.event}-${index}`}>
+												<p
+													key={[
+														event.event,
+														event.stepId,
+														event.agent,
+														event.label,
+														event.summary,
+														index,
+													]
+														.filter((part) => part !== undefined)
+														.join("-")}
+												>
 													<strong>
 														{event.label ||
 															getSessionEventAgent(event) ||
@@ -1935,6 +2016,45 @@ const StyledWrapper = styled.div`
     gap: var(--gap-md);
   }
 
+  .knowledge-notice-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-16);
+    border-radius: var(--radius-md);
+    background: var(--color-warning-bg);
+    padding: var(--space-16);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .knowledge-notice-banner h3 {
+    margin: 0 0 var(--space-4);
+    font-size: var(--text-h5);
+    color: var(--color-text-primary);
+  }
+
+  .knowledge-notice-banner p {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--text-body-sm);
+    line-height: 1.8;
+  }
+
+  .knowledge-notice-banner button {
+    flex-shrink: 0;
+    min-block-size: var(--space-40);
+    border: none;
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-weight-medium);
+    padding: var(--space-8) var(--space-16);
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+  }
+
   .onboarding-step-bar {
     display: flex;
     align-items: center;
@@ -2271,7 +2391,8 @@ const StyledWrapper = styled.div`
     .agent-event-log,
     .agent-step-row,
     .global-error,
-    .composer-completed-hint {
+    .composer-completed-hint,
+    .knowledge-notice-banner button {
       animation: none;
     }
 

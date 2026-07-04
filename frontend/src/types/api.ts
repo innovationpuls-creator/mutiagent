@@ -563,6 +563,23 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	"/api/admin/knowledge-base/textbooks/{textbook_id}/sections": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Admin Textbook Sections */
+		get: operations["admin_textbook_sections_api_admin_knowledge_base_textbooks__textbook_id__sections_get"];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	"/api/admin/knowledge-base/textbooks/{textbook_id}/publish": {
 		parameters: {
 			query?: never;
@@ -648,6 +665,40 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	"/api/admin/knowledge-base/textbooks/{textbook_id}/agent-organize/run": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Run Admin Textbook Organize */
+		post: operations["run_admin_textbook_organize_api_admin_knowledge_base_textbooks__textbook_id__agent_organize_run_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/ingestion-jobs/{job_id}/run": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Run Admin Ingestion Job */
+		post: operations["run_admin_ingestion_job_api_admin_knowledge_base_ingestion_jobs__job_id__run_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	"/api/admin/knowledge-base/ingestion-jobs/{job_id}": {
 		parameters: {
 			query?: never;
@@ -676,6 +727,23 @@ export interface paths {
 		put?: never;
 		/** Admin Knowledge Base Agent */
 		post: operations["admin_knowledge_base_agent_api_admin_knowledge_base_agent_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/knowledge-base/agent/stream": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Stream Admin Knowledge Base Agent */
+		post: operations["stream_admin_knowledge_base_agent_api_admin_knowledge_base_agent_stream_post"];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -1558,6 +1626,13 @@ export interface components {
 			 * @default false
 			 */
 			is_recommended: boolean;
+			/**
+			 * Already Imported
+			 * @default false
+			 */
+			already_imported: boolean;
+			/** Textbook Id */
+			textbook_id?: string | null;
 		};
 		/** KnowledgeGapAdminRead */
 		KnowledgeGapAdminRead: {
@@ -2219,6 +2294,11 @@ export interface components {
 			 */
 			original_title: string;
 			/**
+			 * Content Original
+			 * @default
+			 */
+			content_original: string;
+			/**
 			 * Content Zh
 			 * @default
 			 */
@@ -2228,6 +2308,44 @@ export interface components {
 			 * @default 0
 			 */
 			content_char_count: number;
+		};
+		/** TextbookSectionContentRead */
+		TextbookSectionContentRead: {
+			/** Section Content Id */
+			section_content_id: string;
+			/** Section Id */
+			section_id: string;
+			/** Parent Section Id */
+			parent_section_id?: string | null;
+			/**
+			 * Order Index
+			 * @default 0
+			 */
+			order_index: number;
+			/** Title */
+			title: string;
+			/**
+			 * Original Title
+			 * @default
+			 */
+			original_title: string;
+			/**
+			 * Content Original
+			 * @default
+			 */
+			content_original: string;
+			/**
+			 * Content Zh
+			 * @default
+			 */
+			content_zh: string;
+			/**
+			 * Content Char Count
+			 * @default 0
+			 */
+			content_char_count: number;
+			/** Textbook Id */
+			textbook_id: string;
 		};
 		/** UserLearningDataRead */
 		UserLearningDataRead: {
@@ -3399,6 +3517,37 @@ export interface operations {
 			};
 		};
 	};
+	admin_textbook_sections_api_admin_knowledge_base_textbooks__textbook_id__sections_get: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				textbook_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["TextbookSectionContentRead"][];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
 	publish_admin_textbook_api_admin_knowledge_base_textbooks__textbook_id__publish_post: {
 		parameters: {
 			query?: never;
@@ -3558,6 +3707,68 @@ export interface operations {
 			};
 		};
 	};
+	run_admin_textbook_organize_api_admin_knowledge_base_textbooks__textbook_id__agent_organize_run_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				textbook_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeBaseIngestionJobRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	run_admin_ingestion_job_api_admin_knowledge_base_ingestion_jobs__job_id__run_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				job_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["KnowledgeBaseIngestionJobRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
 	read_admin_ingestion_job_api_admin_knowledge_base_ingestion_jobs__job_id__get: {
 		parameters: {
 			query?: never;
@@ -3609,6 +3820,39 @@ export interface operations {
 				};
 				content: {
 					"application/json": components["schemas"]["KnowledgeBaseAgentResponse"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	stream_admin_knowledge_base_agent_api_admin_knowledge_base_agent_stream_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": components["schemas"]["KnowledgeBaseAgentRequest"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": unknown;
 				};
 			};
 			/** @description Validation Error */

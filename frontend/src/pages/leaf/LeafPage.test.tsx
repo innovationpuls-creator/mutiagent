@@ -37,6 +37,8 @@ vi.mock("../../context/AiWidgetContext", async () => {
 
 afterEach(() => {
 	cleanup();
+	fetchLeafCourseMock.mockReset();
+	openWithDraftMock.mockReset();
 	vi.restoreAllMocks();
 	vi.unstubAllGlobals();
 });
@@ -88,6 +90,11 @@ function leafPayload(overrides: Record<string, unknown> = {}) {
 				order_index: 1,
 				description: "确认边界",
 				key_knowledge_points: ["边界"],
+				source_textbook_id: "textbook-rag",
+				source_textbook_title: "AI 应用开发项目教程",
+				source_section_ids: ["2.1"],
+				source_section_titles: ["知识库问答边界"],
+				source_content_chars: 2400,
 			},
 			{
 				section_id: "1.1",
@@ -97,6 +104,11 @@ function leafPayload(overrides: Record<string, unknown> = {}) {
 				order_index: 2,
 				description: "明确目标",
 				key_knowledge_points: ["目标"],
+				source_textbook_id: "textbook-rag",
+				source_textbook_title: "AI 应用开发项目教程",
+				source_section_ids: ["2.1"],
+				source_section_titles: ["知识库问答边界"],
+				source_content_chars: 2400,
 			},
 		],
 		section_composed_markdowns: {
@@ -159,17 +171,17 @@ function renderLeaf(initialPath = "/leaf/year_3_course_1") {
 	);
 }
 
+async function findSelectedLeafHeading(name: string) {
+	return screen.findByRole("heading", { name, level: 1 }, { timeout: 3000 });
+}
+
 describe("LeafPage", () => {
 	it("loads course content and selects first generated leaf section", async () => {
 		fetchLeafCourseMock.mockResolvedValue(leafPayload());
 
 		renderLeaf();
 
-		await waitFor(() =>
-			expect(
-				screen.getByRole("heading", { name: "1.1 学习目标", level: 1 }),
-			).toBeTruthy(),
-		);
+		expect(await findSelectedLeafHeading("1.1 学习目标")).toBeTruthy();
 		expect(screen.getByLabelText("AI Agent 开发课程内容")).toBeTruthy();
 		expect(screen.getByText("正文内容")).toBeTruthy();
 		expect(screen.getByText("视频生成失败")).toBeTruthy();
@@ -215,11 +227,7 @@ describe("LeafPage", () => {
 
 		renderLeaf();
 
-		await waitFor(() =>
-			expect(
-				screen.getByRole("heading", { name: "1.1 学习目标", level: 1 }),
-			).toBeTruthy(),
-		);
+		expect(await findSelectedLeafHeading("1.1 学习目标")).toBeTruthy();
 		expect(screen.getByRole("table")).toBeTruthy();
 		expect(screen.getByRole("columnheader", { name: "步骤" })).toBeTruthy();
 		expect(screen.getByRole("cell", { name: "可验收学习目标" })).toBeTruthy();
@@ -255,11 +263,7 @@ describe("LeafPage", () => {
 
 		const view = renderLeaf();
 
-		await waitFor(() =>
-			expect(
-				screen.getByRole("heading", { name: "1.1 学习目标", level: 1 }),
-			).toBeTruthy(),
-		);
+		expect(await findSelectedLeafHeading("1.1 学习目标")).toBeTruthy();
 		expect(screen.getByText("plain block line")).toBeTruthy();
 		expect(
 			screen.getByRole("button", { name: "Copy code to clipboard" }),
@@ -482,9 +486,7 @@ describe("LeafPage", () => {
 
 		await waitFor(() => expect(fetchLeafCourseMock).toHaveBeenCalledTimes(2));
 		await waitFor(() => expect(screen.queryByText("生成课程大纲")).toBeNull());
-		expect(
-			screen.getByRole("heading", { name: "1.1 学习目标", level: 1 }),
-		).toBeTruthy();
+		expect(await findSelectedLeafHeading("1.1 学习目标")).toBeTruthy();
 	});
 
 	it("hides the generation entry when the selected chapter is not the first generatable chapter", async () => {
@@ -498,6 +500,11 @@ describe("LeafPage", () => {
 					order_index: 1,
 					description: "确认边界",
 					key_knowledge_points: ["边界"],
+					source_textbook_id: "textbook-rag",
+					source_textbook_title: "AI 应用开发项目教程",
+					source_section_ids: ["2.1"],
+					source_section_titles: ["知识库问答边界"],
+					source_content_chars: 2400,
 				},
 				{
 					section_id: "1.1",
@@ -507,6 +514,11 @@ describe("LeafPage", () => {
 					order_index: 2,
 					description: "明确目标",
 					key_knowledge_points: ["目标"],
+					source_textbook_id: "textbook-rag",
+					source_textbook_title: "AI 应用开发项目教程",
+					source_section_ids: ["2.1"],
+					source_section_titles: ["知识库问答边界"],
+					source_content_chars: 2400,
 				},
 				{
 					section_id: "3",
@@ -516,6 +528,11 @@ describe("LeafPage", () => {
 					order_index: 3,
 					description: "实现向量检索",
 					key_knowledge_points: ["向量检索"],
+					source_textbook_id: "textbook-rag",
+					source_textbook_title: "AI 应用开发项目教程",
+					source_section_ids: ["3.1"],
+					source_section_titles: ["向量检索"],
+					source_content_chars: 2400,
 				},
 				{
 					section_id: "3.1",
@@ -525,6 +542,11 @@ describe("LeafPage", () => {
 					order_index: 4,
 					description: "明确第三章目标",
 					key_knowledge_points: ["向量检索目标"],
+					source_textbook_id: "textbook-rag",
+					source_textbook_title: "AI 应用开发项目教程",
+					source_section_ids: ["3.1"],
+					source_section_titles: ["向量检索"],
+					source_content_chars: 2400,
 				},
 			],
 			section_composed_markdowns: {
@@ -543,11 +565,7 @@ describe("LeafPage", () => {
 
 		renderLeaf("/leaf/year_3_course_1?section_id=3.1");
 
-		await waitFor(() =>
-			expect(
-				screen.getByRole("heading", { name: "3.1 学习目标", level: 1 }),
-			).toBeTruthy(),
-		);
+		expect(await findSelectedLeafHeading("3.1 学习目标")).toBeTruthy();
 		expect(screen.queryByText("让 AI 生成本章内容")).toBeNull();
 	});
 
@@ -595,10 +613,10 @@ describe("LeafPage", () => {
 		fireEvent.click(screen.getByText("让 AI 生成本章内容"));
 
 		expect(openWithDraftMock).toHaveBeenCalledWith(
-			expect.stringContaining("第一章"),
+			expect.stringContaining("帮我生成《AI Agent 开发》的大纲"),
 		);
-		expect(openWithDraftMock).toHaveBeenCalledWith(
-			expect.stringContaining("chapter_section_id: 1"),
+		expect(openWithDraftMock).not.toHaveBeenCalledWith(
+			expect.stringContaining("[LEAF_RESOURCE_GENERATION]"),
 		);
 	});
 
@@ -617,11 +635,7 @@ describe("LeafPage", () => {
 
 		renderLeaf();
 
-		await waitFor(() =>
-			expect(
-				screen.getByRole("heading", { name: "1.1 学习目标", level: 1 }),
-			).toBeTruthy(),
-		);
+		expect(await findSelectedLeafHeading("1.1 学习目标")).toBeTruthy();
 		expect(screen.queryByText("让 AI 生成本章内容")).toBeNull();
 	});
 
@@ -633,11 +647,7 @@ describe("LeafPage", () => {
 
 		renderLeaf();
 
-		await waitFor(() =>
-			expect(
-				screen.getByRole("heading", { name: "1.1 学习目标", level: 1 }),
-			).toBeTruthy(),
-		);
+		expect(await findSelectedLeafHeading("1.1 学习目标")).toBeTruthy();
 
 		window.dispatchEvent(
 			new CustomEvent("mutiagent-leaf-generation-event", {
@@ -671,11 +681,7 @@ describe("LeafPage", () => {
 
 		renderLeaf();
 
-		await waitFor(() =>
-			expect(
-				screen.getByRole("heading", { name: "1.1 学习目标", level: 1 }),
-			).toBeTruthy(),
-		);
+		expect(await findSelectedLeafHeading("1.1 学习目标")).toBeTruthy();
 
 		window.dispatchEvent(
 			new CustomEvent("mutiagent-leaf-generation-event", {
@@ -693,5 +699,77 @@ describe("LeafPage", () => {
 		expect(screen.getByRole("status").textContent).toContain("生成失败");
 		expect(screen.getByText("视频资源未生成，请稍后重试。")).toBeTruthy();
 		expect(fetchLeafCourseMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("shows retry entry only for the failed section and keeps other composed sections intact", async () => {
+		fetchLeafCourseMock.mockResolvedValue(
+			leafPayload({
+				sections: [
+					{
+						section_id: "1",
+						parent_section_id: null,
+						depth: 1,
+						title: "第一章：需求拆解",
+						order_index: 1,
+						description: "确认边界",
+						key_knowledge_points: ["边界"],
+						source_textbook_id: "textbook-rag",
+						source_textbook_title: "AI 应用开发项目教程",
+						source_section_ids: ["2.1"],
+						source_section_titles: ["知识库问答边界"],
+						source_content_chars: 2400,
+					},
+					{
+						section_id: "1.1",
+						parent_section_id: "1",
+						depth: 2,
+						title: "失败章节",
+						order_index: 2,
+						description: "生成失败",
+						key_knowledge_points: ["失败"],
+						source_textbook_id: "textbook-rag",
+						source_textbook_title: "AI 应用开发项目教程",
+						source_section_ids: ["2.1"],
+						source_section_titles: ["知识库问答边界"],
+						source_content_chars: 2400,
+					},
+				],
+				section_composed_markdowns: {
+					"1": {
+						section_id: "1",
+						parent_section_id: null,
+						title: "第一章：需求拆解",
+						markdown: "# 第一章：需求拆解\n\n既有内容",
+						generated_at: "2026-06-06T00:00:00Z",
+						blocks: [
+							{ type: "markdown", markdown: "# 第一章：需求拆解\n\n既有内容" },
+						],
+					},
+				},
+				section_resource_errors: {
+					"1.1": {
+						section_id: "1.1",
+						phase: "markdown",
+						message: "课程资源生成失败：Markdown 文档未生成，请稍后重试。",
+						retryable: true,
+						updated_at: "2026-06-06T00:00:00Z",
+					},
+				},
+				first_generatable_chapter_id: "1",
+			}),
+		);
+
+		renderLeaf("/leaf/year_3_course_1?section_id=1.1");
+
+		await waitFor(() => expect(screen.getByText("重试当前章节")).toBeTruthy());
+		expect(
+			screen.getByText("课程资源生成失败：Markdown 文档未生成，请稍后重试。"),
+		).toBeTruthy();
+		expect(screen.queryByText("让 AI 生成本章内容")).toBeNull();
+		fireEvent.click(screen.getByText("重试当前章节"));
+		expect(openWithDraftMock).toHaveBeenCalledWith(
+			expect.stringContaining("[LEAF_RESOURCE_GENERATION]"),
+		);
+		expect(screen.getByRole("button", { name: "重试当前章节" })).toBeTruthy();
 	});
 });

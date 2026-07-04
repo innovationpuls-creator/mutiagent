@@ -19,6 +19,11 @@ export interface LeafSection {
 	order_index: number;
 	description: string;
 	key_knowledge_points: string[];
+	source_textbook_id: string;
+	source_textbook_title: string;
+	source_section_ids: string[];
+	source_section_titles: string[];
+	source_content_chars: number;
 }
 
 export interface LeafGenerationStatus {
@@ -71,12 +76,21 @@ export interface LeafComposedSection {
 	generated_at: string;
 }
 
+export interface LeafSectionResourceError {
+	section_id: string;
+	phase: string;
+	message: string;
+	retryable: boolean;
+	updated_at: string;
+}
+
 export interface LeafCourseResponse {
 	access_state: LeafAccessState;
 	course: LeafCourse;
 	outline: Record<string, unknown> | null;
 	sections: LeafSection[];
 	section_composed_markdowns: Record<string, LeafComposedSection>;
+	section_resource_errors: Record<string, LeafSectionResourceError>;
 	generation_status: LeafGenerationStatus | null;
 	can_generate: boolean;
 	first_generatable_chapter_id: string | null;

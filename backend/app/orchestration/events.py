@@ -12,12 +12,12 @@ def build_agent_event(
     step_id: str,
     message: str = "",
     depends_on: list[AgentName] | None = None,
-    input_refs: dict | None = None,
-    output_refs: dict | None = None,
-    quality_result: QualityResult | dict | None = None,
-    extra: dict | None = None,
-) -> dict:
-    payload = {
+    input_refs: dict[str, object] | None = None,
+    output_refs: dict[str, object] | None = None,
+    quality_result: QualityResult | dict[str, object] | None = None,
+    extra: dict[str, object] | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
         "event": event,
         "agent": agent,
         "agent_order": agent_order(agent),
@@ -36,7 +36,9 @@ def build_agent_event(
     return payload
 
 
-def _quality_payload(value: QualityResult | dict | None) -> dict | None:
+def _quality_payload(
+    value: QualityResult | dict[str, object] | None,
+) -> dict[str, object] | None:
     if value is None:
         return None
     if isinstance(value, QualityResult):

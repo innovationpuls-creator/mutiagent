@@ -216,6 +216,27 @@ test("shows the bottom-right widget after a logged-in page reload", async () => 
 	expect(shell.style.alignItems).toBe("flex-end");
 });
 
+test("shows the center input on sprout when no intro overlay is pending", async () => {
+	window.history.replaceState({}, "", "/sprout");
+	stubLoggedInAuth();
+
+	render(
+		<AuthProvider>
+			<AiWidgetProvider>
+				<GlobalAiWidget />
+			</AiWidgetProvider>
+		</AuthProvider>,
+	);
+
+	await waitFor(() => {
+		expect(screen.getByTestId("global-ai-widget-shell")).toBeTruthy();
+	});
+
+	const frame = screen.getByTestId("global-ai-widget-frame");
+	expect(frame.style.transform).toContain("translateY(");
+	expect(screen.queryByTestId("global-ai-widget-overlay")).toBeNull();
+});
+
 test("resets expanded widget state after logout before a later login returns to the docked widget", async () => {
 	stubLoggedInAuth();
 
@@ -291,9 +312,9 @@ test("reopens the chat panel when a logged-in sprout page contains a recoverable
 							constraints: "时间有限",
 						},
 						defaulted_fields: [],
-						question_md: "画像已生成，是否继续生成学习路径？",
+						question_md: "画像已生成，是否进入学习路径草案智能体？",
 						question_box: {
-							question: "画像已生成，下一步要继续生成学习路径吗？",
+							question: "画像已生成，下一步要进入学习路径草案智能体吗？",
 							options: [],
 						},
 						text: "【基础学习画像总结】大三软件工程，当前以 AI 应用开发为主线。",
@@ -361,9 +382,9 @@ test("docks the expanded sprout recovery panel to the right edge", async () => {
 							constraints: "时间有限",
 						},
 						defaulted_fields: [],
-						question_md: "画像已生成，是否继续生成学习路径？",
+						question_md: "画像已生成，是否进入学习路径草案智能体？",
 						question_box: {
-							question: "画像已生成，下一步要继续生成学习路径吗？",
+							question: "画像已生成，下一步要进入学习路径草案智能体吗？",
 							options: [],
 						},
 						text: "【基础学习画像总结】大三软件工程，当前以 AI 应用开发为主线。",

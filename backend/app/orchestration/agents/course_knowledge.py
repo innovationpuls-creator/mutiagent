@@ -20,12 +20,10 @@ from app.orchestration.agents.models import (
     SectionItem,
 )
 from app.orchestration.agents.profile import is_complete_profile_data
-from app.orchestration.agents.prompts import COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT
 from app.orchestration.agents.utils import (
     extract_last_tool_call_args,
     extract_last_tool_call_id,
 )
-from app.orchestration.guards import require_course_source_for_course_knowledge
 from app.orchestration.prompt_budget import apply_prompt_budget
 from app.orchestration.state import OrchestrationState
 from app.services.knowledge_base_service import (
@@ -36,8 +34,7 @@ from app.services.learning_path_service import iter_year_learning_paths
 
 logger = logging.getLogger(__name__)
 
-SINGLE_COURSE_OUTLINE_TIMEOUT_SECONDS = 180.0
-YEAR_COURSE_OUTLINE_TIMEOUT_SECONDS = 360.0
+COURSE_OUTLINE_NAMING_TIMEOUT_SECONDS = 45.0
 COURSE_KNOWLEDGE_RETRY_ERROR = "课程大纲生成失败，请稍后重试。"
 ALL_CURRENT_GRADE_COURSES_ID = "__all_current_grade__"
 SOURCE_CONTENT_CHAR_LIMIT = 8000
@@ -281,6 +278,56 @@ def _is_direct_child_section_id(section_id: str, parent_id: str) -> bool:
     return _is_positive_integer_text(suffix)
 
 
+def _looks_like_internal_source_id(value: str) -> bool:
+    text = _clean_text(value)
+    return bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.:-]*", text))
+
+
+def _visible_text_values(section: dict) -> list[str]:
+    values = [
+        _clean_text(section.get("title")),
+        _clean_text(section.get("description")),
+    ]
+    values.extend(_string_list(section.get("key_knowledge_points")))
+    return [value for value in values if value]
+
+
+def _contains_internal_source_id_in_visible_text(section: dict) -> bool:
+    internal_ids = [
+        source_id
+        for source_id in _string_list(section.get("source_section_ids"))
+        if _looks_like_internal_source_id(source_id)
+    ]
+    if not internal_ids:
+        return False
+    visible_text = "\n".join(_visible_text_values(section))
+    return any(source_id in visible_text for source_id in internal_ids)
+
+
+def _contains_source_title_in_visible_text(section: dict) -> bool:
+    source_titles = [
+        title
+        for title in _string_list(section.get("source_section_titles"))
+        if title and not _contains_chinese_text(title)
+    ]
+    if not source_titles:
+        return False
+    visible_text = "\n".join(_visible_text_values(section))
+    return any(title in visible_text for title in source_titles)
+
+
+def _require_student_facing_section_text(section: dict) -> None:
+    if _contains_internal_source_id_in_visible_text(section):
+        raise ValueError("课程大纲可见文案不能包含教材内部小节 ID。")
+    if _contains_source_title_in_visible_text(section):
+        raise ValueError("课程大纲可见文案不能直接暴露英文教材标题。")
+    visible_values = _visible_text_values(section)
+    if visible_values and not all(
+        _contains_chinese_text(value) for value in visible_values
+    ):
+        raise ValueError("课程大纲学生端可见文案必须使用中文。")
+
+
 def _same_grade_course_sequence(
     year_learning_paths: dict | None,
     selected_course: dict,
@@ -410,26 +457,22 @@ def _normalize_generated_sections(raw_sections: object) -> list[dict]:
         if not key_knowledge_points:
             raise ValueError("课程大纲章节缺少 key_knowledge_points。")
 
-        normalized_sections.append(
-            {
-                "section_id": section_id,
-                "parent_section_id": parent_section_id,
-                "depth": depth,
-                "title": title,
-                "order_index": order_index,
-                "description": _clean_text(payload.get("description")),
-                "key_knowledge_points": key_knowledge_points,
-                "source_textbook_id": _clean_text(payload.get("source_textbook_id")),
-                "source_textbook_title": _clean_text(
-                    payload.get("source_textbook_title")
-                ),
-                "source_section_ids": _string_list(payload.get("source_section_ids")),
-                "source_section_titles": _string_list(
-                    payload.get("source_section_titles")
-                ),
-                "source_content_chars": payload.get("source_content_chars"),
-            }
-        )
+        normalized_section = {
+            "section_id": section_id,
+            "parent_section_id": parent_section_id,
+            "depth": depth,
+            "title": title,
+            "order_index": order_index,
+            "description": _clean_text(payload.get("description")),
+            "key_knowledge_points": key_knowledge_points,
+            "source_textbook_id": _clean_text(payload.get("source_textbook_id")),
+            "source_textbook_title": _clean_text(payload.get("source_textbook_title")),
+            "source_section_ids": _string_list(payload.get("source_section_ids")),
+            "source_section_titles": _string_list(payload.get("source_section_titles")),
+            "source_content_chars": payload.get("source_content_chars"),
+        }
+        _require_student_facing_section_text(normalized_section)
+        normalized_sections.append(normalized_section)
 
     if not normalized_sections:
         raise ValueError("课程大纲缺少有效章节。")
@@ -448,6 +491,8 @@ def _normalize_generated_sections(raw_sections: object) -> list[dict]:
         for section in normalized_sections
         if isinstance(section, dict) and section.get("parent_section_id") is None
     }
+    if len(top_level_ids) < 2:
+        raise ValueError("课程大纲至少需要两个一级章节。")
     child_parent_ids = {
         section["parent_section_id"]
         for section in normalized_sections
@@ -518,6 +563,16 @@ def _normalize_generated_course_outline(
             section_id for section_id in section_ids if "." not in section_id
         ]
         learning_sequence = _learning_sequence_texts(sections, preferred_sequence_ids)
+    source_ids = [
+        source_id
+        for section in sections
+        for source_id in _string_list(section.get("source_section_ids"))
+        if _looks_like_internal_source_id(source_id)
+    ]
+    if source_ids and any(
+        source_id in step for step in learning_sequence for source_id in source_ids
+    ):
+        raise ValueError("课程大纲可见文案不能包含教材内部小节 ID。")
     total_estimated_hours = _normalize_total_estimated_hours(
         payload.get("total_estimated_hours"),
         "待评估",
@@ -553,6 +608,359 @@ def _source_section_contexts_for_courses(
                 section_ids,
             )
     return contexts
+
+
+def _source_outline_section_ids_from_textbook(
+    db_session: Session,
+    textbook: object,
+) -> list[str]:
+    outline_data = getattr(textbook, "outline", None)
+    section_ids: list[str] = []
+    if isinstance(outline_data, dict):
+        chapters = outline_data.get("chapters")
+        if isinstance(chapters, list):
+            for chapter in chapters:
+                if not isinstance(chapter, dict):
+                    continue
+                sections = chapter.get("sections")
+                if not isinstance(sections, list):
+                    continue
+                for section in sections:
+                    if not isinstance(section, dict):
+                        continue
+                    section_id = _clean_text(section.get("section_id"))
+                    if section_id and section_id not in section_ids:
+                        section_ids.append(section_id)
+        sections = outline_data.get("sections")
+        if isinstance(sections, list):
+            for section in sections:
+                if not isinstance(section, dict):
+                    continue
+                section_id = _clean_text(section.get("section_id"))
+                if section_id and section_id not in section_ids:
+                    section_ids.append(section_id)
+
+    if section_ids:
+        return section_ids
+
+    content_records = _content_records_by_section_id(db_session, textbook.textbook_id)
+    ordered_records = sorted(
+        content_records.values(),
+        key=lambda row: int(getattr(row, "order_index", 0) or 0),
+    )
+    return [
+        section_id
+        for row in ordered_records
+        if (section_id := _clean_text(getattr(row, "section_id", "")))
+    ]
+
+
+_SOURCE_TERM_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "复杂度",
+        (
+            "complexity",
+            "time complexity",
+            "space complexity",
+            "asymptotic",
+            "big-o",
+            "big-oh",
+            "big-omega",
+            "big-theta",
+            "running time",
+        ),
+    ),
+    ("big-o", ("big-o", "big-oh", "asymptotic", "upper bound")),
+    ("big-omega", ("big-omega", "lower bound")),
+    ("big-theta", ("big-theta", "tight bound")),
+    ("渐近", ("asymptotic", "asymptotic notation", "big-o")),
+    ("指数", ("exponential", "exponentials")),
+    ("对数", ("logarithm", "logarithms")),
+    ("阶乘", ("factorial", "factorials")),
+    ("摊销", ("amortized", "amortization")),
+    ("效率", ("efficiency", "efficient")),
+    ("算法", ("algorithm", "algorithms")),
+    ("数据结构", ("data structure", "data structures")),
+    ("数学", ("mathematical", "mathematics", "notation")),
+    ("正确性", ("correctness",)),
+    ("空间", ("space complexity",)),
+    ("时间", ("time complexity", "running time")),
+    ("计算模型", ("model of computation", "computation model", "computational model")),
+)
+
+
+def _append_course_source_text(value: object, output: list[str]) -> None:
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            output.append(text)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _append_course_source_text(item, output)
+        return
+    if isinstance(value, dict):
+        for item in value.values():
+            _append_course_source_text(item, output)
+
+
+def _course_source_search_text(course: dict) -> str:
+    values: list[str] = []
+    for key in (
+        "course_or_chapter_theme",
+        "course_goal",
+        "key_points",
+        "difficult_points",
+        "acceptance_criteria",
+        "chapter_nodes",
+        "core_knowledge_points",
+    ):
+        _append_course_source_text(course.get(key), values)
+    return "\n".join(values)
+
+
+def _course_source_terms(course: dict) -> set[str]:
+    search_text = _course_source_search_text(course)
+    normalized_text = search_text.lower()
+    terms = {
+        raw_term.strip().lower()
+        for raw_term in re.split(
+            r"[\s,，、。；;：:（）()【】\[\]《》\"']+", search_text
+        )
+        if raw_term.strip()
+    }
+    for trigger, mapped_terms in _SOURCE_TERM_RULES:
+        if trigger.lower() in normalized_text:
+            terms.update(mapped_terms)
+    return {term for term in terms if term}
+
+
+def _text_score(text: object, terms: set[str]) -> int:
+    normalized_text = str(text or "").lower()
+    if not normalized_text:
+        return 0
+    score = 0
+    for term in terms:
+        if term and term in normalized_text:
+            score += 3 if " " in term else 1
+    return score
+
+
+def _section_available_chars(row: object) -> int:
+    content_char_count = getattr(row, "content_char_count", None)
+    if isinstance(content_char_count, int) and content_char_count > 0:
+        return content_char_count
+    content_zh = _clean_text(getattr(row, "content_zh", ""))
+    content_original = _clean_text(getattr(row, "content_original", ""))
+    return len(content_zh or content_original)
+
+
+def _row_source_text(row: object) -> str:
+    return "\n".join(
+        [
+            _clean_text(getattr(row, "title", "")),
+            _clean_text(getattr(row, "original_title", "")),
+            _clean_text(getattr(row, "content_zh", "")),
+            _clean_text(getattr(row, "content_original", "")),
+        ]
+    )
+
+
+def _infer_course_source_binding_from_published_textbooks(
+    db_session: Session,
+    course: dict,
+) -> tuple[object, list[str]] | None:
+    from sqlmodel import select
+
+    from app.models import Textbook
+
+    terms = _course_source_terms(course)
+    if not terms:
+        return None
+
+    textbooks = db_session.exec(
+        select(Textbook)
+        .where(Textbook.student_availability_status == "published")
+        .order_by(Textbook.textbook_id)
+    ).all()
+
+    best_textbook = None
+    best_section_ids: list[str] = []
+    best_score = 0
+    for textbook in textbooks:
+        textbook_text = "\n".join(
+            [
+                _clean_text(getattr(textbook, "title", "")),
+                _clean_text(getattr(textbook, "description", "")),
+                " ".join(str(tag) for tag in getattr(textbook, "tags", []) or []),
+            ]
+        )
+        textbook_score = _text_score(textbook_text, terms)
+        section_ids, section_score = _select_relevant_section_ids_from_textbook(
+            db_session,
+            textbook,
+            terms,
+        )
+        if not section_ids:
+            continue
+
+        total_score = textbook_score + section_score
+        if section_ids and total_score > best_score:
+            best_score = total_score
+            best_textbook = textbook
+            best_section_ids = section_ids
+
+    if best_textbook is None or not best_section_ids:
+        return None
+    return best_textbook, best_section_ids
+
+
+def _select_relevant_section_ids_from_textbook(
+    db_session: Session,
+    textbook: object,
+    terms: set[str],
+) -> tuple[list[str], int]:
+    from sqlmodel import select
+
+    from app.models import TextbookSectionContent
+
+    rows = db_session.exec(
+        select(TextbookSectionContent)
+        .where(TextbookSectionContent.textbook_id == textbook.textbook_id)
+        .order_by(
+            TextbookSectionContent.order_index,
+            TextbookSectionContent.section_id,
+        )
+    ).all()
+    scored_rows: list[tuple[int, object]] = []
+    for row in rows:
+        if _section_available_chars(row) > SOURCE_CONTENT_CHAR_LIMIT:
+            continue
+        row_score = _text_score(_row_source_text(row), terms)
+        if row_score > 0:
+            scored_rows.append((row_score, row))
+
+    selected_rows = sorted(
+        sorted(
+            scored_rows,
+            key=lambda item: (
+                -item[0],
+                int(getattr(item[1], "order_index", 0) or 0),
+                _clean_text(getattr(item[1], "section_id", "")),
+            ),
+        )[:7],
+        key=lambda item: (
+            int(getattr(item[1], "order_index", 0) or 0),
+            _clean_text(getattr(item[1], "section_id", "")),
+        ),
+    )
+    section_ids = [
+        _clean_text(getattr(row, "section_id", ""))
+        for _score, row in selected_rows
+        if _clean_text(getattr(row, "section_id", ""))
+    ]
+    return section_ids, sum(score for score, _row in scored_rows)
+
+
+def _source_binding_has_unusable_sections(
+    db_session: Session,
+    textbook_id: str,
+    section_ids: list[str],
+) -> bool:
+    if not section_ids:
+        return True
+    content_records = _content_records_by_section_id(db_session, textbook_id)
+    for section_id in section_ids:
+        row = content_records.get(section_id)
+        if row is None:
+            return True
+        if _section_available_chars(row) > SOURCE_CONTENT_CHAR_LIMIT:
+            return True
+    return False
+
+
+def _usable_source_section_ids(
+    db_session: Session,
+    textbook_id: str,
+    section_ids: list[str],
+) -> list[str]:
+    content_records = _content_records_by_section_id(db_session, textbook_id)
+    usable_ids: list[str] = []
+    for section_id in section_ids:
+        row = content_records.get(section_id)
+        if row is None:
+            continue
+        if _section_available_chars(row) > SOURCE_CONTENT_CHAR_LIMIT:
+            continue
+        usable_ids.append(section_id)
+    return usable_ids
+
+
+def _fill_course_source_binding_from_textbook(
+    db_session: Session,
+    course: dict,
+) -> None:
+    from sqlmodel import select
+
+    from app.models import Textbook
+
+    source_textbook_id = _clean_text(course.get("source_textbook_id"))
+    textbook = None
+    if source_textbook_id and source_textbook_id != "None":
+        textbook = db_session.get(Textbook, source_textbook_id)
+    else:
+        theme = _clean_text(course.get("course_or_chapter_theme"))
+        if theme:
+            normalized_theme = "".join(theme.lower().split())
+            stmt = select(Textbook).where(
+                Textbook.student_availability_status == "published"
+            )
+            for row in db_session.exec(stmt).all():
+                normalized_title = "".join(row.title.lower().split())
+                if normalized_title == normalized_theme:
+                    textbook = row
+                    break
+
+    inferred_section_ids: list[str] | None = None
+    if textbook is None or textbook.student_availability_status != "published":
+        inferred = _infer_course_source_binding_from_published_textbooks(
+            db_session,
+            course,
+        )
+        if inferred is None:
+            return
+        textbook, inferred_section_ids = inferred
+
+    course["source_textbook_id"] = textbook.textbook_id
+    course["source_textbook_title"] = textbook.title
+    source_section_ids = _string_list(course.get("source_outline_section_ids"))
+    if source_section_ids and _source_binding_has_unusable_sections(
+        db_session,
+        textbook.textbook_id,
+        source_section_ids,
+    ):
+        usable_section_ids = _usable_source_section_ids(
+            db_session,
+            textbook.textbook_id,
+            source_section_ids,
+        )
+        if usable_section_ids:
+            course["source_outline_section_ids"] = usable_section_ids
+        else:
+            repaired_section_ids, _score = _select_relevant_section_ids_from_textbook(
+                db_session,
+                textbook,
+                _course_source_terms(course),
+            )
+            if repaired_section_ids:
+                course["source_outline_section_ids"] = repaired_section_ids
+    elif not source_section_ids:
+        if inferred_section_ids is not None:
+            course["source_outline_section_ids"] = inferred_section_ids
+        else:
+            course["source_outline_section_ids"] = (
+                _source_outline_section_ids_from_textbook(db_session, textbook)
+            )
 
 
 def _apply_source_section_content_lengths(
@@ -637,6 +1045,9 @@ def _source_section_chapter_key(section_id: str, parent_section_id: object) -> s
     parent = _clean_text(parent_section_id)
     if parent:
         return parent.split(".", 1)[0]
+    internal_match = re.match(r"^(sec_\d+)_", section_id)
+    if internal_match:
+        return internal_match.group(1)
     return section_id.split(".", 1)[0]
 
 
@@ -716,6 +1127,12 @@ def _course_input_payload(
             course.get("source_outline_section_ids")
         ),
     }
+    if (
+        not payload["source_textbook_id"]
+        or not payload["source_textbook_title"]
+        or not payload["source_outline_section_ids"]
+    ):
+        raise ValueError("course source binding is incomplete")
     course_id = payload["course_id"]
     if source_section_contexts is not None and course_id in source_section_contexts:
         payload["source_outline_sections"] = source_section_contexts[course_id]
@@ -775,6 +1192,259 @@ def _profile_input_payload(profile: dict) -> dict:
     return compact_profile
 
 
+COURSE_OUTLINE_NAMING_SYSTEM_PROMPT = """\
+你是课程大纲中文教学命名助手。后端已经确定章节结构和教材来源绑定，你只负责为每个学生端章节生成中文教学标题、说明和知识点。
+
+规则：
+- 只能输出 JSON 对象，不能输出 Markdown 或解释文字。
+- 顶层必须包含 personalization_summary 和 section_texts。
+- section_texts 必须是对象，键必须使用输入里的学生端 section_id。
+- 每个 section_texts 项必须包含 title、description、key_knowledge_points。
+- title、description、key_knowledge_points 必须是中文学生端教学表达。
+- 不得输出 sec_1_1 这类教材内部小节 ID。
+- 不得直接把英文教材标题复制到学生端可见文案。
+- 不得输出 source_textbook_id、source_section_ids、source_section_titles、source_content_chars。
+"""
+
+
+def _course_context_for_naming(course: dict) -> dict:
+    time_arrangement = course.get("time_arrangement", {})
+    return {
+        "course_name": _clean_text(course.get("course_or_chapter_theme")),
+        "course_goal": _clean_text(course.get("course_goal")),
+        "key_points": _string_list(course.get("key_points")),
+        "difficult_points": _string_list(course.get("difficult_points")),
+        "acceptance_criteria": _string_list(course.get("acceptance_criteria")),
+        "semester_scope": _clean_text(time_arrangement.get("semester_scope"))
+        if isinstance(time_arrangement, dict)
+        else "",
+        "duration": _clean_text(time_arrangement.get("duration"))
+        if isinstance(time_arrangement, dict)
+        else "",
+    }
+
+
+def _source_rows_by_chapter(
+    source_rows: list[dict[str, object]],
+) -> list[list[dict[str, object]]]:
+    groups: list[list[dict[str, object]]] = []
+    group_keys: list[str] = []
+    for row in source_rows:
+        chapter_key = _source_section_chapter_key(
+            str(row.get("section_id", "")),
+            row.get("parent_section_id"),
+        )
+        if chapter_key in group_keys:
+            groups[group_keys.index(chapter_key)].append(row)
+        else:
+            group_keys.append(chapter_key)
+            groups.append([row])
+    return groups
+
+
+def _section_source_payload(
+    selected_course: dict,
+    source_rows: list[dict[str, object]],
+) -> dict:
+    return {
+        "source_textbook_id": _clean_text(selected_course.get("source_textbook_id")),
+        "source_textbook_title": _clean_text(
+            selected_course.get("source_textbook_title")
+        ),
+        "source_section_ids": [str(row["section_id"]) for row in source_rows],
+        "source_section_titles": [str(row["title"]) for row in source_rows],
+        "source_content_chars": sum(
+            int(row["content_char_count"]) for row in source_rows
+        ),
+    }
+
+
+def _build_deterministic_outline_sections(
+    selected_course: dict,
+    source_rows: list[dict[str, object]],
+) -> list[dict]:
+    if not source_rows:
+        raise ValueError("课程缺少可用于生成大纲的教材小节。")
+
+    sections: list[dict] = []
+    order_index = 1
+    for chapter_index, chapter_rows in enumerate(
+        _source_rows_by_chapter(source_rows),
+        start=1,
+    ):
+        chapter_section_id = str(chapter_index)
+        sections.append(
+            {
+                "section_id": chapter_section_id,
+                "parent_section_id": None,
+                "depth": 1,
+                "title": "",
+                "order_index": order_index,
+                "description": "",
+                "key_knowledge_points": ["待命名"],
+                **_section_source_payload(selected_course, chapter_rows),
+            }
+        )
+        order_index += 1
+
+        child_source_rows = [
+            row
+            for row in chapter_rows
+            if not (
+                len(chapter_rows) > 1
+                and str(row.get("section_id", ""))
+                == _source_section_chapter_key(
+                    str(row.get("section_id", "")),
+                    row.get("parent_section_id"),
+                )
+            )
+        ] or chapter_rows
+
+        for child_index, source_row in enumerate(child_source_rows, start=1):
+            child_rows = [source_row]
+            _require_valid_source_section_group(child_rows)
+            source_content_chars = int(source_row["content_char_count"])
+            if source_content_chars > SOURCE_CONTENT_CHAR_LIMIT:
+                raise ValueError(
+                    "source_content_chars 不能超过 8000，必须拆成多个学生端章节。"
+                )
+            sections.append(
+                {
+                    "section_id": f"{chapter_section_id}.{child_index}",
+                    "parent_section_id": chapter_section_id,
+                    "depth": 2,
+                    "title": "",
+                    "order_index": order_index,
+                    "description": "",
+                    "key_knowledge_points": ["待命名"],
+                    **_section_source_payload(selected_course, child_rows),
+                }
+            )
+            order_index += 1
+    return sections
+
+
+def _build_outline_naming_input(
+    selected_course: dict,
+    profile: dict,
+    sections: list[dict],
+) -> str:
+    naming_sections = [
+        {
+            "section_id": section["section_id"],
+            "parent_section_id": section["parent_section_id"],
+            "depth": section["depth"],
+            "source_titles": section["source_section_titles"],
+        }
+        for section in sections
+    ]
+    payload = {
+        "course": _course_context_for_naming(selected_course),
+        "profile": _profile_input_payload(profile),
+        "sections_to_name": naming_sections,
+    }
+    return (
+        "请为后端已经确定结构的课程大纲生成中文教学命名。\n"
+        "只生成学生端可见文案，不要输出来源绑定字段。\n"
+        "输出 JSON 形状："
+        '{"personalization_summary":"中文安排说明","section_texts":{"1":{"title":"中文章名","description":"中文说明","key_knowledge_points":["中文知识点"]}}}\n'
+        f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
+    )
+
+
+def _naming_payload_texts(
+    raw_output: object, section_ids: list[str]
+) -> tuple[str, dict]:
+    payload = _extract_json_payload(raw_output)
+    personalization_summary = _clean_text(payload.get("personalization_summary"))
+    if not personalization_summary:
+        raise ValueError("课程大纲命名缺少 personalization_summary。")
+    if not _contains_chinese_text(personalization_summary):
+        raise ValueError("课程大纲学生端可见文案必须使用中文。")
+
+    section_texts = payload.get("section_texts")
+    if not isinstance(section_texts, dict):
+        raise ValueError("课程大纲命名缺少 section_texts。")
+
+    normalized: dict[str, dict] = {}
+    for section_id in section_ids:
+        raw_text = section_texts.get(section_id)
+        if not isinstance(raw_text, dict):
+            raise ValueError("课程大纲命名缺少章节文案。")
+        title = _clean_text(raw_text.get("title"))
+        description = _clean_text(raw_text.get("description"))
+        key_knowledge_points = _string_list(raw_text.get("key_knowledge_points"))
+        if not title or not description or not key_knowledge_points:
+            raise ValueError("课程大纲命名章节文案不完整。")
+        normalized[section_id] = {
+            "title": title,
+            "description": description,
+            "key_knowledge_points": key_knowledge_points,
+        }
+    return personalization_summary, normalized
+
+
+def _apply_outline_naming(
+    selected_course: dict,
+    sections: list[dict],
+    personalization_summary: str,
+    section_texts: dict[str, dict],
+) -> dict:
+    named_sections: list[dict] = []
+    for section in sections:
+        section_id = str(section["section_id"])
+        named_section = {
+            **section,
+            **section_texts[section_id],
+        }
+        _require_student_facing_section_text(named_section)
+        named_sections.append(SectionItem(**named_section).model_dump())
+
+    top_level_ids = [
+        section["section_id"]
+        for section in named_sections
+        if section.get("parent_section_id") is None
+    ]
+    total_child_sections = sum(
+        1 for section in named_sections if section.get("parent_section_id") is not None
+    )
+    outline = CourseKnowledgeOutput(
+        course_id=_clean_text(selected_course.get("course_node_id")),
+        course_name=_clean_text(selected_course.get("course_or_chapter_theme")),
+        grade_year=_clean_text(selected_course.get("grade_id")),
+        personalization_summary=personalization_summary,
+        sections=named_sections,
+        learning_sequence=_learning_sequence_texts(named_sections, top_level_ids),
+        total_estimated_hours=f"{max(4, total_child_sections * 2)} 小时",
+    )
+    return outline.model_dump()
+
+
+async def _invoke_named_course_outline(
+    chain: object,
+    selected_course: dict,
+    profile: dict,
+    source_rows: list[dict[str, object]],
+) -> dict:
+    sections = _build_deterministic_outline_sections(selected_course, source_rows)
+    section_ids = [section["section_id"] for section in sections]
+    query = _build_outline_naming_input(selected_course, profile, sections)
+    result = await asyncio.wait_for(
+        chain.ainvoke({"query": query}),
+        timeout=COURSE_OUTLINE_NAMING_TIMEOUT_SECONDS,
+    )
+    personalization_summary, section_texts = _naming_payload_texts(
+        result,
+        section_ids,
+    )
+    return _apply_outline_naming(
+        selected_course,
+        sections,
+        personalization_summary,
+        section_texts,
+    )
+
+
 def _build_analysis_input(
     selected_course: dict,
     profile: dict,
@@ -782,7 +1452,6 @@ def _build_analysis_input(
     latest_grade_year: str = "",
     source_section_contexts: dict[str, list[dict[str, object]]] | None = None,
 ) -> str:
-    require_course_source_for_course_knowledge(selected_course)
     compact_course = _course_input_payload(selected_course, source_section_contexts)
     course_sequence = _same_grade_course_sequence(
         year_learning_paths,
@@ -791,7 +1460,7 @@ def _build_analysis_input(
     )
     compact_profile = _profile_input_payload(profile)
 
-    query = (
+    return (
         "请为以下课程生成详细的章节大纲。\n\n"
         "只使用下面与大纲规划直接相关的信息。当前课程名称必须与"
         "当前课程输入里的 course_name 完全一致。\n"
@@ -805,6 +1474,9 @@ def _build_analysis_input(
         "4. 再把分析结果映射成层级化章节大纲。\n"
         "5. sections[] 的 source_* 字段必须来自这些绑定教材小节，"
         "不能新增未绑定来源。\n\n"
+        "当前课程必须生成完整多章大纲：至少 2 个一级章节，每个一级章节至少 3 个直属二级小节。"
+        "学生可见的 title、description、key_knowledge_points 和 learning_sequence "
+        "必须使用中文教学表达，不能出现 sec_1_1 这类教材内部小节 ID。\n\n"
         "每个二级小节必须为后续 Markdown 教学、视频检索和 HTML 动画提供具体知识点；"
         "不得把小节写成总体性、模糊的资源主题。"
         "Markdown 智能体必须使用本小节 source_section_ids 对应教材正文，"
@@ -812,18 +1484,6 @@ def _build_analysis_input(
         f"当前课程输入：{json.dumps(compact_course, ensure_ascii=False, indent=2)}\n"
         f"同年级课程顺序：{json.dumps(course_sequence, ensure_ascii=False, indent=2)}\n"
         f"学习者输入：{json.dumps(compact_profile, ensure_ascii=False, indent=2)}"
-    )
-    budget = apply_prompt_budget(
-        query,
-        phase="outline",
-        protected_fragments=[
-            compact_course["source_textbook_id"],
-            "、".join(compact_course["source_outline_section_ids"]),
-        ],
-    )
-    return (
-        f"{budget.text}\n\n"
-        f"prompt_budget_applied={str(budget.prompt_budget_applied).lower()}"
     )
 
 
@@ -836,13 +1496,12 @@ def _build_year_analysis_input(
 ) -> str:
     compact_courses = []
     for index, course in enumerate(courses, start=1):
-        require_course_source_for_course_knowledge(course)
         payload = _course_input_payload(course, source_section_contexts)
         payload["order"] = index
         payload["is_current"] = payload["course_id"] == current_course_id
         compact_courses.append(payload)
 
-    query = (
+    return (
         "请一次性为当前年级的全部课程生成详细章节大纲。\n\n"
         "你必须利用全年课程顺序、课程之间的承接关系和学习者画像"
         "统一设计每门课的大纲。"
@@ -853,7 +1512,9 @@ def _build_year_analysis_input(
         "每门课仍然只生成课程结构：章名、小节名、短结构说明和 "
         "key_knowledge_points。\n"
         "一级章节 section_id 必须使用 1、2 这种数字编号；每个一级章节"
-        "必须至少包含 1.1、1.2 这种二级小节。\n"
+        "必须至少包含 1.1、1.2、1.3 这种直属二级小节；每门课程至少 2 个一级章节。\n"
+        "学生可见的 title、description、key_knowledge_points 和 learning_sequence "
+        "必须使用中文教学表达，不能出现 sec_1_1 这类教材内部小节 ID。\n"
         "不要把学习路径里的 learning_sequence、stage_titles 或课程顺序"
         "条目直接当作章节。\n\n"
         "sections[] 的 source_* 字段必须来自这些绑定教材小节，"
@@ -877,208 +1538,32 @@ def _build_year_analysis_input(
         "学习者输入："
         f"{json.dumps(_profile_input_payload(profile), ensure_ascii=False, indent=2)}"
     )
-    protected_fragments = []
-    for course in compact_courses:
-        protected_fragments.append(course["source_textbook_id"])
-        protected_fragments.append("、".join(course["source_outline_section_ids"]))
+
+
+def _outline_prompt_protected_fragments(courses: list[dict]) -> list[str]:
+    fragments: list[str] = []
+    for course in courses:
+        textbook_id = str(course.get("source_textbook_id") or "").strip()
+        if textbook_id:
+            fragments.append(textbook_id)
+        section_ids = course.get("source_outline_section_ids")
+        if isinstance(section_ids, list):
+            fragments.extend(
+                str(item).strip() for item in section_ids if str(item).strip()
+            )
+    return fragments
+
+
+def _apply_outline_prompt_budget(query: str, courses: list[dict]) -> str:
     budget = apply_prompt_budget(
         query,
         phase="outline",
-        protected_fragments=protected_fragments,
+        protected_fragments=_outline_prompt_protected_fragments(courses),
     )
     return (
         f"{budget.text}\n\n"
         f"prompt_budget_applied={str(budget.prompt_budget_applied).lower()}"
     )
-
-
-def _build_repair_input(original_input: str, error_message: str) -> str:
-    return (
-        f"{original_input}\n\n"
-        "上一次输出没有通过课程大纲结构校验，请重新生成完整 JSON。\n"
-        f"校验错误：{error_message}\n\n"
-        "修复要求：\n"
-        "1. 保持当前课程名称与当前课程输入里的 course_name 完全一致。\n"
-        "2. 一级章节 section_id 必须使用 1、2 这种数字编号，对应第一章、第二章。\n"
-        "3. 每个一级章节必须至少包含三个直属二级小节，编号必须使用 1.1、1.2、1.3、2.1、2.2、2.3 这种形式。\n"
-        "4. 每个 section 的 key_knowledge_points 必须非空，且必须是该章或小节的具体知识点、小能力或验收点。\n"
-        "5. 每个 section 必须包含 source_textbook_id、source_textbook_title、source_section_ids、source_section_titles、source_content_chars。\n"
-        "6. 每个 section 的 source_* 字段必须来自这些绑定教材小节，不能新增未绑定来源。\n"
-        "7. 不要使用学习路径里的 learning_sequence、stage_titles 或课程顺序条目作为章节。"
-    )
-
-
-async def _invoke_json_outline(
-    chain: object,
-    selected_course: dict,
-    query: str,
-) -> dict:
-    result = await asyncio.wait_for(
-        chain.ainvoke({"query": query}),
-        timeout=SINGLE_COURSE_OUTLINE_TIMEOUT_SECONDS,
-    )
-    return _normalize_generated_course_outline(selected_course, result)
-
-
-async def _invoke_json_year_outlines(
-    chain: object,
-    courses: list[dict],
-    query: str,
-) -> list[dict]:
-    result = await asyncio.wait_for(
-        chain.ainvoke({"query": query}),
-        timeout=YEAR_COURSE_OUTLINE_TIMEOUT_SECONDS,
-    )
-    return _normalize_generated_year_course_outlines(courses, result)
-
-
-def _append_json_output_contract(query: str, output_contract: str) -> str:
-    return (
-        f"{query}\n\n"
-        "输出格式要求：必须只输出一个 JSON 对象，不要输出 Markdown 代码块、解释文字或额外前后缀。\n"
-        "只按下面的普通 JSON 文本形状输出。\n"
-        f"{output_contract}"
-    )
-
-
-_SINGLE_COURSE_JSON_CONTRACT = """\
-单门课程 JSON 字段：
-- personalization_summary: 字符串。
-- sections: 数组；每项必须包含 "section_id"、"parent_section_id"、"depth"、"title"、"order_index"、"description"、"key_knowledge_points"、"source_textbook_id"、"source_textbook_title"、"source_section_ids"、"source_section_titles"、"source_content_chars"。
-- learning_sequence: 字符串数组。
-- total_estimated_hours: 字符串。
-"""
-
-
-_YEAR_COURSES_JSON_CONTRACT = """\
-全年课程 JSON 形状：
-{
-  "grade_year": "当前年级 ID",
-  "year_summary": "全年课程大纲整体安排说明",
-  "course_outlines": [
-    {
-      "course_id": "必须与输入课程 course_id 完全一致",
-      "personalization_summary": "为什么这样安排这门课",
-      "sections": [
-        {
-          "section_id": "1",
-          "parent_section_id": null,
-          "depth": 1,
-          "title": "第一章章名",
-          "order_index": 1,
-          "description": "这一章解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"],
-          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
-          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
-          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
-          "source_section_titles": ["绑定教材小节标题"],
-          "source_content_chars": 1200
-        },
-        {
-          "section_id": "1.1",
-          "parent_section_id": "1",
-          "depth": 2,
-          "title": "1.1 小节名",
-          "order_index": 2,
-          "description": "这一小节解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"],
-          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
-          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
-          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
-          "source_section_titles": ["绑定教材小节标题"],
-          "source_content_chars": 1200
-        },
-        {
-          "section_id": "1.2",
-          "parent_section_id": "1",
-          "depth": 2,
-          "title": "1.2 小节名",
-          "order_index": 3,
-          "description": "这一小节解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"],
-          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
-          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
-          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
-          "source_section_titles": ["绑定教材小节标题"],
-          "source_content_chars": 1200
-        },
-        {
-          "section_id": "1.3",
-          "parent_section_id": "1",
-          "depth": 2,
-          "title": "1.3 小节名",
-          "order_index": 4,
-          "description": "这一小节解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"],
-          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
-          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
-          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
-          "source_section_titles": ["绑定教材小节标题"],
-          "source_content_chars": 1200
-        },
-        {
-          "section_id": "2",
-          "parent_section_id": null,
-          "depth": 1,
-          "title": "第二章章名",
-          "order_index": 5,
-          "description": "这一章解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"],
-          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
-          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
-          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
-          "source_section_titles": ["绑定教材小节标题"],
-          "source_content_chars": 1200
-        },
-        {
-          "section_id": "2.1",
-          "parent_section_id": "2",
-          "depth": 2,
-          "title": "2.1 小节名",
-          "order_index": 6,
-          "description": "这一小节解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"],
-          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
-          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
-          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
-          "source_section_titles": ["绑定教材小节标题"],
-          "source_content_chars": 1200
-        },
-        {
-          "section_id": "2.2",
-          "parent_section_id": "2",
-          "depth": 2,
-          "title": "2.2 小节名",
-          "order_index": 7,
-          "description": "这一小节解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"],
-          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
-          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
-          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
-          "source_section_titles": ["绑定教材小节标题"],
-          "source_content_chars": 1200
-        },
-        {
-          "section_id": "2.3",
-          "parent_section_id": "2",
-          "depth": 2,
-          "title": "2.3 小节名",
-          "order_index": 8,
-          "description": "这一小节解决什么问题",
-          "key_knowledge_points": ["具体知识点或能力点"],
-          "source_textbook_id": "必须来自对应课程输入 source_textbook_id",
-          "source_textbook_title": "必须来自对应课程输入 source_textbook_title",
-          "source_section_ids": ["必须来自对应课程输入 source_outline_section_ids"],
-          "source_section_titles": ["绑定教材小节标题"],
-          "source_content_chars": 1200
-        }
-      ],
-      "learning_sequence": ["第一章：面向用户的学习步骤", "第二章：面向用户的学习步骤"],
-      "total_estimated_hours": "预计总学时"
-    }
-  ]
-}
-"""
 
 
 def _current_outline_from_generated(
@@ -1095,97 +1580,8 @@ def _current_outline_from_generated(
     return outlines[0]
 
 
-def _translation_content_text(content_record: object | None) -> str:
-    if content_record is None:
-        return ""
-    return _clean_text(
-        getattr(content_record, "content_zh", "")
-        or getattr(content_record, "content_original", "")
-    )
-
-
-def _teaching_sentences_from_content(content_text: str) -> list[str]:
-    normalized = re.sub(r"\s+", " ", content_text).strip()
-    if not normalized:
-        return []
-    sentence_parts = [
-        part.strip()
-        for part in re.split(r"(?<=[。！？!?])\s*|[\r\n]+", normalized)
-        if part.strip()
-    ]
-    if not sentence_parts:
-        sentence_parts = [normalized]
-    return [part[:120] for part in sentence_parts if part]
-
-
-def _description_from_source_content(title: str, content_text: str) -> str:
-    sentences = _teaching_sentences_from_content(content_text)
-    if sentences:
-        return sentences[0]
-    return f"{title}说明。"
-
-
-def _knowledge_points_from_source_content(title: str, content_text: str) -> list[str]:
-    points: list[str] = []
-    for sentence in _teaching_sentences_from_content(content_text):
-        if sentence not in points:
-            points.append(sentence)
-        if len(points) >= 3:
-            break
-    if points:
-        return points
-    return [f"{title}重点"]
-
-
 def _contains_chinese_text(value: object) -> bool:
     return any("\u4e00" <= char <= "\u9fff" for char in str(value or ""))
-
-
-def _student_facing_chinese_title(
-    raw_title: str,
-    content_text: str,
-    fallback: str,
-) -> str:
-    clean_title = _clean_text(raw_title)
-    if _contains_chinese_text(clean_title):
-        return clean_title
-
-    text = _clean_text(content_text)
-    if "链表" in text and ("节点" in text or "指针" in text):
-        if "插入" in text or "删除" in text:
-            return "链表的插入与删除"
-        return "链表的节点与指针结构"
-    if "向量" in text or "嵌入" in text:
-        return "向量表示与语义检索"
-    if "复杂度" in text:
-        return "复杂度分析"
-    return fallback
-
-
-def _chapter_description_from_child_sections(
-    chapter_title: str,
-    child_sections: list[dict],
-) -> str:
-    child_titles = [
-        _clean_text(section.get("title")) for section in child_sections if section
-    ]
-    child_titles = [title for title in child_titles if title]
-    if child_titles:
-        return f"围绕{chapter_title}，依次学习：" + "、".join(child_titles[:4]) + "。"
-    return f"{chapter_title}说明。"
-
-
-def _chapter_points_from_child_sections(
-    chapter_title: str,
-    child_sections: list[dict],
-) -> list[str]:
-    child_titles = [
-        _clean_text(section.get("title")) for section in child_sections if section
-    ]
-    points = [title for title in child_titles if title]
-    if points:
-        return points[:3]
-    return [f"{chapter_title}重点"]
 
 
 def _content_records_by_section_id(
@@ -1202,279 +1598,6 @@ def _content_records_by_section_id(
         )
     ).all()
     return {str(row.section_id): row for row in rows}
-
-
-def _content_chars_for_record(content_record: object | None) -> int:
-    return len(_translation_content_text(content_record))
-
-
-def _flat_outline_sections_from_textbook(
-    outline_data: dict,
-    content_records: dict[str, object],
-    allowed_section_ids: list[str],
-) -> list[dict]:
-    raw_sections = outline_data.get("sections")
-    if not isinstance(raw_sections, list):
-        return []
-
-    allowed_set = set(allowed_section_ids)
-    title_by_id = {
-        _clean_text(section.get("section_id")): _clean_text(section.get("title"))
-        for section in raw_sections
-        if isinstance(section, dict) and _clean_text(section.get("section_id"))
-    }
-    groups: dict[str, list[dict]] = {}
-    group_order: list[str] = []
-    for section in raw_sections:
-        if not isinstance(section, dict):
-            continue
-        section_id = _clean_text(section.get("section_id"))
-        if not section_id:
-            continue
-        if allowed_set and section_id not in allowed_set:
-            continue
-        content_record = content_records.get(section_id)
-        parent_section_id = _clean_text(
-            section.get("parent_section_id")
-        ) or _clean_text(
-            getattr(content_record, "parent_section_id", "")
-            if content_record is not None
-            else ""
-        )
-        if not parent_section_id and "." in section_id:
-            parent_section_id = section_id.split(".", 1)[0]
-        if not parent_section_id:
-            parent_section_id = section_id
-        if parent_section_id not in group_order:
-            group_order.append(parent_section_id)
-        groups.setdefault(parent_section_id, []).append(section)
-
-    normalized_sections: list[dict] = []
-    for chapter_key in group_order:
-        child_sections = groups.get(chapter_key, [])
-        if not child_sections:
-            continue
-        chapter_title = title_by_id.get(chapter_key) or _chapter_label(chapter_key)
-        normalized_sections.append(
-            {
-                "chapter_number": chapter_key,
-                "title": chapter_title,
-                "sections": child_sections,
-            }
-        )
-    return normalized_sections
-
-
-def _try_db_outline_translation(
-    db_session: Session,
-    course: dict,
-    grade_year: str,
-) -> dict | None:
-    from sqlmodel import select
-
-    from app.models import Textbook
-
-    source_textbook_id = str(course.get("source_textbook_id") or "").strip()
-    if not source_textbook_id or source_textbook_id == "None":
-        theme = str(course.get("course_or_chapter_theme") or "").strip()
-        if theme:
-            normalized_theme = "".join(theme.lower().split())
-            stmt = select(Textbook).where(
-                Textbook.student_availability_status == "published"
-            )
-            all_tbs = db_session.exec(stmt).all()
-            for tb in all_tbs:
-                normalized_title = "".join(tb.title.lower().split())
-                if normalized_title == normalized_theme:
-                    course["source_textbook_id"] = tb.textbook_id
-                    course["source_textbook_title"] = tb.title
-                    source_textbook_id = tb.textbook_id
-                    break
-
-    if not source_textbook_id or source_textbook_id == "None":
-        return None
-
-    textbook = db_session.get(Textbook, source_textbook_id)
-    if textbook is None or textbook.student_availability_status != "published":
-        return None
-
-    outline_data = textbook.outline
-    if not isinstance(outline_data, dict) or not outline_data:
-        return None
-
-    content_records = _content_records_by_section_id(
-        db_session,
-        textbook.textbook_id,
-    )
-    allowed_section_ids = _string_list(course.get("source_outline_section_ids"))
-    allowed_set = set(allowed_section_ids)
-    if "chapters" in outline_data:
-        chapters = outline_data.get("chapters") or []
-    else:
-        chapters = _flat_outline_sections_from_textbook(
-            outline_data,
-            content_records,
-            allowed_section_ids,
-        )
-    if not chapters:
-        return None
-
-    translated_sections = []
-    total_chars = 0
-
-    for ch in chapters:
-        if not isinstance(ch, dict):
-            continue
-        ch_num = ch.get("chapter_number")
-        ch_title = ch.get("title") or ""
-        try:
-            ch_order_index = int(ch_num)
-        except (ValueError, TypeError):
-            ch_order_index = 1
-
-        ch_sec_id = str(ch_num)
-        ch_sections = [
-            section
-            for section in (ch.get("sections") or [])
-            if isinstance(section, dict)
-            and _clean_text(section.get("section_id"))
-            and (
-                not allowed_set or _clean_text(section.get("section_id")) in allowed_set
-            )
-        ]
-        if allowed_set and not ch_sections:
-            continue
-        ch_source_ids = [
-            str(s.get("section_id")).strip() for s in ch_sections if s.get("section_id")
-        ]
-        ch_source_titles = [
-            str(s.get("title")).strip() for s in ch_sections if s.get("title")
-        ]
-        if not ch_source_ids:
-            ch_source_ids = [ch_sec_id]
-            ch_source_titles = [ch_title]
-        chapter_content_text = "。".join(
-            _translation_content_text(content_records.get(section_id))
-            for section_id in ch_source_ids
-        )
-        chapter_topic = _student_facing_chinese_title(
-            str(ch_title),
-            chapter_content_text,
-            f"教材第 {ch_order_index} 章核心内容",
-        )
-        chapter_display_title = (
-            chapter_topic
-            if chapter_topic.startswith("第")
-            else f"第{ch_order_index}章：{chapter_topic}"
-        )
-        ch_display_sections = [
-            {
-                **section,
-                "title": _student_facing_chinese_title(
-                    str(section.get("title") or ""),
-                    _translation_content_text(
-                        content_records.get(_clean_text(section.get("section_id")))
-                    ),
-                    f"{_clean_text(section.get('section_id'))} 教材小节",
-                ),
-            }
-            for section in ch_sections
-        ]
-
-        chapter_item = {
-            "section_id": ch_sec_id,
-            "parent_section_id": None,
-            "depth": 1,
-            "title": chapter_display_title,
-            "order_index": ch_order_index,
-            "description": _chapter_description_from_child_sections(
-                chapter_display_title,
-                ch_display_sections,
-            ),
-            "key_knowledge_points": _chapter_points_from_child_sections(
-                chapter_display_title,
-                ch_display_sections,
-            ),
-            "source_textbook_id": textbook.textbook_id,
-            "source_textbook_title": textbook.title,
-            "source_section_ids": ch_source_ids,
-            "source_section_titles": ch_source_titles,
-            "source_content_chars": sum(
-                _content_chars_for_record(content_records.get(section_id))
-                for section_id in ch_source_ids
-            ),
-        }
-        translated_sections.append(chapter_item)
-
-        for idx, sec in enumerate(ch_sections):
-            sec_id = str(sec.get("section_id")).strip()
-            sec_title = str(sec.get("title")).strip()
-
-            content_record = content_records.get(sec_id)
-            content_text = _translation_content_text(content_record)
-            content_chars = len(content_text)
-            total_chars += content_chars
-            display_sec_title = _student_facing_chinese_title(
-                sec_title,
-                content_text,
-                f"{sec_id} 教材小节",
-            )
-
-            section_item = {
-                "section_id": sec_id,
-                "parent_section_id": ch_sec_id,
-                "depth": 2,
-                "title": display_sec_title,
-                "order_index": idx + 1,
-                "description": _description_from_source_content(
-                    display_sec_title,
-                    content_text,
-                ),
-                "key_knowledge_points": _knowledge_points_from_source_content(
-                    display_sec_title,
-                    content_text,
-                ),
-                "source_textbook_id": textbook.textbook_id,
-                "source_textbook_title": textbook.title,
-                "source_section_ids": [sec_id],
-                "source_section_titles": [sec_title],
-                "source_content_chars": content_chars,
-            }
-            translated_sections.append(section_item)
-
-    depth_2_sections = [s for s in translated_sections if s["depth"] == 2]
-    if depth_2_sections:
-        learning_sequence = [
-            f"学习并掌握「{s['title']}」中的核心概念与工程实践。"
-            for s in depth_2_sections
-        ]
-    else:
-        learning_sequence = [
-            f"阅读《{textbook.title}》相关章节。",
-            "结合各小节的核心知识点进行练习与巩固。",
-        ]
-
-    estimated_hours = max(4, total_chars // 2000)
-    output_dict = {
-        "course_id": course.get("course_node_id") or "",
-        "course_name": course.get("course_or_chapter_theme")
-        or course.get("title")
-        or "",
-        "grade_year": course.get("grade_id") or grade_year or "",
-        "personalization_summary": f"已基于教材《{textbook.title}》的真实大纲和正文结构生成课程详细大纲，无需 LLM 模型介入。",
-        "sections": translated_sections,
-        "learning_sequence": learning_sequence,
-        "total_estimated_hours": f"{estimated_hours} 学时",
-    }
-
-    try:
-        from app.orchestration.agents.models import CourseKnowledgeOutput
-
-        outline_obj = CourseKnowledgeOutput(**output_dict)
-        return outline_obj.model_dump()
-    except Exception as e:
-        logger.error("Direct translated outline validation failed: %s", e)
-        return None
 
 
 async def run_course_knowledge_agent(
@@ -1501,29 +1624,7 @@ async def run_course_knowledge_agent(
                     course_id,
                     latest_grade_year,
                 )
-                source_textbook_id = str(
-                    selected_course.get("source_textbook_id") or ""
-                ).strip()
-                if not source_textbook_id or source_textbook_id == "None":
-                    theme = str(
-                        selected_course.get("course_or_chapter_theme") or ""
-                    ).strip()
-                    if theme:
-                        from sqlmodel import select
-
-                        from app.models import Textbook
-
-                        normalized_theme = "".join(theme.lower().split())
-                        stmt = select(Textbook).where(
-                            Textbook.student_availability_status == "published"
-                        )
-                        all_tbs = db_session.exec(stmt).all()
-                        for tb in all_tbs:
-                            normalized_title = "".join(tb.title.lower().split())
-                            if normalized_title == normalized_theme:
-                                selected_course["source_textbook_id"] = tb.textbook_id
-                                selected_course["source_textbook_title"] = tb.title
-                                break
+                _fill_course_source_binding_from_textbook(db_session, selected_course)
 
                 if (
                     selected_course.get("source_textbook_id")
@@ -1540,27 +1641,7 @@ async def run_course_knowledge_agent(
                     )
                 )
                 for course in grade_courses:
-                    source_textbook_id = str(
-                        course.get("source_textbook_id") or ""
-                    ).strip()
-                    if not source_textbook_id or source_textbook_id == "None":
-                        theme = str(course.get("course_or_chapter_theme") or "").strip()
-                        if theme:
-                            from sqlmodel import select
-
-                            from app.models import Textbook
-
-                            normalized_theme = "".join(theme.lower().split())
-                            stmt = select(Textbook).where(
-                                Textbook.student_availability_status == "published"
-                            )
-                            all_tbs = db_session.exec(stmt).all()
-                            for tb in all_tbs:
-                                normalized_title = "".join(tb.title.lower().split())
-                                if normalized_title == normalized_theme:
-                                    course["source_textbook_id"] = tb.textbook_id
-                                    course["source_textbook_title"] = tb.title
-                                    break
+                    _fill_course_source_binding_from_textbook(db_session, course)
 
                     if (
                         course.get("source_textbook_id")
@@ -1579,73 +1660,45 @@ async def run_course_knowledge_agent(
         except ValueError as exc:
             return {"error": str(exc), "hard_error": True}
 
-        with Session(get_engine()) as db_session:
-            db_translated = _try_db_outline_translation(
-                db_session, selected_course, latest_grade_year
+        try:
+            source_section_contexts = _source_section_contexts_for_courses(
+                [selected_course]
             )
+        except ValueError as exc:
+            return {"error": str(exc), "hard_error": True}
 
-        if db_translated is not None:
-            generated_outlines = [db_translated]
-            current_outline = db_translated
-        else:
-            try:
-                source_section_contexts = _source_section_contexts_for_courses(
-                    [selected_course]
-                )
-            except ValueError as exc:
-                return {"error": str(exc), "hard_error": True}
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", COURSE_OUTLINE_NAMING_SYSTEM_PROMPT),
+                ("human", "{query}"),
+            ]
+        )
+        chain = prompt | llm
 
-            input_text = _append_json_output_contract(
-                _build_analysis_input(
+        try:
+            generated_outlines = [
+                await _invoke_named_course_outline(
+                    chain,
                     selected_course,
                     profile,
-                    year_learning_paths,
-                    latest_grade_year,
-                    source_section_contexts=source_section_contexts,
-                ),
-                _SINGLE_COURSE_JSON_CONTRACT,
-            )
-
-            prompt = ChatPromptTemplate.from_messages(
-                [
-                    ("system", COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT),
-                    ("human", "{query}"),
-                ]
-            )
-            chain = prompt | llm
-
-            try:
-                generated_outlines = [
-                    await _invoke_json_outline(chain, selected_course, input_text)
-                ]
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "CourseKnowledgeAgent JSON prompt output timed out after %.1fs",
-                    SINGLE_COURSE_OUTLINE_TIMEOUT_SECONDS,
+                    source_section_contexts[
+                        _clean_text(selected_course.get("course_node_id"))
+                    ],
                 )
-                return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
-            except Exception as exc:
-                logger.warning(
-                    "CourseKnowledgeAgent JSON prompt output failed, retrying once: %s",
-                    exc,
-                )
-                repair_input = _build_repair_input(input_text, str(exc))
-                try:
-                    generated_outlines = [
-                        await _invoke_json_outline(chain, selected_course, repair_input)
-                    ]
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "CourseKnowledgeAgent repair output timed out after %.1fs",
-                        SINGLE_COURSE_OUTLINE_TIMEOUT_SECONDS,
-                    )
-                    return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
-                except Exception as repair_exc:
-                    logger.warning(
-                        "CourseKnowledgeAgent repair output failed: %s", repair_exc
-                    )
-                    return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
-            current_outline = generated_outlines[0]
+            ]
+        except asyncio.TimeoutError:
+            logger.warning(
+                "CourseKnowledgeAgent outline naming timed out after %.1fs",
+                COURSE_OUTLINE_NAMING_TIMEOUT_SECONDS,
+            )
+            return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
+        except Exception as exc:
+            logger.warning(
+                "CourseKnowledgeAgent outline naming failed: %s",
+                exc,
+            )
+            return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
+        current_outline = generated_outlines[0]
     else:
         grade_year, grade_courses, current_course_id = (
             _select_grade_courses_for_outlines(
@@ -1654,88 +1707,46 @@ async def run_course_knowledge_agent(
             )
         )
 
-        db_translated_map = {}
-        unmapped_courses = []
-        with Session(get_engine()) as db_session:
+        try:
+            source_section_contexts = _source_section_contexts_for_courses(
+                grade_courses
+            )
+        except ValueError as exc:
+            return {"error": str(exc), "hard_error": True}
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", COURSE_OUTLINE_NAMING_SYSTEM_PROMPT),
+                ("human", "{query}"),
+            ]
+        )
+        chain = prompt | llm
+
+        try:
+            generated_outlines = []
             for course in grade_courses:
-                db_translated = _try_db_outline_translation(
-                    db_session, course, grade_year
+                generated_outlines.append(
+                    await _invoke_named_course_outline(
+                        chain,
+                        course,
+                        profile,
+                        source_section_contexts[
+                            _clean_text(course.get("course_node_id"))
+                        ],
+                    )
                 )
-                if db_translated is not None:
-                    db_translated_map[course["course_node_id"]] = db_translated
-                else:
-                    unmapped_courses.append(course)
-
-        if unmapped_courses:
-            try:
-                source_section_contexts = _source_section_contexts_for_courses(
-                    unmapped_courses
-                )
-            except ValueError as exc:
-                return {"error": str(exc), "hard_error": True}
-
-            input_text = _append_json_output_contract(
-                _build_year_analysis_input(
-                    grade_year,
-                    unmapped_courses,
-                    current_course_id,
-                    profile,
-                    source_section_contexts=source_section_contexts,
-                ),
-                _YEAR_COURSES_JSON_CONTRACT,
+        except asyncio.TimeoutError:
+            logger.warning(
+                "CourseKnowledgeAgent yearly outline naming timed out after %.1fs",
+                COURSE_OUTLINE_NAMING_TIMEOUT_SECONDS,
             )
-            prompt = ChatPromptTemplate.from_messages(
-                [
-                    ("system", COURSE_KNOWLEDGE_AGENT_SYSTEM_PROMPT),
-                    ("human", "{query}"),
-                ]
+            return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
+        except Exception as exc:
+            logger.warning(
+                "CourseKnowledgeAgent yearly outline naming failed: %s",
+                exc,
             )
-            chain = prompt | llm
-
-            try:
-                llm_generated = await _invoke_json_year_outlines(
-                    chain, unmapped_courses, input_text
-                )
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "CourseKnowledgeAgent yearly JSON prompt output timed out after %.1fs",
-                    YEAR_COURSE_OUTLINE_TIMEOUT_SECONDS,
-                )
-                return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
-            except Exception as exc:
-                logger.warning(
-                    "CourseKnowledgeAgent yearly JSON prompt output failed, retrying once: %s",
-                    exc,
-                )
-                repair_input = _build_repair_input(input_text, str(exc))
-                try:
-                    llm_generated = await _invoke_json_year_outlines(
-                        chain, unmapped_courses, repair_input
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "CourseKnowledgeAgent yearly repair output timed out after %.1fs",
-                        YEAR_COURSE_OUTLINE_TIMEOUT_SECONDS,
-                    )
-                    return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
-                except Exception as repair_exc:
-                    logger.warning(
-                        "CourseKnowledgeAgent yearly repair output failed: %s",
-                        repair_exc,
-                    )
-                    return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
-
-            llm_generated_map = {out["course_id"]: out for out in llm_generated}
-        else:
-            llm_generated_map = {}
-
-        generated_outlines = []
-        for course in grade_courses:
-            c_id = course["course_node_id"]
-            if c_id in db_translated_map:
-                generated_outlines.append(db_translated_map[c_id])
-            else:
-                generated_outlines.append(llm_generated_map[c_id])
+            return {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
 
         current_outline = _current_outline_from_generated(
             generated_outlines, current_course_id

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# ruff: noqa: F811
 import pytest
 from pydantic import ValidationError
 
@@ -995,3 +996,129 @@ def test_profile_session_output_supports_question_form() -> None:
     assert profile.question_form.questions[0].field_name == "major"
     assert profile.question_form.questions[0].required is True
     assert profile.question_form.questions[0].options == []
+
+
+def _source_reference() -> dict:
+    return {
+        "textbook_id": "textbook-ai-web",
+        "textbook_title": "AI 应用开发项目教程",
+        "section_id": "1.1",
+        "section_title": "功能边界",
+        "evidence_summary": "依据教材中对功能边界和验收标准的定义生成。",
+        "content_char_count": 320,
+    }
+
+
+def _paragraph_bound_video_brief() -> dict:
+    return {
+        "video_id": "video_1",
+        "title": "功能边界与验收标准讲解",
+        "target_markdown_heading": "核心概念",
+        "target_paragraph_summary": "解释功能边界如何限定输入、输出和验收标准。",
+        "search_terms": ["功能边界", "验收标准", "输入输出"],
+        "purpose": "辅助理解功能边界与验收标准的关系。",
+    }
+
+
+def _simulation_animation_brief() -> dict:
+    return {
+        "animation_id": "anim_1",
+        "title": "功能边界输入输出流转",
+        "target_markdown_heading": "步骤讲解",
+        "target_paragraph_summary": "展示需求输入如何经过边界判断生成验收项。",
+        "concept": "功能边界到验收标准的流转",
+        "simulation_type": "process_boundary_flow",
+        "visual_elements": ["需求输入", "边界判断", "验收项"],
+        "visual_model": {
+            "entities": [
+                {"id": "request", "kind": "data", "label": "需求输入"},
+                {"id": "boundary", "kind": "decision", "label": "边界判断"},
+                {"id": "acceptance", "kind": "output", "label": "验收项"},
+            ],
+            "relations": [
+                {"from": "request", "to": "boundary", "kind": "flows_to"},
+                {"from": "boundary", "to": "acceptance", "kind": "produces"},
+            ],
+        },
+        "timeline": [
+            {"step": 1, "action": "show_entity", "target": "request"},
+            {"step": 2, "action": "show_entity", "target": "boundary"},
+            {"step": 3, "action": "connect", "from": "request", "to": "boundary"},
+            {"step": 4, "action": "show_entity", "target": "acceptance"},
+        ],
+        "layout": "从左到右的流程结构",
+        "motion": "实体依次通过 transform 进入，连线通过 opacity 出现。",
+        "interaction": "点击步骤按钮切换当前实体。",
+        "success_check": [
+            "DOM 中包含需求输入",
+            "DOM 中包含边界判断",
+            "DOM 中包含验收项",
+        ],
+        "placement_hint": "放在步骤讲解第一段之后",
+    }
+
+
+def test_section_markdown_output_accepts_structured_refs_and_briefs() -> None:
+    markdown = SectionMarkdownOutput(
+        section_id="1.1",
+        parent_section_id="1",
+        title="学习目标",
+        markdown=_complete_markdown(),
+        source_references=[_source_reference()],
+        video_briefs=[_paragraph_bound_video_brief()],
+        animation_briefs=[_simulation_animation_brief()],
+    )
+
+    assert markdown.source_references[0].textbook_id == "textbook-ai-web"
+    assert markdown.video_briefs[0].target_markdown_heading == "核心概念"
+    assert markdown.animation_briefs[0].simulation_type == "process_boundary_flow"
+
+
+def test_section_markdown_output_rejects_generic_video_brief() -> None:
+    brief = _paragraph_bound_video_brief()
+    brief["purpose"] = "帮助理解本节内容"
+
+    with pytest.raises(ValidationError) as exc_info:
+        SectionMarkdownOutput(
+            section_id="1.1",
+            parent_section_id="1",
+            title="学习目标",
+            markdown=_complete_markdown(),
+            source_references=[_source_reference()],
+            video_briefs=[brief],
+            animation_briefs=[_simulation_animation_brief()],
+        )
+
+    assert "video brief purpose is too generic" in str(exc_info.value)
+
+
+def test_section_markdown_rejects_simulation_without_visual_model() -> None:
+    brief = _simulation_animation_brief()
+    brief.pop("visual_model")
+
+    with pytest.raises(ValidationError) as exc_info:
+        SectionMarkdownOutput(
+            section_id="1.1",
+            parent_section_id="1",
+            title="学习目标",
+            markdown=_complete_markdown(),
+            source_references=[_source_reference()],
+            video_briefs=[_paragraph_bound_video_brief()],
+            animation_briefs=[brief],
+        )
+
+    assert "visual_model is required" in str(exc_info.value)
+
+
+def test_section_video_search_output_allows_unavailable_with_failure_reason() -> None:
+    output = SectionVideoSearchOutput(
+        section_id="2.3",
+        query="单链表 节点 next 指针",
+        status="unavailable",
+        failure_reason="未找到同时包含 单链表、节点、next 指针 的公开视频结果。",
+        videos=[],
+    )
+
+    assert output.status == "unavailable"
+    assert output.failure_reason.startswith("未找到")
+    assert output.videos == []

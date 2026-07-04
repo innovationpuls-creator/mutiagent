@@ -35,6 +35,11 @@ describe("leaf api", () => {
 							order_index: 1,
 							description: "确认边界",
 							key_knowledge_points: ["边界"],
+							source_textbook_id: "textbook-rag",
+							source_textbook_title: "AI 应用开发项目教程",
+							source_section_ids: ["2.1"],
+							source_section_titles: ["知识库问答边界"],
+							source_content_chars: 2400,
 						},
 					],
 					section_composed_markdowns: {
@@ -113,6 +118,11 @@ describe("leaf api", () => {
 							order_index: 1,
 							description: "确认边界",
 							key_knowledge_points: ["边界"],
+							source_textbook_id: "textbook-rag",
+							source_textbook_title: "AI 应用开发项目教程",
+							source_section_ids: ["2.1"],
+							source_section_titles: ["知识库问答边界"],
+							source_content_chars: 2400,
 						},
 					],
 					section_composed_markdowns: {

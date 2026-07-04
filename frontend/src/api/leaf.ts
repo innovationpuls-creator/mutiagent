@@ -6,6 +6,7 @@ import type {
 	LeafCourseResponse,
 	LeafGenerationStatus,
 	LeafSection,
+	LeafSectionResourceError,
 	LeafVideoBlock,
 } from "../types/leaf";
 import { API_BASE_URL, notifyAuthInvalidFromError, readApiError } from "./http";
@@ -47,7 +48,12 @@ function normalizeSection(value: unknown): LeafSection {
 		typeof value.title !== "string" ||
 		typeof value.order_index !== "number" ||
 		typeof value.description !== "string" ||
-		!isStringArray(value.key_knowledge_points)
+		!isStringArray(value.key_knowledge_points) ||
+		typeof value.source_textbook_id !== "string" ||
+		typeof value.source_textbook_title !== "string" ||
+		!isStringArray(value.source_section_ids) ||
+		!isStringArray(value.source_section_titles) ||
+		typeof value.source_content_chars !== "number"
 	) {
 		throw new Error("叶茂数据格式不正确");
 	}
@@ -145,6 +151,24 @@ function normalizeComposedSection(value: unknown): LeafComposedSection {
 	};
 }
 
+function normalizeSectionResourceError(
+	value: unknown,
+): LeafSectionResourceError {
+	if (!isRecord(value)) {
+		throw new Error("叶茂内容格式不正确");
+	}
+	if (
+		typeof value.section_id !== "string" ||
+		typeof value.phase !== "string" ||
+		typeof value.message !== "string" ||
+		typeof value.retryable !== "boolean" ||
+		typeof value.updated_at !== "string"
+	) {
+		throw new Error("叶茂内容格式不正确");
+	}
+	return value as unknown as LeafSectionResourceError;
+}
+
 function normalizeGenerationStatus(
 	value: unknown,
 ): LeafGenerationStatus | null {
@@ -200,6 +224,15 @@ export async function fetchLeafCourse(
 			normalizeComposedSection(value),
 		]),
 	);
+	const resourceErrorsRaw = isRecord(payload.section_resource_errors)
+		? payload.section_resource_errors
+		: {};
+	const sectionResourceErrors = Object.fromEntries(
+		Object.entries(resourceErrorsRaw).map(([sectionId, value]) => [
+			sectionId,
+			normalizeSectionResourceError(value),
+		]),
+	);
 
 	return {
 		access_state: payload.access_state,
@@ -207,6 +240,7 @@ export async function fetchLeafCourse(
 		outline: isRecord(payload.outline) ? payload.outline : null,
 		sections: payload.sections.map(normalizeSection),
 		section_composed_markdowns: sectionComposedMarkdowns,
+		section_resource_errors: sectionResourceErrors,
 		generation_status: normalizeGenerationStatus(payload.generation_status),
 		can_generate: payload.can_generate === true,
 		first_generatable_chapter_id:

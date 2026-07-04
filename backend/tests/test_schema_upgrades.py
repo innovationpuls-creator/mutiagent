@@ -172,6 +172,72 @@ def test_schema_upgrades_rebuild_legacy_tables(tmp_path: Path) -> None:
         assert path.path_data["courses"][0]["key_topics"] == ["线性表", "树", "图"]
 
 
+def test_schema_upgrades_backfill_textbook_section_original_content(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(
+        postgresql_test_url(tmp_path, "section-original-content-upgrade"),
+    )
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE textbooksectioncontent (
+                    section_content_id VARCHAR(64) NOT NULL PRIMARY KEY,
+                    textbook_id VARCHAR(64) NOT NULL,
+                    section_id VARCHAR(128) NOT NULL,
+                    parent_section_id VARCHAR(128),
+                    order_index INTEGER NOT NULL,
+                    title VARCHAR(256) NOT NULL,
+                    original_title VARCHAR(256) NOT NULL,
+                    content_zh TEXT NOT NULL,
+                    content_char_count INTEGER NOT NULL
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO textbooksectioncontent
+                    (
+                        section_content_id, textbook_id, section_id,
+                        parent_section_id, order_index, title, original_title,
+                        content_zh, content_char_count
+                    )
+                VALUES
+                    (
+                        'section-legacy-1', 'textbook-legacy', 'sec_1_1',
+                        NULL, 1, 'Arrays', 'Arrays',
+                        'Arrays original content.', 24
+                    )
+                """
+            )
+        )
+
+    run_schema_upgrades(engine)
+
+    inspector = inspect(engine)
+    section_columns = {
+        column["name"] for column in inspector.get_columns("textbooksectioncontent")
+    }
+    assert "content_original" in section_columns
+
+    with engine.connect() as connection:
+        content_original = connection.execute(
+            text(
+                """
+                SELECT content_original
+                FROM textbooksectioncontent
+                WHERE section_content_id = 'section-legacy-1'
+                """
+            )
+        ).scalar_one()
+
+    assert content_original == "Arrays original content."
+
+
 def test_schema_upgrades_remove_legacy_knowledge_gap_duplicates(
     tmp_path: Path,
 ) -> None:

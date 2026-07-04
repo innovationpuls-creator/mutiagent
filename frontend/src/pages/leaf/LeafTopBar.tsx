@@ -11,6 +11,7 @@ interface LeafTopBarProps {
 	selectedSection: LeafSection | null;
 	generationStatus: LeafGenerationStatus | null;
 	liveGenerationMessage: string | null;
+	sectionResourceRetryable: boolean;
 	canGenerate: boolean;
 	onGenerate: () => void;
 }
@@ -31,6 +32,7 @@ export function LeafTopBar({
 	selectedSection,
 	generationStatus,
 	liveGenerationMessage,
+	sectionResourceRetryable,
 	canGenerate,
 	onGenerate,
 }: LeafTopBarProps) {
@@ -125,7 +127,11 @@ export function LeafTopBar({
 						<div className="absolute inset-0 bg-[var(--color-hover-wash)] opacity-0 group-hover:opacity-20 transition-opacity duration-[var(--duration-lazy-hover)]" />
 						<div className="relative flex items-center gap-1.5 text-xs font-medium tracking-normal">
 							<Sparkles className="w-3.5 h-3.5 animate-pulse" />
-							<span>让 AI 生成本章内容</span>
+							<span>
+								{sectionResourceRetryable
+									? "重试当前章节"
+									: "让 AI 生成本章内容"}
+							</span>
 						</div>
 					</button>
 				) : null}

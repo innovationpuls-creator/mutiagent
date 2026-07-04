@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import re
@@ -17,7 +18,6 @@ from app.orchestration.agents.models import (
     SectionMarkdownOutput,
     SectionVideoSearchOutput,
 )
-from app.orchestration.guards import require_section_source_for_markdown
 from app.orchestration.prompt_budget import apply_prompt_budget
 from app.services.course_knowledge_service import upsert_user_course_knowledge_outline
 from app.services.knowledge_base_service import (
@@ -335,57 +335,20 @@ def _section_markdown_data_from_plain_text(text: str, query: str) -> dict:
     parent_section_id = section_data.get("parent_section_id")
     parent_id = parent_section_id if isinstance(parent_section_id, str) else None
     title = _clean_text(section_data.get("title")) or section_id
-    description = _clean_text(section_data.get("description"))
-    knowledge_points = _text_items(section_data.get("key_knowledge_points"))
-    topic_text = "、".join([item for item in [title, *knowledge_points] if item])
-    purpose_topic = topic_text or description or title
-    search_terms = [title, *knowledge_points, "教学讲解", "实践任务"]
 
-    video_briefs = [
-        {
-            "video_id": video_id,
-            "title": f"{title}教学视频",
-            "target_markdown_heading": "核心概念",
-            "target_paragraph_summary": f"解释{purpose_topic}的核心概念与验收任务关系。",
-            "search_terms": search_terms[:3],
-            "purpose": f"帮助学习者理解{purpose_topic}，并把本节内容落到可验收任务。",
-        }
-        for video_id in _extract_brief_ids_from_markdown(markdown, "video")
-    ]
-    visual_elements = knowledge_points[:3] or [title, "练习任务", "检查标准"]
-    animation_briefs = [
-        {
-            "animation_id": animation_id,
-            "title": f"{title}流程动画",
-            "target_markdown_heading": "步骤讲解",
-            "target_paragraph_summary": f"展示{purpose_topic}如何从输入材料推进到检查标准。",
-            "concept": f"展示{purpose_topic}如何转成步骤、练习任务和检查标准。",
-            "simulation_type": "concept_process_flow",
-            "visual_elements": visual_elements,
-            "visual_model": {
-                "entities": [
-                    {"id": "input", "kind": "source", "label": "输入材料"},
-                    {"id": "process", "kind": "process", "label": "处理步骤"},
-                    {"id": "check", "kind": "checkpoint", "label": "检查标准"},
-                ],
-                "relations": [
-                    {"from": "input", "to": "process", "kind": "feeds"},
-                    {"from": "process", "to": "check", "kind": "verifies"},
-                ],
-            },
-            "timeline": [
-                {"step": 1, "action": "show", "target": "input"},
-                {"step": 2, "action": "advance", "target": "process"},
-                {"step": 3, "action": "connect", "from": "process", "to": "check"},
-            ],
-            "layout": "从左到右排列输入材料、处理步骤和检查标准。",
-            "motion": "关键节点依次通过 opacity 淡入，并用 transform 表现轻微位移。",
-            "interaction": "点击节点显示对应的学习任务说明。",
-            "success_check": "学习者能说出每个节点如何服务本节练习任务。",
-            "placement_hint": "练习任务之前或之后。",
-        }
-        for animation_id in _extract_brief_ids_from_markdown(markdown, "animation")
-    ]
+    video_briefs = _generated_markdown_video_briefs(section_data)
+    for index, video_id in enumerate(
+        _extract_brief_ids_from_markdown(markdown, "video")
+    ):
+        if index < len(video_briefs):
+            video_briefs[index]["video_id"] = video_id
+
+    animation_briefs = _generated_markdown_animation_briefs(section_data)
+    for index, animation_id in enumerate(
+        _extract_brief_ids_from_markdown(markdown, "animation")
+    ):
+        if index < len(animation_briefs):
+            animation_briefs[index]["animation_id"] = animation_id
 
     return {
         "section_id": section_id,
@@ -430,28 +393,23 @@ def _section_animation_data_from_plain_text(text: str, query: str) -> dict:
 
 def _normalize_section_markdown_output(output: object, query: str) -> dict:
     data = dict(output) if isinstance(output, dict) else {}
-    if not _clean_text(data.get("section_id")):
-        try:
-            args = json.loads(query)
-            data["section_id"] = _clean_text(args.get("section_id", ""))
-        except Exception:
-            pass
-
-    data["markdown"] = _plain_markdown_text(_clean_text(data.get("markdown")))
     payload = _resource_payload_from_query(query)
     section = payload.get("target_section")
     section_data = section if isinstance(section, dict) else {}
-    source_references = data.get("source_references")
-    if not isinstance(source_references, list) or not source_references:
-        source_references = _source_references_for_section(section_data)
-    data["source_references"] = source_references
+    if not _clean_text(data.get("section_id")):
+        data["section_id"] = _clean_text(section_data.get("section_id"))
 
-    video_briefs = data.get("video_briefs")
-    data["video_briefs"] = _normalize_markdown_video_briefs(section_data, video_briefs)
-
-    animation_briefs = data.get("animation_briefs")
+    data["markdown"] = _plain_markdown_text(_clean_text(data.get("markdown")))
+    data["source_references"] = (
+        data.get("source_references")
+        if isinstance(data.get("source_references"), list)
+        else _source_references_for_section(section_data)
+    )
+    data["video_briefs"] = _normalize_markdown_video_briefs(
+        section_data, data.get("video_briefs")
+    )
     data["animation_briefs"] = _normalize_markdown_animation_briefs(
-        section_data, animation_briefs
+        section_data, data.get("animation_briefs")
     )
 
     return data
@@ -601,6 +559,33 @@ def _section_by_id(outline: dict, section_id: str) -> dict | None:
     return None
 
 
+def _source_references_for_section(section: dict) -> list[dict]:
+    textbook_id = _clean_text(section.get("source_textbook_id"))
+    textbook_title = _clean_text(section.get("source_textbook_title"))
+    section_ids = _text_items(section.get("source_section_ids"))
+    section_titles = _text_items(section.get("source_section_titles"))
+    content_chars = int(section.get("source_content_chars") or 0)
+    if not textbook_id and not textbook_title and not section_ids:
+        return []
+
+    references: list[dict] = []
+    for index, section_id in enumerate(section_ids or [""]):
+        section_title = section_titles[index] if index < len(section_titles) else ""
+        references.append(
+            {
+                "textbook_id": textbook_id,
+                "textbook_title": textbook_title,
+                "section_id": section_id,
+                "section_title": section_title,
+                "evidence_summary": (
+                    f"依据教材《{textbook_title}》中 {section_id} {section_title} 的正文内容生成。"
+                ).strip(),
+                "content_char_count": content_chars,
+            }
+        )
+    return references
+
+
 def _parent_section(outline: dict, section: dict) -> dict | None:
     parent_id = _clean_text(section.get("parent_section_id"))
     if not parent_id:
@@ -612,37 +597,6 @@ def _text_items(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [_clean_text(item) for item in value if _clean_text(item)]
-
-
-def _source_references_for_section(section: dict) -> list[dict]:
-    textbook_id = _clean_text(section.get("source_textbook_id"))
-    textbook_title = _clean_text(section.get("source_textbook_title"))
-    section_ids = _text_items(section.get("source_section_ids"))
-    section_titles = _text_items(section.get("source_section_titles"))
-    try:
-        content_char_count = int(section.get("source_content_chars", 0))
-    except (TypeError, ValueError):
-        content_char_count = 0
-
-    references: list[dict] = []
-    for index, source_section_id in enumerate(section_ids):
-        source_section_title = (
-            section_titles[index] if index < len(section_titles) else ""
-        )
-        references.append(
-            {
-                "textbook_id": textbook_id,
-                "textbook_title": textbook_title,
-                "section_id": source_section_id,
-                "section_title": source_section_title,
-                "evidence_summary": (
-                    f"依据《{textbook_title}》{source_section_id} "
-                    f"{source_section_title} 的教材内容生成。"
-                ),
-                "content_char_count": max(content_char_count, 0),
-            }
-        )
-    return references
 
 
 def _ensure_resource_placeholder(markdown: str, kind: str, brief_id: str) -> str:
@@ -705,6 +659,101 @@ def _resource_context(
     if include_textbook_evidence:
         context["textbook_evidence_pack"] = _textbook_evidence_pack(outline, section)
     return context
+
+
+def _build_resource_query(instruction: str, payload: dict, extra_text: str = "") -> str:
+    query = (
+        f"{instruction}\n\n输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
+    )
+    if extra_text:
+        query = f"{query}\n\n{extra_text}"
+    return query
+
+
+def _trim_text_for_budget(value: object, limit: int) -> object:
+    if not isinstance(value, str) or len(value) <= limit:
+        return value
+    head_len = max(0, limit // 2)
+    tail_len = max(0, limit - head_len)
+    return f"{value[:head_len]}\n...[已按 prompt budget 精简]...\n{value[-tail_len:]}"
+
+
+def _slim_resource_payload_for_budget(payload: dict, phase: str) -> dict:
+    slim = copy.deepcopy(payload)
+    if phase == "markdown":
+        evidence_pack = slim.get("textbook_evidence_pack")
+        if isinstance(evidence_pack, dict):
+            evidence_pack["evidence_text"] = _trim_text_for_budget(
+                evidence_pack.get("evidence_text"), 12000
+            )
+            sections = evidence_pack.get("sections")
+            if isinstance(sections, list):
+                for item in sections:
+                    if not isinstance(item, dict):
+                        continue
+                    for key in (
+                        "evidence_text",
+                        "content",
+                        "content_zh",
+                        "content_original",
+                    ):
+                        item[key] = _trim_text_for_budget(item.get(key), 2500)
+    if phase in {"video", "animation"}:
+        section_markdowns = slim.get("section_markdowns")
+        if isinstance(section_markdowns, dict):
+            for value in section_markdowns.values():
+                if isinstance(value, dict):
+                    value["markdown"] = _trim_text_for_budget(
+                        value.get("markdown"), 2500
+                    )
+        section_markdown = slim.get("section_markdown")
+        if isinstance(section_markdown, dict):
+            section_markdown["markdown"] = _trim_text_for_budget(
+                section_markdown.get("markdown"), 2500
+            )
+    previous_html = slim.get("previous_html")
+    if isinstance(previous_html, str):
+        slim["previous_html"] = _trim_text_for_budget(previous_html, 1800)
+    return slim
+
+
+def _resource_query_with_prompt_budget(
+    instruction: str,
+    payload: dict,
+    *,
+    phase: str,
+    protected_fragments: list[str] | None = None,
+    extra_text: str = "",
+) -> str:
+    raw_query = _build_resource_query(instruction, payload, extra_text)
+    first_budget = apply_prompt_budget(
+        raw_query,
+        phase=phase,
+        protected_fragments=protected_fragments,
+    )
+    if not first_budget.prompt_budget_applied:
+        final_payload = dict(payload)
+        final_payload["prompt_budget_applied"] = False
+        return _build_resource_query(instruction, final_payload, extra_text)
+
+    final_payload = _slim_resource_payload_for_budget(payload, phase)
+    final_payload["prompt_budget_applied"] = True
+    final_query = _build_resource_query(instruction, final_payload, extra_text)
+    final_budget = apply_prompt_budget(
+        final_query,
+        phase=phase,
+        protected_fragments=protected_fragments,
+    )
+    if not final_budget.prompt_budget_applied:
+        return final_query
+
+    final_payload = _slim_resource_payload_for_budget(final_payload, phase)
+    evidence_pack = final_payload.get("textbook_evidence_pack")
+    if isinstance(evidence_pack, dict):
+        evidence_pack["evidence_text"] = _trim_text_for_budget(
+            evidence_pack.get("evidence_text"), 6000
+        )
+    return _build_resource_query(instruction, final_payload, extra_text)
 
 
 def _textbook_evidence_pack(outline: dict, section: dict) -> dict:
@@ -776,7 +825,6 @@ def _current_learning_course_context(state: dict[str, Any], outline: dict) -> di
 
 
 def _markdown_input(state: dict[str, Any], outline: dict, section: dict) -> str:
-    require_section_source_for_markdown(section)
     context = _resource_context(state, outline, section)
     payload = {
         **context,
@@ -785,7 +833,7 @@ def _markdown_input(state: dict[str, Any], outline: dict, section: dict) -> str:
         "video_briefs": [],
         "animation_briefs": [],
     }
-    raw_query = (
+    instruction = (
         "请基于输入大纲、关联学习路径与用户画像，为此小节生成完整的 Markdown 教学设计初稿。"
         "必须严格采用 JSON 输出格式。\n\n"
         "教材证据包是本节唯一的正文事实来源，必须优先依据其中的 evidence_text、sections、total_chars 生成内容。\n"
@@ -807,53 +855,21 @@ def _markdown_input(state: dict[str, Any], outline: dict, section: dict) -> str:
         "关于占位符要求：\n"
         "你必须在正文适当的位置写入视频占位符 `<!-- video:id=xxx -->` 引导学生观看；"
         "并在练习任务前写入交互动效占位符 `<!-- animation:id=yyy -->` 引导实践。"
-        "占位符中引用的 id 必须与 video_briefs 或 animation_briefs 中的定义完全一致。\n\n"
-        f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
+        "占位符中引用的 id 必须与 video_briefs 或 animation_briefs 中的定义完全一致。"
     )
 
     profile = state.get("profile")
     profile_summary = _profile_summary_for_prompt(profile)
-    if profile_summary:
-        raw_query = f"{raw_query}\n\n{profile_summary}"
-
-    budget = apply_prompt_budget(
-        raw_query,
+    return _resource_query_with_prompt_budget(
+        instruction,
+        payload,
         phase="markdown",
         protected_fragments=[
             _clean_text(section.get("source_textbook_id")),
             "、".join(_text_items(section.get("source_section_ids"))),
         ],
+        extra_text=profile_summary,
     )
-    payload["prompt_budget_applied"] = budget.prompt_budget_applied
-    query = (
-        "请基于输入大纲、关联学习路径与用户画像，为此小节生成完整的 Markdown 教学设计初稿。"
-        "必须严格采用 JSON 输出格式。\n\n"
-        "教材证据包是本节唯一的正文事实来源，必须优先依据其中的 evidence_text、sections、total_chars 生成内容。\n"
-        "不要只根据章节标题写摘要式内容，也不要脱离教材正文自行补充事实。\n\n"
-        "字段约定：\n"
-        "- section_id: 小节ID字符串 (必须等于输入中的 target_section.section_id)\n"
-        "- source_references: 数组。每条必须来自 textbook_evidence_pack.sections 或 target_section.source_* 字段，包含教材 ID、小节 ID、标题和证据摘要。\n"
-        "- markdown: 完整教学文档正文，不是预习材料、导读、摘要、课前预览或课程宣传页；必须包含教材来源引用。\n"
-        "- video_briefs: 数组。每个元素必须包含 video_id、title、target_markdown_heading、target_paragraph_summary、search_terms、purpose。target_paragraph_summary 必须说明视频服务哪一段正文，search_terms 至少 3 个且来自教材正文、目标小节或正文段落。\n"
-        "- animation_briefs: 数组。每个元素必须包含 animation_id、title、target_markdown_heading、target_paragraph_summary、concept、simulation_type、visual_elements、visual_model、timeline、layout、motion、interaction、success_check、placement_hint。\n"
-        "- animation_briefs 是 HTML 动画智能体的完整施工图。visual_model.entities 必须列出真实可视对象，visual_model.relations 必须列出对象关系，timeline 必须列出分步展示动作；链表等数据结构必须规划成结构模拟，不得规划成文字说明动画。\n\n"
-        "教学内容必备章节格式：\n"
-        "## 学习目标\n(写出明确的学习与能力目标，建议使用有序列表)\n\n"
-        "## 核心概念\n(讲解核心概念，配有通俗的比喻或表格说明)\n\n"
-        "## 步骤讲解\n(详细的推演或实现步骤。必须包含 Markdown 表格或 fenced code block 作为核心教学支架)\n\n"
-        "## 练习任务\n(为了实现学习目标，设计的一个独立实践任务。提示：请在此章节正文开头前放置视频/动画占位符)\n\n"
-        "## 检查标准\n(提供自测和交付验收单，必须提供至少 4 条 `- [ ]` 的清单格式)\n\n"
-        "## 来源\n(列出教材名、教材小节 ID 和小节标题)\n\n"
-        "关于占位符要求：\n"
-        "你必须在正文适当的位置写入视频占位符 `<!-- video:id=xxx -->` 引导学生观看；"
-        "并在练习任务前写入交互动效占位符 `<!-- animation:id=yyy -->` 引导实践。"
-        "占位符中引用的 id 必须与 video_briefs 或 animation_briefs 中的定义完全一致。\n\n"
-        f"输入：{json.dumps(payload, ensure_ascii=False, indent=2)}"
-    )
-    if profile_summary:
-        query = f"{query}\n\n{profile_summary}"
-
-    return query
 
 
 def _chapter_learning_sequence(outline: dict, root_section: dict | None) -> list[str]:
@@ -1093,15 +1109,6 @@ def _video_by_brief_id(video_links: dict) -> dict[str, dict]:
     return result
 
 
-def _video_failure_by_brief_id(
-    video_links: dict, video_briefs: dict[str, dict]
-) -> dict[str, str]:
-    if _clean_text(video_links.get("status")) != "unavailable":
-        return {}
-    failure_reason = _clean_text(video_links.get("failure_reason"))
-    return {brief_id: failure_reason for brief_id in video_briefs}
-
-
 def _animation_by_brief_id(animation_data: dict) -> dict[str, dict]:
     animations = animation_data.get("animations")
     if not isinstance(animations, list):
@@ -1133,7 +1140,6 @@ def _video_block(brief_id: str, brief: dict, video: dict | None) -> dict:
         "title": _clean_text(brief.get("title")) or video_title,
         "purpose": _clean_text(brief.get("purpose")),
         "status": "available" if isinstance(video, dict) else "unavailable",
-        "failure_reason": _clean_text(brief.get("failure_reason")),
         "videos": [video] if isinstance(video, dict) else [],
     }
 
@@ -1164,7 +1170,6 @@ def _compose_section_content(
         section_markdown.get("animation_briefs"), "animation_id"
     )
     videos = _video_by_brief_id(video_links)
-    video_failures = _video_failure_by_brief_id(video_links, video_briefs)
     animations = _animation_by_brief_id(animation_data)
 
     blocks: list[dict] = []
@@ -1175,12 +1180,7 @@ def _compose_section_content(
         if match.group("kind") == "video":
             blocks.append(
                 _video_block(
-                    brief_id,
-                    {
-                        **video_briefs.get(brief_id, {}),
-                        "failure_reason": video_failures.get(brief_id, ""),
-                    },
-                    videos.get(brief_id),
+                    brief_id, video_briefs.get(brief_id, {}), videos.get(brief_id)
                 )
             )
         else:
@@ -1199,7 +1199,6 @@ def _compose_section_content(
         "parent_section_id": section_markdown.get("parent_section_id"),
         "title": _clean_text(section_markdown.get("title")),
         "markdown": markdown,
-        "source_references": section_markdown.get("source_references", []),
         "blocks": blocks,
         "generated_at": _now_iso(),
     }
@@ -1510,7 +1509,7 @@ def _normalize_markdown_animation_briefs(
             timeline = brief_data.get("timeline")
             layout = _clean_text(brief_data.get("layout"))
             interaction = _clean_text(brief_data.get("interaction"))
-            success_check = _clean_text(brief_data.get("success_check"))
+            success_check = brief_data.get("success_check")
             if (
                 not animation_id
                 or not title
@@ -1525,6 +1524,67 @@ def _normalize_markdown_animation_briefs(
                 or not interaction
                 or not success_check
             ):
+                if animation_id and title and concept:
+                    visual_elements = _text_items(brief_data.get("visual_elements"))
+                    if not visual_elements:
+                        visual_elements = [title, "输入材料", "验收证据"]
+                    for fallback_element in (title, "输入材料", "处理步骤", "验收证据"):
+                        if len(visual_elements) >= 3:
+                            break
+                        if fallback_element and fallback_element not in visual_elements:
+                            visual_elements.append(fallback_element)
+                    normalized.append(
+                        {
+                            "animation_id": animation_id,
+                            "title": title,
+                            "target_markdown_heading": "步骤讲解",
+                            "target_paragraph_summary": f"展示「{title}」服务的正文步骤。",
+                            "concept": concept,
+                            "simulation_type": "concept_process_flow",
+                            "visual_elements": visual_elements,
+                            "visual_model": {
+                                "entities": [
+                                    {
+                                        "id": f"entity_{index}",
+                                        "kind": "concept",
+                                        "label": element,
+                                    }
+                                    for index, element in enumerate(
+                                        visual_elements, start=1
+                                    )
+                                ],
+                                "relations": [
+                                    {
+                                        "from": f"entity_{index}",
+                                        "to": f"entity_{index + 1}",
+                                        "kind": "flows_to",
+                                    }
+                                    for index in range(1, len(visual_elements))
+                                ],
+                            },
+                            "timeline": [
+                                {
+                                    "step": index,
+                                    "action": "show",
+                                    "target": f"entity_{index}",
+                                }
+                                for index, _element in enumerate(
+                                    visual_elements, start=1
+                                )
+                            ],
+                            "layout": _clean_text(brief_data.get("layout"))
+                            or "从左到右排列关键状态节点。",
+                            "motion": _clean_text(brief_data.get("motion"))
+                            or "关键节点依次通过 opacity 淡入，并只用 transform 表现轻微位移。",
+                            "interaction": _clean_text(brief_data.get("interaction"))
+                            or "点击节点显示对应的正文段落依据。",
+                            "success_check": _text_items(success_check)
+                            or [f"DOM 中包含 {item}" for item in visual_elements[:3]],
+                            "placement_hint": _clean_text(
+                                brief_data.get("placement_hint")
+                            ),
+                        }
+                    )
                 continue
             visual_elements = _text_items(brief_data.get("visual_elements"))
             normalized.append(
@@ -1650,14 +1710,24 @@ def _generated_markdown_animation_briefs(section: dict) -> list[dict]:
                         "to": "none",
                     },
                 ],
-                "layout": "head 在最左侧，两个节点水平排列，None 位于尾节点右侧。",
+                "layout": "横向链式结构，head 在左侧，两个节点居中，None 在右侧。",
                 "motion": "头指针先出现，节点依次通过 transform 从左到右进入，next 指针连线按顺序绘制，尾节点 None 最后淡入。",
-                "interaction": "点击节点高亮 data 域与 next 域，点击指针显示指向目标。",
-                "success_check": "学习者能指出 head、node_1.next、node_2.next 分别指向什么。",
+                "interaction": "点击步骤按钮依次高亮 head、节点和 next 指针连线。",
+                "success_check": [
+                    "DOM 中包含 head",
+                    "DOM 中包含 data",
+                    "DOM 中包含 next",
+                    "DOM 中包含 None",
+                ],
                 "placement_hint": "步骤讲解中第一次解释节点指针关系之后。",
             }
         ]
     visual_elements = source_titles[:3] or knowledge_points[:3] or [title]
+    for fallback_element in (title, "输入材料", "处理步骤", "验收证据"):
+        if len(visual_elements) >= 3:
+            break
+        if fallback_element and fallback_element not in visual_elements:
+            visual_elements.append(fallback_element)
     primary = visual_elements[0] if visual_elements else title
     visual_text = "、".join(visual_elements)
     return [
@@ -1665,30 +1735,35 @@ def _generated_markdown_animation_briefs(section: dict) -> list[dict]:
             "animation_id": "anim_1",
             "title": f"{primary}流程动画",
             "target_markdown_heading": "步骤讲解",
-            "target_paragraph_summary": f"展示「{title}」如何围绕{visual_text}从输入材料推进到验收证据。",
+            "target_paragraph_summary": f"展示「{title}」如何从输入材料推进到验收证据。",
             "concept": f"展示「{title}」如何围绕{visual_text}从输入材料、处理步骤推进到验收证据。",
             "simulation_type": "concept_process_flow",
             "visual_elements": visual_elements,
             "visual_model": {
                 "entities": [
-                    {"id": "input", "kind": "source", "label": "输入材料"},
-                    {"id": "process", "kind": "process", "label": "处理步骤"},
-                    {"id": "evidence", "kind": "checkpoint", "label": "验收证据"},
+                    {"id": f"entity_{index}", "kind": "concept", "label": element}
+                    for index, element in enumerate(visual_elements, start=1)
                 ],
                 "relations": [
-                    {"from": "input", "to": "process", "kind": "feeds"},
-                    {"from": "process", "to": "evidence", "kind": "produces"},
+                    {
+                        "from": f"entity_{index}",
+                        "to": f"entity_{index + 1}",
+                        "kind": "flows_to",
+                    }
+                    for index in range(1, len(visual_elements))
                 ],
             },
             "timeline": [
-                {"step": 1, "action": "show", "target": "input"},
-                {"step": 2, "action": "advance", "target": "process"},
-                {"step": 3, "action": "connect", "from": "process", "to": "evidence"},
+                {"step": index, "action": "show", "target": f"entity_{index}"}
+                for index, _element in enumerate(visual_elements, start=1)
             ],
-            "layout": "从左到右排列输入材料、处理步骤和验收证据。",
+            "layout": "从左到右排列关键状态节点。",
             "motion": "关键节点依次通过 opacity 淡入，并只用 transform 表现轻微位移。",
             "interaction": "点击节点显示对应的正文段落依据。",
-            "success_check": "学习者能按动画顺序复述本节从输入到验收的过程。",
+            "success_check": [
+                f"DOM 中包含 {element}" for element in visual_elements[:3]
+            ]
+            or [f"DOM 中包含 {title}"],
             "placement_hint": "练习任务之前。",
         }
     ]

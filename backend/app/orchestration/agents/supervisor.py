@@ -33,7 +33,12 @@ from app.services.learning_path_service import iter_year_learning_paths
 logger = logging.getLogger(__name__)
 
 _GENERIC_PROFILE_UPDATE_QUERIES = {"更新个人画像", "修改画像方向"}
-_GENERIC_PATH_REFRESH_QUERIES = {"继续生成学习路径", "更新学习路径"}
+_GENERIC_PATH_REFRESH_QUERIES = {
+    "继续生成学习路径",
+    "更新学习路径",
+    "进入学习路径草案智能体",
+    "进入学习路径草案",
+}
 _FOLLOWUP_PAUSE_QUERIES = {
     "谢谢",
     "谢谢你",

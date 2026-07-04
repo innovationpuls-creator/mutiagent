@@ -55,7 +55,7 @@ export function OAuthStatusDialog({
 			>
 				<span className="section-kicker">扫码登录</span>
 				<h2>使用{label}扫码登录</h2>
-				<div className="oauth-qr-shell" aria-label={`${label} 登录二维码`}>
+				<figure className="oauth-qr-shell" aria-label={`${label} 登录二维码`}>
 					{qrCodeUrl ? (
 						<img
 							className="oauth-qr-image"
@@ -65,7 +65,7 @@ export function OAuthStatusDialog({
 					) : (
 						<div className="oauth-qr-loading" aria-hidden="true" />
 					)}
-				</div>
+				</figure>
 				<p>请使用{label} App 扫描二维码，在手机上确认后继续。</p>
 				<button className="oauth-dialog-close" type="button" onClick={onClose}>
 					返回登录

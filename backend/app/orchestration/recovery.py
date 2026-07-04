@@ -27,21 +27,28 @@ def update_section_phase_checkpoint(
     section_id: str,
     phase: PhaseName,
     status: str,
-    output_refs: dict | None = None,
-    quality_result: dict | None = None,
+    output_refs: dict[str, object] | None = None,
+    quality_result: dict[str, object] | None = None,
     failure_reason: str = "",
     updated_at: str | None = None,
 ) -> dict:
     updated = deepcopy(outline)
     checkpoints = updated.setdefault("section_resource_checkpoints", {})
+    if not isinstance(checkpoints, dict):
+        checkpoints = {}
+        updated["section_resource_checkpoints"] = checkpoints
     section_checkpoints = checkpoints.setdefault(section_id, {})
-    phase_checkpoint = {
+    if not isinstance(section_checkpoints, dict):
+        section_checkpoints = {}
+        checkpoints[section_id] = section_checkpoints
+
+    checkpoint = {
         "status": status,
         "updated_at": updated_at or datetime.now(timezone.utc).isoformat(),
         "output_refs": output_refs or {},
         "quality_result": quality_result or {},
     }
     if failure_reason:
-        phase_checkpoint["failure_reason"] = failure_reason
-    section_checkpoints[phase] = phase_checkpoint
+        checkpoint["failure_reason"] = failure_reason
+    section_checkpoints[phase] = checkpoint
     return updated

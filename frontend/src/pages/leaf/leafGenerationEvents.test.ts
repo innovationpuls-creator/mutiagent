@@ -67,4 +67,52 @@ describe("dispatchLeafGenerationEvent", () => {
 			listener as EventListener,
 		);
 	});
+
+	it.each([
+		"markdown",
+		"video",
+		"animation",
+		"compose",
+	])("dispatches a refresh completion event after successful %s resource result", (phase) => {
+		const generationListener =
+			vi.fn<(event: CustomEvent<LeafGenerationEventDetail>) => void>();
+		const completedListener =
+			vi.fn<(event: CustomEvent<LeafGenerationCompletedEventDetail>) => void>();
+		window.addEventListener(
+			LEAF_GENERATION_EVENT,
+			generationListener as EventListener,
+		);
+		window.addEventListener(
+			LEAF_GENERATION_COMPLETED_EVENT,
+			completedListener as EventListener,
+		);
+
+		dispatchLeafGenerationEvent({
+			event: "agent_result",
+			kind: "course_resource_section",
+			course_id: "year_3_course_1",
+			chapter_section_id: "1",
+			section_id: "1.1",
+			phase,
+			status: "completed",
+			success: true,
+			summary: "资源阶段已完成",
+		});
+
+		expect(generationListener).toHaveBeenCalledTimes(1);
+		expect(completedListener).toHaveBeenCalledTimes(1);
+		expect(completedListener.mock.calls[0][0].detail).toEqual({
+			courseId: "year_3_course_1",
+			reason: "course_resource",
+		});
+
+		window.removeEventListener(
+			LEAF_GENERATION_EVENT,
+			generationListener as EventListener,
+		);
+		window.removeEventListener(
+			LEAF_GENERATION_COMPLETED_EVENT,
+			completedListener as EventListener,
+		);
+	});
 });

@@ -1,14 +1,14 @@
 declare module "mathjax" {
-	const MathJax: any;
+	const MathJax: unknown;
 	export default MathJax;
 }
 
 declare module "mathjax/tex-chtml.js" {
-	const MathJax: any;
+	const MathJax: unknown;
 	export default MathJax;
 }
 
 declare module "mathjax/tex-svg.js" {
-	const MathJax: any;
+	const MathJax: unknown;
 	export default MathJax;
 }

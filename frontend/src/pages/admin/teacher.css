@@ -276,7 +276,7 @@
 
 .upload-title {
 	font-size: var(--text-h3);
-	font-weight: 500; /* Regular or Medium */
+	font-weight: 500;
 	margin: 0 0 var(--space-12);
 	color: var(--color-text-primary);
 }
@@ -720,82 +720,6 @@
 	.detail-drawer {
 		max-inline-size: 100%;
 	}
-}
-
-/* 导航栏样式 */
-.teacher-header {
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	height: var(--teacher-header-height);
-	background: var(--glass-bg);
-	backdrop-filter: var(--glass-blur);
-	border-bottom: 1px solid var(--color-border);
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	padding: 0 var(--space-32);
-	z-index: 90;
-}
-
-.teacher-brand {
-	display: flex;
-	align-items: center;
-	gap: var(--space-12);
-	text-decoration: none;
-	color: var(--color-text-primary);
-}
-
-.teacher-brand-button {
-	border: none;
-	background: transparent;
-	font: inherit;
-	cursor: pointer;
-	padding: 0;
-}
-
-.teacher-logo-img {
-	width: 28px;
-	height: 28px;
-	border-radius: var(--radius-full);
-}
-
-.teacher-brand-name {
-	font-size: var(--text-h5);
-	font-weight: 500;
-}
-
-.teacher-nav-tabs {
-	display: flex;
-	justify-content: center;
-	gap: var(--space-12);
-	align-items: center;
-	padding: var(--space-8);
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius-full);
-	background: var(--color-surface);
-	box-shadow: var(--shadow-sm);
-	align-self: center;
-}
-
-.teacher-tab {
-	position: relative;
-	background: transparent;
-	border: none;
-	font-family: inherit;
-	font-size: var(--text-body-sm);
-	color: var(--color-text-secondary);
-	padding: var(--space-10) var(--space-20);
-	border-radius: var(--radius-full);
-	cursor: pointer;
-	transition:
-		color var(--duration-lazy-hover) var(--ease-lazy),
-		transform var(--duration-lazy-hover) var(--ease-lazy);
-}
-
-.teacher-tab:hover {
-	color: var(--color-text-primary);
 }
 
 .teacher-tab.tab-active {

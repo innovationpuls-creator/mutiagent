@@ -1137,9 +1137,9 @@ test("keeps free-text composer visible after learning path intake draft is shown
 							constraints: "平时学习节奏，避免过高强度",
 						},
 						defaulted_fields: [],
-						question_md: "画像已生成，是否继续生成学习路径？",
+						question_md: "画像已生成，是否进入学习路径草案智能体？",
 						question_box: {
-							question: "画像已生成，下一步要继续生成学习路径吗？",
+							question: "画像已生成，下一步要进入学习路径草案智能体吗？",
 							options: [],
 						},
 						text: "【基础学习画像总结】大三软件工程，目标是学习数据结构。",
@@ -1150,7 +1150,7 @@ test("keeps free-text composer visible after learning path intake draft is shown
 				{
 					id: "user-intake",
 					role: "user",
-					content: "请根据我的基础画像生成学习路径。",
+					content: "进入学习路径草案智能体",
 					status: "completed",
 					timestamp: 1001,
 				},
@@ -2991,21 +2991,21 @@ test("reuses the same session after profile completion instead of creating a new
 		".composer-completed-cta-panel .cta-completed-btn",
 	);
 	expect(ctaBtn).toBeTruthy();
-	expect(ctaBtn?.textContent).toContain("确认并生成学习路径");
+	expect(ctaBtn?.textContent).toContain("进入学习路径草案智能体");
 
 	fireEvent.click(ctaBtn!);
 
 	const draftInput = screen.getByPlaceholderText(
 		"输入你的学习情况...",
 	) as HTMLTextAreaElement;
-	expect(draftInput.value).toBe("请根据我的基础画像生成学习路径。");
+	expect(draftInput.value).toBe("进入学习路径草案智能体");
 	expect(mockNavigate).not.toHaveBeenCalled();
 
 	fireEvent.click(screen.getByLabelText("发送消息"));
 
 	await waitFor(() => {
 		expect(screen.getByText(/课程路径/)).toBeTruthy();
-		expect(screen.queryByText("确认并生成学习路径")).toBeNull();
+		expect(document.querySelector(".composer-completed-cta-panel")).toBeNull();
 		expect(screen.getByRole("button", { name: /开始学习/ })).toBeTruthy();
 		expect(screen.queryByRole("button", { name: /开始第一门课/ })).toBeNull();
 		expect(learningPathUpdated).toHaveBeenCalled();
@@ -3036,7 +3036,7 @@ test("reuses the same session after profile completion instead of creating a new
 	expect(messageCalls[1]?.[1]?.body).toBe(
 		JSON.stringify({
 			session_id: "session-follow-up",
-			message: "请根据我的基础画像生成学习路径。",
+			message: "进入学习路径草案智能体",
 		}),
 	);
 	window.removeEventListener(

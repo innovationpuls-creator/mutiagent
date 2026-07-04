@@ -71,7 +71,7 @@ def _profile() -> dict:
             "constraints": "平时学习节奏",
         },
         "defaulted_fields": ["learning_stage"],
-        "question_md": "画像已生成，是否继续生成学习路径？",
+        "question_md": "画像已生成，是否进入学习路径草案智能体？",
         "question_box": {"question": "下一步做什么？", "options": []},
         "text": "【基础学习画像总结】大三软件工程 AI 方向。",
     }
@@ -620,7 +620,7 @@ def test_run_profile_agent_prefers_latest_implicit_grade_and_major_from_history(
         "profile": _profile(),
         "messages": [
             HumanMessage(content="大三，软件工程，AI，周末集中"),
-            HumanMessage(content="继续生成学习路径"),
+            HumanMessage(content="进入学习路径草案智能体"),
             HumanMessage(content="我不想要当前这门课了，现在帮我生成一门新课"),
             HumanMessage(content="大四，计算机科学，AI，周末集中"),
         ],

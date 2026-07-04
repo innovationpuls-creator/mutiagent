@@ -149,14 +149,14 @@ describe("ChatCard", () => {
 
 		expect(screen.getByText("基础画像分析完成")).toBeTruthy();
 		expect(screen.getByText("了解自己，是成长的第一步。")).toBeTruthy();
-		expect(screen.getByText("确认并生成学习路径")).toBeTruthy();
+		expect(screen.getByText("进入学习路径草案智能体")).toBeTruthy();
 
-		const ctaBtn = screen.getByRole("button", { name: "确认并生成学习路径 ➔" });
+		const ctaBtn = screen.getByRole("button", {
+			name: "进入学习路径草案智能体 ➔",
+		});
 		fireEvent.click(ctaBtn);
 
-		expect(mockOpenWithDraft).toHaveBeenCalledWith(
-			"请根据我的基础画像生成学习路径。",
-		);
+		expect(mockOpenWithDraft).toHaveBeenCalledWith("进入学习路径草案智能体");
 		expect(mockSetWidgetState).not.toHaveBeenCalledWith("WIDGET");
 		expect(mockNavigate).not.toHaveBeenCalled();
 	});

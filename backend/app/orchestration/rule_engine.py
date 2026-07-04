@@ -97,6 +97,8 @@ _REVIEW_PLAN_KEYWORDS = {
 _PATH_REFRESH_KEYWORDS = {
     "继续生成学习路径",
     "更新学习路径",
+    "进入学习路径草案智能体",
+    "进入学习路径草案",
 }
 _PROFILE_UPDATE_KEYWORDS = {
     "修改画像方向",
@@ -291,6 +293,17 @@ def is_review_plan_query(query: str) -> bool:
     }
 
 
+def _is_outline_review_query(query: str) -> bool:
+    text = query.strip()
+    if is_course_resource_generation_query(text):
+        return False
+    return "大纲" in text and ("课" in text or "课程" in text)
+
+
+def _is_learning_path_review_query(query: str) -> bool:
+    return is_review_plan_query(query)
+
+
 def is_learning_path_refresh_query(query: str) -> bool:
     q = query.strip()
     if any(keyword in q for keyword in _PATH_REFRESH_KEYWORDS):
@@ -478,8 +491,43 @@ def should_auto_continue_learning_path_after_profile(state: dict) -> bool:
         return False
     if not has_pending_profile_update_followup(state):
         return False
+    if not _has_bound_course_sources(state):
+        return False
     profile = state.get("profile", {})
     return _is_complete_profile(profile)
+
+
+def _has_bound_course_sources(state: dict) -> bool:  # noqa: C901
+    year_learning_paths = state.get("year_learning_paths")
+    if not isinstance(year_learning_paths, dict):
+        return False
+    for path in year_learning_paths.values():
+        if not isinstance(path, dict):
+            continue
+        grade_plans = path.get("grade_plans")
+        if not isinstance(grade_plans, dict):
+            continue
+        for grade_plan in grade_plans.values():
+            if not isinstance(grade_plan, dict):
+                continue
+            course_nodes = grade_plan.get("course_nodes")
+            if not isinstance(course_nodes, list):
+                continue
+            for course in course_nodes:
+                if not isinstance(course, dict):
+                    continue
+                source_textbook_id = str(course.get("source_textbook_id", "")).strip()
+                source_textbook_title = str(
+                    course.get("source_textbook_title", "")
+                ).strip()
+                source_section_ids = [
+                    str(section_id).strip()
+                    for section_id in course.get("source_outline_section_ids", [])
+                    if str(section_id).strip()
+                ]
+                if source_textbook_id and source_textbook_title and source_section_ids:
+                    return True
+    return False
 
 
 # ── Hard rule functions ──────────────────────────────────────────────────
@@ -533,7 +581,8 @@ def _rule_no_profile(state: dict, profile: dict) -> RuleResult:
         result.system_hints.append(
             "[系统级强制指令] 用户明确要求按默认信息直接生成基础画像。"
             "你必须立即调用 profile_agent 生成可编辑画像，"
-            "不要直接回复解释，也不要调用 learning_path_agent 或 course_knowledge_agent。"
+            "不要直接回复解释，也不要调用 learning_path_agent "
+            "或 course_knowledge_agent。"
         )
         return result
     if is_profile_refinement_query(query):
@@ -552,7 +601,8 @@ def _rule_no_profile(state: dict, profile: dict) -> RuleResult:
         kw in last_error for kw in ("profile", "画像", "生成失败", "无法被解析")
     ):
         result.system_hints.append(
-            "[系统级强制指令] profile_agent 上一次执行失败。不要再次调用 profile_agent。"
+            "[系统级强制指令] profile_agent 上一次执行失败。"
+            "不要再次调用 profile_agent。"
             "请直接告诉用户画像生成遇到了问题，建议用户尝试说「直接帮我生成默认的」来使用快速通道。"
         )
     else:
@@ -648,7 +698,7 @@ def _rule_has_profile_no_path(state: dict, profile: dict) -> RuleResult:
     return result
 
 
-def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
+def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:  # noqa: C901
     """Has both profile and learning path → allow all, auto-navigate."""
     result = RuleResult()
 
@@ -660,7 +710,8 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
         result.force_call = AGENT_LEARNING_PATH_INTAKE
         result.blocked_agents = {AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
         result.system_hints.append(
-            "[系统级强制指令] 用户刚完成画像更新，且当前流程要求在画像更新后重新生成学习路径。"
+            "[系统级强制指令] 用户刚完成画像更新，且当前流程要求在画像更新后"
+            "重新生成学习路径。"
             "你必须先调用 learning_path_intake_agent 刷新课程草案并等待确认。"
         )
         return result
@@ -672,7 +723,8 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
         result.blocked_agents = {AGENT_LEARNING_PATH, AGENT_COURSE_KNOWLEDGE}
         result.system_hints.append(
             "[系统级强制指令] 用户正在确认或修改课程草案。"
-            "你必须调用 learning_path_intake_agent 更新草案状态，不要直接调用 learning_path_agent。"
+            "你必须调用 learning_path_intake_agent 更新草案状态，"
+            "不要直接调用 learning_path_agent。"
         )
         return result
 
@@ -739,7 +791,8 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
             return result
         result.force_call = AGENT_PROFILE
         result.system_hints.append(
-            "[系统级强制指令] 当前会话正在处理“先更新个人画像，再重新生成学习路径”的后续动作。"
+            "[系统级强制指令] 当前会话正在处理“先更新个人画像，"
+            "再重新生成学习路径”的后续动作。"
             "你必须先调用 profile_agent 更新画像；如果仍缺信息，直接向用户追问。"
         )
         return result
@@ -768,7 +821,8 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
             result.force_call = AGENT_COURSE_KNOWLEDGE
             result.system_hints.append(
                 "[系统级强制指令] 画像和学习路径均已完成，且当前还没有课程大纲。"
-                "用户表达继续或开始意愿时，必须调用 course_knowledge_agent 生成课程大纲。"
+                "用户表达继续或开始意愿时，必须调用 course_knowledge_agent "
+                "生成课程大纲。"
             )
             return result
         result.system_hints.append(
@@ -800,7 +854,8 @@ def _rule_has_profile_and_path(state: dict, profile: dict) -> RuleResult:
         }
         result.allowed_agents = set()
         result.system_hints.append(
-            "[系统级强制指令] 用户想回顾学习路径，直接回复概览信息即可，不要调用任何 agent。"
+            "[系统级强制指令] 用户想回顾学习路径，直接回复概览信息即可，"
+            "不要调用任何 agent。"
         )
     else:
         result.system_hints.append(

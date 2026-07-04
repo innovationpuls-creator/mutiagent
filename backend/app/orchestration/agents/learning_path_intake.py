@@ -16,6 +16,8 @@ from sqlmodel import Session
 
 from app.database import get_engine
 from app.orchestration.agents.models import (
+    MAX_SOURCE_SECTION_COUNT,
+    LearningPathIntakeDraftLLMOutput,
     LearningPathIntakeDraftOutput,
     LearningPathIntakeOutput,
 )
@@ -38,7 +40,7 @@ from app.services.learning_path_service import (
 
 logger = logging.getLogger(__name__)
 
-LEARNING_PATH_INTAKE_STRUCTURED_TIMEOUT_SECONDS = 90.0
+LEARNING_PATH_INTAKE_STRUCTURED_TIMEOUT_SECONDS = 180.0
 LEARNING_PATH_INTAKE_RETRY_ERROR = "课程草案生成失败，请重试生成学习路径草案。"
 
 CONFIRMATION_MARKERS = (
@@ -265,7 +267,7 @@ async def _invoke_intake_draft(
             knowledge_context=knowledge_context,
         )
 
-    structured_llm = llm.with_structured_output(LearningPathIntakeDraftOutput)
+    structured_llm = llm.with_structured_output(LearningPathIntakeDraftLLMOutput)
     messages = [
         SystemMessage(content=LEARNING_PATH_INTAKE_AGENT_SYSTEM_PROMPT),
         HumanMessage(
@@ -343,6 +345,8 @@ def _build_intake_generation_input(
             "- 课程只能从已发布知识库教材上下文中推荐。",
             "- 每门课程的 source_textbook_id、source_textbook_title、"
             "source_outline_section_ids 必须来自已发布知识库教材上下文。",
+            "- source_outline_section_ids 只能逐字复制已发布知识库教材上下文 "
+            "outline_summary 中已有的 section_id，不能改写、缩写或自行编号。",
             "- 已发布知识库教材上下文不包含教材正文，不要编造教材正文。",
             "- 课程顺序会被正式学习路径智能体严格继承；"
             "请把 courses 按用户真正应该学习的先后顺序输出。",
@@ -386,8 +390,69 @@ def _normalize_intake_draft(
         intake["user_modification_summary"] = query
     intake["requires_second_confirmation"] = False
     intake["risk_warnings"] = []
+    _trim_intake_course_source_sections(intake)
+    _normalize_intake_course_sources_from_context(intake, knowledge_context)
     _require_intake_courses_from_knowledge_context(intake, knowledge_context)
     return intake
+
+
+def _trim_intake_course_source_sections(intake: dict) -> None:
+    courses = intake.get("courses")
+    if not isinstance(courses, list):
+        return
+    for course in courses:
+        if not isinstance(course, dict):
+            continue
+        course["source_outline_section_ids"] = _source_section_ids_from_course(course)[
+            :MAX_SOURCE_SECTION_COUNT
+        ]
+
+
+def _normalize_intake_course_sources_from_context(
+    intake: dict,
+    knowledge_context: dict,
+) -> None:
+    courses = intake.get("courses")
+    if not isinstance(courses, list):
+        return
+
+    source_bindings_by_id = {
+        str(binding["source_textbook_id"]): binding
+        for binding in _source_bindings_from_knowledge_context(knowledge_context)
+    }
+    allowed_sections_by_textbook_id = _allowed_sections_by_textbook_id(
+        knowledge_context
+    )
+
+    for course in courses:
+        if not isinstance(course, dict):
+            continue
+        source_textbook_id = str(course.get("source_textbook_id", "")).strip()
+        source_binding = source_bindings_by_id.get(source_textbook_id)
+        allowed_section_ids = allowed_sections_by_textbook_id.get(source_textbook_id)
+        if source_binding is None or not allowed_section_ids:
+            continue
+
+        source_section_ids = _source_section_ids_from_course(course)
+        if source_section_ids and all(
+            section_id in allowed_section_ids for section_id in source_section_ids
+        ):
+            continue
+
+        course_text = " ".join(
+            str(course.get(key, "")).strip() for key in ("title", "purpose")
+        )
+        _, selected_section_id = _best_source_section_for_course(
+            course_text, [source_binding]
+        )
+        selected_section_id = selected_section_id or _first_source_section_id(
+            source_binding
+        )
+        if not selected_section_id:
+            continue
+
+        course["source_textbook_title"] = source_binding["source_textbook_title"]
+        course["source_outline_section_ids"] = [selected_section_id]
 
 
 def _build_intake_draft(

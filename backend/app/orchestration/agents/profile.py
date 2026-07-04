@@ -1947,12 +1947,12 @@ def _has_confirmed_profile_completion_fields(state: OrchestrationState) -> bool:
 
 def _profile_question_box() -> dict[str, object]:
     return {
-        "question": "画像已生成，下一步要继续生成学习路径吗？",
+        "question": "画像已生成，下一步要进入学习路径草案智能体吗？",
         "options": [
             {
-                "label": "继续生成学习路径",
-                "value": "继续生成学习路径",
-                "description": "根据当前画像生成今天可执行的课程路径",
+                "label": "进入学习路径草案智能体",
+                "value": "进入学习路径草案智能体",
+                "description": "根据当前画像定制学习路径草案结构",
                 "target_fields": [],
                 "fills": {},
             },
@@ -2201,7 +2201,7 @@ def _build_local_profile(
         "question_mode": "question_box",
         "confirmed_info": confirmed,
         "defaulted_fields": defaulted_fields,
-        "question_md": "画像已生成，是否继续生成学习路径？",
+        "question_md": "画像已生成，是否进入学习路径草案智能体？",
         "question_box": _profile_question_box(),
         "text": summary,
         "summary_text": summary,

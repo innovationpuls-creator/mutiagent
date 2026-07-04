@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Generator
 from datetime import datetime, timezone
 
@@ -14,6 +15,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -50,6 +52,7 @@ from app.schemas import (
     TextbookExtensionResourceCreateRequest,
     TextbookExtensionResourceRead,
     TextbookRead,
+    TextbookSectionContentRead,
 )
 from app.services.knowledge_base_service import (
     add_textbook_extension_resource,
@@ -62,11 +65,18 @@ from app.services.knowledge_base_service import (
     list_knowledge_sources,
     publish_textbook,
     run_knowledge_base_agent,
+    run_textbook_source_ingestion,
+    run_textbook_source_ingestion_for_textbook,
+    stream_knowledge_base_agent_events,
     textbook_payload_covers_topic,
     upsert_structured_textbook,
 )
 
 SessionDependency = Callable[[], Generator[Session, None, None]]
+
+
+def _sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 def create_knowledge_base_router(session_dependency: SessionDependency) -> APIRouter:
@@ -151,6 +161,27 @@ def _register_textbook_routes(
     ) -> Textbook:
         return _upsert_textbook_payload(session, payload)
 
+    @router.get(
+        "/api/admin/knowledge-base/textbooks/{textbook_id}/sections",
+        response_model=list[TextbookSectionContentRead],
+    )
+    def admin_textbook_sections(
+        textbook_id: str,
+        _: User = Depends(require_admin),
+        session: Session = Depends(session_dependency),
+    ) -> list[TextbookSectionContent]:
+        _get_textbook_or_404(session, textbook_id)
+        return list(
+            session.exec(
+                select(TextbookSectionContent)
+                .where(TextbookSectionContent.textbook_id == textbook_id)
+                .order_by(
+                    TextbookSectionContent.order_index,
+                    TextbookSectionContent.section_id,
+                )
+            ).all()
+        )
+
     @router.post(
         "/api/admin/knowledge-base/textbooks/{textbook_id}/publish",
         response_model=TextbookRead,
@@ -192,6 +223,7 @@ def _register_textbook_outline_routes(
     ) -> Textbook:
         textbook = _get_textbook_or_404(session, textbook_id)
         textbook.outline = outline
+        textbook.outline_review_status = "approved"
         session.add(textbook)
         session.commit()
         session.refresh(textbook)
@@ -271,6 +303,40 @@ def _register_ingestion_job_routes(
                 detail=str(exc),
             ) from exc
 
+    @router.post(
+        "/api/admin/knowledge-base/textbooks/{textbook_id}/agent-organize/run",
+        response_model=KnowledgeBaseIngestionJobRead,
+    )
+    def run_admin_textbook_organize(
+        textbook_id: str,
+        _: User = Depends(require_admin),
+        session: Session = Depends(session_dependency),
+    ) -> KnowledgeBaseIngestionJob:
+        try:
+            return run_textbook_source_ingestion_for_textbook(session, textbook_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
+    @router.post(
+        "/api/admin/knowledge-base/ingestion-jobs/{job_id}/run",
+        response_model=KnowledgeBaseIngestionJobRead,
+    )
+    def run_admin_ingestion_job(
+        job_id: str,
+        _: User = Depends(require_admin),
+        session: Session = Depends(session_dependency),
+    ) -> KnowledgeBaseIngestionJob:
+        try:
+            return run_textbook_source_ingestion(session, job_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
     @router.get(
         "/api/admin/knowledge-base/ingestion-jobs/{job_id}",
         response_model=KnowledgeBaseIngestionJobRead,
@@ -304,6 +370,34 @@ def _register_agent_routes(
         session: Session = Depends(session_dependency),
     ) -> KnowledgeBaseAgentResponse:
         return run_knowledge_base_agent(session, payload.message)
+
+    @router.post("/api/admin/knowledge-base/agent/stream")
+    def stream_admin_knowledge_base_agent(
+        payload: KnowledgeBaseAgentRequest,
+        _: User = Depends(require_admin),
+        session: Session = Depends(session_dependency),
+    ) -> StreamingResponse:
+        def event_stream() -> Generator[str, None, None]:
+            try:
+                for event in stream_knowledge_base_agent_events(
+                    session,
+                    payload.message,
+                ):
+                    yield _sse(event["event"], event["payload"])
+            except Exception as exc:
+                yield _sse(
+                    "error",
+                    {
+                        "message": str(exc) or "知识库 Agent 处理失败。",
+                        "recoverable": True,
+                    },
+                )
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @router.post(
         "/api/admin/knowledge-base/source-results/confirm",

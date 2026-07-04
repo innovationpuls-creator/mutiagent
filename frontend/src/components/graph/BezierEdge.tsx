@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import React, { memo } from "react";
+import { memo } from "react";
 import "../../styles/organic-canvas.css";
 import type { NodeStatus } from "./NodeCard";
 
@@ -13,7 +13,6 @@ interface BezierEdgeProps {
 }
 
 const BezierEdge = memo(function BezierEdge({
-	id,
 	startX,
 	startY,
 	endX,

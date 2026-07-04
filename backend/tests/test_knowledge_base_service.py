@@ -122,6 +122,22 @@ def test_search_real_textbook_sources_rejects_non_textbook_urls(
         "_is_reachable_textbook_url",
         lambda url: url == "https://opendatastructures.org/ods-python.pdf",
     )
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "parse_textbook_source_to_sections",
+        lambda source_url, language, **kwargs: (
+            {
+                "chapters": [
+                    {
+                        "chapter_number": 1,
+                        "title": "Chapter 1",
+                        "sections": [{"section_id": "sec_1_1", "title": "Arrays"}],
+                    }
+                ]
+            },
+            {"sec_1_1": "Arrays original content."},
+        ),
+    )
 
     results = knowledge_base_service.search_real_textbook_sources("数据结构", limit=5)
 
@@ -129,6 +145,380 @@ def test_search_real_textbook_sources_rejects_non_textbook_urls(
     assert results[0].title == "Open Data Structures"
     assert results[0].source_type == "pdf"
     assert results[0].is_recommended is True
+
+
+def test_search_real_textbook_sources_rejects_unparseable_reachable_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_results = [
+        {
+            "title": "Open Data Structures",
+            "original_title": "Open Data Structures",
+            "language": "en",
+            "source_url": "https://opendatastructures.org/ods-python.pdf",
+            "source_type": "pdf",
+            "provider_name": "Open Data Structures",
+            "description": "Open textbook.",
+            "tags": ["数据结构"],
+            "parseability_score": 95,
+            "parseability_reason": "PDF 稳定可访问。",
+            "topic_summary": "覆盖数据结构。",
+        }
+    ]
+
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "_search_real_textbook_sources_with_llm",
+        lambda topic, limit: raw_results,
+    )
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "_is_reachable_textbook_url",
+        lambda url: True,
+    )
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "parse_textbook_source_to_sections",
+        lambda source_url, language, **kwargs: (
+            {
+                "chapters": [
+                    {
+                        "chapter_number": 1,
+                        "title": "Chapter 1",
+                        "sections": [{"section_id": "sec_1_1", "title": "Arrays"}],
+                    }
+                ]
+            },
+            {},
+        ),
+    )
+
+    results = knowledge_base_service.search_real_textbook_sources("数据结构", limit=5)
+
+    assert results == []
+
+
+def test_search_real_textbook_sources_uses_known_open_textbook_when_llm_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parsed_urls: list[str] = []
+
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "_search_real_textbook_sources_with_llm",
+        lambda topic, limit: [],
+    )
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "_is_reachable_textbook_url",
+        lambda url: url == "https://opendatastructures.org/ods-python/",
+    )
+
+    def parse_source(
+        source_url: str, language: str, **kwargs: object
+    ) -> tuple[dict, dict[str, str]]:
+        parsed_urls.append(source_url)
+        assert source_url == "https://opendatastructures.org/ods-python/"
+        assert language == "en"
+        assert kwargs == {"max_linked_pages": 8}
+        return (
+            {
+                "chapters": [
+                    {
+                        "chapter_number": 1,
+                        "title": "1. Introduction",
+                        "sections": [
+                            {
+                                "section_id": "sec_1_1",
+                                "title": "1.1 The Need for Efficiency",
+                            }
+                        ],
+                    }
+                ]
+            },
+            {"sec_1_1": "Real Open Data Structures section content."},
+        )
+
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "parse_textbook_source_to_sections",
+        parse_source,
+    )
+
+    results = knowledge_base_service.search_real_textbook_sources("数据结构", limit=5)
+
+    assert parsed_urls == ["https://opendatastructures.org/ods-python/"]
+    assert [result.source_result_id for result in results] == ["source-result-a19d6118"]
+    assert results[0].title == "Open Data Structures (Python Edition)"
+    assert results[0].source_type == "html"
+    assert results[0].source_url == "https://opendatastructures.org/ods-python/"
+    assert results[0].is_recommended is True
+
+
+def test_search_real_textbook_sources_rejects_agent_development_docs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_results = [
+        {
+            "title": "LangChain Agents 概念与开发指南",
+            "original_title": "LangChain Agents",
+            "language": "en",
+            "source_url": "https://python.langchain.com/docs/concepts/agents/",
+            "source_type": "html",
+            "provider_name": "LangChain",
+            "description": "Agent developer guide and documentation.",
+            "tags": ["agent开发"],
+            "parseability_score": 95,
+            "parseability_reason": "HTML docs are parseable.",
+            "topic_summary": "介绍 LangChain agent 开发。",
+        },
+        {
+            "title": "LLM Powered Autonomous Agents",
+            "original_title": "LLM Powered Autonomous Agents",
+            "language": "en",
+            "source_url": "https://lilianweng.github.io/posts/2023-06-23-agent/",
+            "source_type": "html",
+            "provider_name": "Lilian Weng Blog",
+            "description": "Blog article about LLM agents.",
+            "tags": ["agent开发"],
+            "parseability_score": 92,
+            "parseability_reason": "结构清晰的博客。",
+            "topic_summary": "介绍 LLM agent 架构。",
+        },
+        {
+            "title": "AI Agents in LangGraph",
+            "original_title": "AI Agents in LangGraph",
+            "language": "en",
+            "source_url": "https://www.deeplearning.ai/short-courses/ai-agents-in-langgraph/",
+            "source_type": "html",
+            "provider_name": "DeepLearning.AI",
+            "description": "Short course page.",
+            "tags": ["agent开发"],
+            "parseability_score": 90,
+            "parseability_reason": "课程介绍页包含模块划分。",
+            "topic_summary": "介绍 LangGraph agent 开发。",
+        },
+        {
+            "title": "从零开始构建智能体 (Hello-Agents)",
+            "original_title": "Hello-Agents",
+            "language": "zh",
+            "source_url": "https://github.com/datawhalechina/hello-agents",
+            "source_type": "html",
+            "provider_name": "Datawhale",
+            "description": "GitHub 仓库 README 和 Markdown 文档。",
+            "tags": ["agent开发"],
+            "parseability_score": 88,
+            "parseability_reason": "GitHub仓库的README和Markdown文档结构清晰。",
+            "topic_summary": "介绍智能体开发实践。",
+        },
+        {
+            "title": "Dify 智能体 (Agent) 构建与编排指南",
+            "original_title": "Dify Agent Guide",
+            "language": "zh",
+            "source_url": (
+                "https://docs.dify.ai/zh-hans/guides/application-orchestrate/agent"
+            ),
+            "source_type": "html",
+            "provider_name": "Dify",
+            "description": "Dify 文档站点。",
+            "tags": ["agent开发"],
+            "parseability_score": 86,
+            "parseability_reason": "文档站点结构规范。",
+            "topic_summary": "介绍 Dify agent 配置。",
+        },
+    ]
+    parsed_urls: list[str] = []
+    reachable_urls = {
+        "https://artint.info/3e/html/ArtInt3e.html",
+        "https://python.langchain.com/docs/concepts/agents/",
+        "https://lilianweng.github.io/posts/2023-06-23-agent/",
+        "https://www.deeplearning.ai/short-courses/ai-agents-in-langgraph/",
+        "https://github.com/datawhalechina/hello-agents",
+        "https://docs.dify.ai/zh-hans/guides/application-orchestrate/agent",
+    }
+
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "_search_real_textbook_sources_with_llm",
+        lambda topic, limit: raw_results,
+    )
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "_is_reachable_textbook_url",
+        lambda url: url in reachable_urls,
+    )
+
+    def parse_source(
+        source_url: str, language: str, **kwargs: object
+    ) -> tuple[dict, dict[str, str]]:
+        parsed_urls.append(source_url)
+        return (
+            {
+                "chapters": [
+                    {
+                        "chapter_number": 1,
+                        "title": "Part I Agents in the World",
+                        "sections": [
+                            {
+                                "section_id": "sec_1_1",
+                                "title": "What are Agents and How Can They be Built?",
+                            }
+                        ],
+                    }
+                ]
+            },
+            {"sec_1_1": f"Real textbook content from {source_url}."},
+        )
+
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "parse_textbook_source_to_sections",
+        parse_source,
+    )
+
+    results = knowledge_base_service.search_real_textbook_sources("agent开发", limit=5)
+
+    assert parsed_urls == ["https://artint.info/3e/html/ArtInt3e.html"]
+    assert [result.source_url for result in results] == [
+        "https://artint.info/3e/html/ArtInt3e.html"
+    ]
+    assert results[0].title == (
+        "Artificial Intelligence: Foundations of Computational Agents"
+    )
+    assert results[0].is_recommended is True
+
+
+def test_search_real_textbook_sources_returns_five_known_open_textbooks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reachable_urls = {
+        "https://opendatastructures.org/ods-python/",
+        "https://opendatastructures.org/ods-java/",
+        "https://opendatastructures.org/ods-cpp/",
+        ("https://pressbooks.palni.org/anopenguidetodatastructuresandalgorithms/"),
+        "https://opendsa-server.cs.vt.edu/ODSA/Books/Everything/html/",
+    }
+
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "_search_real_textbook_sources_with_llm",
+        lambda topic, limit: [],
+    )
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "_is_reachable_textbook_url",
+        lambda url: url in reachable_urls,
+    )
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "parse_textbook_source_to_sections",
+        lambda source_url, language, **kwargs: (
+            {
+                "chapters": [
+                    {
+                        "chapter_number": 1,
+                        "title": "1. Introduction",
+                        "sections": [
+                            {
+                                "section_id": "sec_1_1",
+                                "title": "1.1 The Need for Efficiency",
+                            }
+                        ],
+                    }
+                ]
+            },
+            {"sec_1_1": f"Real textbook content from {source_url}."},
+        ),
+    )
+
+    results = knowledge_base_service.search_real_textbook_sources("数据结构", limit=5)
+
+    assert [result.source_url for result in results] == [
+        "https://opendatastructures.org/ods-python/",
+        "https://opendatastructures.org/ods-java/",
+        "https://opendatastructures.org/ods-cpp/",
+        ("https://pressbooks.palni.org/anopenguidetodatastructuresandalgorithms/"),
+        "https://opendsa-server.cs.vt.edu/ODSA/Books/Everything/html/",
+    ]
+    assert [result.is_recommended for result in results] == [
+        True,
+        False,
+        False,
+        False,
+        False,
+    ]
+
+
+def test_search_real_textbook_sources_skips_parse_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_results = [
+        {
+            "title": "Broken PDF",
+            "original_title": "Broken PDF",
+            "language": "en",
+            "source_url": "https://opendatastructures.org/ods-python.pdf",
+            "source_type": "pdf",
+            "provider_name": "Open Data Structures",
+            "description": "PDF source.",
+            "tags": ["数据结构"],
+            "parseability_score": 95,
+            "parseability_reason": "PDF source.",
+            "topic_summary": "覆盖数据结构。",
+        }
+    ]
+
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "_search_real_textbook_sources_with_llm",
+        lambda topic, limit: raw_results,
+    )
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "_is_reachable_textbook_url",
+        lambda url: (
+            url
+            in {
+                "https://opendatastructures.org/ods-python/",
+                "https://opendatastructures.org/ods-python.pdf",
+            }
+        ),
+    )
+
+    def parse_source(
+        source_url: str, language: str, **kwargs: object
+    ) -> tuple[dict, dict[str, str]]:
+        if source_url == "https://opendatastructures.org/ods-python.pdf":
+            raise knowledge_base_service.DocumentParseError("PDF 无法切片。")
+        return (
+            {
+                "chapters": [
+                    {
+                        "chapter_number": 1,
+                        "title": "1. Introduction",
+                        "sections": [
+                            {
+                                "section_id": "sec_1_1",
+                                "title": "1.1 The Need for Efficiency",
+                            }
+                        ],
+                    }
+                ]
+            },
+            {"sec_1_1": "Real Open Data Structures section content."},
+        )
+
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "parse_textbook_source_to_sections",
+        parse_source,
+    )
+
+    results = knowledge_base_service.search_real_textbook_sources("数据结构", limit=5)
+
+    assert [result.source_url for result in results] == [
+        "https://opendatastructures.org/ods-python/"
+    ]
 
 
 def test_run_knowledge_base_agent_source_search_does_not_create_textbook(
@@ -1317,7 +1707,7 @@ def test_publish_textbook_enforces_service_gates(tmp_path: Path) -> None:
             _textbook(
                 textbook_id="textbook-unreviewed-outline",
                 title="未校对目录教材",
-                outline={"sections": [{"section_id": "1", "title": "矩阵"}]},
+                outline={"sections": [{"section_id": "1.1", "title": "矩阵"}]},
                 outline_review_status="unreviewed",
             )
         )
@@ -1336,10 +1726,14 @@ def test_publish_textbook_enforces_service_gates(tmp_path: Path) -> None:
             ("textbook-blocked-source", "教材来源未通过准入校验。"),
             ("textbook-empty-outline", "教材缺少中文目录。"),
             ("textbook-no-content", "教材缺少中文正文。"),
-            ("textbook-unreviewed-outline", "教材目录未校对。"),
         ):
             with pytest.raises(ValueError, match=message):
                 publish_textbook(session, textbook_id)
+
+        # Test publishing unreviewed outline automatically approves it
+        published_tb = publish_textbook(session, "textbook-unreviewed-outline")
+        assert published_tb.outline_review_status == "approved"
+        assert published_tb.student_availability_status == "published"
 
         session.add(
             _textbook(
@@ -1403,6 +1797,119 @@ def test_publish_textbook_enforces_service_gates(tmp_path: Path) -> None:
 
         with pytest.raises(ValueError, match="教材缺少完整中文正文。"):
             publish_textbook(session, "textbook-missing-outline-content-row")
+
+
+def test_publish_textbook_allows_english_original_content(
+    tmp_path: Path,
+) -> None:
+    engine = _knowledge_engine(tmp_path)
+    run_schema_upgrades(engine)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(_admitted_source())
+        session.add(
+            _textbook(
+                textbook_id="textbook-english-without-zh",
+                title="Open Data Structures",
+                outline={"sections": [{"section_id": "1.1", "title": "Arrays"}]},
+                outline_review_status="approved",
+                language="en",
+                translated_language="zh",
+            )
+        )
+        session.add(
+            _section(
+                textbook_id="textbook-english-without-zh",
+                section_content_id="section-english-without-zh",
+                section_id="1.1",
+                content_original="Arrays store elements in contiguous memory.",
+                content_zh="Arrays store elements in contiguous memory.",
+            )
+        )
+        session.commit()
+
+        published = publish_textbook(session, "textbook-english-without-zh")
+
+    assert published.student_availability_status == "published"
+    assert published.published_at is not None
+
+
+def test_publish_textbook_allows_english_textbook_with_chinese_annotation(
+    tmp_path: Path,
+) -> None:
+    engine = _knowledge_engine(tmp_path)
+    run_schema_upgrades(engine)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(_admitted_source())
+        session.add(
+            _textbook(
+                textbook_id="textbook-english-with-zh",
+                title="Open Data Structures",
+                outline={"sections": [{"section_id": "1.1", "title": "Arrays"}]},
+                outline_review_status="approved",
+                language="en",
+                translated_language="zh",
+            )
+        )
+        session.add(
+            _section(
+                textbook_id="textbook-english-with-zh",
+                section_content_id="section-english-with-zh",
+                section_id="1.1",
+                content_original="Arrays store elements in contiguous memory.",
+                content_zh="数组把元素存储在连续内存中。",
+            )
+        )
+        session.commit()
+
+        published = publish_textbook(session, "textbook-english-with-zh")
+
+    assert published.student_availability_status == "published"
+    assert published.published_at is not None
+
+
+def test_textbook_evidence_pack_uses_english_original_when_chinese_content_missing(
+    tmp_path: Path,
+) -> None:
+    engine = _knowledge_engine(tmp_path)
+    run_schema_upgrades(engine)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(_admitted_source())
+        session.add(
+            _textbook(
+                textbook_id="textbook-english-evidence",
+                title="Open Data Structures",
+                outline={"sections": [{"section_id": "1.1", "title": "Arrays"}]},
+                outline_review_status="approved",
+                language="en",
+                translated_language="zh",
+                student_availability_status="published",
+            )
+        )
+        session.add(
+            _section(
+                textbook_id="textbook-english-evidence",
+                section_content_id="section-english-evidence",
+                section_id="1.1",
+                content_original="Arrays store elements by index.",
+                content_zh="",
+            )
+        )
+        session.commit()
+
+        pack = get_textbook_evidence_pack(
+            session,
+            "textbook-english-evidence",
+            ["1.1"],
+        )
+
+    assert pack["total_chars"] == len("Arrays store elements by index.")
+    assert pack["evidence_text"] == "Arrays store elements by index."
 
 
 def test_publish_textbook_rejects_outline_without_named_sections(

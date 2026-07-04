@@ -68,7 +68,7 @@ export function AuthPanel(props: AuthPanelProps) {
 		: { duration: 0.42, ease: [0.33, 1, 0.68, 1] as const };
 
 	return (
-		<div className="auth-glass-panel" aria-label="登录注册">
+		<section className="auth-glass-panel" aria-label="登录注册">
 			<p className="auth-overline">A QUIET SPACE TO LEARN</p>
 			<h2>
 				{isLogin ? (
@@ -134,7 +134,7 @@ export function AuthPanel(props: AuthPanelProps) {
 			</div>
 
 			<AuthForm {...props} />
-		</div>
+		</section>
 	);
 }
 

@@ -16,18 +16,17 @@ from sqlmodel import Session
 from app.database import build_engine, init_db, set_engine
 from app.models import User, UserCourseKnowledgeOutline
 from app.orchestration.agents.course_knowledge import (
-    _SINGLE_COURSE_JSON_CONTRACT,
-    _YEAR_COURSES_JSON_CONTRACT,
     ALL_CURRENT_GRADE_COURSES_ID,
     COURSE_KNOWLEDGE_RETRY_ERROR,
+    COURSE_OUTLINE_NAMING_SYSTEM_PROMPT,
+    _apply_outline_prompt_budget,
     _build_analysis_input,
-    _build_repair_input,
     _build_year_analysis_input,
+    _fill_course_source_binding_from_textbook,
     _normalize_generated_course_outline,
     _normalize_generated_sections,
     _select_course_for_outline,
     _source_section_contexts_for_courses,
-    _try_db_outline_translation,
     run_course_knowledge_agent,
 )
 from app.orchestration.agents.models import (
@@ -54,6 +53,20 @@ DEFAULT_SOURCE_SECTION_IDS = [
     "2.2",
     "2.3",
 ]
+
+
+def test_outline_prompt_budget_preserves_source_binding_markers() -> None:
+    course = {
+        "source_textbook_id": SOURCE_TEXTBOOK_ID,
+        "source_outline_section_ids": ["1.1", "2.3"],
+    }
+
+    query = _apply_outline_prompt_budget("A" * 30000, [course])
+
+    assert "prompt_budget_applied=true" in query
+    assert SOURCE_TEXTBOOK_ID in query
+    assert "1.1" in query
+    assert "2.3" in query
 
 
 def _section_source_binding(section_id: str, title: str) -> dict:
@@ -212,9 +225,103 @@ def _raw_outline_with_source_groups(
                 order_index=4,
                 source_section_ids=["1.4"],
             ),
+            _source_bound_section(
+                section_id="2",
+                parent_section_id=None,
+                depth=1,
+                title="进阶实践",
+                order_index=5,
+                source_section_ids=["1.4"],
+            ),
+            _source_bound_section(
+                section_id="2.1",
+                parent_section_id="2",
+                depth=2,
+                title="实践准备",
+                order_index=6,
+                source_section_ids=["1.4"],
+            ),
+            _source_bound_section(
+                section_id="2.2",
+                parent_section_id="2",
+                depth=2,
+                title="过程演练",
+                order_index=7,
+                source_section_ids=["1.4"],
+            ),
+            _source_bound_section(
+                section_id="2.3",
+                parent_section_id="2",
+                depth=2,
+                title="结果检查",
+                order_index=8,
+                source_section_ids=["1.4"],
+            ),
         ],
         "learning_sequence": ["1"],
         "total_estimated_hours": "12 小时",
+    }
+
+
+def _two_chapter_outline_with_source_ids(
+    source_ids: list[str],
+    *,
+    personalization_summary: str = "按教材正文重新设计为完整教学大纲。",
+) -> dict:
+    first_source = source_ids[0]
+    second_source = source_ids[1] if len(source_ids) > 1 else source_ids[0]
+
+    def section(
+        section_id: str,
+        parent_section_id: str | None,
+        depth: int,
+        title: str,
+        order_index: int,
+        source_section_id: str,
+    ) -> dict:
+        return {
+            "section_id": section_id,
+            "parent_section_id": parent_section_id,
+            "depth": depth,
+            "title": title,
+            "order_index": order_index,
+            "description": f"{title}说明。",
+            "key_knowledge_points": [f"{title}知识点"],
+            "source_textbook_id": SOURCE_TEXTBOOK_ID,
+            "source_textbook_title": SOURCE_TEXTBOOK_TITLE,
+            "source_section_ids": [source_section_id],
+            "source_section_titles": [f"教材小节 {source_section_id}"],
+            "source_content_chars": 1200,
+        }
+
+    return {
+        "personalization_summary": personalization_summary,
+        "sections": [
+            section("1", None, 1, "概念定义与学习边界", 1, first_source),
+            section("1.1", "1", 2, "核心概念辨析", 2, first_source),
+            section("1.2", "1", 2, "使用场景拆解", 3, first_source),
+            section("1.3", "1", 2, "常见误区校正", 4, first_source),
+            section("2", None, 1, "实践流程与验收方法", 5, second_source),
+            section("2.1", "2", 2, "环境准备步骤", 6, second_source),
+            section("2.2", "2", 2, "操作流程演练", 7, second_source),
+            section("2.3", "2", 2, "结果检查标准", 8, second_source),
+        ],
+        "learning_sequence": ["1", "2"],
+        "total_estimated_hours": "12 小时",
+    }
+
+
+def _naming_payload_from_outline(outline: dict) -> dict:
+    return {
+        "personalization_summary": outline["personalization_summary"],
+        "section_texts": {
+            section["section_id"]: {
+                "title": section["title"],
+                "description": section["description"],
+                "key_knowledge_points": section["key_knowledge_points"],
+            }
+            for section in outline["sections"]
+        },
     }
 
 
@@ -249,6 +356,43 @@ def _seed_published_textbook_sections(
                     section_id=section_id,
                     title=f"教材小节 {section_id}",
                     content_zh=content_zh,
+                    order_index=index,
+                )
+            )
+        session.commit()
+    return engine
+
+
+def _seed_published_textbook_sections_with_parents(
+    rows: list[dict[str, str]],
+    tmp_path: Path,
+    schema_suffix: str,
+):
+    engine = build_engine(postgresql_test_url(tmp_path, schema_suffix))
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(enabled_source())
+        row = published_textbook(
+            textbook_id=SOURCE_TEXTBOOK_ID,
+            title=SOURCE_TEXTBOOK_TITLE,
+        )
+        row.outline = {
+            "sections": [
+                {"section_id": item["section_id"], "title": item["title"]}
+                for item in rows
+            ]
+        }
+        session.add(row)
+        for index, item in enumerate(rows, start=1):
+            session.add(
+                section(
+                    textbook_id=SOURCE_TEXTBOOK_ID,
+                    section_content_id=f"section-{item['section_id'].replace('.', '-')}",
+                    section_id=item["section_id"],
+                    parent_section_id=item.get("parent_section_id"),
+                    title=item["title"],
+                    content_zh=item["content_zh"],
                     order_index=index,
                 )
             )
@@ -292,16 +436,6 @@ def _course_tool_messages(course_id: str) -> list[AIMessage]:
     ]
 
 
-def _json_block_after_label(text: str, label: str) -> object:
-    match = re.search(
-        rf"{re.escape(label)}：(?P<body>.*?)\n(?:同年级课程顺序|学习者输入|$)",
-        text,
-        re.DOTALL,
-    )
-    assert match is not None
-    return json.loads(match.group("body"))
-
-
 def test_build_analysis_input_requires_course_source_binding() -> None:
     course = _course_outline_target()
     course.pop("source_textbook_id")
@@ -321,6 +455,16 @@ def test_build_year_analysis_input_requires_each_course_source_binding() -> None
             "year_3_course_1",
             _complete_profile(),
         )
+
+
+def _json_block_after_label(text: str, label: str) -> object:
+    match = re.search(
+        rf"{re.escape(label)}：(?P<body>.*?)\n(?:同年级课程顺序|学习者输入|$)",
+        text,
+        re.DOTALL,
+    )
+    assert match is not None
+    return json.loads(match.group("body"))
 
 
 def test_select_course_for_outline_uses_current_learning_course() -> None:
@@ -516,6 +660,42 @@ def test_normalize_generated_sections_requires_chapter_and_subsection_ids() -> N
                     "description": "确认验收实践。",
                     "key_knowledge_points": ["验收实践要点"],
                 },
+                {
+                    "section_id": "2",
+                    "parent_section_id": None,
+                    "depth": 1,
+                    "title": "进阶实践",
+                    "order_index": 5,
+                    "description": "进入实践阶段。",
+                    "key_knowledge_points": ["实践目标"],
+                },
+                {
+                    "section_id": "2.1",
+                    "parent_section_id": "2",
+                    "depth": 2,
+                    "title": "实践准备",
+                    "order_index": 6,
+                    "description": "准备实践材料。",
+                    "key_knowledge_points": ["材料准备"],
+                },
+                {
+                    "section_id": "2.2",
+                    "parent_section_id": "2",
+                    "depth": 2,
+                    "title": "过程演练",
+                    "order_index": 7,
+                    "description": "完成过程演练。",
+                    "key_knowledge_points": ["过程演练"],
+                },
+                {
+                    "section_id": "2.3",
+                    "parent_section_id": "2",
+                    "depth": 2,
+                    "title": "结果检查",
+                    "order_index": 8,
+                    "description": "检查实践结果。",
+                    "key_knowledge_points": ["结果检查"],
+                },
             ]
         )
 
@@ -558,8 +738,61 @@ def test_normalize_generated_sections_requires_chapter_and_subsection_ids() -> N
                     "description": "确认验收实践。",
                     "key_knowledge_points": ["验收实践要点"],
                 },
+                {
+                    "section_id": "2",
+                    "parent_section_id": None,
+                    "depth": 1,
+                    "title": "进阶实践",
+                    "order_index": 5,
+                    "description": "进入实践阶段。",
+                    "key_knowledge_points": ["实践目标"],
+                },
+                {
+                    "section_id": "2.1",
+                    "parent_section_id": "2",
+                    "depth": 2,
+                    "title": "实践准备",
+                    "order_index": 6,
+                    "description": "准备实践材料。",
+                    "key_knowledge_points": ["材料准备"],
+                },
+                {
+                    "section_id": "2.2",
+                    "parent_section_id": "2",
+                    "depth": 2,
+                    "title": "过程演练",
+                    "order_index": 7,
+                    "description": "完成过程演练。",
+                    "key_knowledge_points": ["过程演练"],
+                },
+                {
+                    "section_id": "2.3",
+                    "parent_section_id": "2",
+                    "depth": 2,
+                    "title": "结果检查",
+                    "order_index": 8,
+                    "description": "检查实践结果。",
+                    "key_knowledge_points": ["结果检查"],
+                },
             ]
         )
+
+
+def test_normalize_generated_sections_rejects_single_top_level_chapter() -> None:
+    with pytest.raises(ValueError, match="课程大纲至少需要两个一级章节"):
+        _normalize_generated_sections(
+            _two_chapter_outline_with_source_ids(["1.1", "1.2"])["sections"][:4]
+        )
+
+
+def test_normalize_generated_sections_rejects_internal_source_ids_in_visible_text() -> (
+    None
+):
+    outline = _two_chapter_outline_with_source_ids(["sec_1_1", "sec_1_2"])
+    outline["sections"][1]["title"] = "sec_1_1 教材小节"
+
+    with pytest.raises(ValueError, match="课程大纲可见文案不能包含教材内部小节 ID"):
+        _normalize_generated_sections(outline["sections"])
 
 
 def test_build_analysis_input_uses_compact_course_and_profile_fields() -> None:
@@ -585,7 +818,7 @@ def test_build_analysis_input_uses_compact_course_and_profile_fields() -> None:
             "acceptance_criteria": ["完成一个可运行的 AI 功能模块并接入 Web 应用"],
             "source_textbook_id": SOURCE_TEXTBOOK_ID,
             "source_textbook_title": SOURCE_TEXTBOOK_TITLE,
-            "source_outline_section_ids": DEFAULT_SOURCE_SECTION_IDS,
+            "source_outline_section_ids": ["1.1", "1.2"],
         },
         _complete_profile(),
         {
@@ -698,28 +931,6 @@ def test_build_analysis_inputs_declare_resource_agent_handoff_requirements() -> 
         assert (
             "Markdown 智能体必须使用本小节 source_section_ids 对应教材正文" in payload
         )
-
-
-def test_course_knowledge_prompt_uses_section_ids_titles_and_summaries() -> None:
-    query = _build_analysis_input(
-        _course_outline_target(),
-        _complete_profile(),
-        {
-            "year_3": {
-                "current_learning_course": {
-                    "grade_id": "year_3",
-                    "course_node_id": "year_3_course_1",
-                },
-                "grade_plans": {"year_3": {"course_nodes": [_course_outline_target()]}},
-            }
-        },
-    )
-    course_input = _json_block_after_label(query, "当前课程输入")
-
-    assert "prompt_budget_applied" in query
-    assert isinstance(course_input, dict)
-    assert "source_outline_section_ids" in course_input
-    assert "evidence_text" not in query
 
 
 def test_build_analysis_input_includes_real_source_content_lengths(
@@ -880,73 +1091,26 @@ def test_normalize_course_outline_rejects_source_groups_over_8000_chars(
 
 
 def test_course_knowledge_output_contracts_show_required_source_fields() -> None:
-    for contract in (_SINGLE_COURSE_JSON_CONTRACT, _YEAR_COURSES_JSON_CONTRACT):
-        assert '"source_textbook_id"' in contract
-        assert '"source_textbook_title"' in contract
-        assert '"source_section_ids"' in contract
-        assert '"source_section_titles"' in contract
-        assert '"source_content_chars"' in contract
-        assert "第一章：概念引入与直觉建立" not in contract
-        assert "生活中的类比分析" not in contract
-        assert "黄金法则应用" not in contract
+    assert "section_texts" in COURSE_OUTLINE_NAMING_SYSTEM_PROMPT
+    assert "title" in COURSE_OUTLINE_NAMING_SYSTEM_PROMPT
+    assert "description" in COURSE_OUTLINE_NAMING_SYSTEM_PROMPT
+    assert "key_knowledge_points" in COURSE_OUTLINE_NAMING_SYSTEM_PROMPT
+    assert "不得输出 source_textbook_id" in COURSE_OUTLINE_NAMING_SYSTEM_PROMPT
+    assert "source_section_ids" in COURSE_OUTLINE_NAMING_SYSTEM_PROMPT
 
 
-def test_course_knowledge_repair_input_requires_section_source_fields() -> None:
-    repair_input = _build_repair_input(
-        "原始输入", "source_textbook_id must not be empty"
+def test_course_knowledge_naming_prompt_forbids_source_fields() -> None:
+    assert "不得输出 source_textbook_id" in COURSE_OUTLINE_NAMING_SYSTEM_PROMPT
+    assert "source_section_ids" in COURSE_OUTLINE_NAMING_SYSTEM_PROMPT
+    assert "source_section_titles" in COURSE_OUTLINE_NAMING_SYSTEM_PROMPT
+    assert "source_content_chars" in COURSE_OUTLINE_NAMING_SYSTEM_PROMPT
+    assert "不得直接把英文教材标题复制到学生端可见文案" in (
+        COURSE_OUTLINE_NAMING_SYSTEM_PROMPT
     )
-
-    assert "source_textbook_id" in repair_input
-    assert "source_textbook_title" in repair_input
-    assert "source_section_ids" in repair_input
-    assert "source_section_titles" in repair_input
-    assert "source_content_chars" in repair_input
-    assert "这些绑定教材小节" in repair_input
 
 
 def test_normalize_generated_sections_rejects_empty_source_fields() -> None:
-    outline = _with_section_sources(
-        {
-            "sections": [
-                {
-                    "section_id": "1",
-                    "parent_section_id": None,
-                    "depth": 1,
-                    "title": "工程化导入",
-                    "order_index": 1,
-                    "description": "确认课程目标。",
-                    "key_knowledge_points": ["课程目标"],
-                },
-                {
-                    "section_id": "1.1",
-                    "parent_section_id": "1",
-                    "depth": 2,
-                    "title": "能力边界",
-                    "order_index": 2,
-                    "description": "确认能力边界。",
-                    "key_knowledge_points": ["能力拆解"],
-                },
-                {
-                    "section_id": "1.2",
-                    "parent_section_id": "1",
-                    "depth": 2,
-                    "title": "验收方式",
-                    "order_index": 3,
-                    "description": "确认验收方式。",
-                    "key_knowledge_points": ["验收证据"],
-                },
-                {
-                    "section_id": "1.3",
-                    "parent_section_id": "1",
-                    "depth": 2,
-                    "title": "验收实践",
-                    "order_index": 4,
-                    "description": "确认验收实践。",
-                    "key_knowledge_points": ["验收实践要点"],
-                },
-            ]
-        }
-    )
+    outline = _two_chapter_outline_with_source_ids(["1.1", "1.2"])
     outline["sections"][1]["source_textbook_id"] = ""
 
     with pytest.raises(ValueError, match="source_textbook_id"):
@@ -1194,7 +1358,10 @@ def test_run_course_knowledge_agent_uses_structured_outline_and_persists(
         async def ainvoke(self, payload):
             captured["query"] = payload["query"]
             return AIMessage(
-                content=json.dumps(designed_outline_payload(), ensure_ascii=False)
+                content=json.dumps(
+                    _naming_payload_from_outline(designed_outline_payload()),
+                    ensure_ascii=False,
+                )
             )
 
     class DesignedOutlinePrompt:
@@ -1282,9 +1449,9 @@ def test_run_course_knowledge_agent_uses_structured_outline_and_persists(
 
     assert not hasattr(RecordingLlm(), "with_structured_output")
     assert "AI 应用开发" in str(captured["query"])
-    assert "同年级课程顺序" in str(captured["query"])
+    assert "sections_to_name" in str(captured["query"])
     assert "JSON Schema" not in str(captured["query"])
-    assert "learning_sequence" in str(captured["query"])
+    assert "source_section_ids" not in str(captured["query"])
     assert "需求拆解" not in str(captured["query"])
     assert "接口接入" not in str(captured["query"])
     assert "最小闭环演示" not in str(captured["query"])
@@ -1305,6 +1472,631 @@ def test_run_course_knowledge_agent_uses_structured_outline_and_persists(
     assert row is not None
     assert row.outline_data["course_name"] == "AI 应用开发"
     assert row.outline_data["sections"][0]["section_id"] == "1"
+
+
+def test_run_course_knowledge_agent_uses_single_short_naming_call(
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {"queries": []}
+
+    class RecordingLlm:
+        pass
+
+    naming_payload = {
+        "personalization_summary": "先理解计算模型，再建立复杂度分析的判断框架。",
+        "section_texts": {
+            "1": {
+                "title": "计算模型的基本边界",
+                "description": "建立抽象机器、可计算过程和问题表达之间的关系。",
+                "key_knowledge_points": ["抽象机器", "可计算过程", "问题表达"],
+            },
+            "1.1": {
+                "title": "抽象机器与状态转换",
+                "description": "理解计算模型如何用状态、输入和转换规则描述计算。",
+                "key_knowledge_points": ["状态表示", "转换规则", "输入输出"],
+            },
+            "1.2": {
+                "title": "可计算问题的表达方式",
+                "description": "把实际问题转换成可以被模型处理的形式化对象。",
+                "key_knowledge_points": ["问题形式化", "输入规模", "判定问题"],
+            },
+            "2": {
+                "title": "复杂度分析的度量方法",
+                "description": "建立时间、空间和增长阶之间的分析框架。",
+                "key_knowledge_points": ["时间复杂度", "空间复杂度", "增长阶"],
+            },
+            "2.1": {
+                "title": "输入规模与资源消耗",
+                "description": "理解输入规模变化时算法资源消耗的变化方式。",
+                "key_knowledge_points": ["输入规模", "资源消耗", "上界估计"],
+            },
+        },
+    }
+
+    class NamingChain:
+        async def ainvoke(self, payload):
+            captured["queries"].append(payload["query"])
+            return AIMessage(content=json.dumps(naming_payload, ensure_ascii=False))
+
+    class NamingPrompt:
+        def __or__(self, _other):
+            return NamingChain()
+
+    engine = _seed_published_textbook_sections_with_parents(
+        [
+            {
+                "section_id": "sec_1_1",
+                "parent_section_id": "1",
+                "title": "Computational Models",
+                "content_zh": "计算模型用于描述算法能够执行的抽象过程。",
+            },
+            {
+                "section_id": "sec_1_2",
+                "parent_section_id": "1",
+                "title": "Formal Problems",
+                "content_zh": "形式化问题把真实任务转换为可分析的输入输出关系。",
+            },
+            {
+                "section_id": "sec_2_1",
+                "parent_section_id": "2",
+                "title": "Complexity Measures",
+                "content_zh": "复杂度度量用于分析算法运行时间和空间消耗。",
+            },
+        ],
+        tmp_path,
+        "course-knowledge-short-naming",
+    )
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.commit()
+
+    state = {
+        "user_id": "user-1",
+        "profile": _complete_profile(),
+        "year_learning_paths": {
+            "year_3": {
+                "current_learning_course": {
+                    "grade_id": "year_3",
+                    "course_node_id": "year_3_course_1",
+                },
+                "grade_plans": {
+                    "year_3": {
+                        "course_nodes": [
+                            _course_outline_target(learning_sequence=[])
+                            | {
+                                "course_or_chapter_theme": "计算模型与复杂度分析基础",
+                                "source_outline_section_ids": [
+                                    "sec_1_1",
+                                    "sec_1_2",
+                                    "sec_2_1",
+                                ],
+                            },
+                        ],
+                    },
+                },
+            },
+        },
+        "messages": _course_tool_messages("year_3_course_1"),
+    }
+
+    module = __import__(
+        "app.orchestration.agents.course_knowledge", fromlist=["ChatPromptTemplate"]
+    )
+    original_factory = module.ChatPromptTemplate
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return NamingPrompt()
+
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert len(captured["queries"]) == 1
+    query = str(captured["queries"][0])
+    assert "section_texts" in query
+    assert "source_section_ids" not in query
+    assert "sec_1_1" not in query
+    assert "Computational Models" in query
+    assert "error" not in result
+    outline = result["course_knowledge"]
+    assert outline["course_name"] == "计算模型与复杂度分析基础"
+    assert outline["total_estimated_hours"] == "6 小时"
+    assert outline["learning_sequence"] == [
+        "第一章：计算模型的基本边界",
+        "第二章：复杂度分析的度量方法",
+    ]
+    assert [section["section_id"] for section in outline["sections"]] == [
+        "1",
+        "1.1",
+        "1.2",
+        "2",
+        "2.1",
+    ]
+    assert outline["sections"][1]["source_section_ids"] == ["sec_1_1"]
+    assert outline["sections"][2]["source_section_ids"] == ["sec_1_2"]
+    assert outline["sections"][4]["source_section_ids"] == ["sec_2_1"]
+    assert outline["sections"][1]["source_section_titles"] == ["Computational Models"]
+
+    with Session(engine) as session:
+        row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
+
+    assert row is not None
+
+
+def test_run_course_knowledge_agent_infers_published_source_for_unbound_complexity_course(
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {"queries": []}
+
+    class RecordingLlm:
+        pass
+
+    naming_payload = {
+        "personalization_summary": "围绕复杂度分析主线，把数学工具、增长率和代码成本判断串成完整学习路径。",
+        "section_texts": {
+            "1": {
+                "title": "复杂度分析的基础框架",
+                "description": "建立从效率问题到增长率分析的整体学习边界。",
+                "key_knowledge_points": ["效率问题", "数学工具", "复杂度判断"],
+            },
+            "1.1": {
+                "title": "效率问题与算法选择",
+                "description": "理解为什么同样功能的程序会因为输入规模产生巨大效率差异。",
+                "key_knowledge_points": ["输入规模", "运行效率", "算法选择"],
+            },
+            "1.2": {
+                "title": "数学背景与符号准备",
+                "description": "补齐复杂度分析中需要反复使用的数学表达方式。",
+                "key_knowledge_points": ["数学符号", "增长率比较", "证明习惯"],
+            },
+            "1.3": {
+                "title": "指数与对数增长",
+                "description": "比较指数和对数在算法运行时间中的增长速度。",
+                "key_knowledge_points": ["指数增长", "对数增长", "规模变化"],
+            },
+            "1.4": {
+                "title": "阶乘增长与组合规模",
+                "description": "理解阶乘增长为什么会让朴素枚举方法快速失控。",
+                "key_knowledge_points": ["阶乘", "组合数量", "枚举成本"],
+            },
+            "1.5": {
+                "title": "正确性与时空成本",
+                "description": "把正确性、时间复杂度和空间复杂度放在同一分析框架中检查。",
+                "key_knowledge_points": ["正确性", "时间复杂度", "空间复杂度"],
+            },
+        },
+    }
+
+    class NamingChain:
+        async def ainvoke(self, payload):
+            captured["queries"].append(payload["query"])
+            return AIMessage(content=json.dumps(naming_payload, ensure_ascii=False))
+
+    class NamingPrompt:
+        def __or__(self, _other):
+            return NamingChain()
+
+    engine = build_engine(postgresql_test_url(tmp_path, "course-source-inference"))
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.add(enabled_source())
+        ai_book = published_textbook(
+            textbook_id="textbook-ai-agents",
+            title="Artificial Intelligence: Foundations of Computational Agents",
+        )
+        ai_book.description = "Agents, planning and search."
+        ai_book.tags = ["人工智能", "AI Agent"]
+        session.add(ai_book)
+        session.add(
+            section(
+                textbook_id="textbook-ai-agents",
+                section_content_id="ai-sec-1",
+                section_id="sec_ai_1",
+                title="Agents and Environments",
+                content_zh="智能体与环境交互，形成感知、动作与反馈。",
+                order_index=1,
+            )
+        )
+
+        ods_book = published_textbook(
+            textbook_id="textbook-ods-python",
+            title="Open Data Structures (Python Edition)",
+        )
+        ods_book.description = (
+            "Data structures, mathematical background and asymptotic analysis."
+        )
+        ods_book.tags = ["数据结构", "算法", "Python"]
+        ods_book.outline = {
+            "sections": [
+                {"section_id": "sec_1_1", "title": "1.1 The Need for Efficiency"},
+                {"section_id": "sec_1_8", "title": "1.2 Interfaces"},
+                {"section_id": "sec_1_13", "title": "1.3 Mathematical Background"},
+                {
+                    "section_id": "sec_1_14",
+                    "title": "1.3.1 Exponentials and Logarithms",
+                },
+                {"section_id": "sec_1_15", "title": "1.3.2 Factorials"},
+                {"section_id": "sec_1_16", "title": "1.3.3 Asymptotic Notation"},
+                {
+                    "section_id": "sec_1_19",
+                    "title": "1.5 Correctness, Time Complexity, and Space Complexity",
+                },
+            ]
+        }
+        session.add(ods_book)
+        ods_sections = [
+            (
+                "sec_1_1",
+                "1.1 The Need for Efficiency",
+                "Efficiency and algorithm choice affect running time as input size grows.",
+                655,
+            ),
+            (
+                "sec_1_8",
+                "1.2 Interfaces",
+                "Interfaces describe operations supported by data structures.",
+                1200,
+            ),
+            (
+                "sec_1_13",
+                "1.3 Mathematical Background",
+                "Mathematical background prepares notation for analyzing data structures.",
+                479,
+            ),
+            (
+                "sec_1_14",
+                "1.3.1 Exponentials and Logarithms",
+                "Exponentials and logarithms describe different growth rates.",
+                2842,
+            ),
+            (
+                "sec_1_15",
+                "1.3.2 Factorials",
+                "Factorials arise when counting permutations and combinations.",
+                1853,
+            ),
+            (
+                "sec_1_16",
+                "1.3.3 Asymptotic Notation",
+                "Big-O, Big-Omega and Big-Theta are asymptotic notation for complexity.",
+                9477,
+            ),
+            (
+                "sec_1_19",
+                "1.5 Correctness, Time Complexity, and Space Complexity",
+                "Correctness, time complexity and space complexity evaluate algorithms.",
+                3008,
+            ),
+        ]
+        for index, (section_id, title, content_text, content_chars) in enumerate(
+            ods_sections,
+            start=1,
+        ):
+            session.add(
+                section(
+                    textbook_id="textbook-ods-python",
+                    section_content_id=f"ods-{section_id}",
+                    section_id=section_id,
+                    title=title,
+                    content_zh=content_text,
+                    order_index=index,
+                    content_char_count=content_chars,
+                )
+            )
+        session.commit()
+
+    state = {
+        "user_id": "user-1",
+        "profile": _complete_profile(),
+        "latest_grade_year": "year_3",
+        "year_learning_paths": {
+            "year_3": {
+                "current_learning_course": {
+                    "grade_id": "year_3",
+                    "course_node_id": "year_3_course_1",
+                },
+                "grade_plans": {
+                    "year_3": {
+                        "course_nodes": [
+                            {
+                                "course_node_id": "year_3_course_1",
+                                "course_or_chapter_theme": "计算模型与复杂度分析基础",
+                                "grade_id": "year_3",
+                                "course_goal": "掌握 Big-O、Big-Omega、Big-Theta 的定义与区别，能准确计算简单代码片段的渐近复杂度，理解摊销成本概念。",
+                                "time_arrangement": {
+                                    "semester_scope": "上学期",
+                                    "duration": "2 周",
+                                    "pace_reason": "先建立复杂度分析基础",
+                                },
+                                "key_points": [
+                                    "指数、对数、阶乘的增长率对比及其在算法选择中的意义",
+                                    "Big-O、Big-Omega、Big-Theta 的严格数学定义与应用场景",
+                                    "时间复杂度与空间复杂度",
+                                ],
+                                "difficult_points": ["渐近符号的物理意义"],
+                                "learning_sequence": ["理解渐近符号", "计算代码复杂度"],
+                                "prerequisite_node_ids": [],
+                                "chapter_nodes": [],
+                                "core_knowledge_points": [],
+                                "knowledge_relations": [],
+                                "downstream_resource_direction_ids": [],
+                                "acceptance_criteria": ["能解释常见代码片段的复杂度"],
+                            }
+                        ],
+                    },
+                },
+            },
+        },
+        "messages": _course_tool_messages("计算模型与复杂度分析基础"),
+    }
+
+    module = __import__(
+        "app.orchestration.agents.course_knowledge", fromlist=["ChatPromptTemplate"]
+    )
+    original_factory = module.ChatPromptTemplate
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return NamingPrompt()
+
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert "error" not in result
+    assert len(captured["queries"]) == 1
+    query = str(captured["queries"][0])
+    assert "source_section_ids" not in query
+    assert "sec_1_1" not in query
+    assert "1.1 The Need for Efficiency" in query
+    assert "1.3.3 Asymptotic Notation" not in query
+    outline = result["course_knowledge"]
+    assert outline["course_name"] == "计算模型与复杂度分析基础"
+    assert outline["total_estimated_hours"] == "10 小时"
+    assert outline["learning_sequence"] == ["第一章：复杂度分析的基础框架"]
+    assert [section["section_id"] for section in outline["sections"]] == [
+        "1",
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+    ]
+    assert [
+        section["source_section_ids"]
+        for section in outline["sections"]
+        if section["parent_section_id"] is not None
+    ] == [
+        ["sec_1_1"],
+        ["sec_1_13"],
+        ["sec_1_14"],
+        ["sec_1_15"],
+        ["sec_1_19"],
+    ]
+
+    with Session(engine) as session:
+        row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
+
+    assert row is not None
+    assert (
+        row.outline_data["sections"][1]["source_textbook_id"] == "textbook-ods-python"
+    )
+
+
+def test_course_source_binding_reselects_when_existing_section_exceeds_limit(
+    tmp_path: Path,
+) -> None:
+    engine = build_engine(postgresql_test_url(tmp_path, "course-source-reselect"))
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(enabled_source())
+        ods_book = published_textbook(
+            textbook_id="textbook-ods-python",
+            title="Open Data Structures (Python Edition)",
+        )
+        ods_book.description = (
+            "Data structures, mathematical background and model of computation."
+        )
+        ods_book.tags = ["数据结构", "算法", "Python"]
+        session.add(ods_book)
+        rows = [
+            (
+                "sec_1_1",
+                "1.1 The Need for Efficiency",
+                "Efficiency and algorithm choice affect running time.",
+                655,
+            ),
+            (
+                "sec_1_8",
+                "1.2 Interfaces",
+                "Interfaces describe operations.",
+                1324,
+            ),
+            (
+                "sec_1_13",
+                "1.3 Mathematical Background",
+                "Mathematical notation prepares analysis.",
+                479,
+            ),
+            (
+                "sec_1_16",
+                "1.3.3 Asymptotic Notation",
+                "Big-O, Big-Omega and Big-Theta describe asymptotic complexity.",
+                9477,
+            ),
+            (
+                "sec_1_18",
+                "1.4 The Model of Computation",
+                "The model of computation defines primitive operations.",
+                3536,
+            ),
+        ]
+        for index, (section_id, title, content_text, content_chars) in enumerate(
+            rows,
+            start=1,
+        ):
+            session.add(
+                section(
+                    textbook_id="textbook-ods-python",
+                    section_content_id=f"ods-{section_id}",
+                    section_id=section_id,
+                    title=title,
+                    content_zh=content_text,
+                    order_index=index,
+                    content_char_count=content_chars,
+                )
+            )
+        session.commit()
+
+        course = {
+            "course_node_id": "year_3_course_1",
+            "course_or_chapter_theme": "计算模型与复杂度分析基础",
+            "course_goal": "掌握 Big-O、Big-Omega、Big-Theta 的定义与区别，能准确计算简单代码片段的渐近复杂度。",
+            "key_points": ["数学背景", "算法效率", "计算模型", "时间复杂度"],
+            "source_textbook_id": "textbook-ods-python",
+            "source_textbook_title": "Open Data Structures (Python Edition)",
+            "source_outline_section_ids": [
+                "sec_1_1",
+                "sec_1_8",
+                "sec_1_13",
+                "sec_1_16",
+                "sec_1_18",
+            ],
+        }
+
+        _fill_course_source_binding_from_textbook(session, course)
+
+    assert course["source_outline_section_ids"] == [
+        "sec_1_1",
+        "sec_1_8",
+        "sec_1_13",
+        "sec_1_18",
+    ]
+
+
+@pytest.mark.parametrize(
+    "section_text",
+    [
+        {
+            "title": "sec_1_1 教材小节",
+            "description": "这里泄露了内部教材小节编号。",
+            "key_knowledge_points": ["内部编号"],
+        },
+        {
+            "title": "Turing Machines",
+            "description": "这里使用了英文教材标题。",
+            "key_knowledge_points": ["自动机"],
+        },
+    ],
+)
+def test_run_course_knowledge_agent_rejects_bad_naming_output(
+    tmp_path: Path,
+    section_text: dict,
+) -> None:
+    class RecordingLlm:
+        pass
+
+    class BadNamingChain:
+        async def ainvoke(self, _payload):
+            return AIMessage(
+                content=json.dumps(
+                    {
+                        "personalization_summary": "按课程目标生成中文大纲。",
+                        "section_texts": {
+                            "1": {
+                                "title": "计算模型基础",
+                                "description": "建立计算模型的学习主线。",
+                                "key_knowledge_points": ["计算模型"],
+                            },
+                            "1.1": section_text,
+                        },
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    class BadNamingPrompt:
+        def __or__(self, _other):
+            return BadNamingChain()
+
+    engine = _seed_published_textbook_sections_with_parents(
+        [
+            {
+                "section_id": "sec_1_1",
+                "parent_section_id": "1",
+                "title": "Turing Machines",
+                "content_zh": "图灵机是一种刻画可计算性的经典计算模型。",
+            },
+        ],
+        tmp_path,
+        "course-knowledge-bad-naming",
+    )
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.commit()
+
+    state = {
+        "user_id": "user-1",
+        "profile": _complete_profile(),
+        "year_learning_paths": {
+            "year_3": {
+                "current_learning_course": {
+                    "grade_id": "year_3",
+                    "course_node_id": "year_3_course_1",
+                },
+                "grade_plans": {
+                    "year_3": {
+                        "course_nodes": [
+                            _course_outline_target(learning_sequence=[])
+                            | {
+                                "course_or_chapter_theme": "计算模型与复杂度分析基础",
+                                "source_outline_section_ids": ["sec_1_1"],
+                            },
+                        ],
+                    },
+                },
+            },
+        },
+        "messages": _course_tool_messages("year_3_course_1"),
+    }
+
+    module = __import__(
+        "app.orchestration.agents.course_knowledge", fromlist=["ChatPromptTemplate"]
+    )
+    original_factory = module.ChatPromptTemplate
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return BadNamingPrompt()
+
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert result == {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
+    with Session(engine) as session:
+        row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
+
+    assert row is None
 
 
 def test_run_course_knowledge_agent_generates_all_grade_course_outlines_in_one_call(
@@ -1398,16 +2190,6 @@ def test_run_course_knowledge_agent_generates_all_grade_course_outlines_in_one_c
         }
         return _with_section_sources(payload)
 
-    def year_outline_payload() -> dict:
-        return {
-            "grade_year": "year_3",
-            "year_summary": "全年按 AI 应用到 RAG 实战的顺序生成大纲。",
-            "course_outlines": [
-                outline_payload("year_3_course_1", "AI 应用核心架构"),
-                outline_payload("year_3_course_2", "RAG 实战"),
-            ],
-        }
-
     class YearOutlineChain:
         def __init__(self):
             self.calls = 0
@@ -1415,8 +2197,15 @@ def test_run_course_knowledge_agent_generates_all_grade_course_outlines_in_one_c
         async def ainvoke(self, payload):
             self.calls += 1
             captured["queries"].append(payload["query"])
+            if self.calls == 1:
+                outline = outline_payload("year_3_course_1", "AI 应用核心架构")
+            else:
+                outline = outline_payload("year_3_course_2", "RAG 实战")
             return AIMessage(
-                content=f"```json\n{json.dumps(year_outline_payload(), ensure_ascii=False)}\n```"
+                content=json.dumps(
+                    _naming_payload_from_outline(outline),
+                    ensure_ascii=False,
+                )
             )
 
     year_chain = YearOutlineChain()
@@ -1489,13 +2278,17 @@ def test_run_course_knowledge_agent_generates_all_grade_course_outlines_in_one_c
         module.asyncio.wait_for = original_wait_for
 
     assert not hasattr(RecordingLlm(), "with_structured_output")
-    assert year_chain.calls == 1
-    assert captured["timeouts"] == [module.YEAR_COURSE_OUTLINE_TIMEOUT_SECONDS]
-    assert "请一次性为当前年级的全部课程生成详细章节大纲" in captured["queries"][0]
+    assert year_chain.calls == 2
+    assert captured["timeouts"] == [
+        module.COURSE_OUTLINE_NAMING_TIMEOUT_SECONDS,
+        module.COURSE_OUTLINE_NAMING_TIMEOUT_SECONDS,
+    ]
+    assert "请为后端已经确定结构的课程大纲生成中文教学命名" in captured["queries"][0]
     assert "JSON Schema" not in captured["queries"][0]
-    assert "course_outlines" in captured["queries"][0]
+    assert "course_outlines" not in captured["queries"][0]
     assert "AI 应用核心架构" in captured["queries"][0]
-    assert "RAG 实战" in captured["queries"][0]
+    assert "RAG 实战" not in captured["queries"][0]
+    assert "RAG 实战" in captured["queries"][1]
     assert result["course_knowledge"]["course_id"] == "year_3_course_1"
     assert result["course_knowledge"]["course_name"] == "AI 应用核心架构"
     assert [outline["course_id"] for outline in result["course_knowledges"]] == [
@@ -1529,52 +2322,16 @@ def test_run_course_knowledge_agent_empty_course_id_generates_current_course_onl
     class CurrentCourseChain:
         async def ainvoke(self, payload):
             captured["queries"].append(payload["query"])
-            outline = _with_section_sources(
-                {
-                    "personalization_summary": "按当前课程生成单门章节大纲。",
-                    "sections": [
-                        {
-                            "section_id": "1",
-                            "parent_section_id": None,
-                            "depth": 1,
-                            "title": "架构入口",
-                            "order_index": 1,
-                            "description": "建立课程主线。",
-                            "key_knowledge_points": ["架构边界", "目标验收"],
-                        },
-                        {
-                            "section_id": "1.1",
-                            "parent_section_id": "1",
-                            "depth": 2,
-                            "title": "目标边界",
-                            "order_index": 2,
-                            "description": "确认输入输出。",
-                            "key_knowledge_points": ["输入输出"],
-                        },
-                        {
-                            "section_id": "1.2",
-                            "parent_section_id": "1",
-                            "depth": 2,
-                            "title": "验收方式",
-                            "order_index": 3,
-                            "description": "定义可验证结果。",
-                            "key_knowledge_points": ["验收标准"],
-                        },
-                        {
-                            "section_id": "1.3",
-                            "parent_section_id": "1",
-                            "depth": 2,
-                            "title": "验收证据",
-                            "order_index": 4,
-                            "description": "设计验收证据和示例。",
-                            "key_knowledge_points": ["验收证据要点"],
-                        },
-                    ],
-                    "learning_sequence": ["1"],
-                    "total_estimated_hours": "8 小时",
-                }
+            outline = _two_chapter_outline_with_source_ids(
+                ["1.1", "2.1"],
+                personalization_summary="按当前课程生成单门章节大纲。",
             )
-            return AIMessage(content=json.dumps(outline, ensure_ascii=False))
+            return AIMessage(
+                content=json.dumps(
+                    _naming_payload_from_outline(outline),
+                    ensure_ascii=False,
+                )
+            )
 
     class CurrentCoursePrompt:
         def __or__(self, _other):
@@ -1643,8 +2400,8 @@ def test_run_course_knowledge_agent_empty_course_id_generates_current_course_onl
         module.asyncio.wait_for = original_wait_for
 
     assert len(captured["queries"]) == 1
-    assert captured["timeouts"] == [module.SINGLE_COURSE_OUTLINE_TIMEOUT_SECONDS]
-    assert "请为以下课程生成详细的章节大纲" in captured["queries"][0]
+    assert captured["timeouts"] == [module.COURSE_OUTLINE_NAMING_TIMEOUT_SECONDS]
+    assert "请为后端已经确定结构的课程大纲生成中文教学命名" in captured["queries"][0]
     assert "请一次性为当前年级的全部课程生成详细章节大纲" not in captured["queries"][0]
     assert "course_outlines" not in captured["queries"][0]
     assert result["course_knowledge"]["course_id"] == "year_3_course_1"
@@ -1803,7 +2560,7 @@ def test_run_course_knowledge_agent_returns_hard_error_after_json_output_failure
     assert row is None
 
 
-def test_run_course_knowledge_agent_repairs_invalid_json_outline_once(
+def test_run_course_knowledge_agent_does_not_repair_invalid_naming_output(
     tmp_path: Path,
 ) -> None:
     captured: dict[str, object] = {"queries": []}
@@ -1811,135 +2568,34 @@ def test_run_course_knowledge_agent_repairs_invalid_json_outline_once(
     class RecordingLlm:
         pass
 
-    def invalid_outline_payload() -> dict:
-        return {
-            "personalization_summary": "先从 RAG 主链路入手。",
-            "sections": [
-                {
-                    "section_id": "1",
-                    "parent_section_id": None,
-                    "depth": 1,
-                    "title": "RAG 主链路",
-                    "order_index": 1,
-                    "description": "只返回了一级章节，缺少二级小节。",
-                    "key_knowledge_points": ["检索增强生成"],
-                },
-            ],
-            "learning_sequence": ["1"],
-            "total_estimated_hours": "12 小时",
-        }
-
-    def repaired_outline_payload() -> dict:
-        payload = {
-            "personalization_summary": "按项目驱动画像先理解 RAG 架构，再完成检索链路验收。",
-            "sections": [
-                {
-                    "section_id": "1",
-                    "parent_section_id": None,
-                    "depth": 1,
-                    "title": "AI 应用核心架构",
-                    "order_index": 1,
-                    "description": "建立 AI 应用从输入到输出的核心分层。",
-                    "key_knowledge_points": ["应用分层", "模型调用边界"],
-                },
-                {
-                    "section_id": "1.1",
-                    "parent_section_id": "1",
-                    "depth": 2,
-                    "title": "请求入口与状态边界",
-                    "order_index": 2,
-                    "description": "确认用户输入、会话状态和模型调用之间的边界。",
-                    "key_knowledge_points": ["输入契约", "状态隔离"],
-                },
-                {
-                    "section_id": "1.2",
-                    "parent_section_id": "1",
-                    "depth": 2,
-                    "title": "模型调用与错误回传",
-                    "order_index": 3,
-                    "description": "设计可恢复的模型调用与错误提示。",
-                    "key_knowledge_points": ["调用超时", "错误提示"],
-                },
-                {
-                    "section_id": "1.3",
-                    "parent_section_id": "1",
-                    "depth": 2,
-                    "title": "测试调试方法",
-                    "order_index": 4,
-                    "description": "说明如何进行调试测试。",
-                    "key_knowledge_points": ["调试技巧"],
-                },
-                {
-                    "section_id": "2",
-                    "parent_section_id": None,
-                    "depth": 1,
-                    "title": "RAG 检索增强实战",
-                    "order_index": 5,
-                    "description": "完成从文档切分到答案引用的 RAG 主链路。",
-                    "key_knowledge_points": ["向量检索", "引用归因"],
-                },
-                {
-                    "section_id": "2.1",
-                    "parent_section_id": "2",
-                    "depth": 2,
-                    "title": "知识切分与向量化",
-                    "order_index": 6,
-                    "description": "把课程资料处理成可检索的知识片段。",
-                    "key_knowledge_points": ["chunk 设计", "embedding 生成"],
-                },
-                {
-                    "section_id": "2.2",
-                    "parent_section_id": "2",
-                    "depth": 2,
-                    "title": "检索召回与答案验收",
-                    "order_index": 7,
-                    "description": "验证检索结果是否真正支撑最终回答。",
-                    "key_knowledge_points": ["top_k 召回", "答案证据"],
-                },
-                {
-                    "section_id": "2.3",
-                    "parent_section_id": "2",
-                    "depth": 2,
-                    "title": "系统评估与优化",
-                    "order_index": 8,
-                    "description": "分析并优化检索系统的整体准确度。",
-                    "key_knowledge_points": ["系统评估"],
-                },
-            ],
-            "learning_sequence": ["1", "2"],
-            "total_estimated_hours": "20 小时",
-        }
-        return _with_section_sources(payload)
-
-    class RepairingChain:
+    class InvalidNamingChain:
         def __init__(self):
             self.calls = 0
 
         async def ainvoke(self, payload):
             self.calls += 1
             captured["queries"].append(payload["query"])
-            if self.calls == 1:
-                return AIMessage(
-                    content=json.dumps(invalid_outline_payload(), ensure_ascii=False)
-                )
             return AIMessage(
-                content=json.dumps(repaired_outline_payload(), ensure_ascii=False)
+                content=json.dumps({"section_texts": {}}, ensure_ascii=False)
             )
 
-    repairing_chain = RepairingChain()
+    invalid_chain = InvalidNamingChain()
 
-    class RepairingPrompt:
+    class InvalidNamingPrompt:
         def __or__(self, _other):
-            return repairing_chain
+            return invalid_chain
 
-    engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-repair"))
-    set_engine(engine)
-    init_db(engine)
+    engine = _seed_published_textbook_sections(
+        {
+            "sec_1_1": "计算模型用于定义算法可执行的抽象机器与计算过程。",
+            "sec_1_2": "复杂度分析用于衡量算法所需的时间、空间与增长阶。",
+        },
+        tmp_path,
+    )
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
         )
-        _add_default_source_material(session)
         session.commit()
 
     state = {
@@ -1954,9 +2610,15 @@ def test_run_course_knowledge_agent_repairs_invalid_json_outline_once(
                 "grade_plans": {
                     "year_3": {
                         "course_nodes": [
-                            {
-                                **_course_outline_target(learning_sequence=[]),
-                                "course_or_chapter_theme": "AI应用核心架构与RAG实战",
+                            _course_outline_target(
+                                learning_sequence=[],
+                            )
+                            | {
+                                "course_or_chapter_theme": "计算模型与复杂度分析基础",
+                                "source_outline_section_ids": [
+                                    "sec_1_1",
+                                    "sec_1_2",
+                                ],
                             },
                         ],
                     },
@@ -1974,7 +2636,7 @@ def test_run_course_knowledge_agent_repairs_invalid_json_outline_once(
     class PromptFactory:
         @staticmethod
         def from_messages(_messages):
-            return RepairingPrompt()
+            return InvalidNamingPrompt()
 
     module.ChatPromptTemplate = PromptFactory
     try:
@@ -1982,23 +2644,115 @@ def test_run_course_knowledge_agent_repairs_invalid_json_outline_once(
     finally:
         module.ChatPromptTemplate = original_factory
 
-    assert not hasattr(RecordingLlm(), "with_structured_output")
-    assert repairing_chain.calls == 2
-    assert "JSON Schema" not in captured["queries"][0]
-    assert "sections" in captured["queries"][0]
-    assert "上一次输出没有通过课程大纲结构校验" in captured["queries"][1]
-    assert "课程大纲必须包含章内小节" in captured["queries"][1]
-    assert result["course_knowledge"]["course_name"] == "AI应用核心架构与RAG实战"
-    assert result["course_knowledge"]["learning_sequence"] == [
-        "第一章：AI 应用核心架构",
-        "第二章：RAG 检索增强实战",
-    ]
+    assert invalid_chain.calls == 1
+    assert len(captured["queries"]) == 1
+    assert "上一次输出没有通过课程大纲结构校验" not in captured["queries"][0]
+    assert result == {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
 
     with Session(engine) as session:
         row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
 
-    assert row is not None
-    assert row.outline_data["sections"][1]["section_id"] == "1.1"
+    assert row is None
+
+
+def test_run_course_knowledge_agent_returns_hard_error_after_invalid_naming(
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {"queries": []}
+
+    class RecordingLlm:
+        pass
+
+    class InvalidChain:
+        def __init__(self):
+            self.calls = 0
+
+        async def ainvoke(self, payload):
+            self.calls += 1
+            captured["queries"].append(payload["query"])
+            return AIMessage(
+                content=json.dumps(
+                    {
+                        "personalization_summary": "一直只返回不完整命名。",
+                        "section_texts": {},
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    invalid_chain = InvalidChain()
+
+    class InvalidPrompt:
+        def __or__(self, _other):
+            return invalid_chain
+
+    engine = _seed_published_textbook_sections(
+        {
+            "sec_1_1": "计算模型用于定义算法可执行的抽象机器与计算过程。",
+            "sec_1_2": "复杂度分析用于衡量算法所需的时间、空间与增长阶。",
+        },
+        tmp_path,
+    )
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.commit()
+
+    state = {
+        "user_id": "user-1",
+        "profile": _complete_profile(),
+        "year_learning_paths": {
+            "year_3": {
+                "current_learning_course": {
+                    "grade_id": "year_3",
+                    "course_node_id": "year_3_course_1",
+                },
+                "grade_plans": {
+                    "year_3": {
+                        "course_nodes": [
+                            _course_outline_target(
+                                learning_sequence=[],
+                            )
+                            | {
+                                "course_or_chapter_theme": "计算模型与复杂度分析基础",
+                                "source_outline_section_ids": [
+                                    "sec_1_1",
+                                    "sec_1_2",
+                                ],
+                            },
+                        ],
+                    },
+                },
+            },
+        },
+        "messages": _course_tool_messages("year_3_course_1"),
+    }
+
+    module = __import__(
+        "app.orchestration.agents.course_knowledge", fromlist=["ChatPromptTemplate"]
+    )
+    original_factory = module.ChatPromptTemplate
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return InvalidPrompt()
+
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert invalid_chain.calls == 1
+    assert len(captured["queries"]) == 1
+    assert result == {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
+
+    with Session(engine) as session:
+        row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
+
+    assert row is None
 
 
 def test_run_course_knowledge_agent_returns_hard_error_after_timeout(
@@ -2055,7 +2809,7 @@ def test_run_course_knowledge_agent_returns_hard_error_after_timeout(
         "app.orchestration.agents.course_knowledge", fromlist=["ChatPromptTemplate"]
     )
     original_factory = module.ChatPromptTemplate
-    original_timeout = module.SINGLE_COURSE_OUTLINE_TIMEOUT_SECONDS
+    original_timeout = module.COURSE_OUTLINE_NAMING_TIMEOUT_SECONDS
 
     class PromptFactory:
         @staticmethod
@@ -2063,12 +2817,12 @@ def test_run_course_knowledge_agent_returns_hard_error_after_timeout(
             return HangingPrompt()
 
     module.ChatPromptTemplate = PromptFactory
-    module.SINGLE_COURSE_OUTLINE_TIMEOUT_SECONDS = 0.01
+    module.COURSE_OUTLINE_NAMING_TIMEOUT_SECONDS = 0.01
     try:
         result = asyncio.run(run_course_knowledge_agent(state, HangingLlm()))
     finally:
         module.ChatPromptTemplate = original_factory
-        module.SINGLE_COURSE_OUTLINE_TIMEOUT_SECONDS = original_timeout
+        module.COURSE_OUTLINE_NAMING_TIMEOUT_SECONDS = original_timeout
 
     assert result == {"error": COURSE_KNOWLEDGE_RETRY_ERROR, "hard_error": True}
 
@@ -2152,7 +2906,10 @@ def test_run_course_knowledge_agent_normalizes_partial_json_outline(
         async def ainvoke(self, payload):
             captured["query"] = payload["query"]
             return AIMessage(
-                content=json.dumps(partial_outline_payload(), ensure_ascii=False)
+                content=json.dumps(
+                    _naming_payload_from_outline(partial_outline_payload()),
+                    ensure_ascii=False,
+                )
             )
 
     class PartialOutlinePrompt:
@@ -2287,7 +3044,7 @@ def test_run_course_knowledge_agent_normalizes_partial_json_outline(
     assert outline["course_id"] == "year_3_course_2"
     assert outline["course_name"] == "AI Agent 开发项目实战"
     assert outline["grade_year"] == "year_3"
-    assert outline["total_estimated_hours"] == "72 小时"
+    assert outline["total_estimated_hours"] == "12 小时"
     assert outline["sections"][0]["parent_section_id"] is None
     assert outline["sections"][0]["depth"] == 1
     assert outline["sections"][0]["order_index"] == 1
@@ -2295,12 +3052,34 @@ def test_run_course_knowledge_agent_normalizes_partial_json_outline(
     assert outline["learning_sequence"] == ["第一章：架构设计", "第二章：多智能体联调"]
 
 
-def test_run_course_knowledge_agent_bypasses_llm_if_textbook_mapped(
+def test_run_course_knowledge_agent_uses_llm_even_when_textbook_mapped(
     tmp_path: Path,
 ) -> None:
     from app.models import Textbook, TextbookSectionContent
 
-    engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-bypass-llm"))
+    captured: dict[str, object] = {"queries": []}
+    source_ids = ["sec_1_1", "sec_1_2"]
+
+    class RecordingLlm:
+        pass
+
+    class DesignedOutlineChain:
+        async def ainvoke(self, payload):
+            captured["queries"].append(payload["query"])
+            return AIMessage(
+                content=json.dumps(
+                    _naming_payload_from_outline(
+                        _two_chapter_outline_with_source_ids(source_ids)
+                    ),
+                    ensure_ascii=False,
+                )
+            )
+
+    class DesignedOutlinePrompt:
+        def __or__(self, _other):
+            return DesignedOutlineChain()
+
+    engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-mapped-llm"))
     set_engine(engine)
     init_db(engine)
 
@@ -2397,14 +3176,27 @@ def test_run_course_knowledge_agent_bypasses_llm_if_textbook_mapped(
         "messages": _course_tool_messages("year_3_course_1"),
     }
 
-    class ExplodingLlm:
-        async def ainvoke(self, *args, **kwargs):
-            raise AssertionError(
-                "LLM should not be called when textbook outline is translated from DB directly!"
-            )
+    module = __import__(
+        "app.orchestration.agents.course_knowledge", fromlist=["ChatPromptTemplate"]
+    )
+    original_factory = module.ChatPromptTemplate
 
-    result = asyncio.run(run_course_knowledge_agent(state, ExplodingLlm()))
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return DesignedOutlinePrompt()
 
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert len(captured["queries"]) == 1
+    assert "source_outline_sections" not in str(captured["queries"][0])
+    assert "sec_1_1" not in str(captured["queries"][0])
+    assert "sec_1_2" not in str(captured["queries"][0])
+    assert "1.1 什么是人工智能" in str(captured["queries"][0])
     assert "error" not in result
     outline_data = result["course_knowledge"]
     assert outline_data["course_id"] == "year_3_course_1"
@@ -2414,265 +3206,53 @@ def test_run_course_knowledge_agent_bypasses_llm_if_textbook_mapped(
     ch = outline_data["sections"][0]
     assert ch["section_id"] == "1"
     assert ch["depth"] == 1
-    assert ch["title"] == "第一章 AI开发入门"
+    assert ch["title"] == "概念定义与学习边界"
     assert ch["parent_section_id"] is None
 
     s1 = outline_data["sections"][1]
-    assert s1["section_id"] == "sec_1_1"
+    assert s1["section_id"] == "1.1"
     assert s1["depth"] == 2
-    assert s1["title"] == "1.1 什么是人工智能"
+    assert s1["title"] == "核心概念辨析"
     assert s1["parent_section_id"] == "1"
     assert s1["source_content_chars"] == len(
         "人工智能（AI）是计算机科学的一个分支，旨在创造能够模拟人类智能的系统。"
     )
 
     s2 = outline_data["sections"][2]
-    assert s2["section_id"] == "sec_1_2"
+    assert s2["section_id"] == "1.2"
     assert s2["depth"] == 2
-    assert s2["title"] == "1.2 Python环境配置"
+    assert s2["title"] == "使用场景拆解"
     assert s2["parent_section_id"] == "1"
     assert s2["source_content_chars"] == len(
         "配置Python开发环境是学习AI的第一步，推荐使用Anaconda。"
     )
 
 
-def test_db_outline_translation_uses_section_content_for_teaching_plan(
-    tmp_path: Path,
-) -> None:
-    from app.models import Textbook, TextbookSectionContent
-
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "course-knowledge-content-plan")
-    )
-    set_engine(engine)
-    init_db(engine)
-
-    with Session(engine) as session:
-        textbook = Textbook(
-            textbook_id="tb-content-plan",
-            source_id="src-1",
-            title="AI开发入门教程",
-            outline={
-                "chapters": [
-                    {
-                        "chapter_number": 1,
-                        "title": "第一章 AI开发入门",
-                        "sections": [
-                            {"section_id": "sec_1_1", "title": "1.1 什么是人工智能"}
-                        ],
-                    }
-                ]
-            },
-            student_availability_status="published",
-            outline_review_status="approved",
-            ingestion_status="completed",
-        )
-        session.add(textbook)
-        session.add(
-            TextbookSectionContent(
-                section_content_id="content-1",
-                textbook_id="tb-content-plan",
-                section_id="sec_1_1",
-                parent_section_id="1",
-                order_index=1,
-                title="1.1 什么是人工智能",
-                content_zh=(
-                    "人工智能是计算机科学的一个分支，旨在创造能够模拟人类智能的系统。"
-                    "学习本节时需要区分符号推理、机器学习和工程落地边界。"
-                ),
-            )
-        )
-        session.commit()
-
-        outline = _try_db_outline_translation(
-            session,
-            {
-                "course_node_id": "year_3_course_1",
-                "course_or_chapter_theme": "AI开发入门教程",
-                "grade_id": "year_3",
-                "source_textbook_id": "tb-content-plan",
-                "source_textbook_title": "AI开发入门教程",
-                "source_outline_section_ids": ["sec_1_1"],
-            },
-            "year_3",
-        )
-
-    assert outline is not None
-    child = outline["sections"][1]
-    assert "模拟人类智能的系统" in child["description"]
-    assert "什么是人工智能知识点" not in child["key_knowledge_points"]
-    assert any("计算机科学" in point for point in child["key_knowledge_points"])
-    assert any("工程落地边界" in point for point in child["key_knowledge_points"])
-
-
-def test_db_outline_translation_outputs_chinese_student_titles_for_english_outline(
-    tmp_path: Path,
-) -> None:
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "english-outline-chinese-title")
-    )
-    set_engine(engine)
-    init_db(engine)
-    with Session(engine) as session:
-        session.add(enabled_source())
-        row = published_textbook(
-            textbook_id=SOURCE_TEXTBOOK_ID,
-            title=SOURCE_TEXTBOOK_TITLE,
-        )
-        row.language = "en"
-        row.translated_language = "zh"
-        row.outline = {
-            "chapters": [
-                {
-                    "chapter_number": 1,
-                    "title": "Linked Lists",
-                    "sections": [
-                        {"section_id": "1.1", "title": "Node and Pointer Structure"},
-                        {"section_id": "1.2", "title": "Insertion and Deletion"},
-                    ],
-                }
-            ]
-        }
-        session.add(row)
-        session.add(
-            section(
-                textbook_id=SOURCE_TEXTBOOK_ID,
-                section_content_id="linked-list-1-1",
-                section_id="1.1",
-                title="Node and Pointer Structure",
-                content_original=(
-                    "A linked list stores elements in nodes. Each node contains "
-                    "data and a pointer to the next node."
-                ),
-                content_zh="链表把元素存储在节点中。每个节点包含数据域和指向下一个节点的指针。",
-                order_index=1,
-            )
-        )
-        session.add(
-            section(
-                textbook_id=SOURCE_TEXTBOOK_ID,
-                section_content_id="linked-list-1-2",
-                section_id="1.2",
-                title="Insertion and Deletion",
-                content_original=(
-                    "Insertion and deletion update links between neighboring nodes."
-                ),
-                content_zh="插入和删除操作会更新相邻节点之间的链接关系。",
-                order_index=2,
-            )
-        )
-        session.commit()
-
-        outline = _try_db_outline_translation(
-            session,
-            {
-                "course_node_id": "year_3_course_1",
-                "course_or_chapter_theme": "数据结构",
-                "grade_id": "year_3",
-                "source_textbook_id": SOURCE_TEXTBOOK_ID,
-                "source_textbook_title": SOURCE_TEXTBOOK_TITLE,
-                "source_outline_section_ids": ["1.1", "1.2"],
-            },
-            "year_3",
-        )
-
-    assert outline is not None
-    titles = [item["title"] for item in outline["sections"]]
-    assert "Linked Lists" not in titles
-    assert "Node and Pointer Structure" not in titles
-    assert any("链表" in title for title in titles)
-    assert all(any("\u4e00" <= char <= "\u9fff" for char in title) for title in titles)
-
-
-def test_db_outline_translation_supports_flat_sections_with_bound_ids(
-    tmp_path: Path,
-) -> None:
-    from app.models import Textbook, TextbookSectionContent
-
-    engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-flat-db"))
-    set_engine(engine)
-    init_db(engine)
-
-    with Session(engine) as session:
-        textbook = Textbook(
-            textbook_id="tb-flat-sections",
-            source_id="src-1",
-            title="数据结构教程",
-            outline={
-                "sections": [
-                    {"section_id": "1.1", "title": "复杂度分析"},
-                    {"section_id": "1.2", "title": "数组与列表"},
-                    {"section_id": "2.1", "title": "树结构"},
-                ]
-            },
-            student_availability_status="published",
-            outline_review_status="approved",
-            ingestion_status="completed",
-        )
-        session.add(textbook)
-        session.add(
-            TextbookSectionContent(
-                section_content_id="content-1-1",
-                textbook_id="tb-flat-sections",
-                section_id="1.1",
-                parent_section_id="1",
-                order_index=1,
-                title="复杂度分析",
-                content_zh="复杂度分析用于判断算法在输入规模增长时的时间和空间开销。",
-            )
-        )
-        session.add(
-            TextbookSectionContent(
-                section_content_id="content-1-2",
-                textbook_id="tb-flat-sections",
-                section_id="1.2",
-                parent_section_id="1",
-                order_index=2,
-                title="数组与列表",
-                content_zh="数组与列表是线性结构基础，需要比较索引访问和插入删除成本。",
-            )
-        )
-        session.add(
-            TextbookSectionContent(
-                section_content_id="content-2-1",
-                textbook_id="tb-flat-sections",
-                section_id="2.1",
-                parent_section_id="2",
-                order_index=3,
-                title="树结构",
-                content_zh="树结构用于表达层次关系。",
-            )
-        )
-        session.commit()
-
-        outline = _try_db_outline_translation(
-            session,
-            {
-                "course_node_id": "year_3_course_1",
-                "course_or_chapter_theme": "复杂度分析与线性结构基础",
-                "grade_id": "year_3",
-                "source_textbook_id": "tb-flat-sections",
-                "source_textbook_title": "数据结构教程",
-                "source_outline_section_ids": ["1.1", "1.2"],
-            },
-            "year_3",
-        )
-
-    assert outline is not None
-    assert [section["section_id"] for section in outline["sections"]] == [
-        "1",
-        "1.1",
-        "1.2",
-    ]
-    assert outline["sections"][0]["source_section_ids"] == ["1.1", "1.2"]
-    assert "树结构" not in json.dumps(outline, ensure_ascii=False)
-    assert "索引访问和插入删除成本" in outline["sections"][2]["description"]
-
-
 def test_run_course_knowledge_agent_fallback_title_mapping(
     tmp_path: Path,
 ) -> None:
     from app.models import Textbook, TextbookSectionContent
+
+    captured: dict[str, object] = {"queries": []}
+
+    class RecordingLlm:
+        pass
+
+    class DesignedOutlineChain:
+        async def ainvoke(self, payload):
+            captured["queries"].append(payload["query"])
+            return AIMessage(
+                content=json.dumps(
+                    _naming_payload_from_outline(
+                        _two_chapter_outline_with_source_ids(["sec_1_1"])
+                    ),
+                    ensure_ascii=False,
+                )
+            )
+
+    class DesignedOutlinePrompt:
+        def __or__(self, _other):
+            return DesignedOutlineChain()
 
     engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-fallback"))
     set_engine(engine)
@@ -2757,16 +3337,29 @@ def test_run_course_knowledge_agent_fallback_title_mapping(
         "messages": _course_tool_messages("year_3_course_1"),
     }
 
-    class ExplodingLlm:
-        async def ainvoke(self, *args, **kwargs):
-            raise AssertionError(
-                "LLM should not be called when textbook outline is translated from DB directly!"
-            )
+    module = __import__(
+        "app.orchestration.agents.course_knowledge", fromlist=["ChatPromptTemplate"]
+    )
+    original_factory = module.ChatPromptTemplate
 
-    result = asyncio.run(run_course_knowledge_agent(state, ExplodingLlm()))
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return DesignedOutlinePrompt()
 
+    module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+    finally:
+        module.ChatPromptTemplate = original_factory
+
+    assert len(captured["queries"]) == 1
+    assert "tb-bypass-test" not in str(captured["queries"][0])
+    assert "sec_1_1" not in str(captured["queries"][0])
+    assert "1.1 什么是人工智能" in str(captured["queries"][0])
     assert "error" not in result
     outline_data = result["course_knowledge"]
     assert outline_data["course_id"] == "year_3_course_1"
-    assert outline_data["course_name"] == "  AI开发入门教程  "
+    assert outline_data["course_name"] == "AI开发入门教程"
     assert len(outline_data["sections"]) == 2
+    assert outline_data["sections"][0]["title"] == "概念定义与学习边界"

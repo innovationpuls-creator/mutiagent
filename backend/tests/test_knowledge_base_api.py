@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app import schemas as app_schemas
 from app.database import get_engine
@@ -15,6 +16,7 @@ from app.models import (
     KnowledgeGapFollow,
     KnowledgeGapNotice,
     Textbook,
+    TextbookSectionContent,
     UserCourseKnowledgeOutline,
     UserYearLearningPath,
 )
@@ -67,6 +69,67 @@ def register_student(client: TestClient, identifier: str, username: str) -> dict
 def admin_headers(client: TestClient) -> dict[str, str]:
     token = login_token(client, "admin-kb@example.com", "admin-password-123")
     return {"Authorization": f"Bearer {token}"}
+
+
+def uploaded_docx_bytes(tmp_path: Path) -> bytes:
+    def paragraph(text: str, style: str | None = None) -> str:
+        style_xml = ""
+        if style is not None:
+            style_xml = f'<w:pPr><w:pStyle w:val="{style}"/></w:pPr>'
+        return f"<w:p>{style_xml}<w:r><w:t>{text}</w:t></w:r></w:p>"
+
+    document_body = "".join(
+        [
+            paragraph("第 1 章 栈与队列", "Heading1"),
+            paragraph("1.1 栈的抽象数据类型", "Heading2"),
+            paragraph("栈是一种后进先出的线性表，本段来自上传 DOCX 文件。"),
+            paragraph("1.2 队列的基本操作", "Heading2"),
+            paragraph("队列是一种先进先出的线性表，本段来自上传 DOCX 文件。"),
+        ]
+    )
+    docx_path = tmp_path / "uploaded-textbook.docx"
+    files = {
+        "[Content_Types].xml": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/'
+            'content-types"><Default Extension="rels" ContentType="'
+            'application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/word/document.xml" ContentType="'
+            "application/vnd.openxmlformats-officedocument."
+            'wordprocessingml.document.main+xml"/>'
+            '<Override PartName="/word/styles.xml" ContentType="'
+            "application/vnd.openxmlformats-officedocument."
+            'wordprocessingml.styles+xml"/></Types>'
+        ),
+        "_rels/.rels": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/'
+            '2006/relationships"><Relationship Id="rId1" Type="'
+            "http://schemas.openxmlformats.org/officeDocument/2006/"
+            'relationships/officeDocument" Target="word/document.xml"/>'
+            "</Relationships>"
+        ),
+        "word/styles.xml": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:styles xmlns:w="http://schemas.openxmlformats.org/'
+            'wordprocessingml/2006/main">'
+            '<w:style w:type="paragraph" w:styleId="Heading1">'
+            '<w:name w:val="heading 1"/></w:style>'
+            '<w:style w:type="paragraph" w:styleId="Heading2">'
+            '<w:name w:val="heading 2"/></w:style></w:styles>'
+        ),
+        "word/document.xml": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/'
+            f'wordprocessingml/2006/main"><w:body>{document_body}'
+            "<w:sectPr/></w:body></w:document>"
+        ),
+    }
+    with ZipFile(docx_path, "w", ZIP_DEFLATED) as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    return docx_path.read_bytes()
 
 
 def auth_headers(token: str) -> dict[str, str]:
@@ -492,6 +555,21 @@ def test_confirm_source_result_creates_draft_textbook_and_queued_job(
         headers=headers,
         json=admitted_source_payload(source_id="source-open-textbook"),
     )
+    monkeypatch.setattr(
+        "app.services.knowledge_base_service.parse_textbook_source_to_sections",
+        lambda source_url, language, **kwargs: (
+            {
+                "chapters": [
+                    {
+                        "chapter_number": 1,
+                        "title": "Chapter 1",
+                        "sections": [{"section_id": "sec_1_1", "title": "Arrays"}],
+                    }
+                ]
+            },
+            {"sec_1_1": "Arrays original content."},
+        ),
+    )
 
     payload = {
         "source_result": {
@@ -532,7 +610,167 @@ def test_confirm_source_result_creates_draft_textbook_and_queued_job(
     assert body["job"]["job_type"] == "agent_organize"
 
 
-def test_upload_textbook_file_creates_draft_and_queued_job(
+def test_confirm_source_result_rejects_unparseable_source(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    headers = admin_headers(client)
+    client.post(
+        "/api/admin/knowledge-base/sources",
+        headers=headers,
+        json=admitted_source_payload(source_id="source-open-textbook"),
+    )
+    monkeypatch.setattr(
+        "app.services.knowledge_base_service.parse_textbook_source_to_sections",
+        lambda source_url, language, **kwargs: (
+            {
+                "chapters": [
+                    {
+                        "chapter_number": 1,
+                        "title": "Chapter 1",
+                        "sections": [{"section_id": "sec_1_1", "title": "Arrays"}],
+                    }
+                ]
+            },
+            {},
+        ),
+    )
+
+    response = client.post(
+        "/api/admin/knowledge-base/source-results/confirm",
+        headers=headers,
+        json={
+            "source_result": {
+                "source_result_id": "source-result-ods-python",
+                "title": "Open Data Structures",
+                "original_title": "Open Data Structures",
+                "language": "en",
+                "source_url": "https://opendatastructures.org/ods-python.pdf",
+                "source_type": "pdf",
+                "provider_name": "Open Data Structures",
+                "description": "Open textbook covering core data structures.",
+                "tags": ["数据结构", "算法"],
+                "parseability_score": 95,
+                "parseability_reason": "PDF 稳定可访问。",
+                "topic_summary": "覆盖数据结构核心课程。",
+                "is_recommended": True,
+            }
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "教材来源无法切分出完整小节正文。"
+
+
+def test_run_confirmed_source_job_fills_outline_and_section_content(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    headers = admin_headers(client)
+    client.post(
+        "/api/admin/knowledge-base/sources",
+        headers=headers,
+        json=admitted_source_payload(source_id="source-open-textbook"),
+    )
+
+    def fake_parse_source(
+        source_url: str, language: str, **kwargs: object
+    ) -> tuple[dict, dict[str, str]]:
+        assert source_url == "https://opendatastructures.org/ods-python.pdf"
+        assert language == "en"
+        return (
+            {
+                "chapters": [
+                    {
+                        "chapter_number": 1,
+                        "title": "Chapter 1",
+                        "sections": [{"section_id": "sec_1_1", "title": "Arrays"}],
+                    }
+                ]
+            },
+            {"sec_1_1": "Arrays original content."},
+        )
+
+    monkeypatch.setattr(
+        "app.services.knowledge_base_service.parse_textbook_source_to_sections",
+        fake_parse_source,
+    )
+    monkeypatch.setattr(
+        "app.services.knowledge_base_service.translate_section_content_to_zh",
+        lambda content, source_language="": (
+            "数组原始正文。" if source_language == "en" else content
+        ),
+    )
+    monkeypatch.setenv("TEXTBOOK_SYNC_TRANSLATE_ENGLISH", "1")
+    confirm_response = client.post(
+        "/api/admin/knowledge-base/source-results/confirm",
+        headers=headers,
+        json={
+            "source_result": {
+                "source_result_id": "source-result-ods-python",
+                "title": "Open Data Structures",
+                "original_title": "Open Data Structures",
+                "language": "en",
+                "source_url": "https://opendatastructures.org/ods-python.pdf",
+                "source_type": "pdf",
+                "provider_name": "Open Data Structures",
+                "description": "Open textbook covering core data structures.",
+                "tags": ["数据结构", "算法"],
+                "parseability_score": 95,
+                "parseability_reason": "PDF 稳定可访问。",
+                "topic_summary": "覆盖数据结构核心课程。",
+                "is_recommended": True,
+            }
+        },
+    )
+    assert confirm_response.status_code == 201
+    body = confirm_response.json()
+
+    run_response = client.post(
+        f"/api/admin/knowledge-base/ingestion-jobs/{body['job']['job_id']}/run",
+        headers=headers,
+    )
+
+    assert run_response.status_code == 200
+    assert run_response.json()["status"] == "completed"
+    textbook_id = body["textbook"]["textbook_id"]
+    with Session(get_engine()) as session:
+        textbook = session.get(Textbook, textbook_id)
+        sections = session.exec(
+            select(TextbookSectionContent).where(
+                TextbookSectionContent.textbook_id == textbook_id
+            )
+        ).all()
+
+    assert textbook is not None
+    assert textbook.ingestion_status == "ready_for_outline_review"
+    assert textbook.outline["chapters"][0]["sections"][0]["section_id"] == "sec_1_1"
+    assert len(sections) == 1
+    assert sections[0].content_original == "Arrays original content."
+    assert sections[0].content_zh == "数组原始正文。"
+
+    sections_response = client.get(
+        f"/api/admin/knowledge-base/textbooks/{textbook_id}/sections",
+        headers=headers,
+    )
+    assert sections_response.status_code == 200
+    assert sections_response.json() == [
+        {
+            "section_content_id": sections[0].section_content_id,
+            "textbook_id": textbook_id,
+            "section_id": "sec_1_1",
+            "parent_section_id": None,
+            "order_index": 1,
+            "title": "Arrays",
+            "original_title": "Arrays",
+            "content_original": "Arrays original content.",
+            "content_zh": "数组原始正文。",
+            "content_char_count": len("数组原始正文。"),
+        }
+    ]
+
+
+def test_upload_textbook_file_creates_job_and_extracts_uploaded_docx_content(
     tmp_path: Path, monkeypatch
 ) -> None:
     upload_dir = tmp_path / "uploads"
@@ -551,19 +789,45 @@ def test_upload_textbook_file_creates_draft_and_queued_job(
         data={
             "title": "数据结构上传教材",
             "language": "zh",
-            "description": "管理员上传的 PDF 教材。",
+            "description": "管理员上传的 DOCX 教材。",
             "tags": "数据结构,算法",
         },
-        files={"file": ("data-structures.pdf", b"%PDF-1.4 fake", "application/pdf")},
+        files={
+            "file": (
+                "data-structures.docx",
+                uploaded_docx_bytes(tmp_path),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
     )
 
     assert response.status_code == 201
     body = response.json()
+    textbook_id = body["textbook"]["textbook_id"]
     assert body["textbook"]["title"] == "数据结构上传教材"
     assert body["textbook"]["source_id"] == "source-upload"
     assert body["textbook"]["student_availability_status"] == "draft"
     assert body["textbook"]["download_url"].startswith(str(upload_dir))
     assert body["job"]["status"] == "queued"
+
+    run_response = client.post(
+        f"/api/admin/knowledge-base/ingestion-jobs/{body['job']['job_id']}/run",
+        headers=headers,
+    )
+    assert run_response.status_code == 200
+    assert run_response.json()["status"] == "completed"
+
+    sections_response = client.get(
+        f"/api/admin/knowledge-base/textbooks/{textbook_id}/sections",
+        headers=headers,
+    )
+    assert sections_response.status_code == 200
+    sections = sections_response.json()
+    assert sections[0]["title"] == "1.1 栈的抽象数据类型"
+    assert (
+        "栈是一种后进先出的线性表，本段来自上传 DOCX 文件。"
+        in sections[0]["content_zh"]
+    )
 
 
 def test_upload_updates_gap_material_found_without_publishing_textbook(

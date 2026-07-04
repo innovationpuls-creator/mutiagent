@@ -1,8 +1,7 @@
 import type { ChatMessage, LearningPathResult } from "../types/chat";
 
 export const LEARNING_PATH_UPDATED_EVENT = "mutiagent-learning-path-updated";
-export const LEARNING_PATH_GENERATION_DRAFT =
-	"请根据我的基础画像生成学习路径。";
+export const LEARNING_PATH_GENERATION_DRAFT = "进入学习路径草案智能体";
 
 export function buildLearningPathGenerationDraft(): string {
 	return LEARNING_PATH_GENERATION_DRAFT;

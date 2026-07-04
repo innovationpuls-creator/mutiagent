@@ -13,6 +13,7 @@ import { CardWrapper } from "./ChatCard.styles";
 interface ChatCardProps {
 	message: SessionMessage;
 	onSendReply?: (text: string) => void;
+	onFollowKnowledgeGap?: (gapId: string) => Promise<void> | void;
 	disabled?: boolean;
 	partialData?: PartialStructuredData | null;
 	showPathGenerationCta?: boolean;
@@ -148,6 +149,7 @@ function normalizeQuestionOption(
 export function ChatCard({
 	message,
 	onSendReply,
+	onFollowKnowledgeGap,
 	disabled = false,
 	partialData,
 	showPathGenerationCta = true,
@@ -166,6 +168,9 @@ export function ChatCard({
 	const [otherInputValues, setOtherInputValues] = React.useState<
 		Record<string, string>
 	>({});
+	const [gapFollowState, setGapFollowState] = React.useState<
+		"idle" | "pending" | "followed" | "error"
+	>("idle");
 	const confirmed = filledFields(message.confirmed_info);
 	const defaultedFields = Array.isArray(message.defaulted_fields)
 		? message.defaulted_fields
@@ -183,6 +188,10 @@ export function ChatCard({
 		message.text ||
 		"画像已生成，可以继续补充你的学习目标与约束。";
 	const showReplyControls = Boolean(onSendReply) && !hasSubmittedReply;
+	const gapId =
+		typeof message.gap_id === "string" && message.gap_id.trim()
+			? message.gap_id
+			: null;
 
 	const isFieldStreaming = (fieldName: string): boolean => {
 		if (
@@ -200,6 +209,17 @@ export function ChatCard({
 		onSendReply?.(answer);
 		setHasSubmittedReply(true);
 		setInputValue("");
+	};
+
+	const followKnowledgeGap = async () => {
+		if (!gapId || disabled || gapFollowState === "pending") return;
+		try {
+			setGapFollowState("pending");
+			await onFollowKnowledgeGap?.(gapId);
+			setGapFollowState("followed");
+		} catch {
+			setGapFollowState("error");
+		}
 	};
 
 	const submitOptionAnswer = (option: QuestionBoxOption) => {
@@ -437,14 +457,14 @@ export function ChatCard({
 							</div>
 							<h3>了解自己，是成长的第一步。</h3>
 							<p className="transition-explanation">
-								我们已经根据你的年级、专业以及优势与瓶颈，为你定制编织了一条专属的课程藤蔓。在你的学习路径中，已自动弱化你熟悉的领域，并为你的薄弱点融入了专项强化章节。
+								我们已经根据你的年级、专业以及优势与瓶颈，准备好与你一同规划初步的课程方向。接下来将进入学习路径草案智能体，定制你的初步课程规划草案。
 							</p>
 							<button
 								className="cta-open-path-btn"
 								onClick={handleGeneratePathDraft}
 								type="button"
 							>
-								<span>确认并生成学习路径</span>
+								<span>进入学习路径草案智能体</span>
 								<span className="arrow">➔</span>
 							</button>
 						</div>
@@ -567,6 +587,35 @@ export function ChatCard({
 									))}
 								</div>
 							</section>
+
+							{gapId && (
+								<section className="knowledge-gap-action">
+									<div>
+										<h3>主题待补齐</h3>
+										<p>关注后，知识库补齐这个主题时会提醒你。</p>
+									</div>
+									<button
+										type="button"
+										disabled={
+											disabled ||
+											gapFollowState === "pending" ||
+											gapFollowState === "followed"
+										}
+										onClick={followKnowledgeGap}
+									>
+										{gapFollowState === "followed"
+											? "已关注该主题"
+											: gapFollowState === "pending"
+												? "关注中..."
+												: "关注该主题"}
+									</button>
+									{gapFollowState === "error" && (
+										<p className="knowledge-gap-error">
+											关注失败，请稍后再试。
+										</p>
+									)}
+								</section>
+							)}
 
 							{showReplyControls &&
 								(message.question_mode === "question_box" ? (

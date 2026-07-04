@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ChevronRight, PanelLeftClose } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { useParams, useSearchParams } from "react-router-dom";
@@ -40,13 +40,41 @@ import {
 import "../../styles/leaf.css";
 
 type LeafPageStatus = "idle" | "loading" | "ready" | "error";
-const LEAF_NAV_TOGGLE_Z_INDEX = 10000;
 const LEAF_GENERATION_REFRESH_RETRY_MS = 600;
 const LEAF_GENERATION_REFRESH_ATTEMPTS = 3;
 
 interface LeafGenerationChapterDraft {
 	section_id: string;
 	title: string;
+	source_textbook_id: string;
+	source_textbook_title: string;
+	source_section_ids: string[];
+	source_section_titles: string[];
+	source_content_chars: number;
+}
+
+function fallbackLeafGenerationChapter(
+	sectionId: string,
+): LeafGenerationChapterDraft {
+	return {
+		section_id: sectionId,
+		title: sectionId === "1" ? "第一章" : `第${sectionId}章`,
+		source_textbook_id: "",
+		source_textbook_title: "",
+		source_section_ids: [],
+		source_section_titles: [],
+		source_content_chars: 0,
+	};
+}
+
+function hasBoundTextbookSource(chapter: LeafGenerationChapterDraft): boolean {
+	return (
+		chapter.source_textbook_id.trim().length > 0 &&
+		chapter.source_textbook_title.trim().length > 0 &&
+		chapter.source_section_ids.length > 0 &&
+		chapter.source_section_titles.length > 0 &&
+		chapter.source_content_chars > 0
+	);
 }
 
 function isLeafGenerationCompletedEventDetail(
@@ -106,13 +134,7 @@ function getGenerationSection(
 	);
 	if (firstGeneratableChapter) return firstGeneratableChapter;
 	if (response.first_generatable_chapter_id) {
-		return {
-			section_id: response.first_generatable_chapter_id,
-			title:
-				response.first_generatable_chapter_id === "1"
-					? "第一章"
-					: `第${response.first_generatable_chapter_id}章`,
-		};
+		return fallbackLeafGenerationChapter(response.first_generatable_chapter_id);
 	}
 	return null;
 }
@@ -264,6 +286,10 @@ export function LeafPage() {
 	const composedSection = response
 		? getLeafComposedSection(response, selectedSectionId)
 		: null;
+	const selectedSectionResourceError =
+		response && selectedSectionId
+			? (response.section_resource_errors?.[selectedSectionId] ?? null)
+			: null;
 	const canGenerate =
 		Boolean(
 			response &&
@@ -294,6 +320,10 @@ export function LeafPage() {
 
 	const handleGenerate = useCallback(() => {
 		if (!response || !generationSection) return;
+		if (!hasBoundTextbookSource(generationSection)) {
+			openWithDraft(buildCourseOutlineGenerationPrompt(response.course));
+			return;
+		}
 		const chapterLeafSections = response.sections.filter(
 			(section) => section.parent_section_id === generationSection.section_id,
 		);
@@ -331,7 +361,7 @@ export function LeafPage() {
 						className="w-12 h-12 border-4 border-[var(--color-primary-soft)] border-t-[var(--color-primary)] rounded-full mx-auto mb-6"
 					/>
 					<span className="text-[var(--color-text-muted)] text-sm tracking-widest uppercase mb-2 block">
-						// loading
+						{"// loading"}
 					</span>
 					<h1 className="text-2xl font-medium text-[var(--color-secondary)] mb-2">
 						正在铺开这一页
@@ -354,7 +384,7 @@ export function LeafPage() {
 				<div className="leaf-paper-canvas" aria-hidden="true" />
 				<div className="text-center relative z-10">
 					<span className="text-[var(--color-error)] text-sm tracking-widest uppercase mb-2 block">
-						// error
+						{"// error"}
 					</span>
 					<h1 className="text-2xl font-medium text-[var(--color-secondary)] mb-2">
 						叶茂数据加载失败
@@ -431,6 +461,9 @@ export function LeafPage() {
 						selectedSection={selectedSection}
 						generationStatus={liveGenerationStatus}
 						liveGenerationMessage={liveGenerationMessage}
+						sectionResourceRetryable={
+							selectedSectionResourceError?.retryable ?? false
+						}
 						canGenerate={canGenerate}
 						onGenerate={handleGenerate}
 					/>
@@ -438,6 +471,7 @@ export function LeafPage() {
 						<LeafContent
 							section={selectedSection}
 							composedSection={composedSection}
+							sectionResourceError={selectedSectionResourceError}
 							lockedReason={response.locked_reason}
 						/>
 					</div>

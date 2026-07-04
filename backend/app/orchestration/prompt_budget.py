@@ -47,12 +47,10 @@ def apply_prompt_budget(
     if len(trimmed) > prompt_limit:
         trimmed = trimmed[:prompt_limit]
         for fragment in protected:
-            if fragment not in trimmed:
-                trimmed = (
-                    trimmed[: max(0, prompt_limit - len(fragment) - 1)]
-                    + "\n"
-                    + fragment
-                )[:prompt_limit]
+            if fragment in trimmed:
+                continue
+            prefix_limit = max(0, prompt_limit - len(fragment) - 1)
+            trimmed = f"{trimmed[:prefix_limit]}\n{fragment}"[:prompt_limit]
     return PromptBudgetResult(
         text=trimmed,
         prompt_budget_applied=True,

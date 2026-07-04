@@ -30,9 +30,9 @@ function makeCompleteProfile() {
 			constraints: "时间有限",
 		},
 		defaulted_fields: [],
-		question_md: "画像已生成，是否继续生成学习路径？",
+		question_md: "画像已生成，是否进入学习路径草案智能体？",
 		question_box: {
-			question: "画像已生成，下一步要继续生成学习路径吗？",
+			question: "画像已生成，下一步要进入学习路径草案智能体吗？",
 			options: [],
 		},
 		text: "画像已生成",

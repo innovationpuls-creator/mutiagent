@@ -9,18 +9,20 @@ import {
 } from "react-router-dom";
 import { AuthPage } from "./components/auth/AuthPage";
 import { BlankPage } from "./components/home/BlankPage";
+import { AdminLayout } from "./components/layout/AdminLayout";
 import { MainLayout } from "./components/layout/MainLayout";
 import { IcebreakerFlow } from "./components/learning/IcebreakerFlow";
 import { useAuth } from "./contexts/AuthContext";
 import { AdminAccountsPage } from "./pages/admin/AdminAccountsPage";
 import { AdminDataPage } from "./pages/admin/AdminDataPage";
+import { AdminKnowledgeBasePage } from "./pages/admin/AdminKnowledgeBasePage";
+import { AdminProgramsPage } from "./pages/admin/AdminProgramsPage";
 import { BranchPage } from "./pages/branch/BranchPage";
 import { CanopyPage } from "./pages/canopy/CanopyPage";
 import { ScratchpadCanvas } from "./pages/canvas/ScratchpadCanvas";
 import { ForestQuizPage } from "./pages/forest/ForestQuizPage";
 import { LeafPage } from "./pages/leaf/LeafPage";
 import { SproutPage } from "./pages/SproutPage";
-import { TeacherPage } from "./pages/teacher/TeacherPage";
 import type { AuthRole } from "./types/auth";
 
 function homeForRole(role: AuthRole): string {
@@ -98,13 +100,19 @@ function AnimatedRoutes() {
 
 					<Route element={<ProtectedRoute />}>
 						<Route element={<RoleRoute allowedRoles={["admin"]} />}>
-							<Route path="/admin/programs" element={<TeacherPage />} />
+							<Route element={<AdminLayout />}>
+								<Route path="/admin/programs" element={<AdminProgramsPage />} />
+								<Route path="/admin/accounts" element={<AdminAccountsPage />} />
+								<Route path="/admin/data" element={<AdminDataPage />} />
+								<Route
+									path="/admin/knowledge-base"
+									element={<AdminKnowledgeBasePage />}
+								/>
+							</Route>
 							<Route
 								path="/teacher"
 								element={<Navigate replace to="/admin/programs" />}
 							/>
-							<Route path="/admin/accounts" element={<AdminAccountsPage />} />
-							<Route path="/admin/data" element={<AdminDataPage />} />
 						</Route>
 
 						<Route element={<RoleRoute allowedRoles={["student"]} />}>
@@ -136,10 +144,12 @@ import { AiWidgetProvider } from "./context/AiWidgetContext";
 
 function AppGlobalAiWidget() {
 	const location = useLocation();
-	if (
+	const isHiddenPath =
+		location.pathname === "/login" ||
 		location.pathname === "/forest" ||
-		location.pathname.startsWith("/forest/")
-	) {
+		location.pathname.startsWith("/forest/") ||
+		location.pathname.startsWith("/admin");
+	if (isHiddenPath) {
 		return null;
 	}
 	return <GlobalAiWidget />;

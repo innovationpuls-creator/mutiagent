@@ -52,11 +52,7 @@ class QualityCheck:
     reason: str = ""
 
     def to_dict(self) -> dict[str, object]:
-        return {
-            "name": self.name,
-            "passed": self.passed,
-            "reason": self.reason,
-        }
+        return {"name": self.name, "passed": self.passed, "reason": self.reason}
 
 
 @dataclass(frozen=True)
@@ -80,13 +76,17 @@ class ContractError(ValueError):
         self,
         agent: AgentName,
         phase: PhaseName,
-        reason: str,
+        message: str,
         quality_result: QualityResult | None = None,
     ) -> None:
-        super().__init__(f"{agent}:{phase}:{reason}")
+        super().__init__(f"{agent}:{phase}:{message}")
         self.agent = agent
         self.phase = phase
-        self.quality_result = quality_result or blocking_quality(reason)
+        self.quality_result = quality_result or QualityResult(
+            passed=False,
+            severity="blocking",
+            reason=message,
+        )
 
 
 def agent_order(agent: AgentName) -> int:
@@ -94,12 +94,11 @@ def agent_order(agent: AgentName) -> int:
 
 
 def quality_passed() -> QualityResult:
-    return QualityResult(passed=True, severity="informational")
+    return QualityResult(passed=True, severity="informational", reason="")
 
 
 def blocking_quality(
-    reason: str,
-    checks: list[QualityCheck] | None = None,
+    reason: str, checks: list[QualityCheck] | None = None
 ) -> QualityResult:
     return QualityResult(
         passed=False,
@@ -110,8 +109,7 @@ def blocking_quality(
 
 
 def recoverable_quality(
-    reason: str,
-    checks: list[QualityCheck] | None = None,
+    reason: str, checks: list[QualityCheck] | None = None
 ) -> QualityResult:
     return QualityResult(
         passed=False,

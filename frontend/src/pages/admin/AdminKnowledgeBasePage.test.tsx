@@ -9,11 +9,13 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
 	AdminKnowledgeBaseApi,
+	KnowledgeBaseAgentResponse,
 	KnowledgeBaseSourceResult,
 	KnowledgeGapAdmin,
 	KnowledgeSource,
 	Textbook,
 	TextbookExtensionResource,
+	TextbookSectionContent,
 } from "../../api/knowledgeBase";
 import { AuthProvider } from "../../contexts/AuthContext";
 import type { AuthUser } from "../../types/auth";
@@ -54,7 +56,7 @@ const textbook: Textbook = {
 	original_title: "Agent Development Basics",
 	language: "zh",
 	translated_language: "en",
-	description: "面向大二项目学习的 agent 入门教材",
+	description: "面向大二项目学习 of agent 入门教材",
 	tags: ["agent", "backend"],
 	download_url: "https://example.test/agent.pdf",
 	file_asset_url: "",
@@ -96,6 +98,20 @@ const extensionResource: TextbookExtensionResource = {
 	status: "published",
 };
 
+const textbookSection: TextbookSectionContent = {
+	section_content_id: "section-content-1",
+	textbook_id: "textbook-1",
+	section_id: "1.1",
+	parent_section_id: null,
+	order_index: 1,
+	title: "理解 Agent",
+	original_title: "Understanding Agent",
+	content_original:
+		"An agent is a software system that perceives, acts, and responds around goals.",
+	content_zh: "",
+	content_char_count: 79,
+};
+
 const sourceResult: KnowledgeBaseSourceResult = {
 	source_result_id: "source-result-ods-python",
 	title: "Open Data Structures",
@@ -110,6 +126,24 @@ const sourceResult: KnowledgeBaseSourceResult = {
 	parseability_reason: "PDF 稳定可访问。",
 	topic_summary: "覆盖数据结构核心课程。",
 	is_recommended: true,
+};
+
+const queuedJob = {
+	job_id: "job-1",
+	textbook_id: "textbook-1",
+	job_type: "agent_organize",
+	status: "queued" as const,
+	error_message: "",
+	created_at: "2026-06-29T10:00:00Z",
+	started_at: null,
+	finished_at: null,
+};
+
+const completedJob = {
+	...queuedJob,
+	status: "completed" as const,
+	started_at: "2026-06-29T10:00:01Z",
+	finished_at: "2026-06-29T10:00:02Z",
 };
 
 afterEach(() => {
@@ -149,6 +183,7 @@ describe("AdminKnowledgeBasePage", () => {
 			listTextbooks: vi.fn().mockResolvedValue([textbook]),
 			listGaps: vi.fn().mockResolvedValue([gap]),
 			listExtensionResources: vi.fn().mockResolvedValue([extensionResource]),
+			listTextbookSections: vi.fn().mockResolvedValue([textbookSection]),
 			runAgent: vi.fn().mockResolvedValue({
 				reply_text: "找到 1 个真实教材来源。",
 				selected_textbook_id: null,
@@ -159,17 +194,10 @@ describe("AdminKnowledgeBasePage", () => {
 			}),
 			confirmSourceResult: vi.fn().mockResolvedValue({
 				textbook,
-				job: {
-					job_id: "job-1",
-					textbook_id: "textbook-1",
-					job_type: "agent_organize",
-					status: "queued",
-					error_message: "",
-					created_at: "2026-06-29T10:00:00Z",
-					started_at: null,
-					finished_at: null,
-				},
+				job: queuedJob,
 			}),
+			runIngestionJob: vi.fn().mockResolvedValue(completedJob),
+			organizeTextbook: vi.fn().mockResolvedValue(completedJob),
 			publishTextbook: vi.fn().mockResolvedValue(textbook),
 			unpublishTextbook: vi.fn().mockResolvedValue({
 				...textbook,
@@ -204,13 +232,34 @@ describe("AdminKnowledgeBasePage", () => {
 			).toBeGreaterThan(0);
 		});
 		expect(screen.getAllByText("推荐解析").length).toBeGreaterThan(0);
-		expect(screen.queryByText("https://example.test/books")).toBeNull();
 		expect(screen.queryByText("source-result-ods-python")).toBeNull();
+		expect(screen.getByText("原始语言：en")).toBeTruthy();
+		expect(screen.getByText("来源类型：PDF")).toBeTruthy();
 		expect(
-			screen.queryByText("https://opendatastructures.org/ods-python.pdf"),
-		).toBeNull();
-		expect(screen.queryByText("PDF 稳定可访问。")).toBeNull();
+			screen.getByRole("link", {
+				name: "https://opendatastructures.org/ods-python.pdf",
+			}),
+		).toBeTruthy();
+		expect(screen.getByText("PDF 稳定可访问。")).toBeTruthy();
 		expect(screen.queryByText("queued")).toBeNull();
+		await waitFor(() => {
+			expect(api.listTextbookSections).toHaveBeenCalledWith(
+				"token-1",
+				"textbook-1",
+			);
+		});
+		// Enter textbook viewing mode
+		fireEvent.click(screen.getAllByRole("button", { name: "查看教材" })[0]);
+		expect(screen.getByText(/章节正文/)).toBeTruthy();
+		expect(screen.getByDisplayValue("理解 Agent")).toBeTruthy();
+		expect(
+			screen.getByText(
+				"An agent is a software system that perceives, acts, and responds around goals.",
+			),
+		).toBeTruthy();
+		// Exit back to main workspace
+		fireEvent.click(screen.getByRole("button", { name: "返回教材工作台" }));
+
 		expect(
 			screen.getAllByRole("button", {
 				name: "确认解析 Open Data Structures",
@@ -227,6 +276,9 @@ describe("AdminKnowledgeBasePage", () => {
 				sourceResult,
 			);
 		});
+		await waitFor(() => {
+			expect(api.runIngestionJob).toHaveBeenCalledWith("token-1", "job-1");
+		});
 
 		fireEvent.click(screen.getByRole("button", { name: "发布当前教材" }));
 		await waitFor(() => {
@@ -242,6 +294,7 @@ describe("AdminKnowledgeBasePage", () => {
 			listTextbooks: vi.fn().mockResolvedValue([textbook]),
 			listGaps: vi.fn().mockResolvedValue([gap]),
 			listExtensionResources: vi.fn().mockResolvedValue([extensionResource]),
+			listTextbookSections: vi.fn().mockResolvedValue([textbookSection]),
 			runAgent: vi.fn().mockResolvedValue({
 				reply_text: "当前没有更合适的教材。",
 				selected_textbook_id: null,
@@ -251,17 +304,10 @@ describe("AdminKnowledgeBasePage", () => {
 			}),
 			confirmSourceResult: vi.fn().mockResolvedValue({
 				textbook,
-				job: {
-					job_id: "job-1",
-					textbook_id: "textbook-1",
-					job_type: "agent_organize",
-					status: "queued",
-					error_message: "",
-					created_at: "2026-06-29T10:00:00Z",
-					started_at: null,
-					finished_at: null,
-				},
+				job: queuedJob,
 			}),
+			runIngestionJob: vi.fn().mockResolvedValue(completedJob),
+			organizeTextbook: vi.fn().mockResolvedValue(completedJob),
 			publishTextbook: vi.fn().mockResolvedValue(textbook),
 			unpublishTextbook: vi.fn().mockResolvedValue(textbook),
 			deleteTextbook: vi.fn().mockResolvedValue(undefined),
@@ -279,5 +325,200 @@ describe("AdminKnowledgeBasePage", () => {
 		expect(screen.getByText("Agent 开发入门")).toBeTruthy();
 		expect(screen.getByText("来源状态")).toBeTruthy();
 		expect(screen.getByText("未覆盖待办")).toBeTruthy();
+	});
+
+	it("renders live stream feedback while the backend agent works", async () => {
+		stubAuth();
+		const api: AdminKnowledgeBaseApi = {
+			listSources: vi.fn().mockResolvedValue([source]),
+			listTextbooks: vi.fn().mockResolvedValue([textbook]),
+			listGaps: vi.fn().mockResolvedValue([gap]),
+			listExtensionResources: vi.fn().mockResolvedValue([extensionResource]),
+			listTextbookSections: vi.fn().mockResolvedValue([textbookSection]),
+			runAgent: vi.fn().mockResolvedValue({
+				reply_text: "旧接口结果",
+				selected_textbook_id: null,
+				textbook_hits: [],
+				gap_hits: [],
+				source_results: [],
+			}),
+			streamAgent: vi.fn(async (_token, _message, onEvent) => {
+				onEvent({
+					event: "started",
+					message: "已收到管理员消息。",
+					normalized_length: 4,
+				});
+				onEvent({
+					event: "context_loaded",
+					message: "已读取知识库现状。",
+					source_count: 1,
+					textbook_count: 1,
+					gap_count: 1,
+				});
+				onEvent({
+					event: "textbook_search_completed",
+					message: "精确匹配完成。",
+					match_count: 1,
+				});
+				const response: KnowledgeBaseAgentResponse = {
+					reply_text: "当前最合适的主教材是《Agent 开发入门》。",
+					selected_textbook_id: "textbook-1",
+					selected_source_result_id: null,
+					textbook_hits: [
+						{
+							textbook_id: "textbook-1",
+							title: "Agent 开发入门",
+							source_name: "官方教材来源",
+							student_availability_status: "published",
+							score: 90,
+							reason: "标题命中。",
+						},
+					],
+					gap_hits: [],
+					source_results: [],
+				};
+				onEvent({
+					event: "completed",
+					message: "本轮已完成。",
+					response,
+				});
+				return response;
+			}),
+			confirmSourceResult: vi.fn().mockResolvedValue({
+				textbook,
+				job: queuedJob,
+			}),
+			runIngestionJob: vi.fn().mockResolvedValue(completedJob),
+			organizeTextbook: vi.fn().mockResolvedValue(completedJob),
+			publishTextbook: vi.fn().mockResolvedValue(textbook),
+			unpublishTextbook: vi.fn().mockResolvedValue(textbook),
+			deleteTextbook: vi.fn().mockResolvedValue(undefined),
+			updateOutline: vi.fn().mockResolvedValue(textbook),
+		};
+
+		renderPage(api);
+
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: "知识库" })).toBeTruthy();
+		});
+
+		fireEvent.change(screen.getByLabelText("消息"), {
+			target: { value: "数据结构" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+		await waitFor(() => {
+			expect(api.streamAgent).toHaveBeenCalledWith(
+				"token-1",
+				"数据结构",
+				expect.any(Function),
+			);
+		});
+		expect(screen.getByText("已读取知识库现状。")).toBeTruthy();
+		expect(screen.getByText("1 个来源 · 1 本教材 · 1 个待办")).toBeTruthy();
+		expect(screen.getByText("匹配 1 本教材")).toBeTruthy();
+		expect(screen.queryByText("已收到管理员消息。")).toBeNull();
+		expect(screen.getByText("本轮已完成。")).toBeTruthy();
+		expect(screen.getAllByText(/\d{2}:\d{2}:\d{2}/).length).toBeGreaterThan(0);
+		expect(
+			screen.getByText("当前最合适的主教材是《Agent 开发入门》。"),
+		).toBeTruthy();
+		expect(api.runAgent).not.toHaveBeenCalled();
+	});
+
+	it("switches to the textbook browser tab, searches and filters textbooks", async () => {
+		stubAuth();
+		const api: AdminKnowledgeBaseApi = {
+			listSources: vi.fn().mockResolvedValue([source]),
+			listTextbooks: vi.fn().mockResolvedValue([
+				textbook,
+				{
+					...textbook,
+					textbook_id: "textbook-2",
+					title: "Python 编程基础",
+					original_title: "Python Programming Basics",
+					student_availability_status: "draft",
+				},
+			]),
+			listGaps: vi.fn().mockResolvedValue([gap]),
+			listExtensionResources: vi.fn().mockResolvedValue([extensionResource]),
+			listTextbookSections: vi.fn().mockResolvedValue([textbookSection]),
+			runAgent: vi.fn().mockResolvedValue({
+				reply_text: "",
+				selected_textbook_id: null,
+				textbook_hits: [],
+				gap_hits: [],
+				source_results: [],
+			}),
+			confirmSourceResult: vi.fn().mockResolvedValue({
+				textbook,
+				job: queuedJob,
+			}),
+			runIngestionJob: vi.fn().mockResolvedValue(completedJob),
+			organizeTextbook: vi.fn().mockResolvedValue(completedJob),
+			publishTextbook: vi.fn().mockResolvedValue(textbook),
+			unpublishTextbook: vi.fn().mockResolvedValue(textbook),
+			deleteTextbook: vi.fn().mockResolvedValue(undefined),
+			updateOutline: vi.fn().mockResolvedValue(textbook),
+		};
+
+		renderPage(api);
+
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: "知识库" })).toBeTruthy();
+		});
+
+		// Check tabs are rendered
+		const chatTab = screen.getByRole("tab", { name: "💬 AI 智能助理" });
+		const browserTab = screen.getByRole("tab", { name: "📚 教材库浏览" });
+		expect(chatTab).toBeTruthy();
+		expect(browserTab).toBeTruthy();
+
+		// Click the browser tab
+		fireEvent.click(browserTab);
+
+		// Verify textbook browser elements are rendered
+		await waitFor(() => {
+			expect(
+				screen.getByPlaceholderText("搜索教材标题、英文名或描述..."),
+			).toBeTruthy();
+		});
+		expect(
+			screen.getByRole("button", { name: "选中教材《Agent 开发入门》" }),
+		).toBeTruthy();
+		expect(
+			screen.getByRole("button", { name: "选中教材《Python 编程基础》" }),
+		).toBeTruthy();
+
+		// Test search filter
+		const searchInput = screen.getByPlaceholderText(
+			"搜索教材标题、英文名或描述...",
+		);
+		fireEvent.change(searchInput, { target: { value: "Python" } });
+		expect(
+			screen.queryByRole("button", { name: "选中教材《Agent 开发入门》" }),
+		).toBeNull();
+		expect(
+			screen.getByRole("button", { name: "选中教材《Python 编程基础》" }),
+		).toBeTruthy();
+
+		// Test status filter
+		fireEvent.change(searchInput, { target: { value: "" } }); // reset search
+		const statusSelect = screen.getByLabelText("状态过滤");
+		fireEvent.change(statusSelect, { target: { value: "published" } });
+		expect(
+			screen.getByRole("button", { name: "选中教材《Agent 开发入门》" }),
+		).toBeTruthy();
+		expect(
+			screen.queryByRole("button", { name: "选中教材《Python 编程基础》" }),
+		).toBeNull(); // textbook-2 is draft
+
+		// Click back to chat tab
+		fireEvent.click(chatTab);
+		await waitFor(() => {
+			expect(
+				screen.getByRole("region", { name: "管理员对话工作台" }),
+			).toBeTruthy();
+		});
 	});
 });

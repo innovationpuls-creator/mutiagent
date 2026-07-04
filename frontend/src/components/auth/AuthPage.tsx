@@ -114,6 +114,7 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
 					{!result && (
 						<div className="auth-pills-row">
 							<button
+								type="button"
 								className="provider-pill qq"
 								aria-label="QQ 登录"
 								onClick={() => handleOAuth("qq")}
@@ -127,6 +128,7 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
 								</div>
 							</button>
 							<button
+								type="button"
 								className="provider-pill xuexitong"
 								aria-label="学习通登录"
 								onClick={() => handleOAuth("xuexitong")}

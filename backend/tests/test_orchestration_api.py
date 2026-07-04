@@ -834,9 +834,9 @@ class TestChatEndpoints:
                 "constraints": "需要平衡学校课程",
             },
             "defaulted_fields": [],
-            "question_md": "画像已生成，下一步要继续生成学习路径吗？",
+            "question_md": "画像已生成，是否进入学习路径草案智能体？",
             "question_box": {
-                "question": "画像已生成，下一步要继续生成学习路径吗？",
+                "question": "画像已生成，下一步要进入学习路径草案智能体吗？",
                 "options": [],
             },
             "text": "用户为软件工程专业大三学生，目标明确指向 Agent 开发与 Vibe Coding 学习。",

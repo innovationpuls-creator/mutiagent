@@ -26,8 +26,12 @@ vi.mock("./pages/admin/AdminAccountsPage", () => ({
 	AdminAccountsPage: () => <div>Admin Accounts Page</div>,
 }));
 
-vi.mock("./pages/teacher/TeacherPage", () => ({
-	TeacherPage: () => <div>Teacher Page</div>,
+vi.mock("./pages/admin/AdminKnowledgeBasePage", () => ({
+	AdminKnowledgeBasePage: () => <div>Admin Knowledge Base Page</div>,
+}));
+
+vi.mock("./pages/admin/AdminProgramsPage", () => ({
+	AdminProgramsPage: () => <div>Admin Programs Page</div>,
 }));
 
 vi.mock("./components/onboarding/GlobalAiWidget", () => ({
@@ -138,14 +142,14 @@ describe("App routing", () => {
 		});
 	});
 
-	it("renders teacher route for authenticated users", async () => {
+	it("renders admin programs route for authenticated users", async () => {
 		stubStoredAuth(true, "admin");
-		window.history.replaceState({}, "", "/teacher");
+		window.history.replaceState({}, "", "/admin/programs");
 
 		renderApp();
 
 		await waitFor(() => {
-			expect(screen.getByText("Teacher Page")).toBeTruthy();
+			expect(screen.getByText("Admin Programs Page")).toBeTruthy();
 		});
 	});
 
@@ -158,6 +162,31 @@ describe("App routing", () => {
 		await waitFor(() => {
 			expect(screen.getByText("Admin Accounts Page")).toBeTruthy();
 		});
+	});
+
+	it("renders admin knowledge base route for authenticated admins", async () => {
+		stubStoredAuth(true, "admin");
+		window.history.replaceState({}, "", "/admin/knowledge-base");
+
+		renderApp();
+
+		await waitFor(() => {
+			expect(screen.getByText("Admin Knowledge Base Page")).toBeTruthy();
+		});
+	});
+
+	it("keeps admin knowledge base route reachable and does not fall back to AIGC entry text", async () => {
+		stubStoredAuth(true, "admin");
+		window.history.replaceState({}, "", "/admin/knowledge-base");
+
+		renderApp();
+
+		await waitFor(() => {
+			expect(screen.getByText("Admin Knowledge Base Page")).toBeTruthy();
+		});
+
+		expect(screen.queryByText("AI 教材创作中心")).toBeNull();
+		expect(screen.queryByText("一键异步生成教材正文 (AIGC)")).toBeNull();
 	});
 
 	it("redirects protected routes to login when no stored auth exists", async () => {

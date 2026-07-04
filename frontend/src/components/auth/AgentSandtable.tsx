@@ -125,23 +125,23 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 			runAnimate(".task-item", { opacity: 1, x: 0 }, { duration: 0 });
 			runAnimate(".check-icon", { opacity: 1, scale: 1 }, { duration: 0 });
 			runAnimate(".sandtable-line", { pathLength: 1 }, { duration: 0 });
-			SUBS.forEach((s) =>
+			SUBS.forEach((s) => {
 				runAnimate(
 					`#${s.id}`,
 					{ x: s.dx, y: s.dy, scale: 1, opacity: 1 },
 					{ duration: 0 },
-				),
-			);
+				);
+			});
 			runAnimate(".sub-line-path", { opacity: 0.4 }, { duration: 0 });
 			runAnimate("#tree-trunk", { pathLength: 1 }, { duration: 0 });
 			runAnimate(".tree-branch", { pathLength: 1 }, { duration: 0 });
-			BRANCHES.forEach((b) =>
+			BRANCHES.forEach((b) => {
 				runAnimate(
 					`#${b.id}`,
 					{ x: b.dx, y: b.dy, scale: 1, opacity: 1 },
 					{ duration: 0 },
-				),
-			);
+				);
+			});
 			runAnimate(".term-line", { opacity: 1 }, { duration: 0 });
 			runAnimate(".term-char", { opacity: 1 }, { duration: 0 });
 			runAnimate(".terminal-cursor", { opacity: 1 }, { duration: 0 });
@@ -420,6 +420,7 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 			<div className="agent-sandtable__stage">
 				{/* ═══════════ SVG 底层 ═══════════ */}
 				<svg
+					aria-hidden="true"
 					viewBox="0 0 1000 1000"
 					preserveAspectRatio="none"
 					style={{
@@ -658,6 +659,7 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 
 				{/* ═══════════ SUB-AGENT 连线 (像素空间, 锚定 Researcher 中心 — 与圆点同源同偏移, 任意视口都贴合) ═══════════ */}
 				<svg
+					aria-hidden="true"
 					className="sub-connectors"
 					style={{
 						position: "absolute",
@@ -767,6 +769,7 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 
 				{/* ═══════════ TREE 连线 (像素空间, 锚定 Path 中心 — 主干 + 分支与叶子同源同偏移) ═══════════ */}
 				<svg
+					aria-hidden="true"
 					className="tree-connectors"
 					style={{
 						position: "absolute",

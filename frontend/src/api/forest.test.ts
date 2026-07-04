@@ -108,9 +108,9 @@ describe("forest api", () => {
 				ok: true,
 				body: new ReadableStream({
 					start(controller) {
-						chunks.forEach((chunk) =>
-							controller.enqueue(encoder.encode(chunk)),
-						);
+						chunks.forEach((chunk) => {
+							controller.enqueue(encoder.encode(chunk));
+						});
 						controller.close();
 					},
 				}),
@@ -152,7 +152,9 @@ describe("forest api", () => {
 				ok: true,
 				body: new ReadableStream({
 					start(controller) {
-						sseChunks.forEach((c) => controller.enqueue(encoder.encode(c)));
+						sseChunks.forEach((chunk) => {
+							controller.enqueue(encoder.encode(chunk));
+						});
 						controller.close();
 					},
 				}),
@@ -206,7 +208,9 @@ describe("forest api", () => {
 				ok: true,
 				body: new ReadableStream({
 					start(controller) {
-						sseChunks.forEach((c) => controller.enqueue(encoder.encode(c)));
+						sseChunks.forEach((chunk) => {
+							controller.enqueue(encoder.encode(chunk));
+						});
 						controller.close();
 					},
 				}),

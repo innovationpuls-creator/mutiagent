@@ -113,9 +113,6 @@ describe("AdminAccountsPage", () => {
 
 		renderAdminPage(adminApi);
 
-		expect(screen.getByRole("navigation", { name: "管理员菜单" })).toBeTruthy();
-		expect(screen.getByRole("link", { name: "账号管理" })).toBeTruthy();
-
 		await waitFor(() => {
 			expect(screen.getByText("admin")).toBeTruthy();
 		});

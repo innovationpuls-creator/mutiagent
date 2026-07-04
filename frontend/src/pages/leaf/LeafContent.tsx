@@ -6,6 +6,7 @@ import type {
 	LeafComposedSection,
 	LeafContentBlock,
 	LeafSection,
+	LeafSectionResourceError,
 	LeafVideoBlock,
 } from "../../types/leaf";
 import {
@@ -17,6 +18,7 @@ import {
 interface LeafContentProps {
 	section: LeafSection | null;
 	composedSection: LeafComposedSection | null;
+	sectionResourceError: LeafSectionResourceError | null;
 	lockedReason: string | null;
 }
 
@@ -44,6 +46,17 @@ function buildFallbackVideoCoverDataUrl(title: string) {
 
 function VideoCard({ block, index }: { block: LeafVideoBlock; index: number }) {
 	const firstVideo = block.videos[0] ?? null;
+	const videoTitle = firstVideo?.title || block.title;
+	const fallbackCoverSrc = buildFallbackVideoCoverDataUrl(videoTitle);
+	const normalizedCoverUrl = firstVideo?.cover_url.trim() ?? "";
+	const [coverSrc, setCoverSrc] = useState(
+		normalizedCoverUrl || fallbackCoverSrc,
+	);
+
+	useEffect(() => {
+		setCoverSrc(normalizedCoverUrl || fallbackCoverSrc);
+	}, [fallbackCoverSrc, normalizedCoverUrl]);
+
 	if (block.status !== "available" || !firstVideo?.url) {
 		return (
 			<section
@@ -67,17 +80,6 @@ function VideoCard({ block, index }: { block: LeafVideoBlock; index: number }) {
 			</section>
 		);
 	}
-
-	const videoTitle = firstVideo.title || block.title;
-	const fallbackCoverSrc = buildFallbackVideoCoverDataUrl(videoTitle);
-	const normalizedCoverUrl = firstVideo.cover_url.trim();
-	const [coverSrc, setCoverSrc] = useState(
-		normalizedCoverUrl || fallbackCoverSrc,
-	);
-
-	useEffect(() => {
-		setCoverSrc(normalizedCoverUrl || fallbackCoverSrc);
-	}, [fallbackCoverSrc, normalizedCoverUrl]);
 
 	return (
 		<section
@@ -251,6 +253,7 @@ function renderContentBlock(block: LeafContentBlock, index: number) {
 export function LeafContent({
 	section,
 	composedSection,
+	sectionResourceError,
 	lockedReason,
 }: LeafContentProps) {
 	if (!section) {
@@ -260,7 +263,7 @@ export function LeafContent({
 					<LayoutDashboard className="w-8 h-8 text-[var(--color-text-muted)]" />
 				</div>
 				<span className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium mb-2">
-					// empty
+					{/* empty */}
 				</span>
 				<h2 className="text-xl font-medium text-[var(--color-text-primary)] mb-2">
 					课程章节还没有准备好
@@ -290,7 +293,19 @@ export function LeafContent({
 				</p>
 			</div>
 
-			{composedSection ? (
+			{sectionResourceError ? (
+				<section className="flex flex-col items-center justify-center text-center py-20 px-6 bg-[var(--color-surface-raised)] rounded-2xl border-2 border-dashed border-[var(--color-border)] opacity-90 mt-4">
+					<div className="w-12 h-12 rounded-full bg-[var(--color-error-bg)] flex items-center justify-center mb-6 shadow-sm">
+						<FileText className="w-5 h-5 text-[var(--color-error)]" />
+					</div>
+					<h3 className="text-xl font-medium text-[var(--color-text-primary)] mb-3">
+						这一节生成失败
+					</h3>
+					<p className="text-sm text-[var(--color-text-secondary)] max-w-sm">
+						{sectionResourceError.message}
+					</p>
+				</section>
+			) : composedSection ? (
 				<div className="flex flex-col gap-12">
 					{composedSection.blocks.length > 0 ? (
 						composedSection.blocks.map(renderContentBlock)

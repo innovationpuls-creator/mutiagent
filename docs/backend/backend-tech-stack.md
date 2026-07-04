@@ -16,7 +16,7 @@ uv run uvicorn app.main:app --reload --port 8000
 | Web 框架 | FastAPI | REST API + SSE 流式 |
 | Agent 编排 | LangGraph | 单轮 StateGraph 编排，无 checkpoint |
 | LLM 调用 | LangChain + langchain-openai | ChatModel、tool calling、structured output |
-| 数据库 | PostgreSQL + psycopg2 | 生产存储；测试用 SQLite |
+| 数据库 | PostgreSQL + psycopg2 | 生产与测试存储 |
 | ORM | SQLModel | 模型定义、Session 管理 |
 | JSON 存储 | PostgreSQL JSONB | 画像、路径、课程大纲、会话消息 |
 | 认证 | python-jose + bcrypt | Bearer token 认证 |

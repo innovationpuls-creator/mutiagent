@@ -370,8 +370,15 @@ class TextbookSectionContentCreateRequest(BaseModel):
     order_index: int = 0
     title: str = Field(min_length=1, max_length=256)
     original_title: str = Field(default="", max_length=256)
+    content_original: str = ""
     content_zh: str = ""
     content_char_count: int = 0
+
+
+class TextbookSectionContentRead(TextbookSectionContentCreateRequest):
+    model_config = ConfigDict(from_attributes=True)
+
+    textbook_id: str
 
 
 class StructuredTextbookCreateRequest(BaseModel):
@@ -435,6 +442,8 @@ class KnowledgeBaseSourceResult(BaseModel):
     parseability_reason: str = ""
     topic_summary: str = ""
     is_recommended: bool = False
+    already_imported: bool = False
+    textbook_id: str | None = None
 
 
 class KnowledgeBaseSourceConfirmRequest(BaseModel):

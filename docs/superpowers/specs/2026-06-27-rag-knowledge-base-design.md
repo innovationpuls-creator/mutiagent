@@ -1,39 +1,37 @@
 # RAG 知识库与多智能体教材集成设计规格说明书
 
-本设计文档旨在为“一棵树 (OneTree)”系统引入一套基于 **PostgreSQL 特性 (JSONB + pgvector + tsvector)** 的原生 RAG/CAG 教材集成方案。本方案通过**“检索引导的 CAG（Retrieval-guided CAG）”**机制，消除原智能体链中依靠“大模型参数盲猜”生成课程及大纲的缺陷，将所有推荐与生成限制在管理员/教师审核通过的高质量教材范围内。
+本设计文档旨在为“一棵树 (OneTree)”系统引入一套基于 **PostgreSQL 特性 (JSONB + pgvector + tsvector)** 的原生 RAG/CAG 教材集成方案。本方案通过**“检索引导的 CAG（Retrieval-guided CAG）”**机制，消除原智能体链中依靠“大模型参数盲猜”生成课程及大纲的缺陷，将所有推荐与生成限制在管理员/教师审核通过、已发布的高质量教材范围内。
 
 ---
 
 ## 1. 项目愿景与使用流程 (Project Vision & Complete User Flows)
 
 ### 1.1 教师/管理员端流程与预期效果
-1. **教材上传阶段**：
-   * 教师登录后台，访问 `/admin/knowledge-base`。
-   * 点击“上传教材”，在弹窗中选择 PDF 文件，输入教材名称（如《Python高级Web开发》），并添加专业标签（如：`["后端开发", "软件工程", "大三"]`）。
-   * 提交后，教材进入“正在解析”状态。
+1. **教材发现与上传阶段**：
+   * 管理员登录后台，访问 `/admin/knowledge-base`。
+   * 管理员说一句话，Agent 自行到网上检索适合的教材来源；管理员也可以直接上传 PDF 教材。
+   * 提交后，教材进入“待整理”或“正在解析”状态。
    * **后台自动切片管道**：如果 PDF 页数超过 200 页或大小超过 30MB，系统在内存中自动使用 Python 进行分片处理，异步调用阿里云百炼文档解析 API，获取高保真 Markdown 全文。
-2. **AI 从零创作生成阶段（AIGC 教材）**：
-   * 如果教师手中没有 PDF 教材，可以直接点击“AI 创作教材”。
-   * 输入创作 prompt（例如：“面向大三学生，生成一本 5 章的 Rust 智能合约开发教材”）。
-   * 系统调用 AI，利用结构化输出快速生成推荐的大纲目录 JSON 并在网页呈现。
-3. **大纲微调与定位阶段**：
-   * 无论是 PDF 解析出来的目录还是 AI 创作出来的目录，均进入可视化的树形大纲编辑器（TOC Editor）。
-   * 教师可以使用 **“AI 目录副驾驶 (Outline Copilot)”** 发出修改指令（如：“在这章增加两个关于安全漏洞的小节”），AI 自动修改对应的 JSON 目录树。
-   * 确认大纲后，教师点击“生成教材内容”。系统启动后台异步任务，针对大纲中的每一个叶子小节，自动调用 LLM 撰写 2000-5000 字的高质量教学正文，并实时显示进度百分比。
+2. **Agent 整理阶段**：
+   * Agent 将检索到的教材或上传的 PDF 整理到小节正文级别，形成可校对的大纲和正文切片。
+   * 整理结果进入可视化的树形大纲编辑器（TOC Editor），供管理员人工校对。
+3. **校对与发布阶段**：
+   * 管理员确认大纲与正文切片后，点击“发布”。
+   * 发布后的教材进入已发布知识库，成为后续草案智能体、路径智能体和章节生成的唯一来源。
    * 对于 PDF 解析出的教材，系统根据结构化大纲自动在 Markdown 全文里定位并切片小节正文，存入 `textbook_section_content`。
 
 ### 1.2 学生端流程与预期效果
 1. **画像收集与推荐草稿**：
    * 学生完成初始画像对话后，表达了想学“后端开发”的意图。
-   * 系统通过混合检索，从数据库粗筛出匹配的 Top 15-20 本教材元数据（书名、标签）。
-   * **`learning_path_intake_agent` (草案 Agent)** 在聊天框中以卡片形式输出推荐课程草案（大模型整篇读入这 15-20 本教材的完整大纲作为上下文进行全局规划，绝不猜错书名）。
+   * 系统只从已发布知识库中进行混合检索，粗筛出匹配的 Top 15-20 本教材元数据（书名、标签）。
+   * **`learning_path_intake_agent` (草案 Agent)** 在聊天框中以卡片形式输出课程主题 + 来源教材，推荐范围严格限制在已发布知识库内。
 2. **草案微调与路径规划**：
    * 学生在对话框中反馈：“我不想学 Django，帮我换成 FastAPI”。
-   * 草案 Agent 在候选教材中匹配到《FastAPI 高效开发指南》，在聊天框中更新推荐清单，并在下方显示「确认并生成路径」与「修改画像」按钮。
-   * 学生点击「确认并生成路径」，**`learning_path_agent`** 将其编排为 4 年级课程规划，每个课程节点内置对应的 `textbook_id`。
+   * 草案 Agent 在已发布知识库中匹配到对应教材后更新推荐清单，并在下方显示「确认并生成路径」与「修改画像」按钮。
+   * 学生点击「确认并生成路径」，**`learning_path_agent`** 将其编排为课程规划，每个课程节点回写并绑定对应的知识库来源。
 3. **确定性章节展开**：
-   * 学生进入“分支页（BranchPage）”查看 4 年路径，点击课程进入“展叶页（LeafPage）”。
-   * **`course_knowledge_agent` (章节 Agent)** 直接从数据库读取对应的 `outline` JSON 渲染出目录，不经过任何大模型脑补，生成大纲是 **100% 确定且精准的**。
+   * 学生进入“分支页（BranchPage）”查看路径，点击课程进入“展叶页（LeafPage）”。
+   * **`course_knowledge_agent` (章节 Agent)** 直接从数据库读取对应教材的 `outline` JSON 渲染出目录，不经过任何大模型脑补。
 4. **Markdown 原文精读生成**：
    * 学生点击学习“第一章第二节：依赖注入”。
    * 触发 **`section_markdown_agent`**，后端直接查询该教材第一章该小节的完整正文（`textbook_section_content.content`，约 2000-5000 字），整篇塞入大模型上下文。
@@ -144,7 +142,8 @@ class TextbookSectionContent(SQLModel, table=True):
 * **`POST /api/admin/knowledge-base/textbooks/{id}/approve`**：审批通过 `admin_kb_agent` 搜集上来的待审教材并触发解析。
 * **`DELETE /api/admin/knowledge-base/textbooks/{id}`**：物理删除教材以及联级删除章节正文。
 
-### 3.2 AI 创作与生成端 API (新增)
+### 3.2 后续阶段 AI 创作与生成端 API
+* 本节能力不属于第一期主线，仅用于后续阶段。
 * **`POST /api/admin/knowledge-base/generate-outline`**
   * **请求体 (JSON)**:
     ```json
@@ -191,15 +190,15 @@ class TextbookSectionContent(SQLModel, table=True):
 ## 4. 智能体输入输出规格与 CAG 接口协议 (Agents Input/Output & CAG Protocols)
 
 ### 4.1 `learning_path_intake_agent` (草案 Agent)
-* **输入规格 (`OrchestrationState`)**：画像及 Top 15-20 本候选教材元数据 + 大纲 JSON。
+* **输入规格 (`OrchestrationState`)**：画像及已发布知识库中检索出的 Top 15-20 本教材元数据 + 大纲 JSON。
 * **输出结构 (`LearningPathIntakeOutput`)**：大模型决策后的课程推荐草稿。
 
 ### 4.2 `learning_path_agent` (路径 Agent)
-* **输出结构 (`UserYearLearningPath` 保存格式)**：强绑定对应的 `textbook_id`。
+* **输出结构 (`UserYearLearningPath` 保存格式)**：强绑定已发布知识库中的 `textbook_id` 与来源信息。
 
 ### 4.3 `course_knowledge_agent` (章节 Agent)
 * **输入规格**：`course_node_id` & `textbook_id`。
-* **降级与防崩溃兼容逻辑**：按课程名称检索教材库补全 `textbook_id`，若无可绑定教材则降级为旧版大模型参数生成。
+* **逻辑**：按课程名称回到已发布知识库定位对应教材与大纲，不凭空生成课程内容。
 
 ### 4.4 `section_markdown_agent` (小节 Markdown Agent)
 * **输入规格**：小节正文（约 2000-5000 字）。
@@ -255,31 +254,9 @@ LIMIT :limit;
 
 ---
 
-## 8. 管理端 AI 教材创作与生成中心设计 (AIGC Center) (新增)
+## 8. 后续阶段：AI 教材创作与生成中心
 
-为了让管理员能直接利用大模型能力生成完整的教学资源，设计如下 AI 创作中心：
-
-### 8.1 创作交互工作流
-1. **初始化大纲**：管理员在 `/admin/knowledge-base` 点击 "AI 创作"，输入提示词与标签。调用 `/generate-outline` 生成初始大纲 JSON。
-2. **人工审校/AI 协同微调 (Outline Copilot)**：
-   * 大纲渲染在 `OutlineEditor.tsx` 中。
-   * 提供 AI 大纲侧边栏。教师可选择某个大纲节点并发出指令（如：“在这章最后插入两个关于性能分析的知识点”）。
-   * 目录 AI 助手（Outline Copilot）使用 structured_output 读取并重构此大纲 JSON 返回前端，渲染更新。
-3. **正文异步生成任务 (Task Runner)**：
-   * 点击“AI 生成内容”按钮，调用 `/generate-content` 接口。
-   * 后端通过 `BackgroundTasks` 分发任务 `generate_textbook_contents_task(textbook_id)`。
-   * **循环执行生成**：对于大纲中每一个小节：
-     ```python
-     # 异步循环，按节依次使用 LLM 生成正文
-     for ch in outline["chapters"]:
-         for sec in ch["sections"]:
-             if exists_in_db(textbook_id, sec["section_id"]):
-                 continue
-             content = await run_llm_section_generation(textbook_title, ch["title"], sec["title"])
-             save_to_section_content(textbook_id, ch["chapter_number"], sec["section_id"], sec["title"], content)
-             update_progress_percentage()
-     ```
-   * 大语言模型只需单次输出 2000-5000 字的小节正文，完全处于安全 Output Token 限制内，避免任务由于输出超限崩溃。
+AI 创作教材、`/generate-outline`、`/generate-content`、正文自动创作与 Outline Copilot 协同微调不属于第一期主线。第一期只保证“找教材/上传教材 -> 整理 -> 校对 -> 发布 -> 基于已发布知识库推荐与生成”闭环成立。
 
 ---
 
@@ -288,9 +265,9 @@ LIMIT :limit;
 遵循 `AGENTS.md` 中 LXGW WenKai 字体规范与暗色模式/间距 Scale 要求。
 
 ### 9.1 管理员页面 (`/admin/knowledge-base`)
-* **教材列表与状态看板 (`TextbookList.tsx`)**：展示解析队列与 AI 生成任务的实时进度条。
+* **教材列表与状态看板 (`TextbookList.tsx`)**：展示检索来源、上传队列、整理状态、校对状态与发布状态。
 * **可视化大纲编辑器 (`OutlineEditor.tsx`)**：
-  提供树状大纲展示，支持折叠/展开、直接点击修改、以及 Outline Copilot 侧边栏交互。
+  提供树状大纲展示，支持折叠/展开、直接点击修改，用于管理员人工校对教材整理结果。
 
 ---
 

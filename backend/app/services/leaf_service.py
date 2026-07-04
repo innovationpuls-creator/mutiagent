@@ -93,6 +93,12 @@ def read_leaf_course(
         outline.get("section_composed_markdowns") if isinstance(outline, dict) else None
     )
     composed = dict(composed_value) if isinstance(composed_value, dict) else {}
+    section_errors_value = (
+        outline.get("section_resource_errors") if isinstance(outline, dict) else None
+    )
+    section_errors = (
+        dict(section_errors_value) if isinstance(section_errors_value, dict) else {}
+    )
     running = get_course_generation_status(user_uid, course_node_id)
 
     generation_status = (
@@ -124,6 +130,7 @@ def read_leaf_course(
             outline=None,
             sections=[],
             section_composed_markdowns={},
+            section_resource_errors={},
             generation_status=generation_status,
             can_generate=False,
             first_generatable_chapter_id=None,
@@ -142,6 +149,7 @@ def read_leaf_course(
         outline=outline,
         sections=sections,
         section_composed_markdowns=composed,
+        section_resource_errors=section_errors,
         generation_status=generation_status,
         can_generate=course_status == "current",
         first_generatable_chapter_id=first_chapter_id,
