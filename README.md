@@ -1,222 +1,325 @@
-<div align="center">
+<div align=”center”>
 
-<img src="./docs/logo/ChatGPT%20Image%202026%E5%B9%B45%E6%9C%8831%E6%97%A5%2001_21_11.png" alt="OneTree Logo" width="140" style="border-radius: 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.15);" />
+<img src=”https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6,11,14&height=220&section=header&text=OneTree&fontSize=72&fontColor=fff&animation=fadeIn&fontAlignY=38&desc=AI%20%E9%A9%B1%E5%8A%A8%20%C2%B7%20%E8%87%AA%E7%84%B6%E6%88%90%E9%95%BF%20%C2%B7%20%E4%B8%AA%E6%80%A7%E5%8C%96%E5%AD%A6%E4%B9%A0%E7%B3%BB%E7%BB%9F&descSize=16&descAlignY=62&descColor=rgba%28255%2C255%2C255%2C0.82%29”/>
 
-# 一棵树 (OneTree)
+<br/>
 
-### “从一句轻声的提问，到一张自然舒展的学习地图。”
+<img src=”./frontend/public/logo.png” alt=”OneTree Logo” width=”108”/>
 
----
+<h2>一棵树</h2>
 
-[![Frontend: React 18](https://img.shields.io/badge/Frontend-React%2018-61DAFB?style=flat-square&logo=react&logoColor=black)](./frontend)
-[![Backend: FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](./backend)
-[![Agent: LangGraph](https://img.shields.io/badge/Orchestrator-LangGraph-orange?style=flat-square)](./backend/app/orchestration)
-[![Database: PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)](./backend/app/database.py)
-[![Environment: uv](https://img.shields.io/badge/Environment-uv-de5d43?style=flat-square)](https://github.com/astral-sh/uv)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](https://opensource.org/licenses/MIT)
+<i>从一句轻声的提问，到一张自然舒展的学习地图。</i>
 
----
+<br/>
 
-[快速开始](#快速开始) · [核心学习旅程](#核心学习旅程) · [功能特性](#功能特性) · [技术栈](#技术栈) · [调试与-mcp](#调试与-mcp)
+<img src=”https://readme-typing-svg.demolab.com?font=Fira+Code&size=16&pause=1100&color=7BBDAD&center=true&vCenter=true&width=560&lines=7+AI+Agents+working+in+harmony.;Personalized+learning+path%2C+generated+on+the+fly.;Interactive+animations%2C+auto-generated+by+AI.;Let+knowledge+grow+like+a+tree.” alt=”Typing SVG”/>
+
+<br/><br/>
+
+[![React 18](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](./frontend)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white)](./backend)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-FF8C42?style=flat-square)](./backend/app/orchestration)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat-square&logo=postgresql&logoColor=white)](./backend)
+[![uv](https://img.shields.io/badge/uv-Python%20管理-DE5D43?style=flat-square)](https://github.com/astral-sh/uv)
+[![License: MIT](https://img.shields.io/badge/License-MIT-98C5B0?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/innovationpuls-creator/mutiagent?style=flat-square&logo=github&color=7BB9AD)](https://github.com/innovationpuls-creator/mutiagent/stargazers)
+
+<br/>
+
+[🚀 快速开始](#-快速开始) · [🌿 核心旅程](#-核心学习旅程) · [✨ 功能特性](#-功能特性) · [🛠️ 技术栈](#️-技术栈) · [🔬 MCP 调试](#-调试与-mcp可选)
 
 </div>
 
-## 核心学习旅程
+---
 
-一棵树摒弃了传统“网盘式”的课程列表，将学生的成长流程抽象为**“破冰 ➡️ 萌芽 ➡️ 出枝 ➡️ 展叶 ➡️ 自测成林”**的自然演化旅程，后台由 **7 个 Worker 智能体** 协作支撑：
+## ✨ 这是什么
+
+**一棵树** 是一个由 7 个 AI 智能体协同驱动的个性化学习系统。它不做"课程列表"，而是把学生的成长路径抽象成一棵真正生长的树——从第一次破冰对话开始，由 AI 实时构建专属学习画像，动态铺设 4 年学习路线，并在每个知识节点自动生成图文讲解、匹配教学视频、渲染交互动画，最后通过智能自测来点亮学习地图。
+
+<br/>
+
+<table>
+<tr>
+<td align="center" width="33%">
+
+**🤖 7 智能体协同**
+
+LangGraph Supervisor-Worker 拓扑，规则引擎前置拦截，确保多 Agent 状态转移的确定性
+
+</td>
+<td align="center" width="33%">
+
+**⚡ 实时流式生成**
+
+全链路 SSE 异步事件流，AI 规划过程可视化，消除等待感
+
+</td>
+<td align="center" width="33%">
+
+**🎨 动画自动生成**
+
+抽象概念（物理阻尼、经典算法）自动编写 HTML/JS 动画卡片，在页面内交互运行
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🖥️ 产品预览
+
+<div align="center">
+
+| 登录 | 学生端 | 管理端 |
+|:---:|:---:|:---:|
+| <img src="./docs/screenshots/login.png" width="280"/> | <img src="./docs/screenshots/student.png" width="280"/> | <img src="./docs/screenshots/admin.png" width="280"/> |
+
+</div>
+
+---
+
+## 🌿 核心学习旅程
+
+学生的成长被抽象为五个自然阶段，后台由 **7 个 Worker 智能体** 协作驱动：
 
 ```mermaid
-graph TD
-    A[Onboarding 破冰会话] -->|收集兴趣与目标| B(Sprout 萌芽: 确定学习画像)
-    B -->|构建成长树基底| C(Branch 出枝: 铺设学习路线)
-    C -->|选择特定年级主题| D(Leaf 展叶: 研读核心大纲)
-    D -->|获取详细知识点| E(Forest 成林: 进行智能自测)
-    E -->|通过测试点亮节点| C
-
-    F[Global AI Widget 全局助手] -.->|全流程陪伴答疑| A
-    F -.->|同步灵感与草稿| G[Canvas 自由画板]
+graph LR
+    A[🌱 破冰] -->|画像构建| B[🌿 萌芽]
+    B -->|路线生成| C[🌳 出枝]
+    C -->|节点精读| D[🍃 展叶]
+    D -->|自测通关| E[🌲 成林]
+    E -->|点亮节点| C
+    F[🤖 全局助手] -.->|全程陪伴| C
 ```
 
-### 核心阶段与智能体分工
-
-#### 1. 🌱 Onboarding & Sprout (破冰与萌芽)
-*   **路由**：`/onboarding` ➡️ `/sprout`
-*   **流程**：通过引导式多轮会话，收集学生的专业基础、核心偏好与预期目标。
-*   **智能体**：`profile_agent` 提取对话特征，动态构建学生画像 (User Profile)，持久化至 PostgreSQL JSONB 字段。
-
-#### 2. 🌿 Branch Path (动态出枝)
-*   **路由**：`/branch`
-*   **流程**：以四载路线图展示大纲结构，支持学生滑动掌控当前阶段。
-*   **智能体**：`learning_path_intake_agent` 推荐初步的课程方向与草案；确认后由 `learning_path_agent` 动态生成完整的按年级学习路径 (Yearly Learning Path)。
-
-#### 3. 🍃 Leaf Detail (精读展叶)
-*   **路由**：`/leaf/:courseNodeId`
-*   **流程**：学生精读特定节点的知识内容、观看推荐视频或操作交互动画。
-*   **多智能体协同**：
-    1. `course_knowledge_agent`：设计整体课程结构，划分章节与重点难点。
-    2. `section_markdown_agent`：针对每个细分章节，生成详细的学习图文和要点解析。
-    3. `section_video_search_agent`：自动联网搜索匹配与章节契合的教学视频。
-    4. `section_html_animation_agent`：针对抽象概念（如物理阻尼、经典算法），自动编写代码并渲染可在页面上嵌入交互的 **HTML/JS 动画卡片**。
-
-#### 4. 🌳 Forest Assessment (自测成林)
-*   **路由**：`/forest/:courseNodeId`
-*   **流程**：学完节点后进行交互式答题自测，通关点亮该节点，最终在地图上汇聚成代表技能熟练度的“知识森林”。
+| 阶段 | 路由 | 核心智能体 | 做什么 |
+| :--: | :--- | :--- | :--- |
+| 🌱 破冰萌芽 | `/onboarding` → `/sprout` | `profile_agent` | 引导式对话收集偏好，构建学习画像 |
+| 🌳 出枝 | `/branch` | `learning_path_agent` | 动态生成 4 年分阶学习路线 |
+| 🍃 展叶 | `/leaf/:id` | 4 个协同 Agent | 生成章节图文、搜索视频、渲染交互动画 |
+| 🌲 成林 | `/forest/:id` | 自测引擎 | 交互答题，通关点亮知识节点 |
+| 📊 管理端 | `/admin/*` | — | 培养方案配置、学情监控、账户管理 |
 
 ---
 
-## 教师与管理端视图
+## ✨ 功能特性
 
-*   **培养方案设计 (`/admin/programs`)**：供教师/管理员使用，用于配置基础大纲模板及课程方向属性。
-*   **学情监控大屏 (`/admin/data`)**：统计班级培养方案的覆盖进度与学生的整体画像状态。
-*   **账户管理后台 (`/admin/accounts`)**：支持单账号创建、批量创建以及导入/导出系统账号。
-
----
-
-## 功能特性
-
-*   **7 智能体协同拓扑**：基于 LangGraph 编排 Supervisor-Worker 决策网络，由内置规则引擎进行前置拦截，确保大模型规划与状态转移的确定性。
-*   **交互式动画自动生成**：`section_html_animation_agent` 针对抽象科学或算法概念，实时编写代码并支持在前端沙箱中热加载，实现动手模拟操作。
-*   **SSE 异步事件流广播**：基于 asyncio 异步执行链，利用 Server-Sent Events (SSE) 协议向前端流式传输 `supervisor_thinking` 规划事件、子智能体调度状态及生成块，消除加载等待焦虑。
-*   **强类型数据约束**：前端 React 启用 TypeScript Strict Mode 避免 safe-type 污染；后端基于 SQLModel（SQLAlchemy/Pydantic）提供强类型 API，统一使用 JSONB 归档画像数据。
+- **7 智能体协同拓扑** — LangGraph Supervisor-Worker 决策网络 + 规则引擎前置拦截，大模型规划与状态转移完全确定
+- **交互动画自动生成** — `section_html_animation_agent` 针对抽象概念实时生成 HTML/JS 卡片，在前端沙箱内热加载可操作
+- **SSE 实时流式广播** — asyncio 全链路异步，`supervisor_thinking` 规划事件流式可视，消除等待焦虑
+- **强类型全栈对齐** — 前端 TypeScript Strict Mode + 后端 SQLModel/Pydantic，接口字段自动生成，零猜测
 
 ---
 
-## 技术栈
-
-| 分层 | 核心技术 | 职责说明 |
-| :--- | :--- | :--- |
-| **前端开发** | React 18 / TypeScript / Vite | 强类型视图构建，极速模块热重载 |
-| **页面路由** | `react-router-dom` | 提供多视图平滑无感知路由切换 |
-| **动效物理** | `framer-motion` | 承接具有“呼吸感”的 Headspace 柔和阻尼动效 |
-| **样式体系** | Tailwind CSS / CSS Variables | 原生变量锁死全局 Token（基于 OKLCH 配色），Tailwind 用于基础排版 |
-| **后端框架** | FastAPI / uvicorn | 提供高性能异步 Web API 与 SSE 流式事件流 |
-| **智能体编排**| LangGraph | 基于图结构的状态机编排，实现多 Agent 灵活交互 |
-| **大模型调用**| LangChain / structured_output | 实现 prompt 模板注入及 Pydantic 结构化输出解析 |
-| **数据持久化**| PostgreSQL (JSONB) / SQLModel | JSONB 格式高效保存动态画像与路径，支持多级智能体状态与历史数据持久化 |
-
----
-
-## 快速开始
+## 🚀 快速开始
 
 > [!IMPORTANT]
-> 开始前，请确保本地开发环境已安装 **Node.js (建议 v18+)** 和 **PostgreSQL**。后端环境及依赖由 **uv** 自动管理，**无需手动配置安装 Python**。
+> **环境要求** — 开始前请确认已安装以下工具：
+> - [Node.js v18+](https://nodejs.org) — 前端运行时
+> - [PostgreSQL 15](https://www.postgresql.org/download/) — 数据库
+> - [uv](https://github.com/astral-sh/uv) — Python 后端管理工具（见步骤一）
+> - 一个兼容 OpenAI 格式的 LLM API Key（如[阿里百炼 Qwen](https://bailian.console.aliyun.com/)）
 
-### 1. 下载与安装 uv
+---
 
-后端完全使用现代 Python 环境管理工具 **uv**（使用 Rust 编写）。它会自动下载最匹配的 Python 运行时及依赖。
+### 第一步：安装 uv（Python 环境管理）
 
-*   **macOS / Linux**：
-    ```bash
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    # 或者使用 Homebrew
-    brew install uv
-    ```
-*   **Windows (PowerShell)**：
-    ```powershell
-    powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-    ```
+uv 会帮你自动下载正确的 Python 版本并安装所有依赖，**无需手动安装 Python**。
 
-验证安装：`uv --version`。
+<table>
+<tr><th>macOS / Linux</th><th>Windows (PowerShell)</th></tr>
+<tr>
+<td>
 
-### 2. 数据库配置 (PostgreSQL)
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# 或
+brew install uv
+```
 
-系统默认使用 PostgreSQL 作为核心存储，并在启动时自动执行表结构升级与种子数据填充。
+</td>
+<td>
 
-#### macOS 安装与启动
-使用 Homebrew 安装并开启服务：
+```powershell
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+</td>
+</tr>
+</table>
+
+验证：`uv --version` 输出版本号即表示成功。
+
+---
+
+### 第二步：克隆项目
+
+```bash
+git clone https://github.com/innovationpuls-creator/mutiagent.git
+cd mutiagent
+```
+
+---
+
+### 第三步：配置 PostgreSQL 数据库
+
+**macOS（Homebrew）：**
 ```bash
 brew install postgresql@15
 brew services start postgresql@15
 ```
 
-#### 创建数据库与用户
-登录 PostgreSQL 并创建满足默认连接串要求的数据库与用户：
-```bash
-# 进入 postgres 控制台
-psql postgres
+**Windows / Linux：** 参考 [PostgreSQL 官方下载页](https://www.postgresql.org/download/) 安装并启动服务。
 
-# 执行以下命令
+**创建数据库和用户（所有平台相同）：**
+```bash
+psql postgres
+```
+```sql
 CREATE USER mutiagent WITH PASSWORD 'mutiagent';
 CREATE DATABASE mutiagent OWNER mutiagent;
 GRANT ALL PRIVILEGES ON DATABASE mutiagent TO mutiagent;
 \q
 ```
 
-### 3. 后端服务启动
+---
 
-1. 进入后端目录：
-   ```bash
-   cd backend
-   ```
-2. 配置环境变量：
-   ```bash
-   cp .env.example .env
-   ```
-   编辑 `.env`，配置大模型 API 密钥（兼容 OpenAI 格式接口，如阿里百炼 Qwen）：
-   ```ini
-   LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-   LLM_API_KEY=sk-xxxxxx
-   LLM_MODEL=qwen3.5-plus-2026-04-20
-   DATABASE_URL=postgresql://mutiagent:mutiagent@localhost:5432/mutiagent
-   ```
-3. 一键启动服务：
-   ```bash
-   uv run uvicorn app.main:app --reload --port 8000
-   ```
-   > [!NOTE]
-   > 运行 `uv run` 时，uv 会自动读取 `pyproject.toml` 的 Python 版本限制并将其下载至本地 `.venv`，无需人工操作。服务启动时会触发 `create_app`，自动执行 Schema 升级并向库中播种测试学生账号：`demo@mutiagent.local` (密码: `demo123456`)。
+### 第四步：启动后端
 
-### 4. 前端服务启动
+```bash
+cd backend
+cp .env.example .env
+```
 
-1. 进入前端目录：
-   ```bash
-   cd frontend
-   ```
-2. 安装依赖并启动：
-   ```bash
-   npm install
-   npm run dev
-   ```
-3. 浏览器访问：
-   打开 [http://localhost:5173](http://localhost:5173)，使用测试账号 `demo@mutiagent.local` / `demo123456` 即可开始探索。
+用任意文本编辑器打开 `.env`，填入你的 LLM API 配置：
+
+```ini
+LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_API_KEY=sk-xxxxxx          # 替换为你的 API Key
+LLM_MODEL=qwen3.5-plus-2026-04-20
+DATABASE_URL=postgresql://mutiagent:mutiagent@localhost:5432/mutiagent
+```
+
+一键启动：
+```bash
+uv run uvicorn app.main:app --reload --port 8000
+```
+
+> [!NOTE]
+> 首次运行时 uv 会自动下载 Python 并安装依赖（约 1-3 分钟）。服务启动后会自动建表并写入测试账号，看到 `Application startup complete` 即成功。
 
 ---
 
-## 🛠️ 调试与 MCP (可选)
+### 第五步：启动前端
 
-本项目原生配有 `code-review-graph` 语义图谱分析工具，可作为 MCP（Model Context Protocol）服务引入您的大模型开发客户端（如 Claude Desktop 或 Windsurf），用于自动索引、分析并生成代码调用链。
+打开新终端窗口：
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+---
+
+### 🎉 开始探索
+
+浏览器打开 **[http://localhost:5173](http://localhost:5173)**，使用以下测试账号登录：
+
+| 角色 | 账号 | 密码 |
+| :--: | :--- | :--- |
+| 🎓 学生 | `demo@mutiagent.local` | `demo123456` |
 
 <details>
-<summary>点击展开查看 MCP 配置方法</summary>
+<summary>🔧 常见问题排查</summary>
 
-在大模型客户端配置文件中加入以下配置（二选一）：
+**`psql: command not found`**
+PostgreSQL 未正确加入 PATH。macOS 用户需执行：
+```bash
+export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
+```
 
-#### 方法 A：基于本地虚拟环境的 `code-review-graph` 服务
+**后端启动报 `database connection refused`**
+检查 PostgreSQL 服务是否运行：`brew services list` 或 `pg_isready`。
+
+**前端 `npm install` 报错**
+确认 Node.js 版本 ≥ 18：`node --version`。版本过低请用 [nvm](https://github.com/nvm-sh/nvm) 升级。
+
+**API Key 无效 / 模型调用失败**
+检查 `.env` 中的 `LLM_API_KEY` 是否正确，以及 `LLM_BASE_URL` 是否与你的服务商匹配。
+
+</details>
+
+---
+
+## 🛠️ 技术栈
+
+| 分层 | 核心技术 | 职责说明 |
+| :--- | :--- | :--- |
+| ![React](https://img.shields.io/badge/-React%2018-61DAFB?style=flat-square&logo=react&logoColor=black) | React 18 / TypeScript / Vite | 强类型视图构建，极速模块热重载 |
+| ![Router](https://img.shields.io/badge/-React%20Router-CA4245?style=flat-square&logo=reactrouter&logoColor=white) | `react-router-dom` | 多视图平滑路由切换 |
+| ![Motion](https://img.shields.io/badge/-Framer%20Motion-0055FF?style=flat-square&logo=framer&logoColor=white) | `framer-motion` | Headspace 柔和阻尼动效 |
+| ![Tailwind](https://img.shields.io/badge/-Tailwind%20CSS-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white) | Tailwind CSS + CSS Variables | OKLCH 色彩 Token 体系 |
+| ![FastAPI](https://img.shields.io/badge/-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white) | FastAPI / uvicorn | 高性能异步 Web API + SSE 事件流 |
+| ![LangGraph](https://img.shields.io/badge/-LangGraph-FF8C42?style=flat-square) | LangGraph | 图结构状态机，多 Agent 编排 |
+| ![LangChain](https://img.shields.io/badge/-LangChain-1C3C3C?style=flat-square) | LangChain / structured_output | Prompt 注入 + Pydantic 结构化解析 |
+| ![PostgreSQL](https://img.shields.io/badge/-PostgreSQL%2015-4169E1?style=flat-square&logo=postgresql&logoColor=white) | PostgreSQL (JSONB) / SQLModel | JSONB 动态画像存储，多级状态持久化 |
+
+---
+
+## 🔬 调试与 MCP（可选）
+
+本项目内置 `code-review-graph` 语义图谱工具，可作为 MCP 服务接入 Claude Desktop、Windsurf 等客户端，用于自动索引代码并生成调用链分析。
+
+<details>
+<summary>点击展开 MCP 配置方法</summary>
+
+在你的 AI 客户端配置文件中二选一添加：
+
+**方法 A — 使用本地虚拟环境（需先启动过后端）**
 ```json
 {
   "mcpServers": {
     "code-review-graph": {
-      "command": "/Users/torch/torch/opt/mutiagent/backend/.venv/bin/code-review-graph",
+      "command": "/path/to/mutiagent/backend/.venv/bin/code-review-graph",
       "args": ["serve"],
-      "cwd": "/Users/torch/torch/opt/mutiagent",
+      "cwd": "/path/to/mutiagent",
       "type": "stdio"
     }
   }
 }
 ```
 
-#### 方法 B：基于全局 `uvx` 运行最新包
+**方法 B — 使用 uvx 直接运行（推荐）**
 ```json
 {
   "mcpServers": {
     "code-review-graph": {
       "command": "uvx",
       "args": ["code-review-graph", "serve"],
-      "cwd": "/Users/torch/torch/opt/mutiagent",
+      "cwd": "/path/to/mutiagent",
       "type": "stdio"
     }
   }
 }
 ```
 
+> 将 `/path/to/mutiagent` 替换为你本地的项目绝对路径。
+
 </details>
+
+---
+
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request。提交前请确保代码通过 Biome（前端）和 Ruff（后端）检查。
+
+---
+
+<div align="center">
+
+<sub>MIT License · 用 ❤️ 构建 · 让学习像树一样自然生长</sub>
+
+<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6,11,14&height=100&section=footer"/>
+
+</div>
