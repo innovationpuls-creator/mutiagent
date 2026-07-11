@@ -41,12 +41,9 @@ frontend/tsconfig.tsbuildinfo
 
 .playwright-mcp/
 mutiagent-auth-desktop.png
-# Added by code-review-graph
-.code-review-graph/
 
 # Node dependencies & build/tool caches (Root level)
 node_modules/
 .vite/
 .stitch/
 .opencode/
-

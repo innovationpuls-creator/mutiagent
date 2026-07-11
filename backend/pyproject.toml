@@ -5,6 +5,7 @@ description = "Mock auth backend for the mutiagent monorepo."
 requires-python = ">=3.11"
 dependencies = [
   "bcrypt>=5.0.0",
+  "dashscope==1.26.2",
   "fastapi>=0.115.0",
   "langchain>=0.3.0",
   "langchain-openai>=0.3.0",
@@ -14,7 +15,6 @@ dependencies = [
   "python-jose[cryptography]>=3.5.0",
   "sqlmodel>=0.0.22",
   "uvicorn[standard]>=0.30.0",
-  "code-review-graph>=2.3.5",
   "python-multipart>=0.0.32",
   "markitdown[docx,pdf]>=0.1.6",
 ]

@@ -291,31 +291,6 @@ export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
 
 ---
 
-## 🔬 调试与 MCP（可选）
-
-本项目内置 `code-review-graph` 语义图谱工具，可接入 Claude Desktop、Windsurf 等 MCP 客户端，自动索引代码调用链。
-
-<details>
-<summary>展开查看配置</summary>
-
-**推荐：uvx 直接运行**
-```json
-{
-  "mcpServers": {
-    "code-review-graph": {
-      "command": "uvx",
-      "args": ["code-review-graph", "serve"],
-      "cwd": "/你的本地路径/mutiagent",
-      "type": "stdio"
-    }
-  }
-}
-```
-
-</details>
-
----
-
 ## 🤝 贡献
 
 欢迎 Issue 和 PR。前端改动后请运行 `npx biome check --write`，后端改动后请运行 `ruff check --fix && ruff format`。

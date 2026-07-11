@@ -1,12 +1,12 @@
 # Agent 逻辑与主流程拆解
 
-本文只描述当前仓库里已经存在、并且已经从代码与 `code-review-graph` 验证过的前后端主流程。
+本文只描述当前仓库中已经存在的前后端主流程。
 
 ---
 
 ## 1. 前端主流程：`onboarding-handle`
 
-这里沿用需求里的 `onboarding-handle` 作为讨论标签；当前 `code-review-graph` 里对应的真实社区名是 `onboarding-after`，图谱里有 `219` 个节点，主体集中在 `frontend/src/components`，但真正的主链路会穿过页面层、上下文层、会话恢复层和视图层。
+这里沿用需求里的 `onboarding-handle` 作为讨论标签。
 
 ### 1.1 入口链路
 
@@ -1135,20 +1135,9 @@ graph TD
 - 重新登录后不会自动继承上一次的 widget 展开态
 - `pendingMessage` 也不会跨登录态残留
 
-### 1.10 `onboarding-handle` 的 CRG Flow 快照
+### 1.10 前端主流程汇总
 
-`code-review-graph` 当前已经给出一条可直接下钻的前端主执行流：
-
-- Flow 名称：
-  - `App`
-- Criticality：
-  - `0.7706`
-- Node Count：
-  - `163`
-- Depth：
-  - `7`
-
-这条 flow 不是“只看一个文件的调用链”，而是从 `App` 入口一路串起页面层、上下文层、会话恢复层和结构化视图层。按关键节点压缩后，当前真实顺序如下：
+按关键节点压缩后，前端主流程如下：
 
 ```mermaid
 graph TD
@@ -1272,7 +1261,7 @@ graph TD
      - 服务端 `GET /api/chat/sessions/{session_id}`
      统一翻译成 `chatReducer.LOAD_SESSION`
 
-这里再叠一层 `code-review-graph` 已经确认的真实调用边：
+相关调用关系如下：
 
 - `useChatSession`
   - 运行时代码 caller 当前只有：
@@ -1382,25 +1371,7 @@ graph TD
 
 ## 2. 后端请求入口：`api-path`
 
-这里沿用需求里的 `api-path` 作为讨论标签；当前 `code-review-graph` 里并不存在一个“覆盖全部 API 入口”的单一社区。
-
-当前图谱里名为 `api-path` 的真实社区只覆盖：
-
-- `backend/app/api/auth.py`
-- `backend/app/api/learning_path.py`
-
-而这次主流程真正要穿过的几个 API 入口文件：
-
-- `backend/app/api/orchestration.py`
-- `backend/app/api/profile.py`
-- `backend/app/api/branch.py`
-
-当前分别以文件节点形式存在，并与更上层的 `app-response` 社区共同构成 API 入口层。
-
-因此下面这一节里的 `api-path`，应该理解为：
-
-- 需求里的“后端请求入口”标签
-- 不是 `code-review-graph` 当前那一个同名社区的严格等价物
+这里沿用需求里的 `api-path` 作为“后端请求入口”的讨论标签。
 
 当前聊天主链路集中在：
 
@@ -1579,22 +1550,7 @@ graph TD
 
 ## 3. 后端编排层：`agents-course`
 
-这里沿用需求里的 `agents-course` 作为讨论标签；当前 `code-review-graph` 里并没有名为 `agents-course` 的真实社区。
-
-当前最接近这条执行链的真实社区名是 `agents-profile`，图谱里有 `157` 个节点。它并不只包含 profile 逻辑，而是把当前编排主链的核心文件一起聚在：
-
-- `backend/app/orchestration/graph.py`
-- `backend/app/orchestration/agents/supervisor.py`
-- `backend/app/orchestration/agents/profile.py`
-- `backend/app/orchestration/agents/learning_path.py`
-- `backend/app/orchestration/agents/course_knowledge.py`
-- `backend/app/orchestration/llm.py`
-
-因此下面这一节里的 `agents-course`，应该理解为：
-
-- 需求里的“Agent 编排执行层”标签
-- 当前图谱里主要落在 `agents-profile` 这一个真实社区
-- 其中 `course_knowledge_agent` 不是独立社区，而是这条编排主链里的一个 worker 分支
+这里沿用需求里的 `agents-course` 作为“Agent 编排执行层”的讨论标签。
 
 ### 3.1 请求到 Agent 的真实链路
 
@@ -2121,24 +2077,9 @@ graph TD
 - `backend/app/api/orchestration.py`
 - `backend/app/orchestration/graph.py`
 
-### 3.9 `api-path -> agents-course` 的 CRG Flow 快照
+### 3.9 请求入口到 Agent 执行链
 
-`code-review-graph` 当前已经把后端请求入口到 Agent 执行链压成几条可直接验证的 flow：
-
-- `send_message`
-  - criticality `0.7303`
-  - node count `37`
-  - depth `6`
-- `supervisor_node`
-  - criticality `0.5769`
-  - node count `16`
-  - depth `3`
-- `learning_path_agent_node`
-  - criticality `0.5713`
-  - node count `24`
-  - depth `4`
-
-其中最关键的是 `send_message` 这条 flow。按关键节点压缩后，当前真实顺序如下：
+按关键节点压缩后，执行顺序如下：
 
 ```mermaid
 graph TD
@@ -2378,9 +2319,8 @@ graph TD
      - 调 `run_course_knowledge_agent(...)`
      - 把结果包成 `ToolMessage`
      - 把 `course_knowledge` / `response` 写回 graph state
-   - 从 `code-review-graph` 当前调用边来看：
-     - 生产代码里的 caller 只有：
-       - `build_orchestration_graph`
+   - 生产代码里的 caller 只有：
+     - `build_orchestration_graph`
      - 这说明它只能作为 LangGraph worker 节点挂进编排图
      - API 层、service 层和其它 worker 当前都不会直接调用它
 2. `run_course_knowledge_agent(...)`
@@ -2396,9 +2336,8 @@ graph TD
    - 先从：
      - `extract_last_tool_call_args(state)`
      拿最近一次 tool call 里的精确参数
-   - 从 `code-review-graph` 当前调用边来看：
-     - 生产代码里的 caller 只有：
-       - `course_knowledge_agent_node`
+   - 生产代码里的 caller 只有：
+     - `course_knowledge_agent_node`
      - 其它 `run_course_knowledge_agent(...)` 调用点全部都在测试文件
    - 也就是说当前生产环境里的唯一真实入口仍然是：
      - `send_message -> _stream_chat_events -> stream_orchestration_events -> supervisor -> course_knowledge_agent_node -> run_course_knowledge_agent`
