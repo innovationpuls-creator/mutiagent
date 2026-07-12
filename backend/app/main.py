@@ -17,6 +17,8 @@ from app.api.orchestration import create_orchestration_router
 from app.api.profile import create_profile_router
 from app.api.student import create_student_router
 from app.api.teacher import create_teacher_router
+from app.core.config import DEFAULT_JWT_SECRET, load_settings
+from app.core.security import configure_jwt
 from app.database import (
     DATABASE_URL,
     build_engine,
@@ -34,6 +36,8 @@ def _build_cors_origin_regex() -> str:
 
 
 def create_app(database_url: str = DATABASE_URL) -> FastAPI:
+    settings = load_settings()
+    configure_jwt(settings.jwt_secret or DEFAULT_JWT_SECRET)
     engine = build_engine(database_url)
     set_engine(engine)
     init_db(engine)

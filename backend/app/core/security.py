@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 
 import bcrypt as _bcrypt
@@ -11,11 +10,18 @@ from sqlmodel import Session, select
 
 from app.models import User
 
-SECRET_KEY = os.getenv("JWT_SECRET", "mutiagent-dev-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 2
 
 bearer_scheme = HTTPBearer()
+_jwt_secret: str | None = None
+
+
+def configure_jwt(secret: str) -> None:
+    global _jwt_secret
+    if not secret.strip():
+        raise ValueError("JWT_SECRET 不能为空")
+    _jwt_secret = secret
 
 
 def hash_password(password: str) -> str:
@@ -34,17 +40,23 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
         expires_delta or timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     )
     to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(to_encode, _get_jwt_secret(), algorithm=ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict:
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return jwt.decode(token, _get_jwt_secret(), algorithms=[ALGORITHM])
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="无效的认证凭证",
         )
+
+
+def _get_jwt_secret() -> str:
+    if _jwt_secret is None:
+        raise RuntimeError("JWT 尚未配置")
+    return _jwt_secret
 
 
 def create_get_current_user(session_dependency):
