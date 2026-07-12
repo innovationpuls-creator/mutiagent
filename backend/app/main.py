@@ -8,6 +8,7 @@ from app.api.admin_data import create_admin_data_router
 from app.api.auth import create_auth_router
 from app.api.branch import create_branch_router
 from app.api.forest import create_forest_router
+from app.api.health import create_health_router
 from app.api.knowledge_base import create_knowledge_base_router
 from app.api.leaf import create_leaf_router
 from app.api.learning_path import create_learning_path_router
@@ -25,7 +26,6 @@ from app.database import (
     init_db,
     set_engine,
 )
-from app.schemas import HealthResponse
 
 DEVELOPMENT_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"]
 
@@ -57,6 +57,7 @@ def create_app(
         allow_headers=["*"],
     )
     app.include_router(create_auth_router(create_session_dependency(engine)))
+    app.include_router(create_health_router(engine))
     app.include_router(create_admin_router(create_session_dependency(engine)))
     app.include_router(create_admin_data_router(create_session_dependency(engine)))
     app.include_router(create_teacher_router(create_session_dependency(engine)))
@@ -68,10 +69,6 @@ def create_app(
     app.include_router(create_leaf_router(create_session_dependency(engine)))
     app.include_router(create_forest_router(create_session_dependency(engine)))
     app.include_router(create_knowledge_base_router(create_session_dependency(engine)))
-
-    @app.get("/api/health", response_model=HealthResponse)
-    def health() -> HealthResponse:
-        return HealthResponse(status="ok", database="connected")
 
     return app
 

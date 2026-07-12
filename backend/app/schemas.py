@@ -240,8 +240,12 @@ class UserLearningDataRead(BaseModel):
 
 
 class HealthResponse(BaseModel):
+    status: Literal["ok", "error"]
+    database: Literal["connected", "unavailable"]
+
+
+class LivenessResponse(BaseModel):
     status: Literal["ok"]
-    database: Literal["connected"]
 
 
 # ── Knowledge Base ──
