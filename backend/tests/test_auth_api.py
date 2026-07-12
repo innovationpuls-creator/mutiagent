@@ -1,8 +1,12 @@
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlmodel import Session, select
 
+from app.core.config import load_settings
+from app.database import build_engine
 from app.main import create_app
+from app.models import User
 from tests.postgres import postgresql_test_url
 
 
@@ -108,6 +112,28 @@ def test_init_db_creates_admin_from_env(tmp_path: Path, monkeypatch) -> None:
     assert body["user"]["role"] == "admin"
 
 
+def test_production_startup_does_not_create_demo_user(tmp_path: Path) -> None:
+    database_url = postgresql_test_url(tmp_path, "production-no-demo")
+    settings = load_settings(
+        {
+            "APP_ENV": "production",
+            "DATABASE_URL": database_url,
+            "JWT_SECRET": "production-no-demo-jwt-secret",
+            "LLM_API_KEY": "production-no-demo-llm-api-key",
+            "LLM_MODEL": "production-no-demo-llm-model",
+            "ALLOWED_ORIGINS": "https://onetree.chat",
+        }
+    )
+
+    create_app(database_url=database_url, settings=settings)
+
+    with Session(build_engine(database_url)) as session:
+        demo_user = session.exec(
+            select(User).where(User.identifier == "demo@mutiagent.local")
+        ).first()
+    assert demo_user is None
+
+
 def test_login_rejects_wrong_password(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
@@ -203,10 +229,12 @@ def test_login_updates_last_login_at(tmp_path: Path) -> None:
         },
     )
 
+    login_response = client.post(
+        "/api/auth/login",
+        json={"account": "time-test@example.com", "password": "test-password-123"},
+    )
     me_before = client.get(
         "/api/auth/me",
-        headers={
-            "Authorization": f"Bearer {client.post('/api/auth/login', json={'account': 'time-test@example.com', 'password': 'test-password-123'}).json()['access_token']}"
-        },
+        headers={"Authorization": f"Bearer {login_response.json()['access_token']}"},
     )
     assert me_before.json()["last_login_at"] is not None

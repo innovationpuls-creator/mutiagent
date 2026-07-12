@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -17,7 +15,7 @@ from app.api.orchestration import create_orchestration_router
 from app.api.profile import create_profile_router
 from app.api.student import create_student_router
 from app.api.teacher import create_teacher_router
-from app.core.config import DEFAULT_JWT_SECRET, load_settings
+from app.core.config import DEFAULT_JWT_SECRET, AppSettings, load_settings
 from app.core.security import configure_jwt
 from app.database import (
     DATABASE_URL,
@@ -28,25 +26,29 @@ from app.database import (
 )
 from app.schemas import HealthResponse
 
-
-def _build_cors_origin_regex() -> str:
-    if os.getenv("ENVIRONMENT") == "development":
-        return r"https?://(127\.0\.0\.1|localhost)(:\d+)?"
-    return r"https?://.*"
+DEVELOPMENT_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"]
 
 
-def create_app(database_url: str = DATABASE_URL) -> FastAPI:
-    settings = load_settings()
-    configure_jwt(settings.jwt_secret or DEFAULT_JWT_SECRET)
-    engine = build_engine(database_url)
+def create_app(
+    database_url: str | None = None, settings: AppSettings | None = None
+) -> FastAPI:
+    resolved_settings = settings or load_settings()
+    configure_jwt(resolved_settings.jwt_secret or DEFAULT_JWT_SECRET)
+    resolved_database_url = (
+        database_url or resolved_settings.database_url or DATABASE_URL
+    )
+    engine = build_engine(resolved_database_url)
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=not resolved_settings.is_production)
 
     app = FastAPI(title="Mutiagent API", version="0.1.0")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
-        allow_origin_regex=_build_cors_origin_regex(),
+        allow_origins=list(
+            resolved_settings.allowed_origins
+            if resolved_settings.is_production
+            else DEVELOPMENT_ORIGINS
+        ),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

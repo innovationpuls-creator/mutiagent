@@ -55,10 +55,13 @@ def create_session_dependency(
     return get_session
 
 
-def init_db(engine: Engine) -> None:
+def init_db(engine: Engine, *, seed_users: bool = True) -> None:
     run_schema_upgrades(engine)
     SQLModel.metadata.create_all(engine)
     migrate_removed_learning_path_table(engine)
+
+    if not seed_users:
+        return
 
     with Session(engine) as session:
         _ensure_admin_user(session)
