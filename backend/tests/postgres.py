@@ -34,6 +34,44 @@ def postgresql_test_url(tmp_path: Path, database_name: str) -> str:
     return base_url.set(query=query).render_as_string(hide_password=False)
 
 
+def cleanup_registered_test_schemas() -> None:
+    schema_names = set(_schema_by_key.values())
+    _schema_by_key.clear()
+    _drop_test_schemas(schema_names)
+
+
+def cleanup_orphaned_test_schemas() -> None:
+    base_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+    engine = sqlalchemy.create_engine(base_url)
+    try:
+        with engine.connect() as connection:
+            schema_names = {
+                row[0]
+                for row in connection.execute(
+                    text(
+                        "SELECT schema_name FROM information_schema.schemata "
+                        "WHERE schema_name LIKE 'test_%'"
+                    )
+                )
+            }
+    finally:
+        engine.dispose()
+    _drop_test_schemas(schema_names)
+
+
+def _drop_test_schemas(schema_names: set[str]) -> None:
+    base_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+    for schema_name in sorted(schema_names):
+        if not re.fullmatch(r"test_[a-z0-9_]+", schema_name):
+            continue
+        engine = sqlalchemy.create_engine(base_url)
+        try:
+            with engine.begin() as connection:
+                connection.execute(text(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE"))
+        finally:
+            engine.dispose()
+
+
 def _schema_name(database_name: str) -> str:
     normalized_name = re.sub(r"[^A-Za-z0-9_]+", "_", database_name).strip("_")
     if not normalized_name:
