@@ -16,6 +16,7 @@ from app.api.profile import create_profile_router
 from app.api.student import create_student_router
 from app.api.teacher import create_teacher_router
 from app.core.config import DEFAULT_JWT_SECRET, AppSettings, load_settings
+from app.core.observability import RequestIdMiddleware, configure_json_logging
 from app.core.security import configure_jwt
 from app.database import (
     DATABASE_URL,
@@ -34,6 +35,7 @@ def create_app(
 ) -> FastAPI:
     resolved_settings = settings or load_settings()
     configure_jwt(resolved_settings.jwt_secret or DEFAULT_JWT_SECRET)
+    configure_json_logging("mutiagent-backend")
     resolved_database_url = (
         database_url or resolved_settings.database_url or DATABASE_URL
     )
@@ -42,6 +44,7 @@ def create_app(
     init_db(engine, seed_users=not resolved_settings.is_production)
 
     app = FastAPI(title="Mutiagent API", version="0.1.0")
+    app.add_middleware(RequestIdMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(
