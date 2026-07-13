@@ -349,7 +349,17 @@ for restore_signal in INT TERM; do
   child_pid="$(<"$RESTORE_SIGNAL_CHILD_PID")"
   import_pid="$(ps -o ppid= -p "$child_pid" | tr -d ' ')"
   test -n "$import_pid"
-  kill -s "$restore_signal" "$import_pid"
+  for _ in {1..100}; do
+    if ! kill -0 "$import_pid" 2>/dev/null; then
+      break
+    fi
+    kill -s "$restore_signal" "$import_pid"
+    sleep 0.05
+  done
+  if kill -0 "$import_pid" 2>/dev/null; then
+    printf '%s\n' "restore import ignored $restore_signal" >&2
+    exit 1
+  fi
   if wait "$restore_pid"; then
     printf '%s\n' "restore unexpectedly passed $restore_signal" >&2
     exit 1
