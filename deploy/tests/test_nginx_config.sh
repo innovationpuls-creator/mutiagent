@@ -11,6 +11,7 @@ DOCKERFILE="$REPO_ROOT/frontend/Dockerfile"
 COMPOSE_FILE="$REPO_ROOT/deploy/compose.production.yml"
 NGINX_IMAGE="nginx:1.28-alpine"
 PUBLIC_IPV4="192.0.2.10"
+MAINTENANCE_BYPASS_TOKEN="nginx-test-maintenance-bypass"
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
@@ -92,6 +93,16 @@ def assert_security_headers(block: str, request_id_variable: str) -> None:
 
 
 nginx_conf, bootstrap, production, dockerfile, compose = map(read, sys.argv[1:])
+
+assert re.search(
+    r"map\s+\$http_x_onetree_maintenance_bypass\s+\$maintenance_marker\s*\{"
+    r".*?default\s+/var/www/certbot/\.onetree-maintenance;"
+    r'.*?"\$\{MAINTENANCE_BYPASS_TOKEN\}"\s+'
+    r"/var/www/certbot/\.onetree-maintenance-bypassed;"
+    r".*?\}",
+    production,
+    flags=re.DOTALL,
+)
 
 for directive in (
     "server_tokens off;",
@@ -195,6 +206,11 @@ for https_server in https_servers:
     assert_security_headers(https_server, "response_request_id")
     assert "proxy_hide_header X-Request-ID;" in https_server
     assert "proxy_intercept_errors on;" in https_server
+    assert re.search(
+        r"if\s*\(-f\s+\$maintenance_marker\)\s*\{"
+        r"\s*return 503;\s*\}",
+        https_server,
+    )
     assert (
         'add_header Strict-Transport-Security '
         '"max-age=31536000; includeSubDomains" always;'
@@ -233,6 +249,11 @@ for source in (
 
 assert "NGINX_CONFIG_MODE: ${NGINX_CONFIG_MODE:-bootstrap}" in compose
 assert "PUBLIC_IPV4: ${PUBLIC_IPV4}" in compose
+assert (
+    "MAINTENANCE_BYPASS_TOKEN: "
+    "${MAINTENANCE_BYPASS_TOKEN:?MAINTENANCE_BYPASS_TOKEN is required}"
+    in compose
+)
 assert 'case "$${NGINX_CONFIG_MODE}" in' in compose
 assert "bootstrap|production)" in compose
 assert "exit 64" in compose
@@ -240,6 +261,7 @@ assert (
     '"/opt/onetree/nginx/conf.d/$${NGINX_CONFIG_MODE}.conf.template"'
     in compose
 )
+assert "'$${PUBLIC_IPV4} $${MAINTENANCE_BYPASS_TOKEN}'" in compose
 PY
 
 mkdir -p \
@@ -262,13 +284,19 @@ for cert_name in onetree-domain onetree-ip; do
     "$TEMP_DIR/letsencrypt/live/$cert_name/privkey.pem"
 done
 
-python3 - "$PRODUCTION_TEMPLATE" "$TEMP_DIR/production.conf" "$PUBLIC_IPV4" <<'PY'
+python3 - \
+  "$PRODUCTION_TEMPLATE" \
+  "$TEMP_DIR/production.conf" \
+  "$PUBLIC_IPV4" \
+  "$MAINTENANCE_BYPASS_TOKEN" <<'PY'
 from pathlib import Path
 import sys
 
 template = Path(sys.argv[1]).read_text(encoding="utf-8")
 Path(sys.argv[2]).write_text(
-    template.replace("${PUBLIC_IPV4}", sys.argv[3]),
+    template.replace("${PUBLIC_IPV4}", sys.argv[3]).replace(
+        "${MAINTENANCE_BYPASS_TOKEN}", sys.argv[4]
+    ),
     encoding="utf-8",
 )
 PY
@@ -301,6 +329,7 @@ export LETSENCRYPT_EMAIL=nginx-test@example.com
 export SMOKE_ACCOUNT=18771701100
 export SMOKE_PASSWORD=nginx-test-password
 export PUBLIC_IPV4
+export MAINTENANCE_BYPASS_TOKEN
 
 docker compose --profile operations -f "$COMPOSE_FILE" config --format json \
   > "$TEMP_DIR/compose.json"

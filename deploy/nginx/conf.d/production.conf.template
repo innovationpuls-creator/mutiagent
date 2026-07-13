@@ -1,3 +1,8 @@
+map $http_x_onetree_maintenance_bypass $maintenance_marker {
+    default /var/www/certbot/.onetree-maintenance;
+    "${MAINTENANCE_BYPASS_TOKEN}" /var/www/certbot/.onetree-maintenance-bypassed;
+}
+
 server {
     listen 80;
     listen [::]:80;
@@ -76,6 +81,9 @@ server {
     }
 
     location = /api/auth/login {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
         limit_req zone=login_limit burst=5 nodelay;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -85,6 +93,9 @@ server {
     }
 
     location = /api/auth/register {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
         limit_req zone=register_limit burst=2 nodelay;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -94,6 +105,9 @@ server {
     }
 
     location = /api/admin/knowledge-base/uploads {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
         client_max_body_size 101m;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -103,6 +117,9 @@ server {
     }
 
     location /api {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -111,6 +128,9 @@ server {
     }
 
     location / {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
         try_files $uri $uri/ /index.html;
     }
 }
@@ -143,6 +163,9 @@ server {
     }
 
     location = /api/auth/login {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
         limit_req zone=login_limit burst=5 nodelay;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -152,6 +175,9 @@ server {
     }
 
     location = /api/auth/register {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
         limit_req zone=register_limit burst=2 nodelay;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -161,6 +187,9 @@ server {
     }
 
     location = /api/admin/knowledge-base/uploads {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
         client_max_body_size 101m;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -170,6 +199,9 @@ server {
     }
 
     location /api {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -178,6 +210,9 @@ server {
     }
 
     location / {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
         try_files $uri $uri/ /index.html;
     }
 }

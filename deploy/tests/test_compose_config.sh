@@ -15,6 +15,7 @@ export LLM_MODEL=compose-test-llm-model
 export LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 export ALLOWED_ORIGINS=https://onetree.chat,https://www.onetree.chat
 export PUBLIC_IPV4=192.0.2.10
+export MAINTENANCE_BYPASS_TOKEN=compose-test-maintenance-bypass
 export LETSENCRYPT_EMAIL=compose-test@example.com
 export SMOKE_ACCOUNT=18771701100
 export SMOKE_PASSWORD=compose-test-password
@@ -115,6 +116,12 @@ nginx_build = services["nginx"]["build"]
 assert nginx_build["target"] == "dist"
 assert nginx_build["args"]["NPM_REGISTRY"] == "https://registry.npmjs.org"
 assert "/opt/onetree/frontend-dist" in " ".join(services["nginx"]["command"])
+assert services["nginx"]["environment"]["MAINTENANCE_BYPASS_TOKEN"] == (
+    "compose-test-maintenance-bypass"
+)
+assert services["smoke"]["environment"]["MAINTENANCE_BYPASS_TOKEN"] == (
+    "compose-test-maintenance-bypass"
+)
 
 upload_dir = services["backend"]["environment"]["KNOWLEDGE_BASE_UPLOAD_DIR"]
 for service_name in ("backend", "worker", "backup", "restore"):
@@ -137,3 +144,10 @@ for service_name in ("backup", "restore"):
 
 print("production compose config passed")
 PY
+
+if env -u MAINTENANCE_BYPASS_TOKEN \
+  docker compose --profile operations -f "$COMPOSE_FILE" config \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'missing MAINTENANCE_BYPASS_TOKEN was accepted' >&2
+  exit 1
+fi
