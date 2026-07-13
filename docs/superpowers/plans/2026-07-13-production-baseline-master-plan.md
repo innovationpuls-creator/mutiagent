@@ -6,7 +6,7 @@
 
 **Architecture:** 按风险和依赖拆成四个子计划。先建立生产配置与观测边界，再把数据库升级和长任务变成可恢复基础设施，随后实现容器与发布系统，最后接入 CI、文档和真实服务器验收。
 
-**Tech Stack:** FastAPI, SQLModel, Alembic, PostgreSQL 15, React 18, Vite, Docker Compose, nginx, Certbot 5.4+, GitHub Actions, Bash, systemd.
+**Tech Stack:** FastAPI, SQLModel, Alembic, PostgreSQL 18, React 18, Vite, Docker Compose, nginx, Certbot 5.4+, GitHub Actions, Bash, systemd.
 
 ## Global Constraints
 

@@ -22,7 +22,7 @@
 <img src="https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black"/>
 <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white"/>
 <img src="https://img.shields.io/badge/LangGraph-FF8C42?style=for-the-badge&logoColor=white"/>
-<img src="https://img.shields.io/badge/PostgreSQL-15-4169E1?style=for-the-badge&logo=postgresql&logoColor=white"/>
+<img src="https://img.shields.io/badge/PostgreSQL-18-4169E1?style=for-the-badge&logo=postgresql&logoColor=white"/>
 </p>
 
 <p>
@@ -132,7 +132,7 @@ graph TD
 > | 工具 | 用途 | 最低版本 |
 > |:---|:---|:---|
 > | [Node.js](https://nodejs.org) | 前端运行时 | v18+ |
-> | [PostgreSQL](https://www.postgresql.org/download/) | 数据库 | v15 |
+> | [PostgreSQL](https://www.postgresql.org/download/) | 数据库 | v18 |
 > | [uv](https://github.com/astral-sh/uv) | Python 管理（见第一步） | 最新 |
 > | LLM API Key | 兼容 OpenAI 格式（如[阿里百炼](https://bailian.console.aliyun.com/)） | — |
 

@@ -75,7 +75,7 @@
 
 ### 4.4 `postgres`
 
-- 运行 PostgreSQL 15，与项目 README 声明的主版本一致。
+- 运行 PostgreSQL 18，与已确认的本地 PostgreSQL 18.3 保持同一主版本。
 - 只加入 Docker 内部网络，不发布 `5432` 到主机。
 - 数据目录使用命名 volume。
 - 配置健康检查。

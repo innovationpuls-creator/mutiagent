@@ -6,7 +6,7 @@
 
 **Architecture:** GitHub Actions 按 backend/migration/frontend/containers/smoke 分 job；部署文档只引用已经由脚本测试验证的命令。最终验收同时使用 CI、故障注入和真实服务器输出，不用局部测试替代整体证据。
 
-**Tech Stack:** GitHub Actions, PostgreSQL 15 service container, uv, npm, Biome, Vitest, Docker Compose, shellcheck, Markdown.
+**Tech Stack:** GitHub Actions, PostgreSQL 18 service container, uv, npm, Biome, Vitest, Docker Compose, shellcheck, Markdown.
 
 ## Global Constraints
 
@@ -34,7 +34,7 @@
 
 - [ ] **Step 2: 编写 backend job**
 
-PostgreSQL 15 service 配置健康检查；执行 `uv sync --extra test`、`uv run ruff check app tests`、`uv run ruff format --check app tests`、`uv run pytest -q`。不得通过调高 locks 参数让测试通过。
+PostgreSQL 18 service 配置健康检查；执行 `uv sync --extra test`、`uv run ruff check app tests`、`uv run ruff format --check app tests`、`uv run pytest -q`。不得通过调高 locks 参数让测试通过。
 
 - [ ] **Step 3: 编写 migration job**
 

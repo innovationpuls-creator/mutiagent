@@ -6,7 +6,7 @@
 
 **Architecture:** 先修复测试 schema 生命周期，再建立空库与现有库两条明确 Alembic 路径。worker 通过 PostgreSQL lease 和 `FOR UPDATE SKIP LOCKED` claim；数据迁移与部署快照都使用 hash manifest 和原子提交。
 
-**Tech Stack:** PostgreSQL 15, Alembic, SQLModel, pytest, Bash, pg_dump/pg_restore, tar, SHA-256.
+**Tech Stack:** PostgreSQL 18, Alembic, SQLModel, pytest, Bash, pg_dump/pg_restore, tar, SHA-256.
 
 ## Global Constraints
 
@@ -188,7 +188,7 @@ Expected: FAIL，因为模块不存在。
 
 先在 staging 目录完整验证，再 `pg_restore` 到明确维护态目标库；教材 tar 解压到 staging，拒绝 path traversal，最后原子替换目标目录。
 
-- [ ] **Step 5: 运行 PostgreSQL 15 roundtrip**
+- [ ] **Step 5: 运行 PostgreSQL 18 roundtrip**
 
 Run: `bash deploy/tests/test_migration_roundtrip.sh`
 Expected: 管理员、`18771701100`、`18771701111` 与教材层级/hash 全部一致。
