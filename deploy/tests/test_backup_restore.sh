@@ -336,7 +336,36 @@ for validation_signal in INT TERM; do
   wrapper_pid="$(<"$wrapper_file")"
   validation_import_pid="$(ps -o ppid= -p "$wrapper_pid" | tr -d ' ')"
   test -n "$validation_import_pid"
+  signal_started_ms="$(python3 -c 'import time; print(time.monotonic_ns() // 1_000_000)')"
   kill -s "$validation_signal" "$validation_import_pid"
+  validation_exited=0
+  for _ in {1..100}; do
+    if ! kill -0 "$validation_import_pid" 2>/dev/null; then
+      validation_exited=1
+      break
+    fi
+    import_state="$(ps -o stat= -p "$validation_import_pid" | tr -d ' ')"
+    if [[ "$import_state" == Z* ]]; then
+      validation_exited=1
+      break
+    fi
+    sleep 0.05
+  done
+  if [[ "$validation_exited" -ne 1 ]]; then
+    validation_pgid="$(<"$pgid_file")"
+    kill -TERM -- "-$validation_pgid" 2>/dev/null || true
+    sleep 0.2
+    kill -KILL -- "-$validation_pgid" 2>/dev/null || true
+    wait "$validation_restore_pid" 2>/dev/null || true
+    printf '%s\n' "validation restore exceeded 5 second $validation_signal deadline" >&2
+    exit 1
+  fi
+  signal_finished_ms="$(python3 -c 'import time; print(time.monotonic_ns() // 1_000_000)')"
+  signal_elapsed_ms=$((signal_finished_ms - signal_started_ms))
+  if [[ "$signal_elapsed_ms" -ge 5000 ]]; then
+    printf '%s\n' "validation restore $validation_signal took ${signal_elapsed_ms}ms" >&2
+    exit 1
+  fi
   if wait "$validation_restore_pid"; then
     printf '%s\n' "validation restore unexpectedly passed $validation_signal" >&2
     exit 1
