@@ -302,7 +302,22 @@ for restore_signal in INT TERM; do
       exit 1
     fi
   fi
-  test "$(<"$UPLOADS_TARGET/chapter/version.txt")" = "snapshot-4"
+  upload_version="$(<"$UPLOADS_TARGET/chapter/version.txt")"
+  database_username="$(DATABASE_URL="$TARGET_URL" uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
+import os
+from sqlalchemy import create_engine, text
+with create_engine(os.environ["DATABASE_URL"]).connect() as connection:
+    print(connection.execute(
+        text('SELECT username FROM "user" WHERE identifier = :identifier'),
+        {"identifier": "18771701100"},
+    ).scalar_one())
+PY
+)"
+  if [[ "$upload_version:$database_username" != "snapshot-4:user-100" && \
+        "$upload_version:$database_username" != "snapshot-5:changed-after-backup" ]]; then
+    printf '%s\n' "restore left inconsistent data after $restore_signal" >&2
+    exit 1
+  fi
   test -z "$(find "$RESTORE_SIGNAL_TMP" -mindepth 1 -print -quit)"
   test -z "$(find "$(dirname "$UPLOADS_TARGET")" -maxdepth 1 -type d -name '.migration-import.*' -print -quit)"
   MAINTENANCE_URL="$MAINTENANCE_URL" uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
@@ -314,17 +329,6 @@ with psycopg2.connect(os.environ["MAINTENANCE_URL"]) as connection:
         assert cursor.fetchone() == (0,)
 PY
 done
-
-DATABASE_URL="$TARGET_URL" uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
-import os
-from sqlalchemy import create_engine, text
-with create_engine(os.environ["DATABASE_URL"]).connect() as connection:
-    username = connection.execute(
-        text('SELECT username FROM "user" WHERE identifier = :identifier'),
-        {"identifier": "18771701100"},
-    ).scalar_one()
-assert username == "user-100"
-PY
 
 SIGNAL_BIN="$TMP_DIR/signal-bin"
 SIGNAL_MARKER="$TMP_DIR/signal-marker"
