@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+    printf 'smoke check failed: %s\n' "$1" >&2
+    exit 1
+}
+
+[[ -n "${BASE_URL:-}" ]] || fail "BASE_URL is required"
+[[ -n "${PUBLIC_IPV4:-}" ]] || fail "PUBLIC_IPV4 is required"
+[[ -n "${MAINTENANCE_BYPASS_TOKEN:-}" ]] || \
+    fail "MAINTENANCE_BYPASS_TOKEN is required"
+[[ -n "${SMOKE_ACCOUNT:-}" ]] || fail "SMOKE_ACCOUNT is required"
+[[ -n "${SMOKE_PASSWORD:-}" ]] || fail "SMOKE_PASSWORD is required"
+
+connect_host="$({
+    python - <<'PY'
+from __future__ import annotations
+
+import os
+from urllib.parse import urlsplit
+
+base_url = urlsplit(os.environ["BASE_URL"])
+if (
+    base_url.scheme != "https"
+    or base_url.hostname is None
+    or base_url.port not in (None, 443)
+    or base_url.username is not None
+    or base_url.password is not None
+    or base_url.path not in ("", "/")
+    or base_url.query
+    or base_url.fragment
+):
+    raise SystemExit(1)
+print(base_url.hostname)
+PY
+} 2>/dev/null)" || fail "BASE_URL must be an HTTPS origin"
+
+if ! python - <<'PY' 2>/dev/null
+from __future__ import annotations
+
+import ipaddress
+import os
+
+address = ipaddress.ip_address(os.environ["PUBLIC_IPV4"])
+if address.version != 4:
+    raise SystemExit(1)
+PY
+then
+    fail "PUBLIC_IPV4 must be an IPv4 address"
+fi
+
+umask 077
+temp_dir="$(mktemp -d)" || fail "cannot create temporary directory"
+trap 'rm -rf "$temp_dir"' EXIT
+login_payload_file="$temp_dir/login.json"
+authorization_header_file="$temp_dir/authorization.header"
+maintenance_header_file="$temp_dir/maintenance.header"
+printf 'X-OneTree-Maintenance-Bypass: %s\n' "$MAINTENANCE_BYPASS_TOKEN" \
+    > "$maintenance_header_file" || fail "maintenance bypass header"
+
+https_url="https://${PUBLIC_IPV4}"
+http_url="http://${PUBLIC_IPV4}"
+https_connect="${PUBLIC_IPV4}:443:${connect_host}:443"
+http_connect="${PUBLIC_IPV4}:80:${connect_host}:80"
+curl_common=(
+    --fail
+    --silent
+    --show-error
+    --connect-timeout 5
+    --max-time 15
+)
+
+if ! curl "${curl_common[@]}" \
+    --head \
+    --output /dev/null \
+    --header "@${maintenance_header_file}" \
+    "https://onetree.chat/"; then
+    fail "public domain TLS"
+fi
+
+if ! curl "${curl_common[@]}" \
+    --head \
+    --output /dev/null \
+    --header "@${maintenance_header_file}" \
+    --connect-to "$https_connect" \
+    "${https_url}/"; then
+    fail "TLS"
+fi
+
+redirect_result="$(
+    curl \
+        --silent \
+        --show-error \
+        --connect-timeout 5 \
+        --max-time 15 \
+        --head \
+        --output /dev/null \
+        --write-out '%{http_code}\n%{redirect_url}\n' \
+        --connect-to "$http_connect" \
+        "${http_url}/"
+)" || fail "HTTP redirect request"
+redirect_status="${redirect_result%%$'\n'*}"
+redirect_url="${redirect_result#*$'\n'}"
+if [[ "$redirect_status" != "301" || "$redirect_url" != "${https_url}/" ]]; then
+    fail "HTTP to HTTPS redirect"
+fi
+
+live_response="$(
+    curl "${curl_common[@]}" \
+        --header "@${maintenance_header_file}" \
+        --connect-to "$https_connect" \
+        "${https_url}/api/health/live"
+)" || fail "liveness request"
+if ! printf '%s' "$live_response" | python -c '
+import json
+import sys
+
+payload = json.load(sys.stdin)
+if not isinstance(payload, dict) or payload.get("status") != "ok":
+    raise SystemExit(1)
+' 2>/dev/null; then
+    fail "liveness response"
+fi
+
+ready_response="$(
+    curl "${curl_common[@]}" \
+        --header "@${maintenance_header_file}" \
+        --connect-to "$https_connect" \
+        "${https_url}/api/health/ready"
+)" || fail "readiness request"
+if ! printf '%s' "$ready_response" | python -c '
+import json
+import sys
+
+payload = json.load(sys.stdin)
+if (
+    not isinstance(payload, dict)
+    or payload.get("status") != "ok"
+    or payload.get("database") != "connected"
+):
+    raise SystemExit(1)
+' 2>/dev/null; then
+    fail "readiness response"
+fi
+
+if ! curl "${curl_common[@]}" \
+    --output /dev/null \
+    --header "@${maintenance_header_file}" \
+    --connect-to "$https_connect" \
+    "${https_url}/"; then
+    fail "home"
+fi
+
+if ! python - <<'PY' > "$login_payload_file" 2>/dev/null
+from __future__ import annotations
+
+import json
+import os
+import sys
+
+json.dump(
+    {
+        "account": os.environ["SMOKE_ACCOUNT"],
+        "password": os.environ["SMOKE_PASSWORD"],
+    },
+    sys.stdout,
+    ensure_ascii=False,
+    separators=(",", ":"),
+)
+PY
+then
+    fail "login payload"
+fi
+
+login_response="$(
+    curl "${curl_common[@]}" \
+        --request POST \
+        --header "Content-Type: application/json" \
+        --header "@${maintenance_header_file}" \
+        --data-binary "@${login_payload_file}" \
+        --connect-to "$https_connect" \
+        "${https_url}/api/auth/login"
+)" || fail "login request"
+access_token="$(
+    printf '%s' "$login_response" | python -c '
+import json
+import sys
+
+payload = json.load(sys.stdin)
+token = payload.get("access_token") if isinstance(payload, dict) else None
+if (
+    not isinstance(token, str)
+    or not token
+    or "\r" in token
+    or "\n" in token
+):
+    raise SystemExit(1)
+sys.stdout.write(token)
+' 2>/dev/null
+)" || fail "login response"
+printf 'Authorization: Bearer %s\n' "$access_token" \
+    > "$authorization_header_file" || fail "authorization header"
+unset access_token login_response
+
+me_response="$(
+    curl "${curl_common[@]}" \
+        --header "@${authorization_header_file}" \
+        --header "@${maintenance_header_file}" \
+        --connect-to "$https_connect" \
+        "${https_url}/api/auth/me"
+)" || fail "authentication request"
+me_identifier="$(
+    printf '%s' "$me_response" | python -c '
+import json
+import sys
+
+payload = json.load(sys.stdin)
+identifier = payload.get("identifier") if isinstance(payload, dict) else None
+if not isinstance(identifier, str):
+    raise SystemExit(1)
+sys.stdout.write(identifier)
+' 2>/dev/null
+)" || fail "authentication response"
+if [[ "$me_identifier" != "$SMOKE_ACCOUNT" ]]; then
+    fail "authenticated account"
+fi
+
+printf 'smoke checks passed\n'
