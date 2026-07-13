@@ -14,16 +14,20 @@ DEPLOY_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(DEPLOY_DIR / "lib"))
 
 from backup_manifest import (  # noqa: E402
+    assert_repository_clean,
     publish_snapshot,
     rotate_snapshots,
+    validate_backup_paths,
     validate_snapshot_directory,
     write_snapshot_manifest,
 )
 from migration_manifest import (  # noqa: E402
+    create_bundle_archive,
     inspect_database_identity,
     postgres_service_environment,
     run_process_group,
     termination_signal_guard,
+    write_manifest,
 )
 
 
@@ -48,19 +52,23 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="创建 OneTree 部署前快照")
     parser.add_argument("snapshot_root", type=Path)
     parser.add_argument("uploads_source", type=Path)
-    parser.add_argument("--repo-root", type=Path, default=DEPLOY_DIR.parent)
     arguments = parser.parse_args()
 
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
         raise RuntimeError("必须通过 DATABASE_URL 指定生产数据库")
-    repository = arguments.repo_root.resolve()
-    uploads_source = arguments.uploads_source.expanduser().absolute()
-    snapshot_root = arguments.snapshot_root.expanduser().absolute()
+    if os.environ.get("ONETREE_MAINTENANCE_MODE") != "1":
+        raise RuntimeError("仅允许在 ONETREE_MAINTENANCE_MODE=1 时备份")
+    repository = DEPLOY_DIR.parent.resolve()
+    uploads_source = arguments.uploads_source.expanduser().resolve()
+    snapshot_root = arguments.snapshot_root.expanduser().resolve(strict=False)
+    validate_backup_paths(uploads_source, snapshot_root)
+    assert_repository_clean(repository)
     if not uploads_source.is_dir() or uploads_source.is_symlink():
         raise RuntimeError("教材源必须是普通目录")
     if snapshot_root.is_symlink():
         raise RuntimeError("快照根目录不得是 symlink")
+    root_created = not snapshot_root.exists()
     snapshot_root.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now(UTC)
@@ -93,10 +101,38 @@ def main() -> int:
                 alembic_revision=identity["alembic_revision"],
             )
             validate_snapshot_directory(staging)
+            validation_directory = Path(tempfile.mkdtemp(prefix=".snapshot-check."))
+            try:
+                for name in ("database.dump", "knowledge-base-uploads.tar"):
+                    shutil.copy2(staging / name, validation_directory / name)
+                write_manifest(
+                    validation_directory,
+                    identity["schema_state"],
+                    identity["alembic_revision"],
+                )
+                validation_bundle = validation_directory / "snapshot.tar"
+                create_bundle_archive(validation_directory, validation_bundle)
+                run_process_group(
+                    [
+                        str(DEPLOY_DIR / "bin" / "import-bundle"),
+                        str(validation_bundle),
+                        "--validate-only",
+                    ],
+                    check=True,
+                    env={**os.environ, "TARGET_DATABASE_URL": database_url},
+                )
+            finally:
+                shutil.rmtree(validation_directory, ignore_errors=True)
             snapshot = publish_snapshot(staging, snapshot_root, snapshot_id)
             rotate_snapshots(snapshot_root, keep=3)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
+            if (
+                root_created
+                and snapshot_root.exists()
+                and not any(snapshot_root.iterdir())
+            ):
+                snapshot_root.rmdir()
     print(snapshot.name)
     return 0
 

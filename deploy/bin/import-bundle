@@ -211,7 +211,8 @@ def _validate_dump_in_temporary_database(
 def main() -> int:
     parser = argparse.ArgumentParser(description="导入 OneTree 数据迁移包")
     parser.add_argument("bundle", type=Path)
-    parser.add_argument("uploads_target", type=Path)
+    parser.add_argument("uploads_target", type=Path, nargs="?")
+    parser.add_argument("--validate-only", action="store_true")
     arguments = parser.parse_args()
     database_url = os.environ.get("TARGET_DATABASE_URL", "")
     if not database_url:
@@ -219,14 +220,20 @@ def main() -> int:
     if os.environ.get("ONETREE_MAINTENANCE_MODE") != "1":
         raise RuntimeError("仅允许在 ONETREE_MAINTENANCE_MODE=1 时导入")
 
-    raw_uploads_target = arguments.uploads_target.expanduser()
-    validate_replacement_target(raw_uploads_target)
-    uploads_target = raw_uploads_target.absolute()
-    uploads_target.parent.mkdir(parents=True, exist_ok=True)
-    validate_replacement_target(uploads_target)
-    staging_root = Path(
-        tempfile.mkdtemp(prefix=".migration-import.", dir=uploads_target.parent)
-    )
+    if arguments.validate_only:
+        staging_root = Path(tempfile.mkdtemp(prefix=".migration-validate."))
+        uploads_target = None
+    else:
+        if arguments.uploads_target is None:
+            raise RuntimeError("导入必须指定教材目标目录")
+        raw_uploads_target = arguments.uploads_target.expanduser()
+        validate_replacement_target(raw_uploads_target)
+        uploads_target = raw_uploads_target.absolute()
+        uploads_target.parent.mkdir(parents=True, exist_ok=True)
+        validate_replacement_target(uploads_target)
+        staging_root = Path(
+            tempfile.mkdtemp(prefix=".migration-import.", dir=uploads_target.parent)
+        )
     verified_bundle = staging_root / "bundle"
     staged_uploads = staging_root / "uploads"
     with termination_signal_guard():
@@ -249,6 +256,10 @@ def main() -> int:
                 staging_root,
                 database_environment,
             )
+            if arguments.validate_only:
+                print("数据库、账号和教材快照预验证完成")
+                return 0
+            assert uploads_target is not None
             _restore_target_with_upload_compensation(
                 verified_bundle / "database.dump",
                 database_environment,

@@ -13,6 +13,7 @@ sys.path.insert(0, str(DEPLOY_DIR / "lib"))
 
 from backup_manifest import (  # noqa: E402
     assert_git_commit,
+    assert_repository_clean,
     validate_snapshot_directory,
 )
 from migration_manifest import (  # noqa: E402
@@ -28,7 +29,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="恢复 OneTree 生产快照")
     parser.add_argument("snapshot", type=Path)
     parser.add_argument("uploads_target", type=Path)
-    parser.add_argument("--repo-root", type=Path, default=DEPLOY_DIR.parent)
     arguments = parser.parse_args()
 
     database_url = os.environ.get("TARGET_DATABASE_URL", "")
@@ -36,7 +36,8 @@ def main() -> int:
         raise RuntimeError("必须通过 TARGET_DATABASE_URL 指定维护态目标库")
     if os.environ.get("ONETREE_MAINTENANCE_MODE") != "1":
         raise RuntimeError("仅允许在 ONETREE_MAINTENANCE_MODE=1 时恢复")
-    repository = arguments.repo_root.resolve()
+    repository = DEPLOY_DIR.parent.resolve()
+    assert_repository_clean(repository)
     snapshot = arguments.snapshot.expanduser().absolute()
     staging_root = Path(tempfile.mkdtemp(prefix=".snapshot-restore."))
     verified = staging_root / "verified"

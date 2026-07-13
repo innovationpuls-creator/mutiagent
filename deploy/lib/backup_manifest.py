@@ -131,6 +131,28 @@ def assert_git_commit(manifest: dict[str, Any], repository: Path) -> None:
         raise SnapshotValidationError("当前 Git commit 与快照不一致")
 
 
+def assert_repository_clean(repository: Path) -> None:
+    result = run_process_group(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    if result.stdout:
+        raise SnapshotValidationError("Git 工作树、索引或未跟踪文件不干净")
+
+
+def validate_backup_paths(uploads_source: Path, snapshot_root: Path) -> None:
+    if uploads_source == snapshot_root:
+        raise SnapshotValidationError("教材目录与快照目录不得相同")
+    if (
+        uploads_source in snapshot_root.parents
+        or snapshot_root in uploads_source.parents
+    ):
+        raise SnapshotValidationError("教材目录与快照目录不得互为祖先或后代")
+
+
 def _validate_manifest(manifest: object) -> None:
     serialized = json.dumps(manifest, ensure_ascii=False)
     if any(name in serialized for name in FORBIDDEN_SECRET_NAMES):

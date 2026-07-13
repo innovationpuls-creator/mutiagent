@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BACKEND_DIR="$REPO_ROOT/backend"
+SOURCE_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_DIR="$(mktemp -d)"
+REPO_ROOT="$TMP_DIR/repository"
+mkdir "$REPO_ROOT"
+git -C "$SOURCE_REPO_ROOT" archive HEAD | tar -x -C "$REPO_ROOT"
+git -C "$REPO_ROOT" init -q
+git -C "$REPO_ROOT" config user.email test@example.com
+git -C "$REPO_ROOT" config user.name "Backup Test"
+git -C "$REPO_ROOT" add .
+git -C "$REPO_ROOT" commit -qm initial
+BACKEND_DIR="$REPO_ROOT/backend"
+export UV_PROJECT_ENVIRONMENT="$SOURCE_REPO_ROOT/backend/.venv"
 SOURCE_DB="onetree_backup_source_$$"
 TARGET_DB="onetree_backup_target_$$"
 MAINTENANCE_URL="${BACKUP_TEST_MAINTENANCE_URL:-postgresql:///postgres}"
@@ -84,8 +93,8 @@ printf '%s\n' 'old target' > "$UPLOADS_TARGET/old.txt"
 
 for index in 1 2 3 4; do
   printf '%s\n' "snapshot-$index" > "$UPLOADS_SOURCE/chapter/version.txt"
-  DATABASE_URL="$SOURCE_URL" "$REPO_ROOT/deploy/bin/backup" \
-    "$BACKUPS" "$UPLOADS_SOURCE" --repo-root "$REPO_ROOT" >/dev/null
+  DATABASE_URL="$SOURCE_URL" ONETREE_MAINTENANCE_MODE=1 "$REPO_ROOT/deploy/bin/backup" \
+    "$BACKUPS" "$UPLOADS_SOURCE" >/dev/null
 done
 test "$(find "$BACKUPS" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | wc -l | tr -d ' ')" = "3"
 SNAPSHOT="$(find "$BACKUPS" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort | tail -1)"
@@ -95,14 +104,33 @@ FAIL_BIN="$TMP_DIR/fail-bin"
 mkdir "$FAIL_BIN"
 printf '%s\n' '#!/usr/bin/env bash' 'exit 93' > "$FAIL_BIN/pg_dump"
 chmod 700 "$FAIL_BIN/pg_dump"
-if PATH="$FAIL_BIN:$PATH" DATABASE_URL="$SOURCE_URL" \
+if PATH="$FAIL_BIN:$PATH" DATABASE_URL="$SOURCE_URL" ONETREE_MAINTENANCE_MODE=1 \
   "$REPO_ROOT/deploy/bin/backup" "$BACKUPS" "$UPLOADS_SOURCE" \
-  --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
+  >/dev/null 2>&1; then
   printf '%s\n' 'failing pg_dump unexpectedly published a snapshot' >&2
   exit 1
 fi
 test "$VISIBLE_BEFORE" = "$(find "$BACKUPS" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort)"
 test -z "$(find "$BACKUPS" -mindepth 1 -maxdepth 1 -type d -name '.snapshot.*' -print -quit)"
+
+CORRUPT_BIN="$TMP_DIR/corrupt-bin"
+REAL_PG_DUMP="$(command -v pg_dump)"
+mkdir "$CORRUPT_BIN"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  '"$REAL_PG_DUMP" "$@"' \
+  'output=""' \
+  'for argument in "$@"; do case "$argument" in --file=*) output="${argument#--file=}" ;; esac; done' \
+  'printf "%s\n" corrupt > "$output"' > "$CORRUPT_BIN/pg_dump"
+chmod 700 "$CORRUPT_BIN/pg_dump"
+if PATH="$CORRUPT_BIN:$PATH" REAL_PG_DUMP="$REAL_PG_DUMP" \
+  DATABASE_URL="$SOURCE_URL" ONETREE_MAINTENANCE_MODE=1 \
+  "$REPO_ROOT/deploy/bin/backup" "$BACKUPS" "$UPLOADS_SOURCE" >/dev/null 2>&1; then
+  printf '%s\n' 'zero-exit corrupt dump unexpectedly published a snapshot' >&2
+  exit 1
+fi
+test "$VISIBLE_BEFORE" = "$(find "$BACKUPS" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort)"
 
 DATABASE_URL="$TARGET_URL" uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
 import os
@@ -117,7 +145,7 @@ cp -R "$SNAPSHOT" "$TAMPERED"
 printf '%s\n' 'tampered' >> "$TAMPERED/database.dump"
 if TARGET_DATABASE_URL="$TARGET_URL" ONETREE_MAINTENANCE_MODE=1 \
   "$REPO_ROOT/deploy/bin/restore" "$TAMPERED" "$UPLOADS_TARGET" \
-  --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
+  >/dev/null 2>&1; then
   printf '%s\n' 'tampered snapshot unexpectedly restored' >&2
   exit 1
 fi
@@ -131,7 +159,7 @@ PY
 
 TARGET_DATABASE_URL="$TARGET_URL" ONETREE_MAINTENANCE_MODE=1 \
   "$REPO_ROOT/deploy/bin/restore" "$SNAPSHOT" "$UPLOADS_TARGET" \
-  --repo-root "$REPO_ROOT" >/dev/null
+  >/dev/null
 test ! -e "$UPLOADS_TARGET/old.txt"
 test "$(<"$UPLOADS_TARGET/chapter/textbook.txt")" = "original textbook"
 test "$(<"$UPLOADS_TARGET/chapter/version.txt")" = "snapshot-4"
@@ -154,8 +182,8 @@ with create_engine(os.environ["DATABASE_URL"]).begin() as connection:
         {"username": "changed-after-backup", "identifier": "18771701100"},
     )
 PY
-DATABASE_URL="$SOURCE_URL" "$REPO_ROOT/deploy/bin/backup" \
-  "$BACKUPS" "$UPLOADS_SOURCE" --repo-root "$REPO_ROOT" >/dev/null
+DATABASE_URL="$SOURCE_URL" ONETREE_MAINTENANCE_MODE=1 "$REPO_ROOT/deploy/bin/backup" \
+  "$BACKUPS" "$UPLOADS_SOURCE" >/dev/null
 NEW_SNAPSHOT="$(find "$BACKUPS" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort | tail -1)"
 RESTORE_FAIL_BIN="$TMP_DIR/restore-fail-bin"
 RESTORE_COUNT="$TMP_DIR/restore-count"
@@ -174,7 +202,7 @@ chmod 700 "$RESTORE_FAIL_BIN/pg_restore"
 if PATH="$RESTORE_FAIL_BIN:$PATH" RESTORE_COUNT="$RESTORE_COUNT" \
   REAL_PG_RESTORE="$REAL_PG_RESTORE" TARGET_DATABASE_URL="$TARGET_URL" \
   ONETREE_MAINTENANCE_MODE=1 "$REPO_ROOT/deploy/bin/restore" \
-  "$NEW_SNAPSHOT" "$UPLOADS_TARGET" --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
+  "$NEW_SNAPSHOT" "$UPLOADS_TARGET" >/dev/null 2>&1; then
   printf '%s\n' 'failing target pg_restore unexpectedly passed' >&2
   exit 1
 fi
@@ -205,8 +233,9 @@ printf '%s\n' \
 chmod 700 "$SIGNAL_BIN/pg_dump"
 if PATH="$SIGNAL_BIN:$PATH" SIGNAL_MARKER="$SIGNAL_MARKER" \
   REAL_PG_DUMP="$REAL_PG_DUMP" DATABASE_URL="$SOURCE_URL" \
+  ONETREE_MAINTENANCE_MODE=1 \
   "$REPO_ROOT/deploy/bin/backup" "$BACKUPS" "$UPLOADS_SOURCE" \
-  --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
+  >/dev/null 2>&1; then
   printf '%s\n' 'SIGTERM backup unexpectedly passed' >&2
   exit 1
 fi

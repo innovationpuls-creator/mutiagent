@@ -11,8 +11,10 @@ sys.path.insert(0, str(DEPLOY_LIB))
 
 from backup_manifest import (  # noqa: E402
     SnapshotValidationError,
+    assert_repository_clean,
     publish_snapshot,
     rotate_snapshots,
+    validate_backup_paths,
     validate_snapshot_directory,
     write_snapshot_manifest,
 )
@@ -126,3 +128,60 @@ def test_snapshot_directory_symlink_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(SnapshotValidationError):
         validate_snapshot_directory(snapshot_link)
+
+
+def test_invalid_upload_tar_is_rejected_even_with_matching_hash(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot"
+    _snapshot(snapshot)
+    (snapshot / "knowledge-base-uploads.tar").write_bytes(b"not-a-tar")
+    write_snapshot_manifest(
+        snapshot,
+        git_commit=GIT_COMMIT,
+        schema_state="versioned",
+        alembic_revision=REVISION,
+    )
+
+    with pytest.raises(SnapshotValidationError):
+        validate_snapshot_directory(snapshot)
+
+
+@pytest.mark.parametrize("relation", ["same", "uploads_parent", "snapshot_parent"])
+def test_backup_paths_must_be_disjoint(tmp_path: Path, relation: str) -> None:
+    uploads = tmp_path / "uploads"
+    snapshots = tmp_path / "snapshots"
+    if relation == "same":
+        snapshots = uploads
+    elif relation == "uploads_parent":
+        snapshots = uploads / "snapshots"
+    else:
+        uploads = snapshots / "uploads"
+
+    with pytest.raises(SnapshotValidationError):
+        validate_backup_paths(uploads, snapshots)
+
+
+def test_repository_clean_rejects_tracked_index_and_untracked(tmp_path: Path) -> None:
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True
+    )
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("clean", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=tmp_path, check=True)
+    assert_repository_clean(tmp_path)
+
+    tracked.write_text("dirty", encoding="utf-8")
+    with pytest.raises(SnapshotValidationError):
+        assert_repository_clean(tmp_path)
+    subprocess.run(["git", "add", "tracked.txt"], cwd=tmp_path, check=True)
+    with pytest.raises(SnapshotValidationError):
+        assert_repository_clean(tmp_path)
+    tracked.write_text("clean", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=tmp_path, check=True)
+    (tmp_path / "untracked.txt").write_text("new", encoding="utf-8")
+    with pytest.raises(SnapshotValidationError):
+        assert_repository_clean(tmp_path)
