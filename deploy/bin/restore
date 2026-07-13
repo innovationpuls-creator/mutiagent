@@ -27,6 +27,8 @@ from migration_manifest import (  # noqa: E402
 
 
 def main() -> int:
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
     signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT, signal.SIGTERM})
     parser = argparse.ArgumentParser(description="恢复 OneTree 生产快照")
     parser.add_argument("snapshot", type=Path)
