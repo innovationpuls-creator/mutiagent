@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.core.observability import access_logger, configure_json_logging
 from app.main import create_app
 from tests.postgres import postgresql_test_url
 
@@ -15,6 +16,14 @@ REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 def make_client(tmp_path: Path) -> TestClient:
     database_url = postgresql_test_url(tmp_path, "request-id")
     return TestClient(create_app(database_url=database_url))
+
+
+def test_json_logging_reenables_access_logger(monkeypatch) -> None:
+    monkeypatch.setattr(access_logger, "disabled", True)
+
+    configure_json_logging("mutiagent-backend")
+
+    assert access_logger.disabled is False
 
 
 def test_response_reuses_valid_incoming_request_id(tmp_path: Path) -> None:

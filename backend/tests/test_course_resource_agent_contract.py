@@ -2024,9 +2024,9 @@ def test_markdown_quality_rejects_preview_or_prep_document_wording() -> None:
     assert issue == "Markdown 必须是教学文档，不得写成预习或导读材料。"
 
 
-def test_animation_input_tells_agent_to_implement_visual_model_not_explain_text() -> (
-    None
-):
+def test_animation_input_tells_agent_to_implement_visual_model_not_explain_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     outline = _outline()
     outline["sections"][1].update(
         {
@@ -2059,6 +2059,22 @@ def test_animation_input_tells_agent_to_implement_visual_model_not_explain_text(
     }
     section = _section_by_id(outline, "1.1")
     assert section is not None
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources.common._textbook_evidence_pack",
+        lambda _outline, _section: {
+            "textbook_id": "textbook-data-structures",
+            "title": "数据结构教程",
+            "sections": [
+                {
+                    "section_id": "2.3",
+                    "title": "单链表",
+                    "content": "单链表通过节点和指针关系组织数据。",
+                }
+            ],
+            "total_chars": 842,
+            "evidence_text": "单链表通过节点和指针关系组织数据。",
+        },
+    )
 
     video_query = _video_input({"profile": _profile()}, outline, section)
     query = _animation_input({"profile": _profile()}, outline, section)

@@ -61,6 +61,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
 
 def configure_json_logging(service_name: str) -> None:
+    access_logger.disabled = False
     access_logger.setLevel(logging.INFO)
     if access_logger.handlers:
         return
