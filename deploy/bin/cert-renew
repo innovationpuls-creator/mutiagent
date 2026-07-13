@@ -7,6 +7,20 @@ ENV_FILE="$DEPLOY_DIR/../.env.production"
 CERT_VERIFY="$DEPLOY_DIR/bin/cert-verify"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
+: "${NGINX_CONFIG_MODE:?NGINX_CONFIG_MODE is required}"
+case "$NGINX_CONFIG_MODE" in
+  production-ip)
+    CERTIFICATE_NAMES=(onetree-ip)
+    ;;
+  production)
+    CERTIFICATE_NAMES=(onetree-domain onetree-ip)
+    ;;
+  *)
+    printf 'unsupported Nginx certificate mode: %s\n' "$NGINX_CONFIG_MODE" >&2
+    exit 64
+    ;;
+esac
+
 run_openssl() {
   "${COMPOSE[@]}" exec -T certbot openssl "$@"
 }
@@ -35,9 +49,12 @@ verify_served_certificate() {
 }
 
 "${COMPOSE[@]}" exec -T certbot certbot renew --quiet --non-interactive
-"$CERT_VERIFY" onetree-domain
-"$CERT_VERIFY" onetree-ip
+for cert_name in "${CERTIFICATE_NAMES[@]}"; do
+  "$CERT_VERIFY" "$cert_name"
+done
 "${COMPOSE[@]}" exec -T nginx nginx -t
 "${COMPOSE[@]}" exec -T nginx nginx -s reload
-verify_served_certificate onetree-domain -servername onetree.chat
+if [[ "$NGINX_CONFIG_MODE" == "production" ]]; then
+  verify_served_certificate onetree-domain -servername onetree.chat
+fi
 verify_served_certificate onetree-ip -noservername

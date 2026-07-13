@@ -257,8 +257,49 @@ PY
 }
 
 : > "$COMMAND_LOG"
+IP_ISSUE_OUTPUT="$TMP_DIR/ip-issue-output.log"
+if ! run_script "$CERT_ISSUE" ip > "$IP_ISSUE_OUTPUT" 2>&1; then
+  sed -n '1,160p' "$IP_ISSUE_OUTPUT" >&2
+  sed -n '1,160p' "$COMMAND_LOG" >&2
+  fail "IP certificate issuance failed"
+fi
+assert_no_sensitive_output "$IP_ISSUE_OUTPUT"
+
+python3 - "$COMMAND_LOG" "$PUBLIC_IPV4" <<'PY'
+from pathlib import Path
+import shlex
+import sys
+
+commands = [
+    shlex.split(line)
+    for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+]
+issuance = [command for command in commands if command[:2] == ["certbot", "certonly"]]
+observed = [
+    (
+        command[command.index("--cert-name") + 1],
+        "--staging" in command or "--dry-run" in command,
+    )
+    for command in issuance
+]
+assert observed == [
+    ("onetree-ip", True),
+    ("onetree-ip", False),
+], observed
+assert all("onetree-domain" not in command for command in commands), commands
+assert all("onetree.chat" not in command for command in commands), commands
+assert all("www.onetree.chat" not in command for command in commands), commands
+ip_commands = [command for command in issuance if "--ip-address" in command]
+assert len(ip_commands) == 2, ip_commands
+assert all(
+    command[command.index("--ip-address") + 1] == sys.argv[2]
+    for command in ip_commands
+), ip_commands
+PY
+
+: > "$COMMAND_LOG"
 ISSUE_OUTPUT="$TMP_DIR/issue-output.log"
-if ! run_script "$CERT_ISSUE" > "$ISSUE_OUTPUT" 2>&1; then
+if ! run_script "$CERT_ISSUE" all > "$ISSUE_OUTPUT" 2>&1; then
   sed -n '1,160p' "$ISSUE_OUTPUT" >&2
   sed -n '1,160p' "$COMMAND_LOG" >&2
   fail "certificate issuance failed"
@@ -329,6 +370,35 @@ assert checkend_values == ["86400", "86400"], checkend_values
 assert not any(command and command[0] == "nginx" for command in commands), commands
 PY
 
+: > "$COMMAND_LOG"
+DEFAULT_ISSUE_OUTPUT="$TMP_DIR/default-issue-output.log"
+run_script "$CERT_ISSUE" > "$DEFAULT_ISSUE_OUTPUT" 2>&1
+assert_no_sensitive_output "$DEFAULT_ISSUE_OUTPUT"
+python3 - "$COMMAND_LOG" <<'PY'
+from pathlib import Path
+import shlex
+import sys
+
+commands = [
+    shlex.split(line)
+    for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+]
+issuance = [command for command in commands if command[:2] == ["certbot", "certonly"]]
+observed = [
+    (
+        command[command.index("--cert-name") + 1],
+        "--staging" in command or "--dry-run" in command,
+    )
+    for command in issuance
+]
+assert observed == [
+    ("onetree-domain", True),
+    ("onetree-ip", True),
+    ("onetree-domain", False),
+    ("onetree-ip", False),
+], observed
+PY
+
 for failed_stage in onetree-domain onetree-ip; do
   : > "$COMMAND_LOG"
   if run_script FAIL_CERTBOT_STAGE="$failed_stage" "$CERT_ISSUE" >/dev/null 2>&1; then
@@ -362,7 +432,8 @@ PY
 
 for failed_check in chain san key expiry; do
   : > "$COMMAND_LOG"
-  if run_script OPENSSL_FAIL_CHECK="$failed_check" "$CERT_RENEW" >/dev/null 2>&1; then
+  if run_script NGINX_CONFIG_MODE=production OPENSSL_FAIL_CHECK="$failed_check" \
+    "$CERT_RENEW" >/dev/null 2>&1; then
     fail "$failed_check verification failure unexpectedly passed"
   fi
   python3 - "$COMMAND_LOG" <<'PY'
@@ -377,7 +448,8 @@ PY
 done
 
 : > "$COMMAND_LOG"
-if run_script FAIL_CERTBOT_RENEW=1 "$CERT_RENEW" >/dev/null 2>&1; then
+if run_script NGINX_CONFIG_MODE=production FAIL_CERTBOT_RENEW=1 \
+  "$CERT_RENEW" >/dev/null 2>&1; then
   fail "Certbot renewal failure unexpectedly passed"
 fi
 python3 - "$COMMAND_LOG" <<'PY'
@@ -390,7 +462,8 @@ assert len(commands) == 1 and commands[0][:2] == ["certbot", "renew"], commands
 PY
 
 : > "$COMMAND_LOG"
-if run_script FAIL_NGINX_TEST=1 "$CERT_RENEW" >/dev/null 2>&1; then
+if run_script NGINX_CONFIG_MODE=production FAIL_NGINX_TEST=1 \
+  "$CERT_RENEW" >/dev/null 2>&1; then
   fail "nginx configuration failure unexpectedly passed"
 fi
 python3 - "$COMMAND_LOG" <<'PY'
@@ -405,7 +478,7 @@ PY
 
 : > "$COMMAND_LOG"
 RENEW_OUTPUT="$TMP_DIR/renew-output.log"
-run_script "$CERT_RENEW" > "$RENEW_OUTPUT" 2>&1
+run_script NGINX_CONFIG_MODE=production "$CERT_RENEW" > "$RENEW_OUTPUT" 2>&1
 assert_no_sensitive_output "$RENEW_OUTPUT"
 python3 - "$COMMAND_LOG" "$PUBLIC_IPV4" <<'PY'
 from pathlib import Path
@@ -467,9 +540,54 @@ assert len(serial_commands) == 4, serial_commands
 assert all(commands.index(command) > reload_index for command in serial_commands), commands
 PY
 
+: > "$COMMAND_LOG"
+IP_RENEW_OUTPUT="$TMP_DIR/ip-renew-output.log"
+run_script NGINX_CONFIG_MODE=production-ip \
+  "$CERT_RENEW" > "$IP_RENEW_OUTPUT" 2>&1
+assert_no_sensitive_output "$IP_RENEW_OUTPUT"
+python3 - "$COMMAND_LOG" "$PUBLIC_IPV4" <<'PY'
+from pathlib import Path
+import shlex
+import sys
+
+commands = [
+    shlex.split(line)
+    for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+]
+assert commands[0][:2] == ["certbot", "renew"], commands
+openssl_commands = [
+    command for command in commands if command and command[0] == "openssl"
+]
+assert all("/live/onetree-domain/" not in " ".join(command) for command in commands), commands
+assert not any("-checkhost" in command for command in openssl_commands), commands
+ip_checks = [
+    command[command.index("-checkip") + 1]
+    for command in openssl_commands
+    if "-checkip" in command
+]
+assert ip_checks == [sys.argv[2]], ip_checks
+nginx_commands = [command for command in commands if command and command[0] == "nginx"]
+assert nginx_commands == [["nginx", "-t"], ["nginx", "-s", "reload"]], nginx_commands
+s_client_commands = [
+    command for command in openssl_commands if command[1] == "s_client"
+]
+assert s_client_commands == [
+    ["openssl", "s_client", "-connect", "nginx:443", "-noservername"],
+], s_client_commands
+serial_commands = [command for command in openssl_commands if "-serial" in command]
+assert len(serial_commands) == 2, serial_commands
+PY
+
+: > "$COMMAND_LOG"
+if run_script NGINX_CONFIG_MODE=bootstrap "$CERT_RENEW" >/dev/null 2>&1; then
+  fail "bootstrap renewal mode unexpectedly passed"
+fi
+[[ ! -s "$COMMAND_LOG" ]] || fail "bootstrap renewal mode invoked external commands"
+
 for mismatched_cert_name in onetree-domain onetree-ip; do
   : > "$COMMAND_LOG"
-  if run_script OPENSSL_MISMATCH_ONLINE_CERT_NAME="$mismatched_cert_name" \
+  if run_script NGINX_CONFIG_MODE=production \
+    OPENSSL_MISMATCH_ONLINE_CERT_NAME="$mismatched_cert_name" \
     "$CERT_RENEW" >/dev/null 2>&1; then
     fail "$mismatched_cert_name online serial mismatch unexpectedly passed"
   fi

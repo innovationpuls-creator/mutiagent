@@ -6,6 +6,15 @@ COMPOSE_FILE="$DEPLOY_DIR/compose.production.yml"
 ENV_FILE="$DEPLOY_DIR/../.env.production"
 CERT_VERIFY="$DEPLOY_DIR/bin/cert-verify"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+CERTIFICATE_MODE="${1:-all}"
+
+case "$CERTIFICATE_MODE" in
+  ip|all) ;;
+  *)
+    printf 'unsupported certificate mode: %s\n' "$CERTIFICATE_MODE" >&2
+    exit 64
+    ;;
+esac
 
 run_certbot() {
   "${COMPOSE[@]}" exec -T certbot certbot "$@"
@@ -51,10 +60,16 @@ IP_ARGUMENTS=(
   --ip-address "$PUBLIC_IPV4"
 )
 
-run_certbot "${COMMON_ARGUMENTS[@]}" --staging --dry-run "${DOMAIN_ARGUMENTS[@]}"
+if [[ "$CERTIFICATE_MODE" == "all" ]]; then
+  run_certbot "${COMMON_ARGUMENTS[@]}" --staging --dry-run "${DOMAIN_ARGUMENTS[@]}"
+fi
 run_certbot "${COMMON_ARGUMENTS[@]}" --staging --dry-run "${IP_ARGUMENTS[@]}"
-run_certbot "${COMMON_ARGUMENTS[@]}" "${DOMAIN_ARGUMENTS[@]}"
+if [[ "$CERTIFICATE_MODE" == "all" ]]; then
+  run_certbot "${COMMON_ARGUMENTS[@]}" "${DOMAIN_ARGUMENTS[@]}"
+fi
 run_certbot "${COMMON_ARGUMENTS[@]}" "${IP_ARGUMENTS[@]}"
 
-"$CERT_VERIFY" onetree-domain
+if [[ "$CERTIFICATE_MODE" == "all" ]]; then
+  "$CERT_VERIFY" onetree-domain
+fi
 "$CERT_VERIFY" onetree-ip
