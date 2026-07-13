@@ -13,6 +13,7 @@ from backup_manifest import (  # noqa: E402
     SnapshotValidationError,
     assert_repository_clean,
     publish_snapshot,
+    reject_symlink_backup_paths,
     rotate_snapshots,
     validate_backup_paths,
     validate_snapshot_directory,
@@ -158,6 +159,19 @@ def test_backup_paths_must_be_disjoint(tmp_path: Path, relation: str) -> None:
 
     with pytest.raises(SnapshotValidationError):
         validate_backup_paths(uploads, snapshots)
+
+
+@pytest.mark.parametrize("symlink_name", ["uploads", "snapshots"])
+def test_raw_backup_path_symlink_is_rejected(tmp_path: Path, symlink_name: str) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    uploads = tmp_path / "uploads"
+    snapshots = tmp_path / "snapshots"
+    path = uploads if symlink_name == "uploads" else snapshots
+    path.symlink_to(real, target_is_directory=True)
+
+    with pytest.raises(SnapshotValidationError):
+        reject_symlink_backup_paths(uploads, snapshots)
 
 
 def test_repository_clean_rejects_tracked_index_and_untracked(tmp_path: Path) -> None:

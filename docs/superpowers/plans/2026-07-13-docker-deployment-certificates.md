@@ -177,6 +177,9 @@ Commit: `git commit -m "test: add production login smoke check"`
 deploy 在 backup 前必须停止 `backend` 与 `worker` 并确认没有业务写入；随后以
 `ONETREE_MAINTENANCE_MODE=1` 执行 backup，完整快照原子发布并完成轮转后才进入
 迁移。该环境变量只作为维护状态门禁，不代表外部写入已被冻结。
+deployment 内部向 backup 分别注入只用于源库 `pg_dump` 的 `DATABASE_URL` 与具备
+`CREATEDB` 的 `TARGET_DATABASE_URL` 维护连接；用户不填写维护连接，应用角色无需
+`CREATEDB`，两者不得互相派生或回退。
 
 - [ ] **Step 4: 验证与提交**
 

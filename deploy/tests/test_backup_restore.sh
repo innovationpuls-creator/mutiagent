@@ -4,6 +4,10 @@ set -euo pipefail
 SOURCE_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 REPO_ROOT="$TMP_DIR/repository"
+git -C "$SOURCE_REPO_ROOT" diff --quiet HEAD -- \
+  deploy/bin/backup deploy/bin/restore deploy/bin/import-bundle \
+  deploy/lib/backup_manifest.py deploy/lib/migration_manifest.py \
+  backend/migrations backend/app/migration_state.py
 mkdir "$REPO_ROOT"
 git -C "$SOURCE_REPO_ROOT" archive HEAD | tar -x -C "$REPO_ROOT"
 git -C "$REPO_ROOT" init -q
@@ -15,10 +19,11 @@ BACKEND_DIR="$REPO_ROOT/backend"
 export UV_PROJECT_ENVIRONMENT="$SOURCE_REPO_ROOT/backend/.venv"
 SOURCE_DB="onetree_backup_source_$$"
 TARGET_DB="onetree_backup_target_$$"
+SOURCE_ROLE="onetree_backup_source_role_$$"
 MAINTENANCE_URL="${BACKUP_TEST_MAINTENANCE_URL:-postgresql:///postgres}"
 
 cleanup() {
-  SOURCE_DB="$SOURCE_DB" TARGET_DB="$TARGET_DB" MAINTENANCE_URL="$MAINTENANCE_URL" \
+  SOURCE_DB="$SOURCE_DB" TARGET_DB="$TARGET_DB" SOURCE_ROLE="$SOURCE_ROLE" MAINTENANCE_URL="$MAINTENANCE_URL" \
     uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
 import os
 import psycopg2
@@ -34,6 +39,7 @@ try:
                     sql.Identifier(os.environ[key])
                 )
             )
+        cursor.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(os.environ["SOURCE_ROLE"])))
 finally:
     connection.close()
 PY
@@ -42,7 +48,7 @@ PY
 trap cleanup EXIT
 
 URLS_FILE="$TMP_DIR/urls"
-SOURCE_DB="$SOURCE_DB" TARGET_DB="$TARGET_DB" MAINTENANCE_URL="$MAINTENANCE_URL" \
+SOURCE_DB="$SOURCE_DB" TARGET_DB="$TARGET_DB" SOURCE_ROLE="$SOURCE_ROLE" MAINTENANCE_URL="$MAINTENANCE_URL" \
   URLS_FILE="$URLS_FILE" uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
 import os
 from pathlib import Path
@@ -56,6 +62,8 @@ try:
     with connection.cursor() as cursor:
         for key in ("SOURCE_DB", "TARGET_DB"):
             cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(os.environ[key])))
+        cursor.execute(sql.SQL("CREATE ROLE {} NOCREATEDB").format(sql.Identifier(os.environ["SOURCE_ROLE"])))
+        cursor.execute(sql.SQL("GRANT {} TO torch").format(sql.Identifier(os.environ["SOURCE_ROLE"])))
 finally:
     connection.close()
 base = make_url(os.environ["MAINTENANCE_URL"])
@@ -63,6 +71,7 @@ source = base.set(database=os.environ["SOURCE_DB"]).render_as_string(hide_passwo
 target = base.set(database=os.environ["TARGET_DB"]).render_as_string(hide_password=False)
 Path(os.environ["URLS_FILE"]).write_text(f"{source}\n{target}\n", encoding="utf-8")
 PY
+
 SOURCE_URL="$(sed -n '1p' "$URLS_FILE")"
 TARGET_URL="$(sed -n '2p' "$URLS_FILE")"
 
@@ -84,6 +93,18 @@ with Session(engine) as session:
     session.commit()
 PY
 
+SOURCE_ROLE="$SOURCE_ROLE" DATABASE_URL="$SOURCE_URL" uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
+import os
+from sqlalchemy import create_engine
+from psycopg2 import sql
+engine = create_engine(os.environ["DATABASE_URL"])
+with engine.begin() as connection:
+    role = sql.Identifier(os.environ["SOURCE_ROLE"]).as_string(connection.connection.driver_connection)
+    connection.exec_driver_sql(f"GRANT USAGE ON SCHEMA public TO {role}")
+    connection.exec_driver_sql(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {role}")
+PY
+SOURCE_BACKUP_URL="${SOURCE_URL}?options=-c%20role%3D${SOURCE_ROLE}"
+
 UPLOADS_SOURCE="$TMP_DIR/source-uploads"
 UPLOADS_TARGET="$TMP_DIR/target-uploads"
 BACKUPS="$TMP_DIR/backups"
@@ -91,9 +112,16 @@ mkdir -p "$UPLOADS_SOURCE/chapter" "$UPLOADS_TARGET" "$BACKUPS"
 printf '%s\n' 'original textbook' > "$UPLOADS_SOURCE/chapter/textbook.txt"
 printf '%s\n' 'old target' > "$UPLOADS_TARGET/old.txt"
 
+if DATABASE_URL="$SOURCE_BACKUP_URL" ONETREE_MAINTENANCE_MODE=1 \
+  "$REPO_ROOT/deploy/bin/backup" "$BACKUPS" "$UPLOADS_SOURCE" \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'backup without maintenance connection unexpectedly passed' >&2
+  exit 1
+fi
+
 for index in 1 2 3 4; do
   printf '%s\n' "snapshot-$index" > "$UPLOADS_SOURCE/chapter/version.txt"
-  DATABASE_URL="$SOURCE_URL" ONETREE_MAINTENANCE_MODE=1 "$REPO_ROOT/deploy/bin/backup" \
+  DATABASE_URL="$SOURCE_BACKUP_URL" ONETREE_MAINTENANCE_MODE=1 TARGET_DATABASE_URL="$MAINTENANCE_URL" "$REPO_ROOT/deploy/bin/backup" \
     "$BACKUPS" "$UPLOADS_SOURCE" >/dev/null
 done
 test "$(find "$BACKUPS" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | wc -l | tr -d ' ')" = "3"
@@ -104,7 +132,7 @@ FAIL_BIN="$TMP_DIR/fail-bin"
 mkdir "$FAIL_BIN"
 printf '%s\n' '#!/usr/bin/env bash' 'exit 93' > "$FAIL_BIN/pg_dump"
 chmod 700 "$FAIL_BIN/pg_dump"
-if PATH="$FAIL_BIN:$PATH" DATABASE_URL="$SOURCE_URL" ONETREE_MAINTENANCE_MODE=1 \
+if PATH="$FAIL_BIN:$PATH" DATABASE_URL="$SOURCE_BACKUP_URL" ONETREE_MAINTENANCE_MODE=1 TARGET_DATABASE_URL="$MAINTENANCE_URL" \
   "$REPO_ROOT/deploy/bin/backup" "$BACKUPS" "$UPLOADS_SOURCE" \
   >/dev/null 2>&1; then
   printf '%s\n' 'failing pg_dump unexpectedly published a snapshot' >&2
@@ -125,7 +153,7 @@ printf '%s\n' \
   'printf "%s\n" corrupt > "$output"' > "$CORRUPT_BIN/pg_dump"
 chmod 700 "$CORRUPT_BIN/pg_dump"
 if PATH="$CORRUPT_BIN:$PATH" REAL_PG_DUMP="$REAL_PG_DUMP" \
-  DATABASE_URL="$SOURCE_URL" ONETREE_MAINTENANCE_MODE=1 \
+  DATABASE_URL="$SOURCE_BACKUP_URL" ONETREE_MAINTENANCE_MODE=1 TARGET_DATABASE_URL="$MAINTENANCE_URL" \
   "$REPO_ROOT/deploy/bin/backup" "$BACKUPS" "$UPLOADS_SOURCE" >/dev/null 2>&1; then
   printf '%s\n' 'zero-exit corrupt dump unexpectedly published a snapshot' >&2
   exit 1
@@ -182,7 +210,7 @@ with create_engine(os.environ["DATABASE_URL"]).begin() as connection:
         {"username": "changed-after-backup", "identifier": "18771701100"},
     )
 PY
-DATABASE_URL="$SOURCE_URL" ONETREE_MAINTENANCE_MODE=1 "$REPO_ROOT/deploy/bin/backup" \
+DATABASE_URL="$SOURCE_BACKUP_URL" ONETREE_MAINTENANCE_MODE=1 TARGET_DATABASE_URL="$MAINTENANCE_URL" "$REPO_ROOT/deploy/bin/backup" \
   "$BACKUPS" "$UPLOADS_SOURCE" >/dev/null
 NEW_SNAPSHOT="$(find "$BACKUPS" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort | tail -1)"
 RESTORE_FAIL_BIN="$TMP_DIR/restore-fail-bin"
@@ -232,8 +260,8 @@ printf '%s\n' \
   'exec "$REAL_PG_DUMP" "$@"' > "$SIGNAL_BIN/pg_dump"
 chmod 700 "$SIGNAL_BIN/pg_dump"
 if PATH="$SIGNAL_BIN:$PATH" SIGNAL_MARKER="$SIGNAL_MARKER" \
-  REAL_PG_DUMP="$REAL_PG_DUMP" DATABASE_URL="$SOURCE_URL" \
-  ONETREE_MAINTENANCE_MODE=1 \
+  REAL_PG_DUMP="$REAL_PG_DUMP" DATABASE_URL="$SOURCE_BACKUP_URL" \
+  ONETREE_MAINTENANCE_MODE=1 TARGET_DATABASE_URL="$MAINTENANCE_URL" \
   "$REPO_ROOT/deploy/bin/backup" "$BACKUPS" "$UPLOADS_SOURCE" \
   >/dev/null 2>&1; then
   printf '%s\n' 'SIGTERM backup unexpectedly passed' >&2

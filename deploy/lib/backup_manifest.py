@@ -153,6 +153,11 @@ def validate_backup_paths(uploads_source: Path, snapshot_root: Path) -> None:
         raise SnapshotValidationError("教材目录与快照目录不得互为祖先或后代")
 
 
+def reject_symlink_backup_paths(uploads_source: Path, snapshot_root: Path) -> None:
+    if uploads_source.is_symlink() or snapshot_root.is_symlink():
+        raise SnapshotValidationError("教材源与快照根目录不得是 symlink")
+
+
 def _validate_manifest(manifest: object) -> None:
     serialized = json.dumps(manifest, ensure_ascii=False)
     if any(name in serialized for name in FORBIDDEN_SECRET_NAMES):

@@ -229,6 +229,7 @@ def main() -> int:
         raw_uploads_target = arguments.uploads_target.expanduser()
         validate_replacement_target(raw_uploads_target)
         uploads_target = raw_uploads_target.absolute()
+        target_parent_created = not uploads_target.parent.exists()
         uploads_target.parent.mkdir(parents=True, exist_ok=True)
         validate_replacement_target(uploads_target)
         staging_root = Path(
@@ -268,6 +269,14 @@ def main() -> int:
             )
         finally:
             shutil.rmtree(staging_root, ignore_errors=True)
+            if (
+                not arguments.validate_only
+                and target_parent_created
+                and uploads_target is not None
+                and uploads_target.parent.exists()
+                and not any(uploads_target.parent.iterdir())
+            ):
+                uploads_target.parent.rmdir()
     print("数据库、账号和教材文件导入完成")
     return 0
 

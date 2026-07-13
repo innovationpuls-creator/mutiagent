@@ -16,6 +16,7 @@ sys.path.insert(0, str(DEPLOY_DIR / "lib"))
 from backup_manifest import (  # noqa: E402
     assert_repository_clean,
     publish_snapshot,
+    reject_symlink_backup_paths,
     rotate_snapshots,
     validate_backup_paths,
     validate_snapshot_directory,
@@ -57,11 +58,17 @@ def main() -> int:
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
         raise RuntimeError("必须通过 DATABASE_URL 指定生产数据库")
+    maintenance_database_url = os.environ.get("TARGET_DATABASE_URL", "")
+    if not maintenance_database_url:
+        raise RuntimeError("必须通过 TARGET_DATABASE_URL 指定维护态数据库连接")
     if os.environ.get("ONETREE_MAINTENANCE_MODE") != "1":
         raise RuntimeError("仅允许在 ONETREE_MAINTENANCE_MODE=1 时备份")
     repository = DEPLOY_DIR.parent.resolve()
-    uploads_source = arguments.uploads_source.expanduser().resolve()
-    snapshot_root = arguments.snapshot_root.expanduser().resolve(strict=False)
+    raw_uploads_source = arguments.uploads_source.expanduser()
+    raw_snapshot_root = arguments.snapshot_root.expanduser()
+    reject_symlink_backup_paths(raw_uploads_source, raw_snapshot_root)
+    uploads_source = raw_uploads_source.resolve()
+    snapshot_root = raw_snapshot_root.resolve(strict=False)
     validate_backup_paths(uploads_source, snapshot_root)
     assert_repository_clean(repository)
     if not uploads_source.is_dir() or uploads_source.is_symlink():
@@ -119,7 +126,10 @@ def main() -> int:
                         "--validate-only",
                     ],
                     check=True,
-                    env={**os.environ, "TARGET_DATABASE_URL": database_url},
+                    env={
+                        **os.environ,
+                        "TARGET_DATABASE_URL": maintenance_database_url,
+                    },
                 )
             finally:
                 shutil.rmtree(validation_directory, ignore_errors=True)
