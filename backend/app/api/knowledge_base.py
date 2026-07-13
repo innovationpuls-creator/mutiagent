@@ -61,6 +61,7 @@ from app.services.knowledge_base_service import (
     create_knowledge_source,
     create_uploaded_textbook,
     follow_knowledge_gap,
+    get_queued_knowledge_base_ingestion_job,
     list_admitted_knowledge_sources,
     list_knowledge_sources,
     publish_textbook,
@@ -331,10 +332,7 @@ def _register_ingestion_job_routes(
         session: Session = Depends(session_dependency),
     ) -> KnowledgeBaseIngestionJob:
         try:
-            job = session.get(KnowledgeBaseIngestionJob, job_id)
-            if job is None:
-                raise ValueError("知识库任务不存在。")
-            return job
+            return get_queued_knowledge_base_ingestion_job(session, job_id)
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

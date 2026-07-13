@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
@@ -419,6 +420,84 @@ def test_run_ingestion_job_only_queues_and_does_not_parse(
 
     assert run_response.status_code == 202
     assert run_response.json()["status"] == "queued"
+
+    textbook_run_response = client.post(
+        "/api/admin/knowledge-base/textbooks/textbook-queue-only-api/agent-organize/run",
+        headers=headers,
+    )
+    assert textbook_run_response.status_code == 202
+    assert textbook_run_response.json()["status"] == "queued"
+    assert textbook_run_response.json()["job_id"] == job_response.json()["job_id"]
+
+
+@pytest.mark.parametrize("job_status", ["running", "completed", "failed"])
+def test_run_ingestion_job_rejects_non_queued_status(
+    tmp_path: Path, monkeypatch, job_status: str
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    headers = admin_headers(client)
+    client.post(
+        "/api/admin/knowledge-base/sources",
+        headers=headers,
+        json=admitted_source_payload(),
+    )
+    client.post(
+        "/api/admin/knowledge-base/textbooks",
+        headers=headers,
+        json=structured_textbook_payload(textbook_id="textbook-job-status-api"),
+    )
+    job_response = client.post(
+        "/api/admin/knowledge-base/textbooks/textbook-job-status-api/agent-organize",
+        headers=headers,
+    )
+    job_id = job_response.json()["job_id"]
+    with Session(get_engine()) as session:
+        job = session.get(KnowledgeBaseIngestionJob, job_id)
+        assert job is not None
+        job.status = job_status
+        session.add(job)
+        session.commit()
+
+    run_response = client.post(
+        f"/api/admin/knowledge-base/ingestion-jobs/{job_id}/run",
+        headers=headers,
+    )
+
+    assert run_response.status_code == 400
+    assert run_response.json()["detail"] == "只有 queued 整理任务可以开始。"
+
+
+def test_run_textbook_organize_rejects_running_job(tmp_path: Path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    headers = admin_headers(client)
+    client.post(
+        "/api/admin/knowledge-base/sources",
+        headers=headers,
+        json=admitted_source_payload(),
+    )
+    client.post(
+        "/api/admin/knowledge-base/textbooks",
+        headers=headers,
+        json=structured_textbook_payload(textbook_id="textbook-running-api"),
+    )
+    job_response = client.post(
+        "/api/admin/knowledge-base/textbooks/textbook-running-api/agent-organize",
+        headers=headers,
+    )
+    with Session(get_engine()) as session:
+        job = session.get(KnowledgeBaseIngestionJob, job_response.json()["job_id"])
+        assert job is not None
+        job.status = "running"
+        session.add(job)
+        session.commit()
+
+    run_response = client.post(
+        "/api/admin/knowledge-base/textbooks/textbook-running-api/agent-organize/run",
+        headers=headers,
+    )
+
+    assert run_response.status_code == 400
+    assert run_response.json()["detail"] == "教材整理任务正在运行。"
 
 
 def test_find_materials_returns_only_admitted_sources_and_updates_gap(

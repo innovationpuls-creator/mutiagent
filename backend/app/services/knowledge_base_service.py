@@ -424,6 +424,18 @@ def create_knowledge_base_ingestion_job(
     return job
 
 
+def get_queued_knowledge_base_ingestion_job(
+    session: Session,
+    job_id: str,
+) -> KnowledgeBaseIngestionJob:
+    job = session.get(KnowledgeBaseIngestionJob, job_id)
+    if job is None:
+        raise ValueError("知识库任务不存在。")
+    if job.status != "queued":
+        raise ValueError("只有 queued 整理任务可以开始。")
+    return job
+
+
 def confirm_textbook_source_result(
     session: Session,
     source_result: KnowledgeBaseSourceResult,
@@ -679,6 +691,7 @@ def run_textbook_source_ingestion(
     job_id: str,
     *,
     start_job: bool = True,
+    ownership: tuple[str, int] | None = None,
 ) -> KnowledgeBaseIngestionJob:
     job = (
         start_knowledge_base_ingestion_job(session, job_id)
@@ -688,10 +701,14 @@ def run_textbook_source_ingestion(
     if job.status != "running":
         raise ValueError("只有 running 整理任务可以执行。")
     textbook = _get_ingestion_job_textbook(session, job)
+    source_url = textbook.download_url
+    source_language = textbook.language
+    if ownership is not None:
+        session.rollback()
     try:
         outline, sections = parse_textbook_source_to_sections(
-            textbook.download_url,
-            textbook.language,
+            source_url,
+            source_language,
         )
         outline_sections = _outline_summary(outline)
         if not outline_sections:
@@ -703,18 +720,6 @@ def run_textbook_source_ingestion(
         ]
         if missing_section_ids:
             raise ValueError("教材解析失败：未切分出完整小节正文。")
-
-        textbook.outline = outline
-        session.add(textbook)
-
-        existing_sections = session.exec(
-            select(TextbookSectionContent).where(
-                TextbookSectionContent.textbook_id == textbook.textbook_id
-            )
-        ).all()
-        for section in existing_sections:
-            session.delete(section)
-        session.flush()
 
         content_by_section_id = _section_content_by_section_id_for_ingestion(
             outline_sections,
@@ -734,26 +739,35 @@ def run_textbook_source_ingestion(
                     "content_char_count": len(content_text),
                 }
             )
-
-        for section in prepared_sections:
-            session.add(
-                TextbookSectionContent(
-                    section_content_id=_new_id("section"),
-                    textbook_id=textbook.textbook_id,
-                    section_id=str(section["section_id"]),
-                    order_index=int(section["order_index"]),
-                    title=str(section["title"]),
-                    original_title=str(section["title"]),
-                    content_original=str(section["content_original"]),
-                    content_zh=str(section["content_zh"]),
-                    content_char_count=int(section["content_char_count"]),
-                )
+        if ownership is not None:
+            return _complete_owned_ingestion_job(
+                session,
+                job_id,
+                ownership,
+                outline,
+                prepared_sections,
             )
 
+        _replace_textbook_ingestion_content(
+            session,
+            textbook,
+            outline,
+            prepared_sections,
+        )
         session.commit()
         return complete_knowledge_base_ingestion_job(session, job_id)
+    except IngestionJobOwnershipLost:
+        session.rollback()
+        raise
     except Exception as exc:
         session.rollback()
+        if ownership is not None:
+            return _fail_owned_ingestion_job(
+                session,
+                job_id,
+                ownership,
+                str(exc),
+            )
         return fail_knowledge_base_ingestion_job(session, job_id, str(exc))
 
 
@@ -763,7 +777,126 @@ def run_claimed_textbook_source_ingestion(
 ) -> KnowledgeBaseIngestionJob:
     if job.status != "running":
         raise ValueError("只有 running 整理任务可以执行。")
-    return run_textbook_source_ingestion(session, job.job_id, start_job=False)
+    if job.worker_id is None or job.attempt_count <= 0:
+        raise IngestionJobOwnershipLost("ingestion worker ownership lost")
+    return run_textbook_source_ingestion(
+        session,
+        job.job_id,
+        start_job=False,
+        ownership=(job.worker_id, job.attempt_count),
+    )
+
+
+class IngestionJobOwnershipLost(RuntimeError):
+    pass
+
+
+def _lock_owned_ingestion_job(
+    session: Session,
+    job_id: str,
+    ownership: tuple[str, int],
+    now: datetime,
+) -> KnowledgeBaseIngestionJob:
+    worker_id, attempt_count = ownership
+    job = session.exec(
+        select(KnowledgeBaseIngestionJob)
+        .where(
+            KnowledgeBaseIngestionJob.job_id == job_id,
+            KnowledgeBaseIngestionJob.status == "running",
+            KnowledgeBaseIngestionJob.worker_id == worker_id,
+            KnowledgeBaseIngestionJob.attempt_count == attempt_count,
+            KnowledgeBaseIngestionJob.lease_expires_at > now,
+        )
+        .with_for_update()
+    ).first()
+    if job is None:
+        raise IngestionJobOwnershipLost("ingestion worker ownership lost")
+    return job
+
+
+def _complete_owned_ingestion_job(
+    session: Session,
+    job_id: str,
+    ownership: tuple[str, int],
+    outline: dict,
+    prepared_sections: list[dict[str, str | int]],
+) -> KnowledgeBaseIngestionJob:
+    now = datetime.now(timezone.utc)
+    job = _lock_owned_ingestion_job(session, job_id, ownership, now)
+    textbook = _get_ingestion_job_textbook(session, job)
+    _replace_textbook_ingestion_content(
+        session,
+        textbook,
+        outline,
+        prepared_sections,
+    )
+    job.status = "completed"
+    job.finished_at = now
+    job.lease_expires_at = None
+    job.updated_at = now
+    job.error_message = ""
+    textbook.ingestion_status = "ready_for_outline_review"
+    textbook.ingestion_error_message = ""
+    session.add(job)
+    session.add(textbook)
+    session.commit()
+    session.refresh(job)
+    return job
+
+
+def _fail_owned_ingestion_job(
+    session: Session,
+    job_id: str,
+    ownership: tuple[str, int],
+    error_message: str,
+) -> KnowledgeBaseIngestionJob:
+    now = datetime.now(timezone.utc)
+    job = _lock_owned_ingestion_job(session, job_id, ownership, now)
+    textbook = _get_ingestion_job_textbook(session, job)
+    message = error_message.strip() or "教材整理失败。"
+    job.status = "failed"
+    job.finished_at = now
+    job.lease_expires_at = None
+    job.updated_at = now
+    job.error_message = message
+    textbook.ingestion_status = "failed"
+    textbook.ingestion_error_message = message
+    session.add(job)
+    session.add(textbook)
+    session.commit()
+    session.refresh(job)
+    return job
+
+
+def _replace_textbook_ingestion_content(
+    session: Session,
+    textbook: Textbook,
+    outline: dict,
+    prepared_sections: list[dict[str, str | int]],
+) -> None:
+    textbook.outline = outline
+    session.add(textbook)
+    existing_sections = session.exec(
+        select(TextbookSectionContent).where(
+            TextbookSectionContent.textbook_id == textbook.textbook_id
+        )
+    ).all()
+    for section in existing_sections:
+        session.delete(section)
+    for section in prepared_sections:
+        session.add(
+            TextbookSectionContent(
+                section_content_id=_new_id("section"),
+                textbook_id=textbook.textbook_id,
+                section_id=str(section["section_id"]),
+                order_index=int(section["order_index"]),
+                title=str(section["title"]),
+                original_title=str(section["title"]),
+                content_original=str(section["content_original"]),
+                content_zh=str(section["content_zh"]),
+                content_char_count=int(section["content_char_count"]),
+            )
+        )
 
 
 def _section_content_by_section_id_for_ingestion(
@@ -872,6 +1005,8 @@ def queue_textbook_source_ingestion_for_textbook(
         )
         .order_by(KnowledgeBaseIngestionJob.created_at.desc())
     ).first()
+    if active_job is not None and active_job.status == "running":
+        raise ValueError("教材整理任务正在运行。")
     return active_job or create_knowledge_base_ingestion_job(session, textbook_id)
 
 
