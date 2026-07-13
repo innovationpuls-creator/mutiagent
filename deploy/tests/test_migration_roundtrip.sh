@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -30,10 +31,15 @@ try:
         )
     role_name = os.environ["NO_CREATEDB_ROLE"]
     with connection.cursor() as cursor:
+        cursor.execute("SELECT current_user")
+        maintenance_role = cursor.fetchone()[0]
         cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role_name,))
         if cursor.fetchone() is not None:
             cursor.execute(
-                sql.SQL("REVOKE {} FROM torch").format(sql.Identifier(role_name))
+                sql.SQL("REVOKE {} FROM {}").format(
+                    sql.Identifier(role_name),
+                    sql.Identifier(maintenance_role),
+                )
             )
             cursor.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role_name)))
 finally:
@@ -71,9 +77,15 @@ try:
     connection.cursor().execute(
         sql.SQL("CREATE ROLE {} NOCREATEDB").format(sql.Identifier(role_name))
     )
-    connection.cursor().execute(
-        sql.SQL("GRANT {} TO torch").format(sql.Identifier(role_name))
-    )
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT current_user")
+        maintenance_role = cursor.fetchone()[0]
+        cursor.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(role_name),
+                sql.Identifier(maintenance_role),
+            )
+        )
 finally:
     connection.close()
 

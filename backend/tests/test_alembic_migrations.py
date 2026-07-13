@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,50 @@ def test_empty_schema_upgrades_to_alembic_head(tmp_path: Path) -> None:
     engine = create_engine(database_url)
     table_names = set(inspect(engine).get_table_names())
     assert table_names == set(SQLModel.metadata.tables) | {"alembic_version"}
+    with engine.connect() as connection:
+        revision = connection.execute(text("SELECT version_num FROM alembic_version"))
+        assert revision.scalar_one() == "0002_ingestion_job_leases"
+
+
+def test_alembic_prefers_database_url_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    database_url = postgresql_test_url(tmp_path, "alembic-environment")
+    config = Config("alembic.ini", cmd_opts=Namespace())
+    config.set_main_option(
+        "sqlalchemy.url",
+        "postgresql://invalid:invalid@127.0.0.1:1/invalid",
+    )
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+    with engine.connect() as connection:
+        revision = connection.execute(text("SELECT version_num FROM alembic_version"))
+        assert revision.scalar_one() == "0002_ingestion_job_leases"
+
+
+def test_programmatic_alembic_config_precedes_database_url_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    database_url = postgresql_test_url(tmp_path, "alembic-programmatic")
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://invalid:invalid@127.0.0.1:1/invalid",
+    )
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
         assert revision.scalar_one() == "0002_ingestion_job_leases"
