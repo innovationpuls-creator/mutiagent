@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import sys
+import tarfile
+import tempfile
+from datetime import UTC, datetime
+from pathlib import Path
+
+DEPLOY_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(DEPLOY_DIR / "lib"))
+
+from backup_manifest import (  # noqa: E402
+    publish_snapshot,
+    rotate_snapshots,
+    validate_snapshot_directory,
+    write_snapshot_manifest,
+)
+from migration_manifest import (  # noqa: E402
+    inspect_database_identity,
+    postgres_service_environment,
+    run_process_group,
+    termination_signal_guard,
+)
+
+
+def _archive_uploads(source: Path, destination: Path) -> None:
+    with tarfile.open(destination, mode="w") as archive:
+        for child in sorted(source.iterdir(), key=lambda path: path.name):
+            archive.add(child, arcname=child.name)
+
+
+def _git_commit(repository: Path) -> str:
+    result = run_process_group(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="创建 OneTree 部署前快照")
+    parser.add_argument("snapshot_root", type=Path)
+    parser.add_argument("uploads_source", type=Path)
+    parser.add_argument("--repo-root", type=Path, default=DEPLOY_DIR.parent)
+    arguments = parser.parse_args()
+
+    database_url = os.environ.get("DATABASE_URL", "")
+    if not database_url:
+        raise RuntimeError("必须通过 DATABASE_URL 指定生产数据库")
+    repository = arguments.repo_root.resolve()
+    uploads_source = arguments.uploads_source.expanduser().absolute()
+    snapshot_root = arguments.snapshot_root.expanduser().absolute()
+    if not uploads_source.is_dir() or uploads_source.is_symlink():
+        raise RuntimeError("教材源必须是普通目录")
+    if snapshot_root.is_symlink():
+        raise RuntimeError("快照根目录不得是 symlink")
+    snapshot_root.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now(UTC)
+    snapshot_id = timestamp.strftime("%Y%m%dT%H%M%S.%fZ")
+    staging = Path(tempfile.mkdtemp(prefix=".snapshot.", dir=snapshot_root))
+    with termination_signal_guard():
+        try:
+            identity = inspect_database_identity(repository / "backend", database_url)
+            if identity["schema_state"] != "versioned":
+                raise RuntimeError("生产数据库必须处于 versioned schema")
+            environment = postgres_service_environment(
+                database_url, staging / "pg_service.conf", "onetree_backup"
+            )
+            run_process_group(
+                [
+                    "pg_dump",
+                    "--format=custom",
+                    f"--file={staging / 'database.dump'}",
+                    "--dbname=service=onetree_backup",
+                ],
+                check=True,
+                env=environment,
+            )
+            (staging / "pg_service.conf").unlink()
+            _archive_uploads(uploads_source, staging / "knowledge-base-uploads.tar")
+            write_snapshot_manifest(
+                staging,
+                git_commit=_git_commit(repository),
+                schema_state=identity["schema_state"],
+                alembic_revision=identity["alembic_revision"],
+            )
+            validate_snapshot_directory(staging)
+            snapshot = publish_snapshot(staging, snapshot_root, snapshot_id)
+            rotate_snapshots(snapshot_root, keep=3)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+    print(snapshot.name)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

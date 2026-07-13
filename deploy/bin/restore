@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+DEPLOY_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(DEPLOY_DIR / "lib"))
+
+from backup_manifest import (  # noqa: E402
+    assert_git_commit,
+    validate_snapshot_directory,
+)
+from migration_manifest import (  # noqa: E402
+    assert_manifest_repository_revision,
+    create_bundle_archive,
+    run_process_group,
+    termination_signal_guard,
+    write_manifest,
+)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="恢复 OneTree 生产快照")
+    parser.add_argument("snapshot", type=Path)
+    parser.add_argument("uploads_target", type=Path)
+    parser.add_argument("--repo-root", type=Path, default=DEPLOY_DIR.parent)
+    arguments = parser.parse_args()
+
+    database_url = os.environ.get("TARGET_DATABASE_URL", "")
+    if not database_url:
+        raise RuntimeError("必须通过 TARGET_DATABASE_URL 指定维护态目标库")
+    if os.environ.get("ONETREE_MAINTENANCE_MODE") != "1":
+        raise RuntimeError("仅允许在 ONETREE_MAINTENANCE_MODE=1 时恢复")
+    repository = arguments.repo_root.resolve()
+    snapshot = arguments.snapshot.expanduser().absolute()
+    staging_root = Path(tempfile.mkdtemp(prefix=".snapshot-restore."))
+    verified = staging_root / "verified"
+    bundle_directory = staging_root / "bundle-directory"
+    bundle = staging_root / "snapshot.tar"
+    with termination_signal_guard():
+        try:
+            validate_snapshot_directory(snapshot)
+            shutil.copytree(snapshot, verified, symlinks=True)
+            manifest = validate_snapshot_directory(verified)
+            assert_git_commit(manifest, repository)
+            assert_manifest_repository_revision(manifest, repository / "backend")
+            bundle_directory.mkdir()
+            for name in ("database.dump", "knowledge-base-uploads.tar"):
+                shutil.copy2(verified / name, bundle_directory / name)
+            write_manifest(
+                bundle_directory,
+                manifest["schema_state"],
+                manifest["alembic_revision"],
+            )
+            create_bundle_archive(bundle_directory, bundle)
+            run_process_group(
+                [
+                    str(DEPLOY_DIR / "bin" / "import-bundle"),
+                    str(bundle),
+                    str(arguments.uploads_target),
+                ],
+                check=True,
+                env=os.environ.copy(),
+            )
+        finally:
+            shutil.rmtree(staging_root, ignore_errors=True)
+    print(f"快照已恢复：{snapshot.name}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
