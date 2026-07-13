@@ -1,0 +1,16 @@
+.git
+.github
+.superpowers
+.DS_Store
+**/.codex-artifacts
+**/.pytest_cache
+**/.ruff_cache
+**/.venv
+**/__pycache__
+**/*.pyc
+**/node_modules
+**/dist
+backend/tests
+frontend/tests
+frontend/test-results
+frontend/playwright-report

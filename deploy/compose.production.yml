@@ -1,0 +1,194 @@
+x-app-environment: &app-environment
+  APP_ENV: production
+  DATABASE_URL: postgresql://onetree_app:${POSTGRES_APP_PASSWORD}@postgres:5432/onetree
+  JWT_SECRET: ${JWT_SECRET}
+  LLM_BASE_URL: ${LLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+  LLM_API_KEY: ${LLM_API_KEY}
+  LLM_MODEL: ${LLM_MODEL}
+  ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+  KNOWLEDGE_BASE_UPLOAD_DIR: /var/lib/onetree/knowledge-base-uploads
+
+x-maintenance-environment: &maintenance-environment
+  DATABASE_URL: postgresql://onetree_app:${POSTGRES_APP_PASSWORD}@postgres:5432/onetree
+  TARGET_DATABASE_URL: postgresql://onetree_maintenance:${POSTGRES_MAINTENANCE_PASSWORD}@postgres:5432/onetree
+  ONETREE_MAINTENANCE_MODE: "1"
+
+x-backend-build: &backend-build
+  context: ..
+  dockerfile: backend/Dockerfile
+  args:
+    DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://deb.debian.org/debian}
+    DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
+    PGDG_KEY_URL: ${PGDG_KEY_URL:-https://www.postgresql.org/media/keys/ACCC4CF8.asc}
+    PGDG_REPOSITORY: ${PGDG_REPOSITORY:-deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main}
+    PYTHON_PACKAGE_INDEX: ${PYTHON_PACKAGE_INDEX:-https://pypi.org/simple}
+    UV_HTTP_TIMEOUT: ${UV_HTTP_TIMEOUT:-300}
+
+x-journald-logging: &journald-logging
+  driver: journald
+  options:
+    tag: onetree-{{.Name}}
+
+services:
+  postgres:
+    image: postgres:18-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: onetree_maintenance
+      POSTGRES_PASSWORD: ${POSTGRES_MAINTENANCE_PASSWORD}
+      POSTGRES_DB: onetree
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./postgres/init/10-create-roles.sh:/docker-entrypoint-initdb.d/10-create-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username onetree_maintenance --dbname onetree"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    logging: *journald-logging
+
+  backend:
+    build: *backend-build
+    image: onetree-backend:production
+    restart: unless-stopped
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - textbook_uploads:/var/lib/onetree/knowledge-base-uploads
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/health/live', timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging: *journald-logging
+
+  worker:
+    build: *backend-build
+    image: onetree-backend:production
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers"]
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - textbook_uploads:/var/lib/onetree/knowledge-base-uploads
+    logging: *journald-logging
+
+  nginx:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+      target: dist
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+    image: onetree-nginx:production
+    restart: unless-stopped
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        rm -rf /usr/share/nginx/html/*
+        /usr/share/nginx/html/.[!.]*
+        /usr/share/nginx/html/..?* 2>/dev/null || true;
+        cp -a /opt/onetree/frontend-dist/. /usr/share/nginx/html/;
+        exec nginx -g 'daemon off;'
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - frontend_dist:/usr/share/nginx/html
+      - letsencrypt:/etc/letsencrypt
+      - acme_webroot:/var/www/certbot
+    logging: *journald-logging
+
+  certbot:
+    image: certbot/certbot:v5.4.0
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        trap 'exit 0' TERM INT;
+        while :; do sleep 86400 & wait $${!}; done
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - acme_webroot:/var/www/certbot
+    logging: *journald-logging
+
+  migrate:
+    build: *backend-build
+    image: onetree-backend:production
+    command: ["alembic", "upgrade", "head"]
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["operations"]
+    logging: *journald-logging
+
+  smoke:
+    build: *backend-build
+    image: onetree-backend:production
+    entrypoint: ["/opt/onetree/deploy/bin/smoke"]
+    environment:
+      BASE_URL: https://nginx
+      PUBLIC_IPV4: ${PUBLIC_IPV4}
+      SMOKE_ACCOUNT: ${SMOKE_ACCOUNT}
+      SMOKE_PASSWORD: ${SMOKE_PASSWORD}
+    depends_on:
+      nginx:
+        condition: service_started
+    profiles: ["operations"]
+    logging: *journald-logging
+
+  backup:
+    build: *backend-build
+    image: onetree-backend:production
+    entrypoint: ["/opt/onetree/deploy/bin/backup"]
+    command: ["/backups", "/var/lib/onetree/knowledge-base-uploads"]
+    environment: *maintenance-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - /opt/onetree:/opt/onetree:ro
+      - /opt/onetree/backups:/backups
+      - textbook_uploads:/var/lib/onetree/knowledge-base-uploads
+    profiles: ["operations"]
+    logging: *journald-logging
+
+  restore:
+    build: *backend-build
+    image: onetree-backend:production
+    entrypoint: ["/opt/onetree/deploy/bin/restore"]
+    environment: *maintenance-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - /opt/onetree:/opt/onetree:ro
+      - /opt/onetree/backups:/backups
+      - textbook_uploads:/var/lib/onetree/knowledge-base-uploads
+    profiles: ["operations"]
+    logging: *journald-logging
+
+volumes:
+  postgres_data:
+  textbook_uploads:
+  letsencrypt:
+  acme_webroot:
+  frontend_dist:

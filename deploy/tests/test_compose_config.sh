@@ -7,7 +7,8 @@ CONFIG_FILE="$(mktemp)"
 trap 'rm -f "$CONFIG_FILE"' EXIT
 
 export APP_ENV=production
-export POSTGRES_PASSWORD=compose-test-postgres-password
+export POSTGRES_MAINTENANCE_PASSWORD=compose-test-maintenance-password
+export POSTGRES_APP_PASSWORD=compose-test-app-password
 export JWT_SECRET=compose-test-jwt-secret
 export LLM_API_KEY=compose-test-llm-api-key
 export LLM_MODEL=compose-test-llm-model
@@ -18,7 +19,8 @@ export LETSENCRYPT_EMAIL=compose-test@example.com
 export SMOKE_ACCOUNT=18771701100
 export SMOKE_PASSWORD=compose-test-password
 
-docker compose -f "$COMPOSE_FILE" config --format json > "$CONFIG_FILE"
+docker compose --profile operations -f "$COMPOSE_FILE" config --format json \
+  > "$CONFIG_FILE"
 
 python3 - "$CONFIG_FILE" <<'PY'
 from __future__ import annotations
@@ -74,6 +76,30 @@ for service_name, service in services.items():
 assert services["postgres"]["image"].split(":", maxsplit=1)[1].startswith("18")
 assert services["worker"]["command"] == ["python", "-m", "app.workers"]
 assert services["migrate"]["command"] == ["alembic", "upgrade", "head"]
+assert services["postgres"]["environment"]["POSTGRES_DB"] == "onetree"
+assert services["postgres"]["environment"]["POSTGRES_USER"] == "onetree_maintenance"
+assert services["backend"]["build"]["args"]["DEBIAN_MIRROR"] == (
+    "http://deb.debian.org/debian"
+)
+assert services["backend"]["build"]["args"]["DEBIAN_SECURITY_MIRROR"] == (
+    "http://deb.debian.org/debian-security"
+)
+assert services["backend"]["build"]["args"]["PGDG_KEY_URL"] == (
+    "https://www.postgresql.org/media/keys/ACCC4CF8.asc"
+)
+assert services["backend"]["build"]["args"]["PYTHON_PACKAGE_INDEX"] == (
+    "https://pypi.org/simple"
+)
+assert services["backend"]["build"]["args"]["UV_HTTP_TIMEOUT"] == "300"
+assert "onetree_app" in services["backend"]["environment"]["DATABASE_URL"]
+assert "onetree_maintenance" in services["backup"]["environment"]["TARGET_DATABASE_URL"]
+assert "onetree_maintenance" in services["restore"]["environment"]["TARGET_DATABASE_URL"]
+assert "frontend" not in services
+
+nginx_build = services["nginx"]["build"]
+assert nginx_build["target"] == "dist"
+assert nginx_build["args"]["NPM_REGISTRY"] == "https://registry.npmjs.org"
+assert "/opt/onetree/frontend-dist" in " ".join(services["nginx"]["command"])
 
 upload_dir = services["backend"]["environment"]["KNOWLEDGE_BASE_UPLOAD_DIR"]
 for service_name in ("backend", "worker", "backup", "restore"):
