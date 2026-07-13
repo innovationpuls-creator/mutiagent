@@ -100,19 +100,18 @@ def _restore_target_with_upload_compensation(
     staged_uploads: Path,
     uploads_target: Path,
 ) -> None:
-    with blocked_termination_signals():
-        replacement = begin_directory_replacement(staged_uploads, uploads_target)
-        try:
-            run_process_group(
-                _restore_command(dump_path, "onetree_import"),
-                check=True,
-                env=database_environment,
-            )
-        except BaseException:
-            replacement.rollback()
-            raise
-        else:
-            replacement.commit()
+    replacement = begin_directory_replacement(staged_uploads, uploads_target)
+    try:
+        run_process_group(
+            _restore_command(dump_path, "onetree_import"),
+            check=True,
+            env=database_environment,
+        )
+    except BaseException:
+        replacement.rollback()
+        raise
+    else:
+        replacement.commit()
 
 
 def _assert_required_accounts(
