@@ -1,0 +1,832 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ONETREE_INSTALL_ROOT="${ONETREE_INSTALL_ROOT:-/opt/onetree}"
+ONETREE_ENV_FILE="$ONETREE_INSTALL_ROOT/.env.production"
+ONETREE_COMPOSE_FILE="$ONETREE_INSTALL_ROOT/deploy/compose.production.yml"
+ONETREE_BACKUP_ROOT="$ONETREE_INSTALL_ROOT/backups"
+ONETREE_OS_RELEASE_FILE="${ONETREE_OS_RELEASE_FILE:-/etc/os-release}"
+ONETREE_FSTAB_FILE="${ONETREE_FSTAB_FILE:-/etc/fstab}"
+ONETREE_SWAPFILE="${ONETREE_SWAPFILE:-/swapfile}"
+ONETREE_UBUNTU_SOURCE_FILE="${ONETREE_UBUNTU_SOURCE_FILE:-/etc/apt/onetree-sources.list}"
+ONETREE_DOCKER_SOURCE_FILE="${ONETREE_DOCKER_SOURCE_FILE:-/etc/apt/sources.list.d/docker.list}"
+ONETREE_DOCKER_KEY_FILE="${ONETREE_DOCKER_KEY_FILE:-/etc/apt/keyrings/docker.asc}"
+ONETREE_DOCKER_DAEMON_FILE="${ONETREE_DOCKER_DAEMON_FILE:-/etc/docker/daemon.json}"
+ONETREE_JOURNALD_DROPIN_FILE="${ONETREE_JOURNALD_DROPIN_FILE:-/etc/systemd/journald.conf.d/onetree.conf}"
+ONETREE_SYSTEMD_UNIT_DIR="${ONETREE_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+
+REPOSITORY_URL="https://github.com/innovationpuls-creator/mutiagent.git"
+REPOSITORY_BRANCH="main"
+LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+DOCKER_OFFICIAL_REPOSITORY="https://download.docker.com/linux/ubuntu"
+DOCKER_TENCENT_REPOSITORY="https://mirrors.cloud.tencent.com/docker-ce/linux/ubuntu"
+DOCKER_GPG_SHA256="1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570"
+DOCKER_REGISTRY_MIRROR="https://docker.m.daocloud.io"
+TENCENT_UBUNTU_MIRROR="https://mirrors.cloud.tencent.com/ubuntu/"
+PUBLIC_IPV4_METADATA_URL="http://metadata.tencentyun.com/latest/meta-data/public-ipv4"
+PUBLIC_IPV4_FALLBACK_URL="https://api.ipify.org"
+SWAP_SIZE_BYTES=4294967296
+
+APT_FALLBACK_ACTIVE=0
+REGISTRY_FALLBACK_ACTIVE=0
+PARTIAL_INSTALL=0
+UBUNTU_CODENAME=""
+APT_SOURCE_OPTIONS=()
+
+bootstrap_error() {
+  printf 'bootstrap error: %s\n' "$1" >&2
+}
+
+bootstrap_status() {
+  printf '%s\n' "$1"
+}
+
+os_release_value() {
+  local key="$1"
+  local line
+  local matches=0
+  local value=""
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      "$key="*)
+        matches=$((matches + 1))
+        value="${line#*=}"
+        ;;
+    esac
+  done < "$ONETREE_OS_RELEASE_FILE"
+
+  if [[ "$matches" -ne 1 || -z "$value" ]]; then
+    return 1
+  fi
+  case "$value" in
+    \"*\") value="${value:1:${#value}-2}" ;;
+    \'*\') value="${value:1:${#value}-2}" ;;
+  esac
+  [[ -n "$value" ]] || return 1
+  printf '%s' "$value"
+}
+
+validate_platform() {
+  local effective_uid="${ONETREE_BOOTSTRAP_EUID:-$EUID}"
+  local operating_system
+  local version_id
+  local architecture
+
+  if [[ "$effective_uid" != "0" ]]; then
+    bootstrap_error "must run as root"
+    return 1
+  fi
+  if [[ ! -r "$ONETREE_OS_RELEASE_FILE" ]]; then
+    bootstrap_error "cannot read operating system release information"
+    return 1
+  fi
+  operating_system="$(os_release_value ID)" || {
+    bootstrap_error "operating system ID is unavailable"
+    return 1
+  }
+  version_id="$(os_release_value VERSION_ID)" || {
+    bootstrap_error "operating system VERSION_ID is unavailable"
+    return 1
+  }
+  if [[ "$operating_system" != "ubuntu" || "$version_id" != "24.04" ]]; then
+    bootstrap_error "Ubuntu VERSION_ID=24.04 is required"
+    return 1
+  fi
+
+  architecture="${ONETREE_ARCH:-$(uname -m)}"
+  if [[ "$architecture" != "x86_64" ]]; then
+    bootstrap_error "x86_64 is required"
+    return 1
+  fi
+  UBUNTU_CODENAME="$(os_release_value VERSION_CODENAME)" || {
+    bootstrap_error "Ubuntu VERSION_CODENAME is unavailable"
+    return 1
+  }
+}
+
+classify_install_state() {
+  if [[ -x "$ONETREE_INSTALL_ROOT/bin/deploy" ]]; then
+    bootstrap_error "production install already exists; use /opt/onetree/bin/deploy for updates"
+    return 1
+  fi
+  if [[ -e "$ONETREE_ENV_FILE" || -L "$ONETREE_ENV_FILE" ]]; then
+    PARTIAL_INSTALL=1
+  fi
+}
+
+validate_public_ipv4() {
+  python3 - "$1" <<'PY' >/dev/null 2>&1
+from __future__ import annotations
+
+import ipaddress
+import sys
+
+value = sys.argv[1]
+address = ipaddress.ip_address(value)
+if not isinstance(address, ipaddress.IPv4Address) or str(address) != value:
+    raise SystemExit(1)
+PY
+}
+
+detect_public_ipv4() {
+  local address=""
+
+  address="$(
+    curl -4fsS --connect-timeout 2 --max-time 5 "$PUBLIC_IPV4_METADATA_URL"
+  )" 2>/dev/null || address=""
+  if [[ -z "$address" ]]; then
+    address="$(
+      curl -4fsS --connect-timeout 2 --max-time 5 "$PUBLIC_IPV4_FALLBACK_URL"
+    )" 2>/dev/null || address=""
+  fi
+  if [[ -z "$address" ]] || ! validate_public_ipv4 "$address"; then
+    bootstrap_error "automatic public IPv4 detection failed"
+    return 1
+  fi
+  printf '%s' "$address"
+}
+
+write_ubuntu_fallback_source() {
+  local docker_repository="${1:-}"
+  local source_directory
+  local temporary_file
+
+  source_directory="$(dirname "$ONETREE_UBUNTU_SOURCE_FILE")"
+  install -d -m 0755 "$source_directory"
+  temporary_file="$(mktemp "$source_directory/.onetree-sources.XXXXXX")"
+  {
+    printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] %s %s main restricted universe multiverse\n' \
+      "$TENCENT_UBUNTU_MIRROR" "$UBUNTU_CODENAME"
+    printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] %s %s-updates main restricted universe multiverse\n' \
+      "$TENCENT_UBUNTU_MIRROR" "$UBUNTU_CODENAME"
+    printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] %s %s-backports main restricted universe multiverse\n' \
+      "$TENCENT_UBUNTU_MIRROR" "$UBUNTU_CODENAME"
+    printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] %s %s-security main restricted universe multiverse\n' \
+      "$TENCENT_UBUNTU_MIRROR" "$UBUNTU_CODENAME"
+    if [[ -n "$docker_repository" ]]; then
+      printf 'deb [arch=amd64 signed-by=%s] %s %s stable\n' \
+        "$ONETREE_DOCKER_KEY_FILE" "$docker_repository" "$UBUNTU_CODENAME"
+    fi
+  } > "$temporary_file"
+  chmod 0644 "$temporary_file"
+  mv -f "$temporary_file" "$ONETREE_UBUNTU_SOURCE_FILE"
+}
+
+activate_ubuntu_apt_fallback() {
+  write_ubuntu_fallback_source
+  APT_SOURCE_OPTIONS=(
+    -o "Dir::Etc::sourcelist=$ONETREE_UBUNTU_SOURCE_FILE"
+    -o "Dir::Etc::sourceparts=-"
+    -o "APT::Get::List-Cleanup=0"
+  )
+  APT_FALLBACK_ACTIVE=1
+}
+
+apt_get() {
+  if [[ "$APT_FALLBACK_ACTIVE" -eq 1 ]]; then
+    apt-get "${APT_SOURCE_OPTIONS[@]}" "$@"
+    return
+  fi
+  apt-get "$@"
+}
+
+install_base_packages() {
+  apt_get install -y \
+    ca-certificates \
+    curl \
+    git \
+    gnupg \
+    openssl \
+    python3 \
+    ufw \
+    util-linux
+}
+
+install_prerequisites() {
+  if apt-get update && install_base_packages; then
+    return
+  fi
+  bootstrap_status "Ubuntu apt failed; switching to the Tencent mirror"
+  activate_ubuntu_apt_fallback
+  apt_get update
+  install_base_packages
+}
+
+write_docker_repository() {
+  local repository="$1"
+  local source_directory
+  local temporary_file
+
+  source_directory="$(dirname "$ONETREE_DOCKER_SOURCE_FILE")"
+  install -d -m 0755 "$source_directory"
+  temporary_file="$(mktemp "$source_directory/.docker-list.XXXXXX")"
+  printf 'deb [arch=amd64 signed-by=%s] %s %s stable\n' \
+    "$ONETREE_DOCKER_KEY_FILE" "$repository" "$UBUNTU_CODENAME" \
+    > "$temporary_file"
+  chmod 0644 "$temporary_file"
+  mv -f "$temporary_file" "$ONETREE_DOCKER_SOURCE_FILE"
+  if [[ "$APT_FALLBACK_ACTIVE" -eq 1 ]]; then
+    write_ubuntu_fallback_source "$repository"
+  fi
+}
+
+install_docker_from_repository() {
+  local repository="$1"
+  local key_directory
+  local temporary_key
+  local actual_hash
+
+  key_directory="$(dirname "$ONETREE_DOCKER_KEY_FILE")"
+  install -d -m 0755 "$key_directory"
+  temporary_key="$(mktemp "$key_directory/.docker-key.XXXXXX")"
+  if ! curl --fail --silent --show-error --location \
+    "$repository/gpg" --output "$temporary_key"; then
+    rm -f "$temporary_key"
+    return 1
+  fi
+  actual_hash="$(sha256sum "$temporary_key")"
+  actual_hash="${actual_hash%% *}"
+  if [[ "$actual_hash" != "$DOCKER_GPG_SHA256" ]]; then
+    rm -f "$temporary_key"
+    bootstrap_error "Docker repository GPG key hash mismatch"
+    return 1
+  fi
+  install -m 0644 "$temporary_key" "$ONETREE_DOCKER_KEY_FILE"
+  rm -f "$temporary_key"
+  write_docker_repository "$repository"
+  apt_get update || return 1
+  apt_get install -y \
+    docker-ce \
+    docker-ce-cli \
+    containerd.io \
+    docker-buildx-plugin \
+    docker-compose-plugin || return 1
+}
+
+docker_cli_ready() {
+  docker compose version >/dev/null 2>&1
+}
+
+docker_daemon_ready() {
+  docker info >/dev/null 2>&1
+}
+
+install_docker_engine() {
+  if ! docker_cli_ready; then
+    if ! install_docker_from_repository "$DOCKER_OFFICIAL_REPOSITORY"; then
+      bootstrap_status "Official Docker apt installation failed; switching to the Tencent mirror"
+      install_docker_from_repository "$DOCKER_TENCENT_REPOSITORY"
+    fi
+  fi
+  systemctl enable --now docker
+  if ! docker_cli_ready || ! docker_daemon_ready; then
+    bootstrap_error "Docker Engine or Docker Compose is unavailable after installation"
+    return 1
+  fi
+}
+
+swap_is_active() {
+  local active_swap
+
+  while IFS= read -r active_swap; do
+    [[ "$active_swap" == "$1" ]] && return 0
+  done < <(swapon --show=NAME --noheadings)
+  return 1
+}
+
+ensure_swap_fstab_entry() {
+  python3 - "$1" "$2" <<'PY'
+from __future__ import annotations
+
+import os
+import stat
+import sys
+from pathlib import Path
+
+fstab_path = Path(sys.argv[1])
+swap_path = sys.argv[2]
+original_mode = stat.S_IMODE(fstab_path.stat().st_mode)
+lines = fstab_path.read_text(encoding="utf-8").splitlines()
+kept_lines = []
+for line in lines:
+    fields = line.split()
+    if fields and not fields[0].startswith("#") and fields[0] == swap_path:
+        continue
+    kept_lines.append(line)
+kept_lines.append(f"{swap_path} none swap sw 0 0")
+temporary_path = fstab_path.with_name(f".{fstab_path.name}.onetree.tmp")
+temporary_path.write_text("\n".join(kept_lines) + "\n", encoding="utf-8")
+os.chmod(temporary_path, original_mode)
+os.replace(temporary_path, fstab_path)
+PY
+}
+
+configure_swap() {
+  local current_size=""
+  local recreate=0
+
+  if [[ -e "$ONETREE_SWAPFILE" ]]; then
+    if [[ ! -f "$ONETREE_SWAPFILE" ]]; then
+      bootstrap_error "swap path exists and is not a regular file"
+      return 1
+    fi
+    current_size="$(stat -c %s "$ONETREE_SWAPFILE")"
+    if [[ "$current_size" != "$SWAP_SIZE_BYTES" ]]; then
+      if swap_is_active "$ONETREE_SWAPFILE"; then
+        swapoff "$ONETREE_SWAPFILE"
+      fi
+      rm -f "$ONETREE_SWAPFILE"
+      recreate=1
+    fi
+  else
+    recreate=1
+  fi
+
+  if [[ "$recreate" -eq 1 ]]; then
+    fallocate -l "$SWAP_SIZE_BYTES" "$ONETREE_SWAPFILE"
+  fi
+  chmod 0600 "$ONETREE_SWAPFILE"
+  if ! swap_is_active "$ONETREE_SWAPFILE"; then
+    mkswap "$ONETREE_SWAPFILE" >/dev/null
+    swapon "$ONETREE_SWAPFILE"
+  fi
+  ensure_swap_fstab_entry "$ONETREE_FSTAB_FILE" "$ONETREE_SWAPFILE"
+}
+
+configure_firewall() {
+  ufw --force reset
+  ufw default deny incoming
+  ufw default allow outgoing
+  ufw allow 80/tcp
+  ufw allow 443/tcp
+  ufw --force enable
+}
+
+configure_journald() {
+  local dropin_directory
+  local temporary_file
+
+  dropin_directory="$(dirname "$ONETREE_JOURNALD_DROPIN_FILE")"
+  install -d -m 0755 "$dropin_directory"
+  temporary_file="$(mktemp "$dropin_directory/.onetree-journal.XXXXXX")"
+  printf '%s\n' \
+    '[Journal]' \
+    'Storage=persistent' \
+    'MaxRetentionSec=7day' \
+    'SystemMaxUse=2G' > "$temporary_file"
+  chmod 0644 "$temporary_file"
+  mv -f "$temporary_file" "$ONETREE_JOURNALD_DROPIN_FILE"
+  systemd-tmpfiles --create --prefix /var/log/journal
+  systemctl restart systemd-journald
+}
+
+clone_repository() {
+  local current_remote
+
+  if [[ ! -e "$ONETREE_INSTALL_ROOT" ]]; then
+    install -d -m 0755 "$(dirname "$ONETREE_INSTALL_ROOT")"
+    git clone \
+      --branch "$REPOSITORY_BRANCH" \
+      --single-branch \
+      "$REPOSITORY_URL" \
+      "$ONETREE_INSTALL_ROOT"
+    return
+  fi
+  if [[ ! -d "$ONETREE_INSTALL_ROOT/.git" ]]; then
+    bootstrap_error "install root exists but is not the OneTree Git repository"
+    return 1
+  fi
+  current_remote="$(git -C "$ONETREE_INSTALL_ROOT" remote get-url origin)"
+  if [[ "$current_remote" != "$REPOSITORY_URL" ]]; then
+    bootstrap_error "existing repository origin does not match the production repository"
+    return 1
+  fi
+}
+
+require_nonempty_input() {
+  if [[ -z "$2" ]]; then
+    bootstrap_error "$1 must not be empty"
+    return 1
+  fi
+}
+
+validate_env_literal_input() {
+  if [[ "$2" == *"'"* ]]; then
+    bootstrap_error "$1 cannot contain a single quote"
+    return 1
+  fi
+}
+
+resolve_bundle_path() {
+  python3 - "$1" <<'PY'
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+bundle_path = Path(sys.argv[1]).expanduser().resolve(strict=True)
+if not bundle_path.is_file() or not os.access(bundle_path, os.R_OK):
+    raise SystemExit(1)
+print(bundle_path)
+PY
+}
+
+collect_inputs() {
+  printf 'LLM API key: ' >&2
+  IFS= read -r -s LLM_API_KEY
+  printf '\n' >&2
+  printf 'LLM model: ' >&2
+  IFS= read -r LLM_MODEL
+  printf 'Let\x27s Encrypt email: ' >&2
+  IFS= read -r LETSENCRYPT_EMAIL
+  printf 'Migration bundle path: ' >&2
+  IFS= read -r BUNDLE_PATH
+  printf 'Smoke account: ' >&2
+  IFS= read -r SMOKE_ACCOUNT
+  printf 'Smoke password: ' >&2
+  IFS= read -r -s SMOKE_PASSWORD
+  printf '\n' >&2
+
+  require_nonempty_input LLM_API_KEY "$LLM_API_KEY"
+  require_nonempty_input LLM_MODEL "$LLM_MODEL"
+  require_nonempty_input LETSENCRYPT_EMAIL "$LETSENCRYPT_EMAIL"
+  require_nonempty_input BUNDLE_PATH "$BUNDLE_PATH"
+  require_nonempty_input SMOKE_ACCOUNT "$SMOKE_ACCOUNT"
+  require_nonempty_input SMOKE_PASSWORD "$SMOKE_PASSWORD"
+  validate_env_literal_input LLM_API_KEY "$LLM_API_KEY"
+  validate_env_literal_input LLM_MODEL "$LLM_MODEL"
+  validate_env_literal_input LETSENCRYPT_EMAIL "$LETSENCRYPT_EMAIL"
+  validate_env_literal_input SMOKE_ACCOUNT "$SMOKE_ACCOUNT"
+  validate_env_literal_input SMOKE_PASSWORD "$SMOKE_PASSWORD"
+  if ! BUNDLE_PATH="$(resolve_bundle_path "$BUNDLE_PATH")"; then
+    bootstrap_error "migration bundle must be one readable regular file"
+    return 1
+  fi
+}
+
+existing_env_value() {
+  local key="$1"
+  local line
+  local value=""
+  local matches=0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      "$key="*)
+        matches=$((matches + 1))
+        value="${line#*=}"
+        ;;
+    esac
+  done < "$ONETREE_ENV_FILE"
+  if [[ "$matches" -ne 1 || -z "$value" ]]; then
+    return 1
+  fi
+  printf '%s' "$value"
+}
+
+load_or_generate_secrets() {
+  if [[ -f "$ONETREE_ENV_FILE" ]]; then
+    POSTGRES_MAINTENANCE_PASSWORD="$(
+      existing_env_value POSTGRES_MAINTENANCE_PASSWORD
+    )" || return 1
+    POSTGRES_APP_PASSWORD="$(existing_env_value POSTGRES_APP_PASSWORD)" || return 1
+    JWT_SECRET="$(existing_env_value JWT_SECRET)" || return 1
+    MAINTENANCE_BYPASS_TOKEN="$(
+      existing_env_value MAINTENANCE_BYPASS_TOKEN
+    )" || return 1
+    return
+  fi
+  POSTGRES_MAINTENANCE_PASSWORD="$(openssl rand -hex 32)"
+  POSTGRES_APP_PASSWORD="$(openssl rand -hex 32)"
+  JWT_SECRET="$(openssl rand -hex 32)"
+  MAINTENANCE_BYPASS_TOKEN="$(openssl rand -hex 32)"
+}
+
+write_literal_env_entry() {
+  local key="$1"
+  local value="$2"
+
+  validate_env_literal_input "$key" "$value"
+  printf "%s='%s'\n" "$key" "$value"
+}
+
+write_production_env() {
+  local nginx_mode="$1"
+  local environment_directory
+  local temporary_file
+
+  DATABASE_URL="postgresql://onetree_app:${POSTGRES_APP_PASSWORD}@postgres:5432/onetree"
+  TARGET_DATABASE_URL="postgresql://onetree_maintenance:${POSTGRES_MAINTENANCE_PASSWORD}@postgres:5432/onetree"
+  ALLOWED_ORIGINS="https://onetree.chat,https://www.onetree.chat,https://${PUBLIC_IPV4}"
+  NGINX_CONFIG_MODE="$nginx_mode"
+  environment_directory="$(dirname "$ONETREE_ENV_FILE")"
+  install -d -m 0755 "$environment_directory"
+  umask 077
+  temporary_file="$(mktemp "$environment_directory/.env.production.XXXXXX")"
+  {
+    printf 'APP_ENV=production\n'
+    printf 'POSTGRES_MAINTENANCE_PASSWORD=%s\n' "$POSTGRES_MAINTENANCE_PASSWORD"
+    printf 'POSTGRES_APP_PASSWORD=%s\n' "$POSTGRES_APP_PASSWORD"
+    printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
+    printf 'TARGET_DATABASE_URL=%s\n' "$TARGET_DATABASE_URL"
+    printf 'JWT_SECRET=%s\n' "$JWT_SECRET"
+    printf 'LLM_BASE_URL=%s\n' "$LLM_BASE_URL"
+    write_literal_env_entry LLM_API_KEY "$LLM_API_KEY"
+    write_literal_env_entry LLM_MODEL "$LLM_MODEL"
+    printf 'ALLOWED_ORIGINS=%s\n' "$ALLOWED_ORIGINS"
+    printf 'PUBLIC_IPV4=%s\n' "$PUBLIC_IPV4"
+    printf 'MAINTENANCE_BYPASS_TOKEN=%s\n' "$MAINTENANCE_BYPASS_TOKEN"
+    printf 'NGINX_CONFIG_MODE=%s\n' "$NGINX_CONFIG_MODE"
+    write_literal_env_entry LETSENCRYPT_EMAIL "$LETSENCRYPT_EMAIL"
+    write_literal_env_entry SMOKE_ACCOUNT "$SMOKE_ACCOUNT"
+    write_literal_env_entry SMOKE_PASSWORD "$SMOKE_PASSWORD"
+    if [[ "$REGISTRY_FALLBACK_ACTIVE" -eq 1 ]]; then
+      printf 'DEBIAN_MIRROR=%s\n' "$DEBIAN_MIRROR"
+      printf 'DEBIAN_SECURITY_MIRROR=%s\n' "$DEBIAN_SECURITY_MIRROR"
+      printf 'PGDG_KEY_URL=%s\n' "$PGDG_KEY_URL"
+      printf 'PGDG_REPOSITORY=%s\n' "$PGDG_REPOSITORY"
+      printf 'PYTHON_PACKAGE_INDEX=%s\n' "$PYTHON_PACKAGE_INDEX"
+      printf 'NPM_REGISTRY=%s\n' "$NPM_REGISTRY"
+      printf 'UV_HTTP_TIMEOUT=%s\n' "$UV_HTTP_TIMEOUT"
+    fi
+  } > "$temporary_file"
+  chmod 0600 "$temporary_file"
+  mv -f "$temporary_file" "$ONETREE_ENV_FILE"
+}
+
+export_production_environment() {
+  export \
+    ALLOWED_ORIGINS \
+    DATABASE_URL \
+    JWT_SECRET \
+    LETSENCRYPT_EMAIL \
+    LLM_API_KEY \
+    LLM_BASE_URL \
+    LLM_MODEL \
+    MAINTENANCE_BYPASS_TOKEN \
+    NGINX_CONFIG_MODE \
+    POSTGRES_APP_PASSWORD \
+    POSTGRES_MAINTENANCE_PASSWORD \
+    PUBLIC_IPV4 \
+    SMOKE_ACCOUNT \
+    SMOKE_PASSWORD \
+    TARGET_DATABASE_URL
+}
+
+load_persisted_image_fallback() {
+  local key
+  local present=0
+  local keys=(
+    DEBIAN_MIRROR
+    DEBIAN_SECURITY_MIRROR
+    PGDG_KEY_URL
+    PGDG_REPOSITORY
+    PYTHON_PACKAGE_INDEX
+    NPM_REGISTRY
+    UV_HTTP_TIMEOUT
+  )
+
+  for key in "${keys[@]}"; do
+    if existing_env_value "$key" >/dev/null; then
+      present=$((present + 1))
+    fi
+  done
+  if [[ "$present" -eq 0 ]]; then
+    return
+  fi
+  if [[ "$present" -ne "${#keys[@]}" ]]; then
+    bootstrap_error "persisted image fallback settings are incomplete"
+    return 1
+  fi
+  DEBIAN_MIRROR="$(existing_env_value DEBIAN_MIRROR)"
+  DEBIAN_SECURITY_MIRROR="$(existing_env_value DEBIAN_SECURITY_MIRROR)"
+  PGDG_KEY_URL="$(existing_env_value PGDG_KEY_URL)"
+  PGDG_REPOSITORY="$(existing_env_value PGDG_REPOSITORY)"
+  PYTHON_PACKAGE_INDEX="$(existing_env_value PYTHON_PACKAGE_INDEX)"
+  NPM_REGISTRY="$(existing_env_value NPM_REGISTRY)"
+  UV_HTTP_TIMEOUT="$(existing_env_value UV_HTTP_TIMEOUT)"
+  export \
+    DEBIAN_MIRROR \
+    DEBIAN_SECURITY_MIRROR \
+    PGDG_KEY_URL \
+    PGDG_REPOSITORY \
+    PYTHON_PACKAGE_INDEX \
+    NPM_REGISTRY \
+    UV_HTTP_TIMEOUT
+  REGISTRY_FALLBACK_ACTIVE=1
+}
+
+compose() {
+  docker compose \
+    --env-file "$ONETREE_ENV_FILE" \
+    -f "$ONETREE_COMPOSE_FILE" \
+    "$@"
+}
+
+prepare_partial_retry() {
+  local running_services
+
+  compose stop backend worker nginx certbot
+  if ! running_services="$(
+    compose ps --status running --services backend worker nginx certbot
+  )"; then
+    bootstrap_error "failed to verify partial deployment service state"
+    return 1
+  fi
+  if [[ -n "$running_services" ]]; then
+    bootstrap_error "partial deployment services are still running"
+    return 1
+  fi
+}
+
+merge_registry_mirror() {
+  python3 - "$1" "$2" <<'PY'
+from __future__ import annotations
+
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+
+daemon_path = Path(sys.argv[1])
+mirror = sys.argv[2]
+daemon_path.parent.mkdir(parents=True, exist_ok=True)
+if daemon_path.exists():
+    payload = json.loads(daemon_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise RuntimeError("Docker daemon configuration must be a JSON object")
+    mode = stat.S_IMODE(daemon_path.stat().st_mode)
+else:
+    payload = {}
+    mode = 0o644
+mirrors = payload.get("registry-mirrors", [])
+if not isinstance(mirrors, list) or not all(isinstance(item, str) for item in mirrors):
+    raise RuntimeError("Docker registry-mirrors must be a string array")
+if mirror not in mirrors:
+    mirrors.append(mirror)
+payload["registry-mirrors"] = mirrors
+temporary_path = daemon_path.with_name(f".{daemon_path.name}.onetree.tmp")
+temporary_path.write_text(
+    json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+os.chmod(temporary_path, mode)
+os.replace(temporary_path, daemon_path)
+PY
+}
+
+activate_registry_fallback() {
+  merge_registry_mirror "$ONETREE_DOCKER_DAEMON_FILE" "$DOCKER_REGISTRY_MIRROR"
+  systemctl restart docker
+  docker_daemon_ready
+  export DEBIAN_MIRROR="https://mirrors.cloud.tencent.com/debian"
+  export DEBIAN_SECURITY_MIRROR="https://mirrors.cloud.tencent.com/debian-security"
+  export PGDG_KEY_URL="https://mirrors.cloud.tencent.com/postgresql/repos/apt/ACCC4CF8.asc"
+  export PGDG_REPOSITORY="deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://mirrors.cloud.tencent.com/postgresql/repos/apt bookworm-pgdg main"
+  export PYTHON_PACKAGE_INDEX="https://mirrors.cloud.tencent.com/pypi/simple/"
+  export NPM_REGISTRY="https://mirrors.cloud.tencent.com/npm/"
+  export UV_HTTP_TIMEOUT=300
+  REGISTRY_FALLBACK_ACTIVE=1
+  write_production_env "$NGINX_CONFIG_MODE"
+}
+
+run_image_step() {
+  if "$@"; then
+    return 0
+  fi
+  if [[ "$REGISTRY_FALLBACK_ACTIVE" -eq 1 ]]; then
+    return 1
+  fi
+  bootstrap_status "Docker image operation failed; enabling verified mirror fallbacks"
+  activate_registry_fallback
+  "$@"
+}
+
+import_migration_bundle() {
+  run_image_step compose pull postgres certbot
+  run_image_step compose build backend
+  compose up -d --wait postgres
+  TARGET_DATABASE_URL="$TARGET_DATABASE_URL" \
+    ONETREE_MAINTENANCE_MODE=1 \
+    UPLOADS_OWNER_UID=10001 \
+    UPLOADS_OWNER_GID=10001 \
+    compose run --rm --no-deps \
+      --user 0:0 \
+      --volume "$BUNDLE_PATH:$BUNDLE_PATH:ro" \
+      --entrypoint /opt/onetree/deploy/bin/import-bundle \
+      -e TARGET_DATABASE_URL \
+      -e ONETREE_MAINTENANCE_MODE \
+      -e UPLOADS_OWNER_UID \
+      -e UPLOADS_OWNER_GID \
+      backend \
+      "$BUNDLE_PATH" \
+      /var/lib/onetree/knowledge-base-uploads
+}
+
+valid_backup_id() {
+  [[ "$1" =~ ^[0-9]{8}T[0-9]{6}\.[0-9]{6}Z$ ]]
+}
+
+create_baseline_backup() {
+  local backup_id
+
+  install -d -m 0755 "$ONETREE_BACKUP_ROOT"
+  if ! backup_id="$(
+    DATABASE_URL="$DATABASE_URL" \
+      TARGET_DATABASE_URL="$TARGET_DATABASE_URL" \
+      ONETREE_MAINTENANCE_MODE=1 \
+      compose --profile operations run --rm \
+      -e DATABASE_URL \
+      -e TARGET_DATABASE_URL \
+      -e ONETREE_MAINTENANCE_MODE \
+      backup
+  )"; then
+    bootstrap_error "baseline backup command failed"
+    return 1
+  fi
+  if ! valid_backup_id "$backup_id"; then
+    bootstrap_error "baseline backup did not return one valid backup id"
+    return 1
+  fi
+  if [[ ! -d "$ONETREE_BACKUP_ROOT/$backup_id" ]]; then
+    bootstrap_error "baseline backup directory was not published"
+    return 1
+  fi
+  printf '%s' "$backup_id"
+}
+
+start_production() {
+  run_image_step compose build
+  compose --profile operations run --rm migrate
+  compose up -d --wait postgres backend worker certbot nginx
+  "$ONETREE_INSTALL_ROOT/deploy/bin/cert-issue"
+  write_production_env production
+  export_production_environment
+  compose up -d --wait --force-recreate nginx
+  compose --profile operations run --rm smoke
+}
+
+install_operations() {
+  local temporary_deploy_link
+
+  install -d -m 0755 "$ONETREE_INSTALL_ROOT/bin" "$ONETREE_INSTALL_ROOT/backups"
+  install -d -m 0755 "$ONETREE_SYSTEMD_UNIT_DIR"
+  install -m 0644 \
+    "$ONETREE_INSTALL_ROOT/deploy/systemd/onetree-cert-renew.service" \
+    "$ONETREE_SYSTEMD_UNIT_DIR/onetree-cert-renew.service"
+  install -m 0644 \
+    "$ONETREE_INSTALL_ROOT/deploy/systemd/onetree-cert-renew.timer" \
+    "$ONETREE_SYSTEMD_UNIT_DIR/onetree-cert-renew.timer"
+  systemctl daemon-reload
+  systemctl enable --now onetree-cert-renew.timer
+  ln -sfn \
+    "$ONETREE_INSTALL_ROOT/deploy/bin/rollback" \
+    "$ONETREE_INSTALL_ROOT/bin/rollback"
+  temporary_deploy_link="$ONETREE_INSTALL_ROOT/bin/.deploy.bootstrap.$$"
+  rm -f "$temporary_deploy_link"
+  ln -s "$ONETREE_INSTALL_ROOT/deploy/bin/deploy" "$temporary_deploy_link"
+  mv -f "$temporary_deploy_link" "$ONETREE_INSTALL_ROOT/bin/deploy"
+}
+
+main() {
+  validate_platform
+  classify_install_state
+  bootstrap_status "Installing required system packages"
+  install_prerequisites
+  install_docker_engine
+  PUBLIC_IPV4="$(detect_public_ipv4)"
+  configure_journald
+  configure_swap
+  configure_firewall
+  clone_repository
+  if [[ "$PARTIAL_INSTALL" -eq 1 ]]; then
+    load_or_generate_secrets || {
+      bootstrap_error "existing production secrets are incomplete or duplicated"
+      return 1
+    }
+    load_persisted_image_fallback
+    prepare_partial_retry
+  fi
+  collect_inputs
+  if [[ "$PARTIAL_INSTALL" -eq 0 ]]; then
+    load_or_generate_secrets
+  fi
+  write_production_env bootstrap
+  export_production_environment
+  import_migration_bundle
+  create_baseline_backup >/dev/null
+  start_production
+  install_operations
+  bootstrap_status "OneTree production bootstrap completed"
+  printf 'https://onetree.chat\nhttps://www.onetree.chat\nhttps://%s\n' "$PUBLIC_IPV4"
+  printf '%s\n' \
+    "$ONETREE_INSTALL_ROOT/bin/deploy" \
+    "$ONETREE_INSTALL_ROOT/bin/rollback <backup-id>"
+}
+
+if [[ "${ONETREE_BOOTSTRAP_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi

@@ -74,7 +74,6 @@ services:
     logging: *journald-logging
 
   worker:
-    build: *backend-build
     image: onetree-backend:production
     restart: unless-stopped
     command: ["python", "-m", "app.workers"]
@@ -141,7 +140,6 @@ services:
     logging: *journald-logging
 
   migrate:
-    build: *backend-build
     image: onetree-backend:production
     command: ["alembic", "upgrade", "head"]
     environment: *app-environment
@@ -152,7 +150,6 @@ services:
     logging: *journald-logging
 
   smoke:
-    build: *backend-build
     image: onetree-backend:production
     entrypoint: ["/opt/onetree/deploy/bin/smoke"]
     environment:
@@ -168,7 +165,6 @@ services:
     logging: *journald-logging
 
   backup:
-    build: *backend-build
     image: onetree-backend:production
     user: "0:0"
     entrypoint: ["/opt/onetree/deploy/bin/backup"]
@@ -185,7 +181,6 @@ services:
     logging: *journald-logging
 
   restore:
-    build: *backend-build
     image: onetree-backend:production
     user: "0:0"
     entrypoint: ["/opt/onetree/deploy/bin/restore"]

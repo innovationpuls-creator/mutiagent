@@ -102,6 +102,9 @@ assert services["backend"]["build"]["args"]["PYTHON_PACKAGE_INDEX"] == (
     "https://pypi.org/simple"
 )
 assert services["backend"]["build"]["args"]["UV_HTTP_TIMEOUT"] == "300"
+for service_name in ("worker", "migrate", "smoke", "backup", "restore"):
+    assert services[service_name]["image"] == "onetree-backend:production"
+    assert "build" not in services[service_name], service_name
 assert "onetree_app" in services["backend"]["environment"]["DATABASE_URL"]
 assert "onetree_maintenance" in services["backup"]["environment"]["TARGET_DATABASE_URL"]
 assert "onetree_maintenance" in services["restore"]["environment"]["TARGET_DATABASE_URL"]
