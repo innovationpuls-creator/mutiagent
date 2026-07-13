@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import tarfile
+import time
 from pathlib import Path
 
 import pytest
@@ -21,9 +22,11 @@ from migration_manifest import (  # noqa: E402
     TerminationRequested,
     assert_manifest_repository_revision,
     begin_directory_replacement,
+    blocked_termination_signals,
     create_bundle_archive,
     extract_verified_bundle,
     replace_database_name,
+    run_process_group,
     termination_signal_guard,
     validate_replacement_target,
 )
@@ -357,6 +360,71 @@ def test_database_failure_rolls_back_begun_directory_replacement(
 
     assert (target / "old.txt").read_text(encoding="utf-8") == "old"
     assert not (target / "new.txt").exists()
+
+
+def test_signal_is_deferred_until_directory_replacement_is_committed(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "uploads"
+    target.mkdir()
+    (target / "old.txt").write_text("old", encoding="utf-8")
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "new.txt").write_text("new", encoding="utf-8")
+
+    with termination_signal_guard(), pytest.raises(TerminationRequested):
+        with blocked_termination_signals():
+            replacement = begin_directory_replacement(staging, target)
+            os.kill(os.getpid(), signal.SIGTERM)
+            replacement.commit()
+
+    assert (target / "new.txt").read_text(encoding="utf-8") == "new"
+    assert not (target / "old.txt").exists()
+
+
+def test_repeated_signal_during_handler_does_not_interrupt_callback() -> None:
+    callback_calls = 0
+
+    def callback() -> None:
+        nonlocal callback_calls
+        callback_calls += 1
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    with termination_signal_guard(callback), pytest.raises(TerminationRequested):
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    assert callback_calls == 1
+
+
+def test_process_group_signal_stops_shell_descendant(tmp_path: Path) -> None:
+    script = tmp_path / "spawn-descendant.sh"
+    child_pid_file = tmp_path / "child-pid"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "sleep 30 &\n"
+        "child=$!\n"
+        'printf "%s\\n" "$child" > "$CHILD_PID_FILE"\n'
+        'kill -TERM "$PPID"\n'
+        'wait "$child"\n',
+        encoding="utf-8",
+    )
+    script.chmod(0o700)
+    environment = os.environ.copy()
+    environment["CHILD_PID_FILE"] = str(child_pid_file)
+
+    with pytest.raises(TerminationRequested):
+        run_process_group([str(script)], check=True, env=environment)
+
+    child_pid = int(child_pid_file.read_text(encoding="utf-8"))
+    for _ in range(100):
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail("process-group descendant remained alive")
 
 
 def test_previous_cleanup_failure_does_not_block_next_replacement(

@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import uuid
@@ -16,6 +15,7 @@ sys.path.insert(0, str(DEPLOY_DIR / "lib"))
 from migration_manifest import (  # noqa: E402
     assert_manifest_repository_revision,
     begin_directory_replacement,
+    blocked_termination_signals,
     extract_upload_archive,
     extract_verified_bundle,
     inspect_database_identity,
@@ -23,6 +23,7 @@ from migration_manifest import (  # noqa: E402
     postgres_service_environment,
     replace_database_name,
     repository_revision_sets,
+    run_process_group,
     termination_signal_guard,
     validate_replacement_target,
 )
@@ -37,7 +38,7 @@ REQUIRED_ACCOUNTS = (
 def _query(
     database_environment: dict[str, str], service_name: str, sql: str
 ) -> list[str]:
-    result = subprocess.run(
+    result = run_process_group(
         [
             "psql",
             "--no-psqlrc",
@@ -60,7 +61,7 @@ def _restore_dump(
     database_environment: dict[str, str],
     service_name: str,
 ) -> None:
-    subprocess.run(
+    run_process_group(
         [
             "pg_restore",
             "--clean",
@@ -97,33 +98,19 @@ def _restore_target_with_upload_compensation(
     staged_uploads: Path,
     uploads_target: Path,
 ) -> None:
-    replacement = None
-    restore_process: subprocess.Popen[bytes] | None = None
-    try:
+    with blocked_termination_signals():
         replacement = begin_directory_replacement(staged_uploads, uploads_target)
-
-        def compensate_signal() -> None:
-            if restore_process is not None and restore_process.poll() is None:
-                restore_process.kill()
-
-        with termination_signal_guard(compensate_signal):
-            restore_process = subprocess.Popen(
+        try:
+            run_process_group(
                 _restore_command(dump_path, "onetree_import"),
+                check=True,
                 env=database_environment,
             )
-            return_code = restore_process.wait()
-            if return_code != 0:
-                raise subprocess.CalledProcessError(return_code, restore_process.args)
+        except BaseException:
+            replacement.rollback()
+            raise
+        else:
             replacement.commit()
-    except BaseException:
-        if restore_process is not None and restore_process.returncode is None:
-            restore_process.wait()
-        if replacement is not None and replacement.active:
-            if restore_process is not None and restore_process.returncode == 0:
-                replacement.commit()
-            else:
-                replacement.rollback()
-        raise
 
 
 def _assert_required_accounts(
@@ -171,7 +158,7 @@ def _validate_dump_in_temporary_database(
         "onetree_validation",
     )
     try:
-        subprocess.run(
+        run_process_group(
             [
                 "createdb",
                 "--maintenance-db=service=onetree_import",
@@ -207,17 +194,18 @@ def _validate_dump_in_temporary_database(
             raise RuntimeError("验证数据库未迁移到仓库唯一 Alembic head")
         _assert_required_accounts(validation_environment, "onetree_validation")
     finally:
-        subprocess.run(
-            [
-                "dropdb",
-                "--force",
-                "--if-exists",
-                "--maintenance-db=service=onetree_import",
-                validation_name,
-            ],
-            check=True,
-            env=target_database_environment,
-        )
+        with blocked_termination_signals():
+            run_process_group(
+                [
+                    "dropdb",
+                    "--force",
+                    "--if-exists",
+                    "--maintenance-db=service=onetree_import",
+                    validation_name,
+                ],
+                check=True,
+                env=target_database_environment,
+            )
 
 
 def main() -> int:

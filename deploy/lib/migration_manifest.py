@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -101,26 +101,146 @@ class TerminationRequested(RuntimeError):
     pass
 
 
+_termination_guard_depth = 0
+_termination_callbacks: list[Callable[[], None] | None] = []
+_termination_previous_handlers: dict[signal.Signals, Any] = {}
+_termination_handling = False
+
+
 @contextmanager
 def termination_signal_guard(on_signal: Callable[[], None] | None = None):
+    global _termination_guard_depth
+    global _termination_handling
+    global _termination_previous_handlers
+
     watched_signals = (signal.SIGINT, signal.SIGTERM)
-    previous_handlers = {
-        signal_number: signal.getsignal(signal_number)
-        for signal_number in watched_signals
-    }
 
     def handle_signal(signal_number: int, _frame: object) -> None:
-        if on_signal is not None:
-            on_signal()
+        global _termination_handling
+
+        if _termination_handling:
+            return
+        _termination_handling = True
+        callback = next(
+            (
+                current
+                for current in reversed(_termination_callbacks)
+                if current is not None
+            ),
+            None,
+        )
+        if callback is not None:
+            callback()
         raise TerminationRequested(f"收到终止信号 {signal_number}")
 
-    for signal_number in watched_signals:
-        signal.signal(signal_number, handle_signal)
+    if _termination_guard_depth == 0:
+        _termination_previous_handlers = {
+            signal_number: signal.getsignal(signal_number)
+            for signal_number in watched_signals
+        }
+        _termination_handling = False
+        for signal_number in watched_signals:
+            signal.signal(signal_number, handle_signal)
+    _termination_guard_depth += 1
+    _termination_callbacks.append(on_signal)
     try:
         yield
     finally:
-        for signal_number, previous_handler in previous_handlers.items():
-            signal.signal(signal_number, previous_handler)
+        _termination_callbacks.pop()
+        _termination_guard_depth -= 1
+        if _termination_guard_depth == 0:
+            for (
+                signal_number,
+                previous_handler,
+            ) in _termination_previous_handlers.items():
+                signal.signal(signal_number, previous_handler)
+            _termination_previous_handlers = {}
+            _termination_handling = False
+
+
+@contextmanager
+def blocked_termination_signals():
+    watched_signals = {signal.SIGINT, signal.SIGTERM}
+    previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, watched_signals)
+    try:
+        yield previous_mask
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+
+
+def _request_process_group_termination(process: subprocess.Popen[Any]) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+
+
+def _finish_process_group_termination(process: subprocess.Popen[Any]) -> None:
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+
+
+def run_process_group(
+    command: Sequence[str],
+    *,
+    check: bool,
+    cwd: Path | None = None,
+    capture_output: bool = False,
+    text: bool = False,
+    env: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess[Any]:
+    stdout = subprocess.PIPE if capture_output else None
+    stderr = subprocess.PIPE if capture_output else None
+    process: subprocess.Popen[Any] | None = None
+    process_guard = None
+    try:
+        with blocked_termination_signals() as inherited_mask:
+
+            def restore_inherited_mask() -> None:
+                signal.pthread_sigmask(signal.SIG_SETMASK, inherited_mask)
+
+            process = subprocess.Popen(
+                command,
+                cwd=cwd,
+                env=env,
+                stdout=stdout,
+                stderr=stderr,
+                text=text,
+                start_new_session=True,
+                preexec_fn=restore_inherited_mask,
+            )
+            process_guard = termination_signal_guard(
+                lambda: _request_process_group_termination(process)
+            )
+            process_guard.__enter__()
+        try:
+            process_stdout, process_stderr = process.communicate()
+        except TerminationRequested:
+            _request_process_group_termination(process)
+            _finish_process_group_termination(process)
+            raise
+    finally:
+        if process_guard is not None:
+            process_guard.__exit__(*sys.exc_info())
+    if process is None:
+        raise RuntimeError("子进程未启动")
+    result = subprocess.CompletedProcess(
+        process.args,
+        process.returncode,
+        process_stdout,
+        process_stderr,
+    )
+    if check:
+        result.check_returncode()
+    return result
 
 
 def sha256_file(path: Path) -> str:
@@ -499,10 +619,10 @@ def begin_directory_replacement(staging: Path, target: Path) -> DirectoryReplace
     replacement = DirectoryReplacement(target=target, previous=previous)
     try:
         if previous is not None:
-            with _blocked_termination_signals():
+            with blocked_termination_signals():
                 target.replace(previous)
                 replacement.old_moved = True
-        with _blocked_termination_signals():
+        with blocked_termination_signals():
             staging.replace(target)
             replacement.new_installed = True
         return replacement
@@ -518,24 +638,13 @@ def replace_directory_atomically(staging: Path, target: Path) -> None:
     replacement.commit()
 
 
-@contextmanager
-def _blocked_termination_signals():
-    previous_mask = signal.pthread_sigmask(
-        signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM}
-    )
-    try:
-        yield
-    finally:
-        signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
-
-
 def _run_backend_json(
     backend_directory: Path,
     code: str,
     environment: dict[str, str],
     failure_message: str,
 ) -> object:
-    dependency_check = subprocess.run(
+    dependency_check = run_process_group(
         [sys.executable, "-c", "import alembic, sqlalchemy, sqlmodel"],
         cwd=backend_directory,
         check=False,
@@ -559,7 +668,7 @@ def _run_backend_json(
             "-c",
             code,
         ]
-    result = subprocess.run(
+    result = run_process_group(
         command,
         cwd=backend_directory,
         check=False,

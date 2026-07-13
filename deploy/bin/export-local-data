@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -17,6 +16,7 @@ from migration_manifest import (  # noqa: E402
     extract_verified_bundle,
     inspect_database_identity,
     postgres_service_environment,
+    run_process_group,
     termination_signal_guard,
     write_manifest,
 )
@@ -85,7 +85,7 @@ def main() -> int:
             database_environment = postgres_service_environment(
                 database_url, staging / "pg_service.conf", "onetree_export"
             )
-            subprocess.run(
+            run_process_group(
                 [
                     "pg_dump",
                     "--format=custom",

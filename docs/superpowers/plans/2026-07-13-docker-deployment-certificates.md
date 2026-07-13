@@ -222,6 +222,8 @@ Commit: `git commit -m "feat: add one-command server bootstrap"`
 Run: `for test_file in deploy/tests/test_*.sh; do bash "$test_file"; done`
 Expected: all PASS。
 
+必须在目标 Ubuntu 24.04 x86_64 主机复跑 `deploy/tests/test_migration_roundtrip.sh`，验证 Linux 的 `pthread_sigmask` 延迟信号、独立 process group 后代清理、临时验证库删除和 PostgreSQL 18 target COMMIT 后信号行为；macOS 本地结果不能替代该项。
+
 - [ ] **Step 2: 构建并启动生产等价栈**
 
 Run: `docker compose -f deploy/compose.production.yml -f deploy/compose.ci.yml up -d --build`

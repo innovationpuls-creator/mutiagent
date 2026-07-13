@@ -266,16 +266,21 @@ PY
 VERIFY_SIGNAL_TMP="$TMP_DIR/verify-signal-tmp"
 VERIFY_SIGNAL_BIN="$TMP_DIR/verify-signal-bin"
 VERIFY_SIGNAL_MARKER="$TMP_DIR/verify-signal-marker"
+VERIFY_SIGNAL_CHILD_PID="$TMP_DIR/verify-signal-child-pid"
 mkdir "$VERIFY_SIGNAL_TMP" "$VERIFY_SIGNAL_BIN"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'set -euo pipefail' \
+  'sleep 30 &' \
+  'child=$!' \
+  'printf "%s\n" "$child" > "$VERIFY_SIGNAL_CHILD_PID"' \
   'printf "%s\n" "backend-check-started" > "$VERIFY_SIGNAL_MARKER"' \
-  'sleep 30' \
+  'wait "$child"' \
   > "$VERIFY_SIGNAL_BIN/uv"
 chmod 700 "$VERIFY_SIGNAL_BIN/uv"
 TMPDIR="$VERIFY_SIGNAL_TMP" PATH="$VERIFY_SIGNAL_BIN:$PATH" \
   VERIFY_SIGNAL_MARKER="$VERIFY_SIGNAL_MARKER" \
+  VERIFY_SIGNAL_CHILD_PID="$VERIFY_SIGNAL_CHILD_PID" \
   "$REPO_ROOT/deploy/bin/verify-bundle" "$BAD_SCHEMA_BUNDLE" >/dev/null 2>&1 &
 VERIFY_SIGNAL_PID=$!
 for _ in {1..100}; do
@@ -285,6 +290,7 @@ for _ in {1..100}; do
   sleep 0.05
 done
 test -f "$VERIFY_SIGNAL_MARKER"
+test -f "$VERIFY_SIGNAL_CHILD_PID"
 test -n "$(find "$VERIFY_SIGNAL_TMP" -maxdepth 1 -type d -name 'onetree-bundle-check.*' -print -quit)"
 kill -TERM "$VERIFY_SIGNAL_PID"
 if wait "$VERIFY_SIGNAL_PID"; then
@@ -292,6 +298,10 @@ if wait "$VERIFY_SIGNAL_PID"; then
   exit 1
 fi
 test -z "$(find "$VERIFY_SIGNAL_TMP" -maxdepth 1 -type d -name 'onetree-bundle-check.*' -print -quit)"
+if kill -0 "$(<"$VERIFY_SIGNAL_CHILD_PID")" 2>/dev/null; then
+  printf '%s\n' 'verify-bundle left a descendant process alive' >&2
+  exit 1
+fi
 
 TARGET_UPLOADS="$TMP_DIR/restored-uploads"
 mkdir -p "$TARGET_UPLOADS"
@@ -353,6 +363,32 @@ for invalid_bundle in "$MISSING_ACCOUNT_BUNDLE" "$BAD_SCHEMA_BUNDLE"; do
   test -z "$(find "$TMP_DIR" -maxdepth 1 -type d -name '.migration-import.*' -print -quit)"
 done
 
+DROPDB_INJECT_DIR="$TMP_DIR/dropdb-inject"
+DROPDB_INJECT_MARKER="$TMP_DIR/dropdb-inject-marker"
+REAL_DROPDB="$(command -v dropdb)"
+mkdir "$DROPDB_INJECT_DIR"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  'printf "%s\n" "dropdb-started" > "$DROPDB_INJECT_MARKER"' \
+  'kill -TERM "$PPID"' \
+  'sleep 0.2' \
+  'exec "$REAL_DROPDB" "$@"' \
+  > "$DROPDB_INJECT_DIR/dropdb"
+chmod 700 "$DROPDB_INJECT_DIR/dropdb"
+if PATH="$DROPDB_INJECT_DIR:$PATH" \
+  DROPDB_INJECT_MARKER="$DROPDB_INJECT_MARKER" REAL_DROPDB="$REAL_DROPDB" \
+  TARGET_DATABASE_URL="$TARGET_URL" ONETREE_MAINTENANCE_MODE=1 \
+  "$REPO_ROOT/deploy/bin/import-bundle" "$BUNDLE" "$TARGET_UPLOADS" \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'dropdb signal injection unexpectedly passed' >&2
+  exit 1
+fi
+test "$(<"$DROPDB_INJECT_MARKER")" = "dropdb-started"
+assert_target_unchanged
+assert_no_validation_databases
+test "$(<"$TARGET_UPLOADS/stale.txt")" = "stale"
+
 FIXED_PREVIOUS="$TMP_DIR/.restored-uploads.previous"
 mkdir "$FIXED_PREVIOUS"
 printf '%s\n' 'fixed-previous' > "$FIXED_PREVIOUS/sentinel.txt"
@@ -373,8 +409,11 @@ printf '%s\n' \
   '  test ! -e "$INJECT_UPLOAD_TARGET/stale.txt"' \
   '  printf "%s\n" "new-uploads-visible" > "$PG_RESTORE_MARKER"' \
   '  if [[ "$PG_RESTORE_INJECT_MODE" == "failure" ]]; then exit 97; fi' \
+  '  "$REAL_PG_RESTORE" "$@"' \
+  '  printf "%s\n" "target-restore-committed" > "$PG_RESTORE_MARKER"' \
   '  kill -TERM "$PPID"' \
-  '  sleep 30' \
+  '  sleep 0.2' \
+  '  exit 0' \
   'fi' \
   'exec "$REAL_PG_RESTORE" "$@"' \
   > "$PG_RESTORE_INJECT_DIR/pg_restore"
@@ -382,6 +421,16 @@ chmod 700 "$PG_RESTORE_INJECT_DIR/pg_restore"
 
 for inject_mode in failure signal; do
   rm -f "$PG_RESTORE_COUNT_FILE" "$PG_RESTORE_MARKER"
+  if [[ "$inject_mode" == "signal" ]]; then
+    DATABASE_URL="$TARGET_URL" uv run --no-env-file python - <<'PY'
+import os
+
+from sqlalchemy import create_engine
+
+with create_engine(os.environ["DATABASE_URL"]).begin() as connection:
+    connection.exec_driver_sql("DROP TABLE migration_sentinel")
+PY
+  fi
   if PATH="$PG_RESTORE_INJECT_DIR:$PATH" \
     PG_RESTORE_COUNT_FILE="$PG_RESTORE_COUNT_FILE" \
     PG_RESTORE_MARKER="$PG_RESTORE_MARKER" \
@@ -394,24 +443,19 @@ for inject_mode in failure signal; do
     printf '%s\n' 'injected target restore interruption unexpectedly passed' >&2
     exit 1
   fi
-  test "$(<"$PG_RESTORE_MARKER")" = "new-uploads-visible"
-  assert_target_unchanged
+  if [[ "$inject_mode" == "failure" ]]; then
+    test "$(<"$PG_RESTORE_MARKER")" = "new-uploads-visible"
+    assert_target_unchanged
+    test "$(<"$TARGET_UPLOADS/stale.txt")" = "stale"
+    test ! -e "$TARGET_UPLOADS/高等数学/第一章/极限.txt"
+  else
+    test "$(<"$PG_RESTORE_MARKER")" = "target-restore-committed"
+    test -f "$TARGET_UPLOADS/高等数学/第一章/极限.txt"
+    test ! -e "$TARGET_UPLOADS/stale.txt"
+  fi
   assert_no_validation_databases
-  test "$(<"$TARGET_UPLOADS/stale.txt")" = "stale"
-  test ! -e "$TARGET_UPLOADS/高等数学/第一章/极限.txt"
 done
 test "$(<"$FIXED_PREVIOUS/sentinel.txt")" = "fixed-previous"
-
-DATABASE_URL="$TARGET_URL" uv run --no-env-file python - <<'PY'
-import os
-
-from sqlalchemy import create_engine
-
-with create_engine(os.environ["DATABASE_URL"]).begin() as connection:
-    connection.exec_driver_sql("DROP TABLE migration_sentinel")
-PY
-TARGET_DATABASE_URL="$TARGET_URL" ONETREE_MAINTENANCE_MODE=1 \
-  "$REPO_ROOT/deploy/bin/import-bundle" "$BUNDLE" "$TARGET_UPLOADS"
 
 DATABASE_URL="$TARGET_URL" uv run --no-env-file python - <<'PY'
 import os
