@@ -318,7 +318,8 @@ PY
     printf '%s\n' "restore left inconsistent data after $restore_signal" >&2
     exit 1
   fi
-  test -z "$(find "$RESTORE_SIGNAL_TMP" -mindepth 1 -print -quit)"
+  test -z "$(find "$RESTORE_SIGNAL_TMP" -mindepth 1 ! -name 'uv-*.lock' -print -quit)"
+  find "$RESTORE_SIGNAL_TMP" -maxdepth 1 -type f -name 'uv-*.lock' -delete
   test -z "$(find "$(dirname "$UPLOADS_TARGET")" -maxdepth 1 -type d -name '.migration-import.*' -print -quit)"
   MAINTENANCE_URL="$MAINTENANCE_URL" uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
 import os
