@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>系统维护中 | one-tree</title>
+    <style>
+      @font-face {
+        font-family: "LXGW WenKai";
+        src: url("/maintenance/lxgw-wenkai-500-normal.woff2") format("woff2");
+        font-weight: 400;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: "LXGW WenKai";
+        src: url("/maintenance/lxgw-wenkai-500-normal.woff2") format("woff2");
+        font-weight: 500;
+        font-display: swap;
+      }
+
+      :root {
+        color-scheme: light;
+        --color-primary: oklch(76% 0.12 55);
+        --color-background: oklch(94% 0.04 73);
+        --color-surface: oklch(97% 0.02 75);
+        --color-text-primary: oklch(26% 0.04 235);
+        --color-text-secondary: oklch(42% 0.035 235);
+        --color-accent-sage: oklch(75% 0.09 135);
+        --shadow-sm:
+          0 1px 2px oklch(50% 0.05 55 / 0.08),
+          0 8px 24px oklch(76% 0.12 55 / 0.1);
+        --font-heading: "LXGW WenKai";
+        --font-body: "LXGW WenKai";
+        --font-weight-regular: 400;
+        --font-weight-medium: 500;
+        --text-h1: 2.5rem;
+        --text-body-relaxed: 1.0625rem;
+        --text-overline: 0.75rem;
+        --space-8: 8px;
+        --space-12: 12px;
+        --space-16: 16px;
+        --space-24: 24px;
+        --space-32: 32px;
+        --space-48: 48px;
+        --space-64: 64px;
+        --radius-md: 24px;
+        --radius-full: 9999px;
+        --container-narrow: 640px;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-block-size: 100%;
+      }
+
+      body {
+        margin: 0;
+        color: var(--color-text-primary);
+        background: var(--color-background);
+        font-family: var(--font-body);
+        font-weight: var(--font-weight-regular);
+        line-height: 2;
+        text-rendering: geometricPrecision;
+        font-synthesis: none;
+      }
+
+      .maintenance-shell {
+        min-block-size: 100svh;
+        display: grid;
+        place-items: center;
+        padding: var(--space-64) var(--space-24);
+      }
+
+      .maintenance-content {
+        inline-size: min(100%, var(--container-narrow));
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: var(--space-16);
+      }
+
+      .brand-mark {
+        inline-size: var(--space-48);
+        block-size: var(--space-48);
+        display: grid;
+        place-items: center;
+        border-radius: var(--radius-md);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .brand-mark img {
+        inline-size: var(--space-24);
+        block-size: var(--space-24);
+        object-fit: contain;
+      }
+
+      .brand-name {
+        color: var(--color-text-secondary);
+        font-weight: var(--font-weight-medium);
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: var(--space-12);
+        margin-block: var(--space-64) var(--space-24);
+        color: var(--color-text-secondary);
+        font-size: var(--text-overline);
+        font-weight: var(--font-weight-medium);
+        letter-spacing: 0;
+      }
+
+      .status-mark {
+        inline-size: var(--space-12);
+        block-size: var(--space-12);
+        border-radius: var(--radius-full);
+        background: var(--color-accent-sage);
+      }
+
+      h1 {
+        max-inline-size: var(--container-narrow);
+        margin: 0;
+        font-family: var(--font-heading);
+        font-size: var(--text-h1);
+        font-weight: var(--font-weight-medium);
+        line-height: 1.2;
+        letter-spacing: 0;
+        text-wrap: pretty;
+      }
+
+      p {
+        max-inline-size: var(--container-narrow);
+        margin: var(--space-24) 0 0;
+        color: var(--color-text-secondary);
+        font-size: var(--text-body-relaxed);
+        line-height: 2.15;
+        text-wrap: pretty;
+      }
+
+      .closing {
+        margin-block-start: var(--space-32);
+        color: var(--color-primary);
+        font-weight: var(--font-weight-medium);
+      }
+
+      @media (max-width: 767px) {
+        :root {
+          --text-h1: 2rem;
+        }
+
+        .maintenance-shell {
+          padding-block: var(--space-48);
+        }
+
+        .status {
+          margin-block-start: var(--space-48);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+          transform: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="maintenance-shell">
+      <section class="maintenance-content" aria-labelledby="maintenance-title">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <img src="/logo.png" alt="" />
+          </span>
+          <span class="brand-name">one-tree</span>
+        </div>
+
+        <div class="status">
+          <span class="status-mark" aria-hidden="true"></span>
+          <span>短暂维护</span>
+        </div>
+
+        <h1 id="maintenance-title">我们正在整理学习空间</h1>
+        <p>一棵树学习空间正在进行短暂更新，请稍后再试。</p>
+        <p class="closing">谢谢你的耐心。</p>
+      </section>
+    </main>
+  </body>
+</html>

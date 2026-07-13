@@ -1,5 +1,8 @@
 .agent
 .env
+.env.production
+/backups/
+/bin/
 CLAUDE.md
 .superpowers
 docs/superpowers

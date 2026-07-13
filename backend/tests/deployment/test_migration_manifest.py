@@ -29,6 +29,7 @@ from migration_manifest import (  # noqa: E402
     extract_verified_bundle,
     replace_database_name,
     run_process_group,
+    set_directory_ownership,
     termination_signal_guard,
     validate_replacement_target,
 )
@@ -105,6 +106,36 @@ def test_valid_bundle_extracts_exact_members(tmp_path: Path) -> None:
     }
     assert manifest["alembic_revision"] == "0002_ingestion_job_leases"
     assert manifest["schema_state"] == "versioned"
+
+
+def test_set_directory_ownership_updates_root_directories_and_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "uploads"
+    nested = target / "chapter"
+    nested.mkdir(parents=True)
+    textbook = nested / "textbook.pdf"
+    textbook.write_bytes(b"pdf")
+    ownership_calls: list[tuple[Path, int, int, bool]] = []
+
+    def record_chown(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        uid: int,
+        gid: int,
+        *,
+        follow_symlinks: bool = True,
+    ) -> None:
+        ownership_calls.append((Path(path), uid, gid, follow_symlinks))
+
+    monkeypatch.setattr(migration_manifest_module.os, "chown", record_chown)
+
+    set_directory_ownership(target, uid=10001, gid=10001)
+
+    assert set(ownership_calls) == {
+        (target, 10001, 10001, False),
+        (nested, 10001, 10001, False),
+        (textbook, 10001, 10001, False),
+    }
 
 
 def test_current_unversioned_bundle_records_null_revision(tmp_path: Path) -> None:

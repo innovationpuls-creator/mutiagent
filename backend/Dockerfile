@@ -6,6 +6,8 @@ ARG DEBIAN_MIRROR=http://deb.debian.org/debian
 ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
 ARG PGDG_KEY_URL=https://www.postgresql.org/media/keys/ACCC4CF8.asc
 ARG PGDG_REPOSITORY="deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main"
+ARG PYTHON_PACKAGE_INDEX=https://pypi.org/simple
+ARG UV_HTTP_TIMEOUT=300
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -33,10 +35,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get update \
     && apt-get install -y --no-install-recommends postgresql-client-18
 
-COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /usr/local/bin/uv
-
-ARG PYTHON_PACKAGE_INDEX=https://pypi.org/simple
-ARG UV_HTTP_TIMEOUT=300
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    PIP_DEFAULT_TIMEOUT="$UV_HTTP_TIMEOUT" \
+    python -m pip install --index-url "$PYTHON_PACKAGE_INDEX" uv==0.8.22
 
 WORKDIR /opt/onetree/backend
 COPY backend/pyproject.toml backend/uv.lock ./

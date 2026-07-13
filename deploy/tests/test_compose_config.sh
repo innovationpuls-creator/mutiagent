@@ -22,7 +22,10 @@ export SMOKE_PASSWORD=compose-test-password
 docker compose --profile operations -f "$COMPOSE_FILE" config --format json \
   > "$CONFIG_FILE"
 
-python3 - "$CONFIG_FILE" <<'PY'
+python3 - \
+  "$CONFIG_FILE" \
+  "$REPO_ROOT/.gitignore" \
+  "$REPO_ROOT/backend/Dockerfile" <<'PY'
 from __future__ import annotations
 
 import json
@@ -30,7 +33,14 @@ import sys
 from pathlib import Path
 
 config = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+gitignore_lines = set(Path(sys.argv[2]).read_text(encoding="utf-8").splitlines())
+backend_dockerfile = Path(sys.argv[3]).read_text(encoding="utf-8")
 services = config["services"]
+
+for runtime_path in (".env.production", "/backups/", "/bin/"):
+    assert runtime_path in gitignore_lines, runtime_path
+assert "ghcr.io" not in backend_dockerfile
+assert "uv==0.8.22" in backend_dockerfile
 
 expected_services = {
     "nginx",
@@ -94,6 +104,11 @@ assert services["backend"]["build"]["args"]["UV_HTTP_TIMEOUT"] == "300"
 assert "onetree_app" in services["backend"]["environment"]["DATABASE_URL"]
 assert "onetree_maintenance" in services["backup"]["environment"]["TARGET_DATABASE_URL"]
 assert "onetree_maintenance" in services["restore"]["environment"]["TARGET_DATABASE_URL"]
+assert services["backup"]["user"] == "0:0"
+assert services["restore"]["user"] == "0:0"
+assert services["restore"]["entrypoint"] == ["/opt/onetree/deploy/bin/restore"]
+assert services["restore"]["environment"]["UPLOADS_OWNER_UID"] == "10001"
+assert services["restore"]["environment"]["UPLOADS_OWNER_GID"] == "10001"
 assert "frontend" not in services
 
 nginx_build = services["nginx"]["build"]

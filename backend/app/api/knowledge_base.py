@@ -73,10 +73,38 @@ from app.services.knowledge_base_service import (
 )
 
 SessionDependency = Callable[[], Generator[Session, None, None]]
+MAX_TEXTBOOK_UPLOAD_BYTES = 100 * 1024 * 1024
+TEXTBOOK_UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
 
 
 def _sse(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+async def _read_textbook_upload(file: UploadFile) -> bytes:
+    chunks: list[bytes] = []
+    remaining_bytes = MAX_TEXTBOOK_UPLOAD_BYTES
+    while True:
+        chunk = await file.read(
+            min(TEXTBOOK_UPLOAD_READ_CHUNK_BYTES, remaining_bytes + 1)
+        )
+        if not chunk:
+            return b"".join(chunks)
+        remaining_bytes -= len(chunk)
+        if remaining_bytes < 0:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail="教材文件不能超过 100 MB。",
+            )
+        chunks.append(chunk)
+
+
+def _validate_textbook_upload_size(file: UploadFile) -> None:
+    if file.size is not None and file.size > MAX_TEXTBOOK_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="教材文件不能超过 100 MB。",
+        )
 
 
 def create_knowledge_base_router(session_dependency: SessionDependency) -> APIRouter:
@@ -440,6 +468,7 @@ def _register_agent_routes(
         _: User = Depends(require_admin),
         session: Session = Depends(session_dependency),
     ) -> KnowledgeBaseSourceConfirmResponse:
+        _validate_textbook_upload_size(file)
         try:
             textbook, job = create_uploaded_textbook(
                 session,
@@ -448,7 +477,7 @@ def _register_agent_routes(
                 description=description,
                 tags=[tag.strip() for tag in tags.split(",") if tag.strip()],
                 file_name=file.filename or "textbook.pdf",
-                file_bytes=await file.read(),
+                file_bytes=await _read_textbook_upload(file),
             )
         except ValueError as exc:
             raise HTTPException(

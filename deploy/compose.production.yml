@@ -95,10 +95,20 @@ services:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
     image: onetree-nginx:production
     restart: unless-stopped
+    environment:
+      NGINX_CONFIG_MODE: ${NGINX_CONFIG_MODE:-bootstrap}
+      PUBLIC_IPV4: ${PUBLIC_IPV4}
     command:
       - /bin/sh
       - -c
       - >-
+        case "$${NGINX_CONFIG_MODE}" in
+          bootstrap|production) ;;
+          *) echo "invalid NGINX_CONFIG_MODE: $${NGINX_CONFIG_MODE}" >&2; exit 64 ;;
+        esac;
+        envsubst '$${PUBLIC_IPV4}'
+        < "/opt/onetree/nginx/conf.d/$${NGINX_CONFIG_MODE}.conf.template"
+        > /etc/nginx/conf.d/default.conf;
         rm -rf /usr/share/nginx/html/*
         /usr/share/nginx/html/.[!.]*
         /usr/share/nginx/html/..?* 2>/dev/null || true;
@@ -158,6 +168,7 @@ services:
   backup:
     build: *backend-build
     image: onetree-backend:production
+    user: "0:0"
     entrypoint: ["/opt/onetree/deploy/bin/backup"]
     command: ["/backups", "/var/lib/onetree/knowledge-base-uploads"]
     environment: *maintenance-environment
@@ -174,8 +185,12 @@ services:
   restore:
     build: *backend-build
     image: onetree-backend:production
+    user: "0:0"
     entrypoint: ["/opt/onetree/deploy/bin/restore"]
-    environment: *maintenance-environment
+    environment:
+      <<: *maintenance-environment
+      UPLOADS_OWNER_UID: "10001"
+      UPLOADS_OWNER_GID: "10001"
     depends_on:
       postgres:
         condition: service_healthy

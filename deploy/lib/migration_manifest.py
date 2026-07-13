@@ -421,6 +421,14 @@ def extract_upload_archive(archive_path: Path, target_directory: Path) -> None:
         raise
 
 
+def set_directory_ownership(directory: Path, uid: int, gid: int) -> None:
+    for root, directory_names, file_names in os.walk(directory):
+        root_path = Path(root)
+        os.chown(root_path, uid, gid, follow_symlinks=False)
+        for name in (*directory_names, *file_names):
+            os.chown(root_path / name, uid, gid, follow_symlinks=False)
+
+
 def _extract_outer_archive(bundle_path: Path, staging: Path) -> None:
     with tarfile.open(bundle_path, mode="r:*") as archive:
         members = archive.getmembers()

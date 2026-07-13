@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app import schemas as app_schemas
+from app.api import knowledge_base as knowledge_base_api
 from app.database import get_engine
 from app.main import create_app
 from app.models import (
@@ -967,6 +968,83 @@ def test_upload_textbook_file_creates_job_and_extracts_uploaded_docx_content(
         "栈是一种后进先出的线性表，本段来自上传 DOCX 文件。"
         in sections[0]["content_zh"]
     )
+
+
+def test_textbook_upload_limit_is_exactly_100_mib() -> None:
+    assert knowledge_base_api.MAX_TEXTBOOK_UPLOAD_BYTES == 100 * 1024 * 1024
+
+
+def test_upload_textbook_file_allows_exact_limit_to_reach_file_validation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    headers = admin_headers(client)
+    monkeypatch.setattr(knowledge_base_api, "MAX_TEXTBOOK_UPLOAD_BYTES", 4)
+    received_file_bytes: list[bytes] = []
+
+    def reject_during_file_validation(*_: object, **kwargs: object) -> None:
+        file_bytes = kwargs["file_bytes"]
+        assert isinstance(file_bytes, bytes)
+        received_file_bytes.append(file_bytes)
+        raise ValueError("file validation reached")
+
+    monkeypatch.setattr(
+        knowledge_base_api,
+        "create_uploaded_textbook",
+        reject_during_file_validation,
+    )
+
+    response = client.post(
+        "/api/admin/knowledge-base/uploads",
+        headers=headers,
+        data={"title": "边界教材"},
+        files={"file": ("boundary.pdf", b"1234", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "file validation reached"
+    assert received_file_bytes == [b"1234"]
+
+
+def test_upload_textbook_file_rejects_byte_over_limit_before_create(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    headers = admin_headers(client)
+    monkeypatch.setattr(knowledge_base_api, "MAX_TEXTBOOK_UPLOAD_BYTES", 4)
+    create_calls: list[object] = []
+    read_calls: list[object] = []
+
+    async def record_read_call(file: object) -> bytes:
+        read_calls.append(file)
+        raise AssertionError("oversized UploadFile must not be read")
+
+    def record_create_call(*args: object, **kwargs: object) -> None:
+        create_calls.append((args, kwargs))
+        raise AssertionError("create_uploaded_textbook must not be called")
+
+    monkeypatch.setattr(
+        knowledge_base_api,
+        "_read_textbook_upload",
+        record_read_call,
+    )
+    monkeypatch.setattr(
+        knowledge_base_api,
+        "create_uploaded_textbook",
+        record_create_call,
+    )
+
+    response = client.post(
+        "/api/admin/knowledge-base/uploads",
+        headers=headers,
+        data={"title": "超限教材"},
+        files={"file": ("too-large.pdf", b"12345", "application/pdf")},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "教材文件不能超过 100 MB。"
+    assert read_calls == []
+    assert create_calls == []
 
 
 def test_upload_updates_gap_material_found_without_publishing_textbook(

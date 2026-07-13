@@ -26,6 +26,7 @@ from migration_manifest import (  # noqa: E402
     replace_database_name,
     repository_revision_sets,
     run_process_group,
+    set_directory_ownership,
     termination_signal_guard,
     validate_replacement_target,
 )
@@ -100,6 +101,9 @@ def _restore_target_with_upload_compensation(
     staged_uploads: Path,
     uploads_target: Path,
 ) -> None:
+    uploads_owner = _uploads_owner_from_environment()
+    if uploads_owner is not None:
+        set_directory_ownership(staged_uploads, *uploads_owner)
     with blocked_termination_signals():
         replacement = begin_directory_replacement(staged_uploads, uploads_target)
         try:
@@ -113,6 +117,23 @@ def _restore_target_with_upload_compensation(
             raise
         else:
             replacement.commit()
+
+
+def _uploads_owner_from_environment() -> tuple[int, int] | None:
+    uid_value = os.environ.get("UPLOADS_OWNER_UID")
+    gid_value = os.environ.get("UPLOADS_OWNER_GID")
+    if uid_value is None and gid_value is None:
+        return None
+    if not uid_value or not gid_value:
+        raise RuntimeError("UPLOADS_OWNER_UID 和 UPLOADS_OWNER_GID 必须同时设置")
+    try:
+        uid = int(uid_value)
+        gid = int(gid_value)
+    except ValueError as exc:
+        raise RuntimeError("教材目录 UID/GID 必须为非负整数") from exc
+    if uid < 0 or gid < 0:
+        raise RuntimeError("教材目录 UID/GID 必须为非负整数")
+    return uid, gid
 
 
 def _assert_required_accounts(
