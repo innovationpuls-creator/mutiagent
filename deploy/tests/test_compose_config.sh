@@ -127,6 +127,7 @@ assert services["smoke"]["environment"]["MAINTENANCE_BYPASS_TOKEN"] == (
 )
 
 upload_dir = services["backend"]["environment"]["KNOWLEDGE_BASE_UPLOAD_DIR"]
+upload_volume_target = str(Path(upload_dir).parent)
 for service_name in ("backend", "worker", "backup", "restore"):
     mounts = services[service_name].get("volumes", [])
     matching_mounts = [
@@ -134,7 +135,7 @@ for service_name in ("backend", "worker", "backup", "restore"):
         for mount in mounts
         if mount["type"] == "volume"
         and mount["source"].endswith("textbook_uploads")
-        and mount["target"] == upload_dir
+        and mount["target"] == upload_volume_target
     ]
     assert len(matching_mounts) == 1, service_name
 

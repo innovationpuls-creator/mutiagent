@@ -58,7 +58,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - textbook_uploads:/var/lib/onetree/knowledge-base-uploads
+      - textbook_uploads:/var/lib/onetree
     healthcheck:
       test:
         - CMD
@@ -82,7 +82,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - textbook_uploads:/var/lib/onetree/knowledge-base-uploads
+      - textbook_uploads:/var/lib/onetree
     logging: *journald-logging
 
   nginx:
@@ -176,7 +176,7 @@ services:
     volumes:
       - /opt/onetree:/opt/onetree:ro
       - /opt/onetree/backups:/backups
-      - textbook_uploads:/var/lib/onetree/knowledge-base-uploads
+      - textbook_uploads:/var/lib/onetree
     profiles: ["operations"]
     logging: *journald-logging
 
@@ -194,7 +194,7 @@ services:
     volumes:
       - /opt/onetree:/opt/onetree:ro
       - /opt/onetree/backups:/backups
-      - textbook_uploads:/var/lib/onetree/knowledge-base-uploads
+      - textbook_uploads:/var/lib/onetree
     profiles: ["operations"]
     logging: *journald-logging
 
