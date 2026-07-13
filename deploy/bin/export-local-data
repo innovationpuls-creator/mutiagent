@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+from pathlib import Path
+
+DEPLOY_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(DEPLOY_DIR / "lib"))
+
+from migration_manifest import (  # noqa: E402
+    create_bundle_archive,
+    extract_verified_bundle,
+    inspect_database_identity,
+    postgres_service_environment,
+    write_manifest,
+)
+
+
+def _arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="导出 OneTree 本地生产数据")
+    parser.add_argument("bundle", type=Path)
+    parser.add_argument("--repo-root", type=Path, default=DEPLOY_DIR.parent)
+    parser.add_argument("--uploads-source", type=Path)
+    return parser.parse_args()
+
+
+def _database_url(env_path: Path) -> str:
+    values: list[str] = []
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("DATABASE_URL="):
+            values.append(line.removeprefix("DATABASE_URL=").strip())
+    if len(values) != 1 or not values[0]:
+        raise RuntimeError("backend/.env 必须精确包含一个 DATABASE_URL")
+    value = values[0]
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        value = value[1:-1]
+    if not value:
+        raise RuntimeError("backend/.env 中 DATABASE_URL 不能为空")
+    return value
+
+
+def _archive_uploads(source: Path, destination: Path) -> None:
+    with tarfile.open(destination, mode="w") as archive:
+        for child in sorted(source.iterdir(), key=lambda path: path.name):
+            archive.add(child, arcname=child.name)
+
+
+def main() -> int:
+    arguments = _arguments()
+    repo_root = arguments.repo_root.resolve()
+    env_path = repo_root / "backend" / ".env"
+    uploads_source = (
+        arguments.uploads_source.resolve()
+        if arguments.uploads_source
+        else repo_root / "backend" / ".codex-artifacts" / "knowledge-base-uploads"
+    )
+    bundle = arguments.bundle.resolve()
+    if not env_path.is_file():
+        raise RuntimeError(f"配置文件不存在：{env_path}")
+    if not uploads_source.is_dir():
+        raise RuntimeError(f"教材源目录不存在：{uploads_source}")
+    if bundle.exists():
+        raise RuntimeError(f"输出迁移包已经存在：{bundle}")
+    print(f"教材源目录：{uploads_source}")
+
+    bundle.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".migration-export.", dir=bundle.parent))
+    verification = bundle.parent / f".{bundle.name}.verified"
+    try:
+        database_url = _database_url(env_path)
+        identity = inspect_database_identity(
+            DEPLOY_DIR.parent / "backend", database_url
+        )
+        database_environment = postgres_service_environment(
+            database_url, staging / "pg_service.conf", "onetree_export"
+        )
+        subprocess.run(
+            [
+                "pg_dump",
+                "--format=custom",
+                f"--file={staging / 'database.dump'}",
+                "--dbname=service=onetree_export",
+            ],
+            check=True,
+            env=database_environment,
+        )
+        (staging / "pg_service.conf").unlink()
+        _archive_uploads(uploads_source, staging / "knowledge-base-uploads.tar")
+        write_manifest(
+            staging,
+            identity["schema_state"],
+            identity["alembic_revision"],
+        )
+        create_bundle_archive(staging, bundle)
+        extract_verified_bundle(bundle, verification)
+        shutil.rmtree(verification)
+        bundle.chmod(0o600)
+    except Exception:
+        bundle.unlink(missing_ok=True)
+        raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+        shutil.rmtree(verification, ignore_errors=True)
+    print(f"迁移包已生成：{bundle}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

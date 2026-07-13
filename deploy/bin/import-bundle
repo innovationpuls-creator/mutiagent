@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+DEPLOY_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(DEPLOY_DIR / "lib"))
+
+from migration_manifest import (  # noqa: E402
+    extract_upload_archive,
+    extract_verified_bundle,
+    inspect_database_identity,
+    postgres_service_environment,
+)
+
+REQUIRED_ACCOUNTS = (
+    ("13297540721", "admin"),
+    ("18771701100", "student"),
+    ("18771701111", "admin"),
+)
+
+
+def _query(database_environment: dict[str, str], sql: str) -> list[str]:
+    result = subprocess.run(
+        [
+            "psql",
+            "--no-psqlrc",
+            "--dbname=service=onetree_import",
+            "--tuples-only",
+            "--no-align",
+            "--command",
+            sql,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=database_environment,
+    )
+    return [line for line in result.stdout.splitlines() if line]
+
+
+def _validate_replace_target(target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() and (not target.is_dir() or target.is_symlink()):
+        raise RuntimeError(f"教材目标必须是普通目录：{target}")
+    previous = target.parent / f".{target.name}.previous"
+    if previous.exists():
+        raise RuntimeError(f"教材恢复保护目录已经存在：{previous}")
+
+
+def _replace_directory(staging: Path, target: Path) -> None:
+    previous = target.parent / f".{target.name}.previous"
+    if not target.exists():
+        staging.replace(target)
+        return
+    target.replace(previous)
+    try:
+        staging.replace(target)
+    except Exception:
+        previous.replace(target)
+        raise
+    shutil.rmtree(previous)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="导入 OneTree 数据迁移包")
+    parser.add_argument("bundle", type=Path)
+    parser.add_argument("uploads_target", type=Path)
+    arguments = parser.parse_args()
+    database_url = os.environ.get("TARGET_DATABASE_URL", "")
+    if not database_url:
+        raise RuntimeError("必须通过 TARGET_DATABASE_URL 指定维护态目标库")
+    if os.environ.get("ONETREE_MAINTENANCE_MODE") != "1":
+        raise RuntimeError("仅允许在 ONETREE_MAINTENANCE_MODE=1 时导入")
+
+    uploads_target = arguments.uploads_target.resolve()
+    _validate_replace_target(uploads_target)
+    staging_root = Path(
+        tempfile.mkdtemp(prefix=".migration-import.", dir=uploads_target.parent)
+    )
+    verified_bundle = staging_root / "bundle"
+    staged_uploads = staging_root / "uploads"
+    try:
+        database_environment = postgres_service_environment(
+            database_url, staging_root / "pg_service.conf", "onetree_import"
+        )
+        manifest = extract_verified_bundle(arguments.bundle.resolve(), verified_bundle)
+        extract_upload_archive(
+            verified_bundle / "knowledge-base-uploads.tar", staged_uploads
+        )
+        subprocess.run(
+            [
+                "pg_restore",
+                "--clean",
+                "--if-exists",
+                "--no-owner",
+                "--no-privileges",
+                "--single-transaction",
+                "--dbname",
+                "service=onetree_import",
+                str(verified_bundle / "database.dump"),
+            ],
+            check=True,
+            env=database_environment,
+        )
+        restored_identity = inspect_database_identity(
+            DEPLOY_DIR.parent / "backend", database_url
+        )
+        manifest_identity = {
+            "schema_state": manifest["schema_state"],
+            "alembic_revision": manifest["alembic_revision"],
+        }
+        if restored_identity != manifest_identity:
+            raise RuntimeError("恢复后的 schema state 与 manifest 不一致")
+        quoted_identifiers = ", ".join(
+            f"'{identifier}'" for identifier, _role in REQUIRED_ACCOUNTS
+        )
+        accounts = _query(
+            database_environment,
+            "SELECT identifier || ':' || role FROM \"user\" "
+            f"WHERE identifier IN ({quoted_identifiers}) ORDER BY identifier",
+        )
+        expected_accounts = [
+            f"{identifier}:{role}" for identifier, role in REQUIRED_ACCOUNTS
+        ]
+        if accounts != expected_accounts:
+            raise RuntimeError("恢复后的必须保留账号记录不一致")
+        _replace_directory(staged_uploads, uploads_target)
+    finally:
+        shutil.rmtree(staging_root, ignore_errors=True)
+    print("数据库、账号和教材文件导入完成")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

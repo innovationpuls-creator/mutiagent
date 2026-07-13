@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+DEPLOY_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(DEPLOY_DIR / "lib"))
+
+from migration_manifest import extract_verified_bundle  # noqa: E402
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="校验 OneTree 数据迁移包")
+    parser.add_argument("bundle", type=Path)
+    arguments = parser.parse_args()
+    staging_parent = Path(tempfile.mkdtemp(prefix="onetree-bundle-check."))
+    staging = staging_parent / "bundle"
+    try:
+        manifest = extract_verified_bundle(arguments.bundle.resolve(), staging)
+    finally:
+        shutil.rmtree(staging_parent, ignore_errors=True)
+    revision = manifest["alembic_revision"]
+    revision_label = revision if revision is not None else "null"
+    print(
+        "迁移包校验通过，"
+        f"schema state：{manifest['schema_state']}，"
+        f"Alembic revision：{revision_label}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
