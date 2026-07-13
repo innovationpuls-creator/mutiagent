@@ -141,8 +141,9 @@ services:
 
   migrate:
     image: onetree-backend:production
-    command: ["alembic", "upgrade", "head"]
-    environment: *app-environment
+    command: ["python", "-m", "app.migration_cli"]
+    environment:
+      DATABASE_URL: postgresql://onetree_maintenance:${POSTGRES_MAINTENANCE_PASSWORD}@postgres:5432/onetree
     depends_on:
       postgres:
         condition: service_healthy

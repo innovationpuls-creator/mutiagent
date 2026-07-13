@@ -88,7 +88,8 @@ services:
     logging: *ci-logging
 
   migrate:
-    environment: *ci-app-environment
+    environment:
+      DATABASE_URL: postgresql://onetree_maintenance:compose-test-maintenance-password@postgres:5432/onetree
     logging: *ci-logging
 
   smoke:

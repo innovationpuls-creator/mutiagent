@@ -262,6 +262,22 @@ def test_current_unversioned_schema_is_verified_before_stamp(tmp_path: Path) -> 
         assert session.get(User, "existing-user") is not None
 
 
+def test_migration_cli_stamps_current_unversioned_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.migration_cli import main
+    from app.migration_state import assert_schema_at_head, inspect_schema_state
+
+    database_url = postgresql_test_url(tmp_path, "alembic-cli-current")
+    engine = create_engine(database_url)
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    assert main() == 0
+    assert inspect_schema_state(engine) == "versioned"
+    assert_schema_at_head(engine)
+
+
 def test_production_create_app_does_not_run_startup_ddl(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

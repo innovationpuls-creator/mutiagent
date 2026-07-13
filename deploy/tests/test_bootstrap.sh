@@ -861,9 +861,9 @@ assert (
     backend_build
     < postgres_up
     < bundle_import
+    < migrate
     < baseline_backup
     < full_build
-    < migrate
     < bootstrap_nginx
     < cert_issue
     < production_nginx

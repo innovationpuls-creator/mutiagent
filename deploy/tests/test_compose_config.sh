@@ -3,8 +3,10 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/deploy/compose.production.yml"
+CI_COMPOSE_FILE="$REPO_ROOT/deploy/compose.ci.yml"
 CONFIG_FILE="$(mktemp)"
-trap 'rm -f "$CONFIG_FILE"' EXIT
+CI_CONFIG_FILE="$(mktemp)"
+trap 'rm -f "$CONFIG_FILE" "$CI_CONFIG_FILE"' EXIT
 
 export APP_ENV=production
 export POSTGRES_MAINTENANCE_PASSWORD=compose-test-maintenance-password
@@ -22,11 +24,14 @@ export SMOKE_PASSWORD=compose-test-password
 
 docker compose --profile operations -f "$COMPOSE_FILE" config --format json \
   > "$CONFIG_FILE"
+docker compose --profile operations -f "$COMPOSE_FILE" -f "$CI_COMPOSE_FILE" \
+  config --format json > "$CI_CONFIG_FILE"
 
 python3 - \
   "$CONFIG_FILE" \
   "$REPO_ROOT/.gitignore" \
-  "$REPO_ROOT/backend/Dockerfile" <<'PY'
+  "$REPO_ROOT/backend/Dockerfile" \
+  "$CI_CONFIG_FILE" <<'PY'
 from __future__ import annotations
 
 import json
@@ -36,7 +41,9 @@ from pathlib import Path
 config = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 gitignore_lines = set(Path(sys.argv[2]).read_text(encoding="utf-8").splitlines())
 backend_dockerfile = Path(sys.argv[3]).read_text(encoding="utf-8")
+ci_config = json.loads(Path(sys.argv[4]).read_text(encoding="utf-8"))
 services = config["services"]
+ci_services = ci_config["services"]
 
 for runtime_path in (".env.production", "/backups/", "/bin/"):
     assert runtime_path in gitignore_lines, runtime_path
@@ -86,7 +93,7 @@ for service_name, service in services.items():
 
 assert services["postgres"]["image"].split(":", maxsplit=1)[1].startswith("18")
 assert services["worker"]["command"] == ["python", "-m", "app.workers"]
-assert services["migrate"]["command"] == ["alembic", "upgrade", "head"]
+assert services["migrate"]["command"] == ["python", "-m", "app.migration_cli"]
 assert services["postgres"]["environment"]["POSTGRES_DB"] == "onetree"
 assert services["postgres"]["environment"]["POSTGRES_USER"] == "onetree_maintenance"
 assert services["backend"]["build"]["args"]["DEBIAN_MIRROR"] == (
@@ -106,6 +113,8 @@ for service_name in ("worker", "migrate", "smoke", "backup", "restore"):
     assert services[service_name]["image"] == "onetree-backend:production"
     assert "build" not in services[service_name], service_name
 assert "onetree_app" in services["backend"]["environment"]["DATABASE_URL"]
+assert "onetree_maintenance" in services["migrate"]["environment"]["DATABASE_URL"]
+assert "onetree_maintenance" in ci_services["migrate"]["environment"]["DATABASE_URL"]
 assert "onetree_maintenance" in services["backup"]["environment"]["TARGET_DATABASE_URL"]
 assert "onetree_maintenance" in services["restore"]["environment"]["TARGET_DATABASE_URL"]
 assert services["backup"]["user"] == "0:0"

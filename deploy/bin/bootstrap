@@ -758,9 +758,12 @@ create_baseline_backup() {
   printf '%s' "$backup_id"
 }
 
+migrate_imported_database() {
+  compose --profile operations run --rm migrate
+}
+
 start_production() {
   run_image_step compose build
-  compose --profile operations run --rm migrate
   compose up -d --wait postgres backend worker certbot nginx
   "$ONETREE_INSTALL_ROOT/deploy/bin/cert-issue"
   write_production_env production
@@ -817,6 +820,7 @@ main() {
   write_production_env bootstrap
   export_production_environment
   import_migration_bundle
+  migrate_imported_database
   create_baseline_backup >/dev/null
   start_production
   install_operations
