@@ -1,0 +1,11 @@
+[Unit]
+Description=Renew and verify OneTree TLS certificates
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/onetree
+EnvironmentFile=/opt/onetree/.env.production
+ExecStart=/opt/onetree/deploy/bin/cert-renew
+UMask=0077

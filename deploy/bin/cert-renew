@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMPOSE_FILE="$DEPLOY_DIR/compose.production.yml"
+ENV_FILE="$DEPLOY_DIR/../.env.production"
+CERT_VERIFY="$DEPLOY_DIR/bin/cert-verify"
+COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+
+run_openssl() {
+  "${COMPOSE[@]}" exec -T certbot openssl "$@"
+}
+
+verify_served_certificate() {
+  local cert_name="$1"
+  shift
+  local disk_serial
+  local online_serial
+
+  disk_serial="$(
+    run_openssl x509 \
+      -in "/etc/letsencrypt/live/$cert_name/fullchain.pem" \
+      -noout \
+      -serial
+  )"
+  online_serial="$(
+    run_openssl s_client -connect nginx:443 "$@" </dev/null 2>/dev/null |
+      run_openssl x509 -noout -serial
+  )"
+  if [[ "$online_serial" != "$disk_serial" ]]; then
+    printf 'nginx certificate serial does not match disk: %s\n' \
+      "$cert_name" >&2
+    return 1
+  fi
+}
+
+"${COMPOSE[@]}" exec -T certbot certbot renew --quiet --non-interactive
+"$CERT_VERIFY" onetree-domain
+"$CERT_VERIFY" onetree-ip
+"${COMPOSE[@]}" exec -T nginx nginx -t
+"${COMPOSE[@]}" exec -T nginx nginx -s reload
+verify_served_certificate onetree-domain -servername onetree.chat
+verify_served_certificate onetree-ip -noservername

@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew OneTree TLS certificates twice daily
+
+[Timer]
+OnCalendar=*-*-* 03,15:00:00
+Persistent=true
+Unit=onetree-cert-renew.service
+
+[Install]
+WantedBy=timers.target

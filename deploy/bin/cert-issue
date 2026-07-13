@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMPOSE_FILE="$DEPLOY_DIR/compose.production.yml"
+ENV_FILE="$DEPLOY_DIR/../.env.production"
+CERT_VERIFY="$DEPLOY_DIR/bin/cert-verify"
+COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+
+run_certbot() {
+  "${COMPOSE[@]}" exec -T certbot certbot "$@"
+}
+
+version_output="$(run_certbot --version)"
+version="${version_output#certbot }"
+if [[ "$version" == "$version_output" ]]; then
+  printf 'unable to parse Certbot version\n' >&2
+  exit 1
+fi
+IFS=. read -r version_major version_minor _ <<< "$version"
+if [[ ! "$version_major" =~ ^[0-9]+$ || ! "$version_minor" =~ ^[0-9]+$ ]]; then
+  printf 'unable to parse Certbot version: %s\n' "$version" >&2
+  exit 1
+fi
+if ((10#$version_major < 5 || (10#$version_major == 5 && 10#$version_minor < 4))); then
+  printf 'Certbot 5.4 or later is required for IP certificate issuance\n' >&2
+  exit 1
+fi
+
+: "${LETSENCRYPT_EMAIL:?LETSENCRYPT_EMAIL is required}"
+: "${PUBLIC_IPV4:?PUBLIC_IPV4 is required}"
+
+COMMON_ARGUMENTS=(
+  certonly
+  --quiet
+  --non-interactive
+  --agree-tos
+  --no-eff-email
+  --email "$LETSENCRYPT_EMAIL"
+  --webroot
+  --webroot-path /var/www/certbot
+)
+DOMAIN_ARGUMENTS=(
+  --cert-name onetree-domain
+  -d onetree.chat
+  -d www.onetree.chat
+)
+IP_ARGUMENTS=(
+  --cert-name onetree-ip
+  --preferred-profile shortlived
+  --ip-address "$PUBLIC_IPV4"
+)
+
+run_certbot "${COMMON_ARGUMENTS[@]}" --staging --dry-run "${DOMAIN_ARGUMENTS[@]}"
+run_certbot "${COMMON_ARGUMENTS[@]}" --staging --dry-run "${IP_ARGUMENTS[@]}"
+run_certbot "${COMMON_ARGUMENTS[@]}" "${DOMAIN_ARGUMENTS[@]}"
+run_certbot "${COMMON_ARGUMENTS[@]}" "${IP_ARGUMENTS[@]}"
+
+"$CERT_VERIFY" onetree-domain
+"$CERT_VERIFY" onetree-ip

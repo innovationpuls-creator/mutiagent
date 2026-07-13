@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMPOSE_FILE="$DEPLOY_DIR/compose.production.yml"
+ENV_FILE="$DEPLOY_DIR/../.env.production"
+CERT_NAME="${1:-}"
+
+case "$CERT_NAME" in
+  onetree-domain)
+    EXPECTED_HOSTS=(onetree.chat www.onetree.chat)
+    EXPECTED_IP=""
+    ;;
+  onetree-ip)
+    : "${PUBLIC_IPV4:?PUBLIC_IPV4 is required}"
+    EXPECTED_IP="$PUBLIC_IPV4"
+    ;;
+  *)
+    printf 'unsupported certificate name: %s\n' "$CERT_NAME" >&2
+    exit 64
+    ;;
+esac
+
+CERT_DIR="/etc/letsencrypt/live/$CERT_NAME"
+CERT_FILE="$CERT_DIR/fullchain.pem"
+CHAIN_FILE="$CERT_DIR/chain.pem"
+PRIVATE_KEY_FILE="$CERT_DIR/privkey.pem"
+COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+
+run_openssl() {
+  "${COMPOSE[@]}" exec -T certbot openssl "$@"
+}
+
+run_openssl verify \
+  -CAfile /etc/ssl/certs/ca-certificates.crt \
+  -untrusted "$CHAIN_FILE" \
+  "$CERT_FILE" >/dev/null
+
+if [[ "$CERT_NAME" == "onetree-domain" ]]; then
+  for expected_host in "${EXPECTED_HOSTS[@]}"; do
+    run_openssl x509 -in "$CERT_FILE" -noout -checkhost "$expected_host" >/dev/null
+  done
+fi
+
+if [[ -n "$EXPECTED_IP" ]]; then
+  run_openssl x509 -in "$CERT_FILE" -noout -checkip "$EXPECTED_IP" >/dev/null
+fi
+
+certificate_public_key="$(run_openssl x509 -in "$CERT_FILE" -pubkey -noout)"
+private_key_public_key="$(run_openssl pkey -in "$PRIVATE_KEY_FILE" -pubout)"
+if [[ "$certificate_public_key" != "$private_key_public_key" ]]; then
+  printf 'certificate and private key do not match: %s\n' "$CERT_NAME" >&2
+  exit 1
+fi
+
+run_openssl x509 -in "$CERT_FILE" -noout -checkend 86400 >/dev/null
