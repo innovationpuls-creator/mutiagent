@@ -155,6 +155,7 @@ services:
     entrypoint: ["/opt/onetree/deploy/bin/smoke"]
     environment:
       BASE_URL: https://nginx
+      NGINX_CONFIG_MODE: ${NGINX_CONFIG_MODE:-bootstrap}
       PUBLIC_IPV4: ${PUBLIC_IPV4}
       MAINTENANCE_BYPASS_TOKEN: ${MAINTENANCE_BYPASS_TOKEN:?MAINTENANCE_BYPASS_TOKEN is required}
       SMOKE_ACCOUNT: ${SMOKE_ACCOUNT}

@@ -18,6 +18,7 @@ export LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 export ALLOWED_ORIGINS=https://onetree.chat,https://www.onetree.chat
 export PUBLIC_IPV4=192.0.2.10
 export MAINTENANCE_BYPASS_TOKEN=compose-test-maintenance-bypass
+export NGINX_CONFIG_MODE=production-ip
 export LETSENCRYPT_EMAIL=compose-test@example.com
 export SMOKE_ACCOUNT=18771701100
 export SMOKE_PASSWORD=compose-test-password
@@ -134,6 +135,7 @@ assert services["nginx"]["environment"]["MAINTENANCE_BYPASS_TOKEN"] == (
 assert services["smoke"]["environment"]["MAINTENANCE_BYPASS_TOKEN"] == (
     "compose-test-maintenance-bypass"
 )
+assert services["smoke"]["environment"]["NGINX_CONFIG_MODE"] == "production-ip"
 
 upload_dir = services["backend"]["environment"]["KNOWLEDGE_BASE_UPLOAD_DIR"]
 upload_volume_target = str(Path(upload_dir).parent)

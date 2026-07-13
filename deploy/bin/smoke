@@ -7,11 +7,24 @@ fail() {
 }
 
 [[ -n "${BASE_URL:-}" ]] || fail "BASE_URL is required"
+[[ -n "${NGINX_CONFIG_MODE:-}" ]] || fail "NGINX_CONFIG_MODE is required"
 [[ -n "${PUBLIC_IPV4:-}" ]] || fail "PUBLIC_IPV4 is required"
 [[ -n "${MAINTENANCE_BYPASS_TOKEN:-}" ]] || \
     fail "MAINTENANCE_BYPASS_TOKEN is required"
 [[ -n "${SMOKE_ACCOUNT:-}" ]] || fail "SMOKE_ACCOUNT is required"
 [[ -n "${SMOKE_PASSWORD:-}" ]] || fail "SMOKE_PASSWORD is required"
+
+case "$NGINX_CONFIG_MODE" in
+    production-ip)
+        check_public_domain=0
+        ;;
+    production)
+        check_public_domain=1
+        ;;
+    *)
+        fail "unsupported NGINX_CONFIG_MODE"
+        ;;
+esac
 
 connect_host="$({
     python - <<'PY'
@@ -71,12 +84,14 @@ curl_common=(
     --max-time 15
 )
 
-if ! curl "${curl_common[@]}" \
-    --head \
-    --output /dev/null \
-    --header "@${maintenance_header_file}" \
-    "https://onetree.chat/"; then
-    fail "public domain TLS"
+if [[ "$check_public_domain" -eq 1 ]]; then
+    if ! curl "${curl_common[@]}" \
+        --head \
+        --output /dev/null \
+        --header "@${maintenance_header_file}" \
+        "https://onetree.chat/"; then
+        fail "public domain TLS"
+    fi
 fi
 
 if ! curl "${curl_common[@]}" \

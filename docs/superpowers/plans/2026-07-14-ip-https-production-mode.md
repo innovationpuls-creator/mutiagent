@@ -282,6 +282,10 @@ git commit -m "fix: bootstrap with IP HTTPS before ICP filing"
 ### Task 5: Update the Production Runbook and Verify the Full Deployment Suite
 
 **Files:**
+- Modify: `deploy/bin/smoke`
+- Modify: `deploy/compose.production.yml`
+- Modify: `deploy/tests/test_smoke.sh`
+- Modify: `deploy/tests/test_compose_config.sh`
 - Modify: `docs/deployment/docker-production.md`
 - Test: all `deploy/tests/test_*.sh`
 
@@ -289,17 +293,32 @@ git commit -m "fix: bootstrap with IP HTTPS before ICP filing"
 - Consumes: the completed IP-only production workflow.
 - Produces: exact operator instructions for the current pre-filing state.
 
-- [ ] **Step 1: Document the current public URL and mode**
+- [ ] **Step 1: Make smoke select checks by production mode**
+
+Pass `NGINX_CONFIG_MODE` into the smoke container. In `production-ip`, skip the direct `https://onetree.chat` request and retain IP TLS, redirect, live, ready, home, login, and `/api/auth/me` checks. In `production`, retain the domain request and all IP checks. Reject every other mode before invoking curl.
+
+- [ ] **Step 2: Verify smoke mode selection**
+
+Run:
+
+```bash
+bash deploy/tests/test_smoke.sh
+bash deploy/tests/test_compose_config.sh
+```
+
+Expected: both tests PASS, with `production-ip` making no domain request.
+
+- [ ] **Step 3: Document the current public URL and mode**
 
 State that the current production URL is `https://1.12.69.26`, `.env.production` must contain `NGINX_CONFIG_MODE=production-ip`, and domain access remains unavailable until ICP filing passes. Preserve the existing domain certificate commands as the post-filing transition procedure.
 
-- [ ] **Step 2: Run deployment tests in parallel**
+- [ ] **Step 4: Run deployment tests in parallel**
 
 Run every executable `deploy/tests/test_*.sh` concurrently, capture each exit status, and fail the verification if any script fails.
 
 Expected: all deployment tests PASS.
 
-- [ ] **Step 3: Check the diff**
+- [ ] **Step 5: Check the diff**
 
 Run:
 
@@ -310,7 +329,7 @@ git status --short
 
 Expected: no whitespace errors and only the planned files changed.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add docs/deployment/docker-production.md

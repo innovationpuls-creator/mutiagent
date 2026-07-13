@@ -214,8 +214,9 @@ python3_path="$(command -v python3)"
 ln -s "$python3_path" "$FAKE_BIN/python"
 
 run_smoke() {
-    local fail_step="$1"
-    local expected_status="$2"
+    local nginx_config_mode="$1"
+    local fail_step="$2"
+    local expected_status="$3"
     local output
     local status
 
@@ -224,6 +225,7 @@ run_smoke() {
     output="$(
         PATH="$FAKE_BIN:$PATH" \
         BASE_URL="https://nginx" \
+        NGINX_CONFIG_MODE="$nginx_config_mode" \
         PUBLIC_IPV4="$PUBLIC_IPV4" \
         SMOKE_ACCOUNT="$SMOKE_ACCOUNT" \
         SMOKE_PASSWORD="$SMOKE_PASSWORD" \
@@ -259,7 +261,21 @@ run_smoke() {
     fi
 }
 
-run_smoke "" zero
+run_smoke production-ip "" zero
+python3 - "$CURL_LOG" <<'PY'
+from __future__ import annotations
+
+import sys
+from collections import Counter
+from pathlib import Path
+
+calls = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+assert Counter(calls) == Counter(
+    ["tls", "redirect", "live", "ready", "home", "login", "me"]
+)
+PY
+
+run_smoke production "" zero
 python3 - "$CURL_LOG" <<'PY'
 from __future__ import annotations
 
@@ -273,8 +289,15 @@ assert Counter(calls) == Counter(
 )
 PY
 
-for fail_step in public-domain tls redirect live ready home login me; do
-    run_smoke "$fail_step" nonzero
+for fail_step in tls redirect live ready home login me; do
+    run_smoke production-ip "$fail_step" nonzero
 done
+run_smoke production public-domain nonzero
+
+run_smoke bootstrap "" nonzero
+[[ ! -s "$CURL_LOG" ]] || {
+    printf 'invalid smoke mode invoked curl\n' >&2
+    exit 1
+}
 
 printf 'smoke tests passed\n'
