@@ -367,7 +367,7 @@ fi
 
 if [[ " $* " == *" up -d "* && " $* " == *" nginx "* ]]; then
   if [[ " $* " == *" --force-recreate "* ]]; then
-    grep -qx 'NGINX_CONFIG_MODE=production' "$ENV_FILE" || exit 42
+    grep -qx 'NGINX_CONFIG_MODE=production-ip' "$ENV_FILE" || exit 42
   else
     grep -qx 'NGINX_CONFIG_MODE=bootstrap' "$ENV_FILE" || exit 43
   fi
@@ -396,7 +396,9 @@ if [[ "${1:-}" == "clone" ]]; then
   cat > "$destination/deploy/bin/cert-issue" <<'CERT'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'cert-issue\n' >> "$COMMAND_LOG"
+printf 'cert-issue' >> "$COMMAND_LOG"
+printf ' %q' "$@" >> "$COMMAND_LOG"
+printf '\n' >> "$COMMAND_LOG"
 CERT
   cat > "$destination/deploy/bin/deploy" <<'DEPLOY'
 #!/usr/bin/env bash
@@ -607,7 +609,7 @@ assert entries["PUBLIC_IPV4"] == "203.0.113.10"
 assert entries["ALLOWED_ORIGINS"] == (
     "https://onetree.chat,https://www.onetree.chat,https://203.0.113.10"
 )
-assert entries["NGINX_CONFIG_MODE"] == "production"
+assert entries["NGINX_CONFIG_MODE"] == "production-ip"
 assert entries["LLM_API_KEY"] == sys.argv[3]
 assert entries["LLM_MODEL"] == "qwen3.5-plus"
 assert entries["LETSENCRYPT_EMAIL"] == "ops@example.com"
@@ -658,6 +660,9 @@ for secret in (
     *generated_values,
 ):
     assert secret not in output
+assert "https://203.0.113.10" in output
+assert "https://onetree.chat\n" not in output
+assert "https://www.onetree.chat\n" not in output
 PY
 
 COMPOSE_CONFIG="$TEMP_DIR/compose-config.json"
@@ -849,7 +854,7 @@ migrate = command_index(
 bootstrap_nginx = command_index(
     "docker compose", " up -d --wait postgres backend worker certbot nginx"
 )
-cert_issue = command_index("cert-issue")
+cert_issue = command_index("cert-issue ip")
 production_nginx = command_index(
     "docker compose", " up -d --wait --force-recreate nginx"
 )

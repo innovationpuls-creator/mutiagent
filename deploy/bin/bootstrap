@@ -765,8 +765,8 @@ migrate_imported_database() {
 start_production() {
   run_image_step compose build
   compose up -d --wait postgres backend worker certbot nginx
-  "$ONETREE_INSTALL_ROOT/deploy/bin/cert-issue"
-  write_production_env production
+  "$ONETREE_INSTALL_ROOT/deploy/bin/cert-issue" ip
+  write_production_env production-ip
   export_production_environment
   compose up -d --wait --force-recreate nginx
   compose --profile operations run --rm smoke
@@ -825,7 +825,7 @@ main() {
   start_production
   install_operations
   bootstrap_status "OneTree production bootstrap completed"
-  printf 'https://onetree.chat\nhttps://www.onetree.chat\nhttps://%s\n' "$PUBLIC_IPV4"
+  printf 'https://%s\n' "$PUBLIC_IPV4"
   printf '%s\n' \
     "$ONETREE_INSTALL_ROOT/bin/deploy" \
     "$ONETREE_INSTALL_ROOT/bin/rollback <backup-id>"
