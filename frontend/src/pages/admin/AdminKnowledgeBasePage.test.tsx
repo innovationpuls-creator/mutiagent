@@ -134,7 +134,14 @@ const queuedJob = {
 	job_type: "agent_organize",
 	status: "queued" as const,
 	error_message: "",
+	attempt_count: 0,
+	max_attempts: 3,
+	available_at: "2026-06-29T10:00:00Z",
+	lease_expires_at: null,
+	worker_id: null,
+	request_id: "request-1",
 	created_at: "2026-06-29T10:00:00Z",
+	updated_at: "2026-06-29T10:00:00Z",
 	started_at: null,
 	finished_at: null,
 };
@@ -196,7 +203,8 @@ describe("AdminKnowledgeBasePage", () => {
 				textbook,
 				job: queuedJob,
 			}),
-			runIngestionJob: vi.fn().mockResolvedValue(completedJob),
+			runIngestionJob: vi.fn().mockResolvedValue(queuedJob),
+			getIngestionJob: vi.fn().mockResolvedValue(completedJob),
 			organizeTextbook: vi.fn().mockResolvedValue(completedJob),
 			publishTextbook: vi.fn().mockResolvedValue(textbook),
 			unpublishTextbook: vi.fn().mockResolvedValue({
@@ -276,9 +284,18 @@ describe("AdminKnowledgeBasePage", () => {
 				sourceResult,
 			);
 		});
-		await waitFor(() => {
-			expect(api.runIngestionJob).toHaveBeenCalledWith("token-1", "job-1");
-		});
+		await waitFor(
+			() => {
+				expect(api.runIngestionJob).toHaveBeenCalledWith("token-1", "job-1");
+			},
+			{ timeout: 4_000 },
+		);
+		await waitFor(
+			() => {
+				expect(api.getIngestionJob).toHaveBeenCalledWith("token-1", "job-1");
+			},
+			{ timeout: 4_000 },
+		);
 
 		fireEvent.click(screen.getByRole("button", { name: "发布当前教材" }));
 		await waitFor(() => {
@@ -307,6 +324,7 @@ describe("AdminKnowledgeBasePage", () => {
 				job: queuedJob,
 			}),
 			runIngestionJob: vi.fn().mockResolvedValue(completedJob),
+			getIngestionJob: vi.fn().mockResolvedValue(completedJob),
 			organizeTextbook: vi.fn().mockResolvedValue(completedJob),
 			publishTextbook: vi.fn().mockResolvedValue(textbook),
 			unpublishTextbook: vi.fn().mockResolvedValue(textbook),
@@ -389,6 +407,7 @@ describe("AdminKnowledgeBasePage", () => {
 				job: queuedJob,
 			}),
 			runIngestionJob: vi.fn().mockResolvedValue(completedJob),
+			getIngestionJob: vi.fn().mockResolvedValue(completedJob),
 			organizeTextbook: vi.fn().mockResolvedValue(completedJob),
 			publishTextbook: vi.fn().mockResolvedValue(textbook),
 			unpublishTextbook: vi.fn().mockResolvedValue(textbook),
@@ -455,6 +474,7 @@ describe("AdminKnowledgeBasePage", () => {
 				job: queuedJob,
 			}),
 			runIngestionJob: vi.fn().mockResolvedValue(completedJob),
+			getIngestionJob: vi.fn().mockResolvedValue(completedJob),
 			organizeTextbook: vi.fn().mockResolvedValue(completedJob),
 			publishTextbook: vi.fn().mockResolvedValue(textbook),
 			unpublishTextbook: vi.fn().mockResolvedValue(textbook),

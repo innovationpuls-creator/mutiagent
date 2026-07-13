@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -20,6 +21,8 @@ from app.models import (
     UserCourseKnowledgeOutline,
     UserYearLearningPath,
 )
+from app.services.knowledge_base_service import run_claimed_textbook_source_ingestion
+from app.workers.knowledge_base_worker import claim_next_ingestion_job
 from tests.fixtures.knowledge_base import (
     admitted_source_payload,
     blocked_source_payload,
@@ -69,6 +72,17 @@ def register_student(client: TestClient, identifier: str, username: str) -> dict
 def admin_headers(client: TestClient) -> dict[str, str]:
     token = login_token(client, "admin-kb@example.com", "admin-password-123")
     return {"Authorization": f"Bearer {token}"}
+
+
+def run_next_ingestion_job() -> KnowledgeBaseIngestionJob:
+    with Session(get_engine()) as session:
+        job = claim_next_ingestion_job(
+            session,
+            "test-worker",
+            datetime.now(timezone.utc),
+        )
+        assert job is not None
+        return run_claimed_textbook_source_ingestion(session, job)
 
 
 def uploaded_docx_bytes(tmp_path: Path) -> bytes:
@@ -368,6 +382,43 @@ def test_agent_organize_returns_queued_job_and_job_query_reads_it(
 
     assert read_response.status_code == 200
     assert read_response.json() == job
+
+
+def test_run_ingestion_job_only_queues_and_does_not_parse(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    headers = admin_headers(client)
+    client.post(
+        "/api/admin/knowledge-base/sources",
+        headers=headers,
+        json=admitted_source_payload(),
+    )
+    client.post(
+        "/api/admin/knowledge-base/textbooks",
+        headers=headers,
+        json=structured_textbook_payload(textbook_id="textbook-queue-only-api"),
+    )
+    job_response = client.post(
+        "/api/admin/knowledge-base/textbooks/textbook-queue-only-api/agent-organize",
+        headers=headers,
+    )
+
+    def fail_if_parsed(*_args, **_kwargs):
+        raise AssertionError("API request parsed textbook synchronously")
+
+    monkeypatch.setattr(
+        "app.services.knowledge_base_service.parse_textbook_source_to_sections",
+        fail_if_parsed,
+    )
+
+    run_response = client.post(
+        f"/api/admin/knowledge-base/ingestion-jobs/{job_response.json()['job_id']}/run",
+        headers=headers,
+    )
+
+    assert run_response.status_code == 202
+    assert run_response.json()["status"] == "queued"
 
 
 def test_find_materials_returns_only_admitted_sources_and_updates_gap(
@@ -695,13 +746,6 @@ def test_run_confirmed_source_job_fills_outline_and_section_content(
         "app.services.knowledge_base_service.parse_textbook_source_to_sections",
         fake_parse_source,
     )
-    monkeypatch.setattr(
-        "app.services.knowledge_base_service.translate_section_content_to_zh",
-        lambda content, source_language="": (
-            "数组原始正文。" if source_language == "en" else content
-        ),
-    )
-    monkeypatch.setenv("TEXTBOOK_SYNC_TRANSLATE_ENGLISH", "1")
     confirm_response = client.post(
         "/api/admin/knowledge-base/source-results/confirm",
         headers=headers,
@@ -731,8 +775,16 @@ def test_run_confirmed_source_job_fills_outline_and_section_content(
         headers=headers,
     )
 
-    assert run_response.status_code == 200
-    assert run_response.json()["status"] == "completed"
+    assert run_response.status_code == 202
+    assert run_response.json()["status"] == "queued"
+    completed = run_next_ingestion_job()
+    read_response = client.get(
+        f"/api/admin/knowledge-base/ingestion-jobs/{body['job']['job_id']}",
+        headers=headers,
+    )
+    assert completed.status == "completed"
+    assert read_response.status_code == 200
+    assert read_response.json()["status"] == "completed"
     textbook_id = body["textbook"]["textbook_id"]
     with Session(get_engine()) as session:
         textbook = session.get(Textbook, textbook_id)
@@ -747,7 +799,7 @@ def test_run_confirmed_source_job_fills_outline_and_section_content(
     assert textbook.outline["chapters"][0]["sections"][0]["section_id"] == "sec_1_1"
     assert len(sections) == 1
     assert sections[0].content_original == "Arrays original content."
-    assert sections[0].content_zh == "数组原始正文。"
+    assert sections[0].content_zh == "Arrays original content."
 
     sections_response = client.get(
         f"/api/admin/knowledge-base/textbooks/{textbook_id}/sections",
@@ -764,8 +816,8 @@ def test_run_confirmed_source_job_fills_outline_and_section_content(
             "title": "Arrays",
             "original_title": "Arrays",
             "content_original": "Arrays original content.",
-            "content_zh": "数组原始正文。",
-            "content_char_count": len("数组原始正文。"),
+            "content_zh": "Arrays original content.",
+            "content_char_count": len("Arrays original content."),
         }
     ]
 
@@ -814,8 +866,16 @@ def test_upload_textbook_file_creates_job_and_extracts_uploaded_docx_content(
         f"/api/admin/knowledge-base/ingestion-jobs/{body['job']['job_id']}/run",
         headers=headers,
     )
-    assert run_response.status_code == 200
-    assert run_response.json()["status"] == "completed"
+    assert run_response.status_code == 202
+    assert run_response.json()["status"] == "queued"
+    completed = run_next_ingestion_job()
+    read_response = client.get(
+        f"/api/admin/knowledge-base/ingestion-jobs/{body['job']['job_id']}",
+        headers=headers,
+    )
+    assert completed.status == "completed"
+    assert read_response.status_code == 200
+    assert read_response.json()["status"] == "completed"
 
     sections_response = client.get(
         f"/api/admin/knowledge-base/textbooks/{textbook_id}/sections",

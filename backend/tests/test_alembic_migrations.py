@@ -40,7 +40,106 @@ def test_empty_schema_upgrades_to_alembic_head(tmp_path: Path) -> None:
     assert table_names == set(SQLModel.metadata.tables) | {"alembic_version"}
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0001_production_baseline"
+        assert revision.scalar_one() == "0002_ingestion_job_leases"
+
+
+def test_ingestion_job_lease_migration_preserves_existing_job(
+    tmp_path: Path,
+) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    database_url = postgresql_test_url(tmp_path, "alembic-ingestion-lease")
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+    command.upgrade(config, "0001_production_baseline")
+
+    engine = create_engine(database_url)
+    lease_columns = (
+        "attempt_count",
+        "max_attempts",
+        "available_at",
+        "lease_expires_at",
+        "worker_id",
+        "request_id",
+        "updated_at",
+    )
+    with engine.begin() as connection:
+        for column_name in lease_columns:
+            connection.execute(
+                text(
+                    f'ALTER TABLE knowledgebaseingestionjob DROP COLUMN "{column_name}"'
+                )
+            )
+        connection.execute(
+            text(
+                "INSERT INTO knowledgebaseingestionjob "
+                "(job_id, textbook_id, job_type, status, error_message, created_at) "
+                "VALUES ('existing-job', 'existing-textbook', 'agent_organize', "
+                "'queued', '', CURRENT_TIMESTAMP)"
+            )
+        )
+
+    command.upgrade(config, "head")
+
+    with engine.connect() as connection:
+        stored = connection.execute(
+            text(
+                "SELECT attempt_count, max_attempts, available_at, updated_at "
+                "FROM knowledgebaseingestionjob WHERE job_id = 'existing-job'"
+            )
+        ).one()
+    assert stored.attempt_count == 0
+    assert stored.max_attempts == 3
+    assert stored.available_at is not None
+    assert stored.updated_at is not None
+
+
+def test_baseline_unversioned_schema_upgrades_through_ingestion_migration(
+    tmp_path: Path,
+) -> None:
+    from app.migration_state import inspect_schema_state, migrate_to_head
+
+    engine = create_engine(postgresql_test_url(tmp_path, "alembic-baseline-worker"))
+    SQLModel.metadata.create_all(engine)
+    lease_columns = (
+        "attempt_count",
+        "max_attempts",
+        "available_at",
+        "lease_expires_at",
+        "worker_id",
+        "request_id",
+        "updated_at",
+    )
+    with engine.begin() as connection:
+        for column_name in lease_columns:
+            connection.execute(
+                text(
+                    f'ALTER TABLE knowledgebaseingestionjob DROP COLUMN "{column_name}"'
+                )
+            )
+        connection.execute(
+            text(
+                "INSERT INTO knowledgebaseingestionjob "
+                "(job_id, textbook_id, job_type, status, error_message, created_at) "
+                "VALUES ('unversioned-job', 'existing-textbook', 'agent_organize', "
+                "'queued', '', CURRENT_TIMESTAMP)"
+            )
+        )
+
+    assert inspect_schema_state(engine) == "baseline_unversioned"
+    migrate_to_head(engine)
+
+    assert inspect_schema_state(engine) == "versioned"
+    with engine.connect() as connection:
+        stored = connection.execute(
+            text(
+                "SELECT attempt_count, max_attempts FROM knowledgebaseingestionjob "
+                "WHERE job_id = 'unversioned-job'"
+            )
+        ).one()
+    assert stored.attempt_count == 0
+    assert stored.max_attempts == 3
 
 
 def test_current_sqlmodel_schema_is_current_unversioned(tmp_path: Path) -> None:

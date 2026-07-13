@@ -132,6 +132,8 @@ def test_ingestion_job_running_then_completed_sets_textbook_ready_for_review(
 
     assert completed.status == "completed"
     assert completed.finished_at is not None
+    assert completed.lease_expires_at is None
+    assert completed.updated_at >= completed.started_at
     assert completed.error_message == ""
     assert stored_textbook is not None
     assert stored_textbook.ingestion_status == "ready_for_outline_review"
@@ -158,6 +160,8 @@ def test_ingestion_job_running_then_failed_records_error_on_textbook(
 
     assert failed.status == "failed"
     assert failed.finished_at is not None
+    assert failed.lease_expires_at is None
+    assert failed.updated_at >= failed.started_at
     assert failed.error_message == "教材解析失败。"
     assert stored_textbook is not None
     assert stored_textbook.ingestion_status == "failed"

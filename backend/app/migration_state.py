@@ -11,7 +11,27 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.engine.reflection import Inspector
 from sqlmodel import SQLModel
 
-SchemaState = Literal["empty", "current_unversioned", "legacy", "versioned"]
+import app.models  # noqa: F401  # Register all SQLModel tables before inspection.
+
+SchemaState = Literal[
+    "empty",
+    "baseline_unversioned",
+    "current_unversioned",
+    "legacy",
+    "versioned",
+]
+
+_INGESTION_LEASE_COLUMNS = frozenset(
+    {
+        "attempt_count",
+        "max_attempts",
+        "available_at",
+        "lease_expires_at",
+        "worker_id",
+        "request_id",
+        "updated_at",
+    }
+)
 
 
 def inspect_schema_state(engine: Engine) -> SchemaState:
@@ -25,9 +45,11 @@ def inspect_schema_state(engine: Engine) -> SchemaState:
         return "empty"
     if table_names != expected_tables:
         return "legacy"
-    if not _matches_current_metadata(engine):
-        return "legacy"
-    return "current_unversioned"
+    if _matches_current_metadata(engine):
+        return "current_unversioned"
+    if _matches_production_baseline_metadata(engine):
+        return "baseline_unversioned"
+    return "legacy"
 
 
 def assert_schema_at_head(engine: Engine) -> None:
@@ -46,6 +68,10 @@ def migrate_to_head(engine: Engine) -> None:
         raise RuntimeError("legacy 数据库结构不能自动 stamp")
 
     config = _alembic_config(engine)
+    if state == "baseline_unversioned":
+        command.stamp(config, "0001_production_baseline")
+        command.upgrade(config, "head")
+        return
     if state == "current_unversioned":
         command.stamp(config, "head")
         return
@@ -67,15 +93,40 @@ def _matches_current_metadata(engine: Engine) -> bool:
     )
 
 
+def _matches_production_baseline_metadata(engine: Engine) -> bool:
+    inspector = inspect(engine)
+    return all(
+        _table_matches_metadata(
+            engine,
+            inspector,
+            table_name,
+            table,
+            missing_columns=(
+                _INGESTION_LEASE_COLUMNS
+                if table_name == "knowledgebaseingestionjob"
+                else frozenset()
+            ),
+        )
+        for table_name, table in SQLModel.metadata.tables.items()
+    )
+
+
 def _table_matches_metadata(
-    engine: Engine, inspector: Inspector, table_name: str, table: Table
+    engine: Engine,
+    inspector: Inspector,
+    table_name: str,
+    table: Table,
+    missing_columns: frozenset[str] = frozenset(),
 ) -> bool:
     actual_columns = {
         column["name"]: column for column in inspector.get_columns(table_name)
     }
-    if set(actual_columns) != set(table.columns.keys()):
+    expected_column_names = set(table.columns.keys()) - missing_columns
+    if set(actual_columns) != expected_column_names:
         return False
     for column in table.columns:
+        if column.name in missing_columns:
+            continue
         actual = actual_columns[column.name]
         if _type_signature(actual["type"], engine) != _type_signature(
             column.type, engine

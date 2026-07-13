@@ -398,7 +398,14 @@ class KnowledgeBaseIngestionJobRead(BaseModel):
     job_type: str
     status: KnowledgeBaseIngestionJobStatus
     error_message: str
+    attempt_count: int
+    max_attempts: int
+    available_at: datetime
+    lease_expires_at: datetime | None
+    worker_id: str | None
+    request_id: str | None
     created_at: datetime
+    updated_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
 

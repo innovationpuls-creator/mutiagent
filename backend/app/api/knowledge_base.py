@@ -64,9 +64,8 @@ from app.services.knowledge_base_service import (
     list_admitted_knowledge_sources,
     list_knowledge_sources,
     publish_textbook,
+    queue_textbook_source_ingestion_for_textbook,
     run_knowledge_base_agent,
-    run_textbook_source_ingestion,
-    run_textbook_source_ingestion_for_textbook,
     stream_knowledge_base_agent_events,
     textbook_payload_covers_topic,
     upsert_structured_textbook,
@@ -306,6 +305,7 @@ def _register_ingestion_job_routes(
     @router.post(
         "/api/admin/knowledge-base/textbooks/{textbook_id}/agent-organize/run",
         response_model=KnowledgeBaseIngestionJobRead,
+        status_code=status.HTTP_202_ACCEPTED,
     )
     def run_admin_textbook_organize(
         textbook_id: str,
@@ -313,7 +313,7 @@ def _register_ingestion_job_routes(
         session: Session = Depends(session_dependency),
     ) -> KnowledgeBaseIngestionJob:
         try:
-            return run_textbook_source_ingestion_for_textbook(session, textbook_id)
+            return queue_textbook_source_ingestion_for_textbook(session, textbook_id)
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -323,6 +323,7 @@ def _register_ingestion_job_routes(
     @router.post(
         "/api/admin/knowledge-base/ingestion-jobs/{job_id}/run",
         response_model=KnowledgeBaseIngestionJobRead,
+        status_code=status.HTTP_202_ACCEPTED,
     )
     def run_admin_ingestion_job(
         job_id: str,
@@ -330,7 +331,10 @@ def _register_ingestion_job_routes(
         session: Session = Depends(session_dependency),
     ) -> KnowledgeBaseIngestionJob:
         try:
-            return run_textbook_source_ingestion(session, job_id)
+            job = session.get(KnowledgeBaseIngestionJob, job_id)
+            if job is None:
+                raise ValueError("知识库任务不存在。")
+            return job
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

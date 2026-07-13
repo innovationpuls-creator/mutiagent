@@ -18,6 +18,7 @@ from langchain_openai import OpenAIEmbeddings
 from sqlalchemy import func, or_, text
 from sqlmodel import Session, select
 
+from app.core.observability import get_request_id
 from app.models import (
     KnowledgeBaseIngestionJob,
     KnowledgeGap,
@@ -415,6 +416,7 @@ def create_knowledge_base_ingestion_job(
         textbook_id=textbook_id,
         job_type="agent_organize",
         status="queued",
+        request_id=get_request_id(),
     )
     session.add(job)
     session.commit()
@@ -518,9 +520,11 @@ def start_knowledge_base_ingestion_job(
         raise ValueError("只有 queued 整理任务可以开始。")
 
     textbook = _get_ingestion_job_textbook(session, job)
+    now = datetime.now(timezone.utc)
     job.status = "running"
-    job.started_at = datetime.now(timezone.utc)
+    job.started_at = now
     job.finished_at = None
+    job.updated_at = now
     job.error_message = ""
     textbook.ingestion_status = "processing"
     textbook.ingestion_error_message = ""
@@ -540,8 +544,11 @@ def complete_knowledge_base_ingestion_job(
         raise ValueError("只有 running 整理任务可以完成。")
 
     textbook = _get_ingestion_job_textbook(session, job)
+    now = datetime.now(timezone.utc)
     job.status = "completed"
-    job.finished_at = datetime.now(timezone.utc)
+    job.finished_at = now
+    job.lease_expires_at = None
+    job.updated_at = now
     job.error_message = ""
     textbook.ingestion_status = "ready_for_outline_review"
     textbook.ingestion_error_message = ""
@@ -563,8 +570,11 @@ def fail_knowledge_base_ingestion_job(
 
     textbook = _get_ingestion_job_textbook(session, job)
     message = error_message.strip() or "教材整理失败。"
+    now = datetime.now(timezone.utc)
     job.status = "failed"
-    job.finished_at = datetime.now(timezone.utc)
+    job.finished_at = now
+    job.lease_expires_at = None
+    job.updated_at = now
     job.error_message = message
     textbook.ingestion_status = "failed"
     textbook.ingestion_error_message = message
@@ -667,8 +677,16 @@ def _split_translation_chunks(content: str, chunk_char_limit: int) -> list[str]:
 def run_textbook_source_ingestion(
     session: Session,
     job_id: str,
+    *,
+    start_job: bool = True,
 ) -> KnowledgeBaseIngestionJob:
-    job = start_knowledge_base_ingestion_job(session, job_id)
+    job = (
+        start_knowledge_base_ingestion_job(session, job_id)
+        if start_job
+        else _get_ingestion_job(session, job_id)
+    )
+    if job.status != "running":
+        raise ValueError("只有 running 整理任务可以执行。")
     textbook = _get_ingestion_job_textbook(session, job)
     try:
         outline, sections = parse_textbook_source_to_sections(
@@ -737,6 +755,15 @@ def run_textbook_source_ingestion(
     except Exception as exc:
         session.rollback()
         return fail_knowledge_base_ingestion_job(session, job_id, str(exc))
+
+
+def run_claimed_textbook_source_ingestion(
+    session: Session,
+    job: KnowledgeBaseIngestionJob,
+) -> KnowledgeBaseIngestionJob:
+    if job.status != "running":
+        raise ValueError("只有 running 整理任务可以执行。")
+    return run_textbook_source_ingestion(session, job.job_id, start_job=False)
 
 
 def _section_content_by_section_id_for_ingestion(
@@ -827,6 +854,25 @@ def run_textbook_source_ingestion_for_textbook(
     ).first()
     job = queued_job or create_knowledge_base_ingestion_job(session, textbook_id)
     return run_textbook_source_ingestion(session, job.job_id)
+
+
+def queue_textbook_source_ingestion_for_textbook(
+    session: Session,
+    textbook_id: str,
+) -> KnowledgeBaseIngestionJob:
+    textbook = session.get(Textbook, textbook_id)
+    if textbook is None:
+        raise ValueError("教材不存在。")
+    active_job = session.exec(
+        select(KnowledgeBaseIngestionJob)
+        .where(
+            KnowledgeBaseIngestionJob.textbook_id == textbook_id,
+            KnowledgeBaseIngestionJob.job_type == "agent_organize",
+            KnowledgeBaseIngestionJob.status.in_(["queued", "running"]),
+        )
+        .order_by(KnowledgeBaseIngestionJob.created_at.desc())
+    ).first()
+    return active_job or create_knowledge_base_ingestion_job(session, textbook_id)
 
 
 def publish_textbook(session: Session, textbook_id: str) -> Textbook:

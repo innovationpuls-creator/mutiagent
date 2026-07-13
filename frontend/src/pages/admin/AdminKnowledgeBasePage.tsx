@@ -26,6 +26,9 @@ interface AdminKnowledgeBasePageProps {
 	knowledgeBaseApi?: AdminKnowledgeBaseApi;
 }
 
+const INGESTION_JOB_POLL_INTERVAL_MS = 2_000;
+const INGESTION_JOB_POLL_TIMEOUT_MS = 15 * 60 * 1_000;
+
 function formatStreamEventName(event: string): string {
 	switch (event) {
 		case "started":
@@ -93,6 +96,38 @@ function formatStreamEventMeta(event: KnowledgeBaseAgentStreamEvent): string {
 function assertIngestionJobSucceeded(job: KnowledgeBaseIngestionJob): void {
 	if (job.status !== "failed") return;
 	throw new Error(job.error_message || "教材整理失败");
+}
+
+function waitForNextIngestionJobPoll(delayMs: number): Promise<void> {
+	return new Promise((resolve) => {
+		window.setTimeout(resolve, delayMs);
+	});
+}
+
+async function pollIngestionJobUntilTerminal(
+	knowledgeBaseApi: AdminKnowledgeBaseApi,
+	token: string,
+	job: KnowledgeBaseIngestionJob,
+): Promise<KnowledgeBaseIngestionJob> {
+	const deadline = Date.now() + INGESTION_JOB_POLL_TIMEOUT_MS;
+	let currentJob = job;
+	while (currentJob.status === "queued" || currentJob.status === "running") {
+		const remainingMs = deadline - Date.now();
+		if (remainingMs <= 0) {
+			throw new Error("教材整理仍在后台进行，请稍后查看任务状态。");
+		}
+		await waitForNextIngestionJobPoll(
+			Math.min(INGESTION_JOB_POLL_INTERVAL_MS, remainingMs),
+		);
+		if (Date.now() >= deadline) {
+			throw new Error("教材整理仍在后台进行，请稍后查看任务状态。");
+		}
+		currentJob = await knowledgeBaseApi.getIngestionJob(
+			token,
+			currentJob.job_id,
+		);
+	}
+	return currentJob;
 }
 
 export function AdminKnowledgeBasePage({
@@ -268,9 +303,14 @@ export function AdminKnowledgeBasePage({
 				);
 				setTextbooks((current) => [response.textbook, ...current]);
 				setSelectedTextbookId(response.textbook.textbook_id);
-				const job = await knowledgeBaseApi.runIngestionJob(
+				const queuedJob = await knowledgeBaseApi.runIngestionJob(
 					token,
 					response.job.job_id,
+				);
+				const job = await pollIngestionJobUntilTerminal(
+					knowledgeBaseApi,
+					token,
+					queuedJob,
 				);
 				assertIngestionJobSucceeded(job);
 				await loadKnowledgeBase();
@@ -290,9 +330,14 @@ export function AdminKnowledgeBasePage({
 		setBusy(true);
 		setError(null);
 		try {
-			const job = await knowledgeBaseApi.organizeTextbook(
+			const queuedJob = await knowledgeBaseApi.organizeTextbook(
 				token,
 				selectedTextbook.textbook_id,
+			);
+			const job = await pollIngestionJobUntilTerminal(
+				knowledgeBaseApi,
+				token,
+				queuedJob,
 			);
 			assertIngestionJobSucceeded(job);
 			await loadKnowledgeBase();
@@ -460,7 +505,7 @@ export function AdminKnowledgeBasePage({
 				<div>
 					<p className="admin-kicker">knowledge-base</p>
 					<h1 id="admin-knowledge-title">知识库</h1>
-					
+
 					{/* Tabs */}
 					<div className="admin-kb-tabs" role="tablist">
 						<button

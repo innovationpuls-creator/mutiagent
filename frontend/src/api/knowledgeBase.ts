@@ -76,6 +76,10 @@ export interface AdminKnowledgeBaseApi {
 		token: string,
 		jobId: string,
 	): Promise<KnowledgeBaseIngestionJob>;
+	getIngestionJob(
+		token: string,
+		jobId: string,
+	): Promise<KnowledgeBaseIngestionJob>;
 	organizeTextbook(
 		token: string,
 		textbookId: string,
@@ -301,6 +305,12 @@ export const adminKnowledgeBaseApi: AdminKnowledgeBaseApi = {
 			token,
 			`/api/admin/knowledge-base/ingestion-jobs/${encodeURIComponent(jobId)}/run`,
 			{ method: "POST" },
+		);
+	},
+	getIngestionJob(token: string, jobId: string) {
+		return requestJson<KnowledgeBaseIngestionJob>(
+			token,
+			`/api/admin/knowledge-base/ingestion-jobs/${encodeURIComponent(jobId)}`,
 		);
 	},
 	organizeTextbook(token: string, textbookId: string) {

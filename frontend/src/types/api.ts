@@ -1589,11 +1589,31 @@ export interface components {
 			status: "queued" | "running" | "failed" | "completed";
 			/** Error Message */
 			error_message: string;
+			/** Attempt Count */
+			attempt_count: number;
+			/** Max Attempts */
+			max_attempts: number;
+			/**
+			 * Available At
+			 * Format: date-time
+			 */
+			available_at: string;
+			/** Lease Expires At */
+			lease_expires_at: string | null;
+			/** Worker Id */
+			worker_id: string | null;
+			/** Request Id */
+			request_id: string | null;
 			/**
 			 * Created At
 			 * Format: date-time
 			 */
 			created_at: string;
+			/**
+			 * Updated At
+			 * Format: date-time
+			 */
+			updated_at: string;
 			/** Started At */
 			started_at: string | null;
 			/** Finished At */
@@ -3821,7 +3841,7 @@ export interface operations {
 		requestBody?: never;
 		responses: {
 			/** @description Successful Response */
-			200: {
+			202: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -3852,7 +3872,7 @@ export interface operations {
 		requestBody?: never;
 		responses: {
 			/** @description Successful Response */
-			200: {
+			202: {
 				headers: {
 					[name: string]: unknown;
 				};
