@@ -246,6 +246,86 @@ with create_engine(os.environ["DATABASE_URL"]).connect() as connection:
 assert username == "user-100"
 PY
 
+RESTORE_SIGNAL_BIN="$TMP_DIR/restore-signal-bin"
+RESTORE_SIGNAL_TMP="$TMP_DIR/restore-signal-tmp"
+mkdir "$RESTORE_SIGNAL_BIN" "$RESTORE_SIGNAL_TMP"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  'count=0' \
+  'if [[ -f "$RESTORE_SIGNAL_COUNT" ]]; then count="$(<"$RESTORE_SIGNAL_COUNT")"; fi' \
+  'count=$((count + 1))' \
+  'printf "%s\n" "$count" > "$RESTORE_SIGNAL_COUNT"' \
+  'if [[ "$count" -eq 2 ]]; then' \
+  '  printf "%s\n" target-restore-started > "$RESTORE_SIGNAL_MARKER"' \
+  '  printf "%s\n" "$$" > "$RESTORE_SIGNAL_CHILD_PID"' \
+  '  sleep 30' \
+  'fi' \
+  'exec "$REAL_PG_RESTORE" "$@"' > "$RESTORE_SIGNAL_BIN/pg_restore"
+chmod 700 "$RESTORE_SIGNAL_BIN/pg_restore"
+
+for restore_signal in INT TERM; do
+  RESTORE_SIGNAL_COUNT="$TMP_DIR/restore-signal-count-$restore_signal"
+  RESTORE_SIGNAL_MARKER="$TMP_DIR/restore-signal-marker-$restore_signal"
+  RESTORE_SIGNAL_CHILD_PID="$TMP_DIR/restore-signal-child-$restore_signal"
+  PATH="$RESTORE_SIGNAL_BIN:$PATH" TMPDIR="$RESTORE_SIGNAL_TMP" \
+    RESTORE_SIGNAL_COUNT="$RESTORE_SIGNAL_COUNT" \
+    RESTORE_SIGNAL_MARKER="$RESTORE_SIGNAL_MARKER" \
+    RESTORE_SIGNAL_CHILD_PID="$RESTORE_SIGNAL_CHILD_PID" \
+    REAL_PG_RESTORE="$REAL_PG_RESTORE" TARGET_DATABASE_URL="$TARGET_URL" \
+    ONETREE_MAINTENANCE_MODE=1 "$REPO_ROOT/deploy/bin/restore" \
+    "$NEW_SNAPSHOT" "$UPLOADS_TARGET" >/dev/null 2>&1 &
+  restore_pid=$!
+  for _ in {1..200}; do
+    if [[ -s "$RESTORE_SIGNAL_MARKER" && -s "$RESTORE_SIGNAL_CHILD_PID" ]]; then
+      break
+    fi
+    sleep 0.05
+  done
+  test "$(<"$RESTORE_SIGNAL_MARKER")" = "target-restore-started"
+  kill -s "$restore_signal" "$restore_pid"
+  if wait "$restore_pid"; then
+    printf '%s\n' "restore unexpectedly passed $restore_signal" >&2
+    exit 1
+  fi
+  child_pid="$(<"$RESTORE_SIGNAL_CHILD_PID")"
+  for _ in {1..100}; do
+    if ! kill -0 "$child_pid" 2>/dev/null; then
+      break
+    fi
+    sleep 0.05
+  done
+  if kill -0 "$child_pid" 2>/dev/null; then
+    child_state="$(ps -o stat= -p "$child_pid" | tr -d ' ')"
+    if [[ "$child_state" != Z* ]]; then
+      printf '%s\n' "restore left running descendant after $restore_signal" >&2
+      exit 1
+    fi
+  fi
+  test "$(<"$UPLOADS_TARGET/chapter/version.txt")" = "snapshot-4"
+  test -z "$(find "$RESTORE_SIGNAL_TMP" -mindepth 1 -print -quit)"
+  test -z "$(find "$(dirname "$UPLOADS_TARGET")" -maxdepth 1 -type d -name '.migration-import.*' -print -quit)"
+  MAINTENANCE_URL="$MAINTENANCE_URL" uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
+import os
+import psycopg2
+with psycopg2.connect(os.environ["MAINTENANCE_URL"]) as connection:
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT count(*) FROM pg_database WHERE datname LIKE 'onetree_import_verify_%'")
+        assert cursor.fetchone() == (0,)
+PY
+done
+
+DATABASE_URL="$TARGET_URL" uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
+import os
+from sqlalchemy import create_engine, text
+with create_engine(os.environ["DATABASE_URL"]).connect() as connection:
+    username = connection.execute(
+        text('SELECT username FROM "user" WHERE identifier = :identifier'),
+        {"identifier": "18771701100"},
+    ).scalar_one()
+assert username == "user-100"
+PY
+
 SIGNAL_BIN="$TMP_DIR/signal-bin"
 SIGNAL_MARKER="$TMP_DIR/signal-marker"
 REAL_PG_DUMP="$(command -v pg_dump)"

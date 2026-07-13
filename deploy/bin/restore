@@ -19,7 +19,6 @@ from backup_manifest import (  # noqa: E402
 from migration_manifest import (  # noqa: E402
     assert_manifest_repository_revision,
     create_bundle_archive,
-    run_process_group,
     termination_signal_guard,
     write_manifest,
 )
@@ -59,14 +58,15 @@ def main() -> int:
                 manifest["alembic_revision"],
             )
             create_bundle_archive(bundle_directory, bundle)
-            run_process_group(
+            os.execve(
+                str(DEPLOY_DIR / "bin" / "import-bundle"),
                 [
                     str(DEPLOY_DIR / "bin" / "import-bundle"),
                     str(bundle),
                     str(arguments.uploads_target),
+                    "--cleanup-bundle-parent",
                 ],
-                check=True,
-                env=os.environ.copy(),
+                os.environ.copy(),
             )
         finally:
             shutil.rmtree(staging_root, ignore_errors=True)

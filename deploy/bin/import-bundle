@@ -213,6 +213,7 @@ def main() -> int:
     parser.add_argument("bundle", type=Path)
     parser.add_argument("uploads_target", type=Path, nargs="?")
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--cleanup-bundle-parent", action="store_true")
     arguments = parser.parse_args()
     database_url = os.environ.get("TARGET_DATABASE_URL", "")
     if not database_url:
@@ -277,6 +278,11 @@ def main() -> int:
                 and not any(uploads_target.parent.iterdir())
             ):
                 uploads_target.parent.rmdir()
+            if arguments.cleanup_bundle_parent:
+                bundle_parent = arguments.bundle.resolve().parent
+                if not bundle_parent.name.startswith(".snapshot-restore."):
+                    raise RuntimeError("restore staging 目录名不正确")
+                shutil.rmtree(bundle_parent, ignore_errors=True)
     print("数据库、账号和教材文件导入完成")
     return 0
 
