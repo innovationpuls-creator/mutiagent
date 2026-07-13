@@ -173,6 +173,16 @@ for failure_name in TAR HASH; do
   test "$(shasum -a 256 "$UPLOADS_SOURCE/chapter/textbook.txt")" = "$SOURCE_UPLOAD_HASH"
 done
 
+BASELINE_BACKUP_ID="$(
+  DATABASE_URL="$SOURCE_BACKUP_URL" ONETREE_MAINTENANCE_MODE=1 \
+    TARGET_DATABASE_URL="$MAINTENANCE_URL" \
+    "$REPO_ROOT/deploy/bin/backup" "$BACKUPS" "$UPLOADS_SOURCE"
+)"
+if [[ ! "$BASELINE_BACKUP_ID" =~ ^[0-9]{8}T[0-9]{6}\.[0-9]{6}Z$ ]]; then
+  printf '%s\n' 'backup did not return exactly one backup id' >&2
+  exit 1
+fi
+
 for index in 1 2 3 4; do
   printf '%s\n' "snapshot-$index" > "$UPLOADS_SOURCE/chapter/version.txt"
   DATABASE_URL="$SOURCE_BACKUP_URL" ONETREE_MAINTENANCE_MODE=1 TARGET_DATABASE_URL="$MAINTENANCE_URL" "$REPO_ROOT/deploy/bin/backup" \

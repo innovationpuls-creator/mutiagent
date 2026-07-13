@@ -135,6 +135,8 @@ def _main() -> int:
                         "--validate-only",
                     ],
                     check=True,
+                    capture_output=True,
+                    text=True,
                     env={
                         **os.environ,
                         "TARGET_DATABASE_URL": maintenance_database_url,
