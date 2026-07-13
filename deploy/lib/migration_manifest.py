@@ -5,14 +5,17 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
+import sys
 import tarfile
 import tempfile
 from collections.abc import Mapping
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import parse_qsl, unquote, urlsplit
+from urllib.parse import parse_qsl, quote, unquote, urlsplit, urlunsplit
 
 BUNDLE_MEMBERS = frozenset(
     {"database.dump", "knowledge-base-uploads.tar", "manifest.json"}
@@ -48,10 +51,73 @@ if state == "versioned":
     revision = heads[0]
 print(json.dumps({"schema_state": state, "alembic_revision": revision}))
 """
+SCHEMA_MIGRATION_CODE = """
+import json
+import os
+
+from alembic.migration import MigrationContext
+from sqlalchemy import create_engine
+
+from app.migration_state import (
+    _matches_current_metadata,
+    inspect_schema_state,
+    migrate_to_head,
+)
+
+engine = create_engine(os.environ["ONETREE_SCHEMA_DATABASE_URL"])
+migrate_to_head(engine)
+if not _matches_current_metadata(engine):
+    raise RuntimeError("迁移后数据库结构与当前 metadata 不一致")
+state = inspect_schema_state(engine)
+revision = None
+if state == "versioned":
+    with engine.connect() as connection:
+        heads = MigrationContext.configure(connection).get_current_heads()
+    if len(heads) != 1:
+        raise RuntimeError("versioned 数据库必须精确包含一个 Alembic revision")
+    revision = heads[0]
+print(json.dumps({"schema_state": state, "alembic_revision": revision}))
+"""
+REPOSITORY_REVISIONS_CODE = """
+import json
+
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
+script = ScriptDirectory.from_config(Config("alembic.ini"))
+print(json.dumps({
+    "heads": sorted(script.get_heads()),
+    "revisions": sorted(revision.revision for revision in script.walk_revisions()),
+}))
+"""
 
 
 class BundleValidationError(ValueError):
     pass
+
+
+class TerminationRequested(RuntimeError):
+    pass
+
+
+@contextmanager
+def termination_signal_guard():
+    watched_signals = (signal.SIGINT, signal.SIGTERM)
+    previous_handlers = {
+        signal_number: signal.getsignal(signal_number)
+        for signal_number in watched_signals
+    }
+
+    def handle_signal(signal_number: int, _frame: object) -> None:
+        raise TerminationRequested(f"收到终止信号 {signal_number}")
+
+    for signal_number in watched_signals:
+        signal.signal(signal_number, handle_signal)
+    try:
+        yield
+    finally:
+        for signal_number, previous_handler in previous_handlers.items():
+            signal.signal(signal_number, previous_handler)
 
 
 def sha256_file(path: Path) -> str:
@@ -97,12 +163,28 @@ def write_manifest(
 def create_bundle_archive(bundle_directory: Path, bundle_path: Path) -> None:
     if set(path.name for path in bundle_directory.iterdir()) != BUNDLE_MEMBERS:
         raise BundleValidationError("迁移包目录成员不正确")
-    temporary_path = bundle_path.with_name(f".{bundle_path.name}.tmp")
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{bundle_path.name}.", suffix=".tmp", dir=bundle_path.parent
+    )
+    os.close(descriptor)
+    temporary_path = Path(temporary_name)
+    bundle_linked = False
     try:
         with tarfile.open(temporary_path, mode="w") as archive:
             for name in sorted(BUNDLE_MEMBERS):
                 archive.add(bundle_directory / name, arcname=name, recursive=False)
-        temporary_path.replace(bundle_path)
+        previous_mask = signal.pthread_sigmask(
+            signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM}
+        )
+        try:
+            os.link(temporary_path, bundle_path, follow_symlinks=False)
+            bundle_linked = True
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+    except BaseException:
+        if bundle_linked:
+            bundle_path.unlink(missing_ok=True)
+        raise
     finally:
         temporary_path.unlink(missing_ok=True)
 
@@ -258,14 +340,19 @@ def _validate_tar_member(member: tarfile.TarInfo) -> None:
 
 
 def postgres_service_environment(
-    database_url: str, service_file: Path, service_name: str
+    database_url: str,
+    service_file: Path,
+    service_name: str,
+    database_name: str | None = None,
 ) -> dict[str, str]:
     parsed = urlsplit(database_url)
     if parsed.scheme not in {"postgres", "postgresql"}:
         raise ValueError("DATABASE_URL 必须使用 postgres 或 postgresql scheme")
     if not parsed.path or parsed.path == "/":
         raise ValueError("DATABASE_URL 必须包含数据库名")
-    values: dict[str, str] = {"dbname": unquote(parsed.path.removeprefix("/"))}
+    values: dict[str, str] = {
+        "dbname": database_name or unquote(parsed.path.removeprefix("/"))
+    }
     if parsed.username is not None:
         values["user"] = unquote(parsed.username)
     if parsed.password is not None:
@@ -287,13 +374,148 @@ def postgres_service_environment(
 def inspect_database_identity(
     backend_directory: Path, database_url: str
 ) -> dict[str, str | None]:
-    python_path = backend_directory / ".venv" / "bin" / "python"
-    if not python_path.is_file():
-        raise RuntimeError(f"后端 Python 环境不存在：{python_path}")
     environment = os.environ.copy()
     environment["ONETREE_SCHEMA_DATABASE_URL"] = database_url
+    identity = _run_backend_json(
+        backend_directory,
+        SCHEMA_INSPECTION_CODE,
+        environment,
+        "无法通过 inspect_schema_state 精确检查数据库结构",
+    )
+    if not isinstance(identity, dict):
+        raise RuntimeError("数据库结构检查结果不正确")
+    schema_state = identity.get("schema_state")
+    revision = identity.get("alembic_revision")
+    _validate_schema_identity(schema_state, revision)
+    return {"schema_state": schema_state, "alembic_revision": revision}
+
+
+def migrate_database_to_head(
+    backend_directory: Path, database_url: str
+) -> dict[str, str | None]:
+    environment = os.environ.copy()
+    environment["ONETREE_SCHEMA_DATABASE_URL"] = database_url
+    identity = _run_backend_json(
+        backend_directory,
+        SCHEMA_MIGRATION_CODE,
+        environment,
+        "验证数据库 Alembic 迁移失败",
+    )
+    if not isinstance(identity, dict):
+        raise RuntimeError("数据库迁移检查结果不正确")
+    schema_state = identity.get("schema_state")
+    revision = identity.get("alembic_revision")
+    _validate_schema_identity(schema_state, revision)
+    return {"schema_state": schema_state, "alembic_revision": revision}
+
+
+def repository_revision_sets(backend_directory: Path) -> dict[str, set[str]]:
+    result = _run_backend_json(
+        backend_directory,
+        REPOSITORY_REVISIONS_CODE,
+        os.environ.copy(),
+        "无法读取仓库 Alembic revision 集合",
+    )
+    if not isinstance(result, dict):
+        raise RuntimeError("仓库 Alembic revision 集合不正确")
+    heads = result.get("heads")
+    revisions = result.get("revisions")
+    if not isinstance(heads, list) or not all(isinstance(item, str) for item in heads):
+        raise RuntimeError("仓库 Alembic head 集合不正确")
+    if not isinstance(revisions, list) or not all(
+        isinstance(item, str) for item in revisions
+    ):
+        raise RuntimeError("仓库 Alembic revision 集合不正确")
+    return {"heads": set(heads), "revisions": set(revisions)}
+
+
+def assert_manifest_repository_revision(
+    manifest: dict[str, Any], backend_directory: Path
+) -> None:
+    if manifest["schema_state"] != "versioned":
+        return
+    revision = manifest["alembic_revision"]
+    revisions = repository_revision_sets(backend_directory)["revisions"]
+    if revision not in revisions:
+        raise BundleValidationError("manifest Alembic revision 不属于当前仓库")
+
+
+def replace_database_name(database_url: str, database_name: str) -> str:
+    parsed = urlsplit(database_url)
+    if parsed.scheme not in {"postgres", "postgresql"}:
+        raise ValueError("DATABASE_URL 必须使用 postgres 或 postgresql scheme")
+    encoded_name = quote(database_name, safe="")
+    if not parsed.netloc:
+        query = f"?{parsed.query}" if parsed.query else ""
+        return f"{parsed.scheme}:///{encoded_name}{query}"
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, f"/{encoded_name}", parsed.query, "")
+    )
+
+
+def validate_replacement_target(target: Path) -> None:
+    if target.is_symlink():
+        raise BundleValidationError(f"教材目标不得是 symlink：{target}")
+    if target.exists() and not target.is_dir():
+        raise BundleValidationError(f"教材目标必须是普通目录：{target}")
+    previous = target.parent / f".{target.name}.previous"
+    if previous.exists() or previous.is_symlink():
+        raise BundleValidationError(f"教材恢复保护路径已经存在：{previous}")
+
+
+def replace_directory_atomically(staging: Path, target: Path) -> None:
+    validate_replacement_target(target)
+    previous = target.parent / f".{target.name}.previous"
+    if not target.exists():
+        staging.replace(target)
+        return
+    replacement_started = False
+    try:
+        replacement_started = True
+        target.replace(previous)
+        staging.replace(target)
+        replacement_started = False
+    except BaseException:
+        if replacement_started and previous.exists():
+            if target.exists():
+                shutil.rmtree(target)
+            previous.replace(target)
+        raise
+    shutil.rmtree(previous)
+
+
+def _run_backend_json(
+    backend_directory: Path,
+    code: str,
+    environment: dict[str, str],
+    failure_message: str,
+) -> object:
+    dependency_check = subprocess.run(
+        [sys.executable, "-c", "import alembic, sqlalchemy, sqlmodel"],
+        cwd=backend_directory,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    if dependency_check.returncode == 0:
+        command = [sys.executable, "-c", code]
+    else:
+        uv_path = shutil.which("uv")
+        if uv_path is None:
+            raise RuntimeError("后端依赖不可导入且未找到 uv")
+        command = [
+            uv_path,
+            "--directory",
+            str(backend_directory),
+            "run",
+            "--no-env-file",
+            "python",
+            "-c",
+            code,
+        ]
     result = subprocess.run(
-        [str(python_path), "-c", SCHEMA_INSPECTION_CODE],
+        command,
         cwd=backend_directory,
         check=False,
         capture_output=True,
@@ -301,17 +523,11 @@ def inspect_database_identity(
         env=environment,
     )
     if result.returncode != 0:
-        raise RuntimeError("无法通过 inspect_schema_state 精确检查数据库结构")
+        raise RuntimeError(failure_message)
     try:
-        identity = json.loads(result.stdout)
+        return json.loads(result.stdout)
     except json.JSONDecodeError as error:
-        raise RuntimeError("数据库结构检查未返回有效 JSON") from error
-    if not isinstance(identity, dict):
-        raise RuntimeError("数据库结构检查结果不正确")
-    schema_state = identity.get("schema_state")
-    revision = identity.get("alembic_revision")
-    _validate_schema_identity(schema_state, revision)
-    return {"schema_state": schema_state, "alembic_revision": revision}
+        raise RuntimeError(failure_message) from error
 
 
 def _write_service_file(

@@ -17,6 +17,7 @@ from migration_manifest import (  # noqa: E402
     extract_verified_bundle,
     inspect_database_identity,
     postgres_service_environment,
+    termination_signal_guard,
     write_manifest,
 )
 
@@ -59,53 +60,59 @@ def main() -> int:
         if arguments.uploads_source
         else repo_root / "backend" / ".codex-artifacts" / "knowledge-base-uploads"
     )
-    bundle = arguments.bundle.resolve()
+    bundle = arguments.bundle.expanduser().absolute()
     if not env_path.is_file():
         raise RuntimeError(f"配置文件不存在：{env_path}")
     if not uploads_source.is_dir():
         raise RuntimeError(f"教材源目录不存在：{uploads_source}")
-    if bundle.exists():
+    if bundle.exists() or bundle.is_symlink():
         raise RuntimeError(f"输出迁移包已经存在：{bundle}")
     print(f"教材源目录：{uploads_source}")
 
     bundle.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".migration-export.", dir=bundle.parent))
-    verification = bundle.parent / f".{bundle.name}.verified"
-    try:
-        database_url = _database_url(env_path)
-        identity = inspect_database_identity(
-            DEPLOY_DIR.parent / "backend", database_url
-        )
-        database_environment = postgres_service_environment(
-            database_url, staging / "pg_service.conf", "onetree_export"
-        )
-        subprocess.run(
-            [
-                "pg_dump",
-                "--format=custom",
-                f"--file={staging / 'database.dump'}",
-                "--dbname=service=onetree_export",
-            ],
-            check=True,
-            env=database_environment,
-        )
-        (staging / "pg_service.conf").unlink()
-        _archive_uploads(uploads_source, staging / "knowledge-base-uploads.tar")
-        write_manifest(
-            staging,
-            identity["schema_state"],
-            identity["alembic_revision"],
-        )
-        create_bundle_archive(staging, bundle)
-        extract_verified_bundle(bundle, verification)
-        shutil.rmtree(verification)
-        bundle.chmod(0o600)
-    except Exception:
-        bundle.unlink(missing_ok=True)
-        raise
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
-        shutil.rmtree(verification, ignore_errors=True)
+    verification_parent = Path(
+        tempfile.mkdtemp(prefix=".migration-verify.", dir=bundle.parent)
+    )
+    verification = verification_parent / "bundle"
+    bundle_created = False
+    with termination_signal_guard():
+        try:
+            database_url = _database_url(env_path)
+            identity = inspect_database_identity(
+                DEPLOY_DIR.parent / "backend", database_url
+            )
+            database_environment = postgres_service_environment(
+                database_url, staging / "pg_service.conf", "onetree_export"
+            )
+            subprocess.run(
+                [
+                    "pg_dump",
+                    "--format=custom",
+                    f"--file={staging / 'database.dump'}",
+                    "--dbname=service=onetree_export",
+                ],
+                check=True,
+                env=database_environment,
+            )
+            (staging / "pg_service.conf").unlink()
+            _archive_uploads(uploads_source, staging / "knowledge-base-uploads.tar")
+            write_manifest(
+                staging,
+                identity["schema_state"],
+                identity["alembic_revision"],
+            )
+            create_bundle_archive(staging, bundle)
+            bundle_created = True
+            extract_verified_bundle(bundle, verification)
+            bundle.chmod(0o600)
+        except BaseException:
+            if bundle_created:
+                bundle.unlink(missing_ok=True)
+            raise
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+            shutil.rmtree(verification_parent, ignore_errors=True)
     print(f"迁移包已生成：{bundle}")
     return 0
 

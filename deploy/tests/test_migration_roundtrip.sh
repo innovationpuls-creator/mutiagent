@@ -11,7 +11,7 @@ MIGRATION_TEST_MAINTENANCE_URL="${MIGRATION_TEST_MAINTENANCE_URL:-postgresql:///
 cleanup() {
   SOURCE_DB="$SOURCE_DB" TARGET_DB="$TARGET_DB" \
     MAINTENANCE_URL="$MIGRATION_TEST_MAINTENANCE_URL" \
-    "$BACKEND_DIR/.venv/bin/python" - <<'PY'
+    uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
 import os
 
 import psycopg2
@@ -39,7 +39,7 @@ TARGET_URL_FILE="$TMP_DIR/target-url"
 SOURCE_DB="$SOURCE_DB" TARGET_DB="$TARGET_DB" \
   MAINTENANCE_URL="$MIGRATION_TEST_MAINTENANCE_URL" \
   SOURCE_URL_FILE="$SOURCE_URL_FILE" TARGET_URL_FILE="$TARGET_URL_FILE" \
-  "$BACKEND_DIR/.venv/bin/python" - <<'PY'
+  uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
 import os
 from pathlib import Path
 
@@ -71,7 +71,7 @@ SOURCE_URL="$(<"$SOURCE_URL_FILE")"
 TARGET_URL="$(<"$TARGET_URL_FILE")"
 
 cd "$BACKEND_DIR"
-DATABASE_URL="$SOURCE_URL" .venv/bin/python - <<'PY'
+DATABASE_URL="$SOURCE_URL" uv run --no-env-file python - <<'PY'
 import os
 
 from sqlalchemy import create_engine
@@ -123,13 +123,165 @@ SOURCE_TREE_HASH="$TMP_DIR/source-tree.sha256"
   find . -type f -print0 | sort -z | xargs -0 shasum -a 256
 ) > "$SOURCE_TREE_HASH"
 
+MISSING_ACCOUNT_BUNDLE="$TMP_DIR/missing-account.tar"
+DATABASE_URL="$SOURCE_URL" uv run --no-env-file python - <<'PY'
+import os
+
+from sqlalchemy import create_engine, text
+
+with create_engine(os.environ["DATABASE_URL"]).begin() as connection:
+    connection.execute(
+        text('DELETE FROM "user" WHERE identifier = :identifier'),
+        {"identifier": "18771701111"},
+    )
+PY
+"$REPO_ROOT/deploy/bin/export-local-data" \
+  --repo-root "$FAKE_REPO" "$MISSING_ACCOUNT_BUNDLE"
+
+DATABASE_URL="$SOURCE_URL" uv run --no-env-file python - <<'PY'
+import os
+
+from sqlalchemy import create_engine
+from sqlmodel import Session
+
+from app.models import User
+
+with Session(create_engine(os.environ["DATABASE_URL"])) as session:
+    session.add(
+        User(
+            uid="roundtrip-user-111",
+            username="user-111",
+            identifier="18771701111",
+            role="admin",
+        )
+    )
+    session.commit()
+PY
+
 BUNDLE="$TMP_DIR/local-data.tar"
+FIXED_ARCHIVE_SENTINEL="$TMP_DIR/fixed-archive-sentinel"
+FIXED_VERIFIED_SENTINEL="$TMP_DIR/.local-data.tar.verified"
+printf '%s\n' 'archive-sentinel' > "$FIXED_ARCHIVE_SENTINEL"
+ln -s "$FIXED_ARCHIVE_SENTINEL" "$TMP_DIR/.local-data.tar.tmp"
+mkdir "$FIXED_VERIFIED_SENTINEL"
+printf '%s\n' 'verified-sentinel' > "$FIXED_VERIFIED_SENTINEL/sentinel.txt"
 "$REPO_ROOT/deploy/bin/export-local-data" --repo-root "$FAKE_REPO" "$BUNDLE"
+test "$(<"$FIXED_ARCHIVE_SENTINEL")" = "archive-sentinel"
+test "$(<"$FIXED_VERIFIED_SENTINEL/sentinel.txt")" = "verified-sentinel"
+test -z "$(find "$TMP_DIR" -maxdepth 1 -type d -name '.migration-*' -print -quit)"
 "$REPO_ROOT/deploy/bin/verify-bundle" "$BUNDLE"
+
+SYMLINK_REAL_TARGET="$TMP_DIR/symlink-real-uploads"
+SYMLINK_UPLOAD_TARGET="$TMP_DIR/symlink-uploads"
+mkdir "$SYMLINK_REAL_TARGET"
+printf '%s\n' 'symlink-old' > "$SYMLINK_REAL_TARGET/old.txt"
+ln -s "$SYMLINK_REAL_TARGET" "$SYMLINK_UPLOAD_TARGET"
+if TARGET_DATABASE_URL="$TARGET_URL" ONETREE_MAINTENANCE_MODE=1 \
+  "$REPO_ROOT/deploy/bin/import-bundle" "$BUNDLE" "$SYMLINK_UPLOAD_TARGET" \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'symlink upload target unexpectedly accepted' >&2
+  exit 1
+fi
+test -L "$SYMLINK_UPLOAD_TARGET"
+test "$(<"$SYMLINK_REAL_TARGET/old.txt")" = "symlink-old"
+
+BAD_SCHEMA_DIRECTORY="$TMP_DIR/bad-schema-directory"
+BAD_SCHEMA_BUNDLE="$TMP_DIR/bad-schema.tar"
+DATABASE_URL="$SOURCE_URL" uv run --no-env-file python - <<'PY'
+import os
+
+from sqlalchemy import create_engine
+
+with create_engine(os.environ["DATABASE_URL"]).begin() as connection:
+    connection.exec_driver_sql('ALTER TABLE "user" DROP COLUMN provider')
+    connection.exec_driver_sql(
+        "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"
+    )
+    connection.exec_driver_sql(
+        "INSERT INTO alembic_version (version_num) "
+        "VALUES ('0002_ingestion_job_leases')"
+    )
+PY
+mkdir "$BAD_SCHEMA_DIRECTORY"
+pg_dump --format=custom --file="$BAD_SCHEMA_DIRECTORY/database.dump" "$SOURCE_URL"
+(
+  cd "$SOURCE_UPLOADS"
+  tar -cf "$BAD_SCHEMA_DIRECTORY/knowledge-base-uploads.tar" .
+)
+BAD_SCHEMA_DIRECTORY="$BAD_SCHEMA_DIRECTORY" BAD_SCHEMA_BUNDLE="$BAD_SCHEMA_BUNDLE" \
+  python3 - <<PY
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, "$REPO_ROOT/deploy/lib")
+from migration_manifest import create_bundle_archive, write_manifest
+
+directory = Path(os.environ["BAD_SCHEMA_DIRECTORY"])
+write_manifest(directory, "versioned", "0002_ingestion_job_leases")
+create_bundle_archive(directory, Path(os.environ["BAD_SCHEMA_BUNDLE"]))
+PY
 
 TARGET_UPLOADS="$TMP_DIR/restored-uploads"
 mkdir -p "$TARGET_UPLOADS"
 printf '%s\n' 'stale' > "$TARGET_UPLOADS/stale.txt"
+DATABASE_URL="$TARGET_URL" uv run --no-env-file python - <<'PY'
+import os
+
+from sqlalchemy import create_engine
+
+with create_engine(os.environ["DATABASE_URL"]).begin() as connection:
+    connection.exec_driver_sql("CREATE TABLE migration_sentinel (value text NOT NULL)")
+    connection.exec_driver_sql(
+        "INSERT INTO migration_sentinel (value) VALUES ('untouched')"
+    )
+PY
+
+assert_target_unchanged() {
+  DATABASE_URL="$TARGET_URL" uv run --no-env-file python - <<'PY'
+import os
+
+from sqlalchemy import create_engine, text
+
+with create_engine(os.environ["DATABASE_URL"]).connect() as connection:
+    assert connection.execute(
+        text("SELECT value FROM migration_sentinel")
+    ).scalar_one() == "untouched"
+    assert connection.execute(
+        text("SELECT to_regclass('public.user')")
+    ).scalar_one() is None
+PY
+}
+
+assert_no_validation_databases() {
+  MAINTENANCE_URL="$MIGRATION_TEST_MAINTENANCE_URL" \
+    uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
+import os
+
+import psycopg2
+
+with psycopg2.connect(os.environ["MAINTENANCE_URL"]) as connection:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM pg_database "
+            "WHERE datname LIKE 'onetree_import_verify_%'"
+        )
+        assert cursor.fetchone() == (0,)
+PY
+}
+
+for invalid_bundle in "$MISSING_ACCOUNT_BUNDLE" "$BAD_SCHEMA_BUNDLE"; do
+  if TARGET_DATABASE_URL="$TARGET_URL" ONETREE_MAINTENANCE_MODE=1 \
+    "$REPO_ROOT/deploy/bin/import-bundle" "$invalid_bundle" "$TARGET_UPLOADS" \
+    >/dev/null 2>&1; then
+    printf '%s\n' 'invalid migration bundle unexpectedly imported' >&2
+    exit 1
+  fi
+  assert_target_unchanged
+  assert_no_validation_databases
+  test -z "$(find "$TMP_DIR" -maxdepth 1 -type d -name '.migration-import.*' -print -quit)"
+done
+
 mkdir "$TMP_DIR/.restored-uploads.previous"
 if TARGET_DATABASE_URL="$TARGET_URL" ONETREE_MAINTENANCE_MODE=1 \
   "$REPO_ROOT/deploy/bin/import-bundle" "$BUNDLE" "$TARGET_UPLOADS" \
@@ -137,19 +289,32 @@ if TARGET_DATABASE_URL="$TARGET_URL" ONETREE_MAINTENANCE_MODE=1 \
   printf '%s\n' 'import unexpectedly accepted an existing protection directory' >&2
   exit 1
 fi
-DATABASE_URL="$TARGET_URL" .venv/bin/python - <<'PY'
+DATABASE_URL="$TARGET_URL" uv run --no-env-file python - <<'PY'
 import os
 
 from sqlalchemy import create_engine, text
 
 with create_engine(os.environ["DATABASE_URL"]).connect() as connection:
-    assert connection.execute(text("SELECT to_regclass('public.user')")).scalar_one() is None
+    assert connection.execute(
+        text("SELECT value FROM migration_sentinel")
+    ).scalar_one() == "untouched"
+    assert connection.execute(
+        text("SELECT to_regclass('public.user')")
+    ).scalar_one() is None
 PY
 rmdir "$TMP_DIR/.restored-uploads.previous"
+DATABASE_URL="$TARGET_URL" uv run --no-env-file python - <<'PY'
+import os
+
+from sqlalchemy import create_engine
+
+with create_engine(os.environ["DATABASE_URL"]).begin() as connection:
+    connection.exec_driver_sql("DROP TABLE migration_sentinel")
+PY
 TARGET_DATABASE_URL="$TARGET_URL" ONETREE_MAINTENANCE_MODE=1 \
   "$REPO_ROOT/deploy/bin/import-bundle" "$BUNDLE" "$TARGET_UPLOADS"
 
-DATABASE_URL="$TARGET_URL" .venv/bin/python - <<'PY'
+DATABASE_URL="$TARGET_URL" uv run --no-env-file python - <<'PY'
 import os
 
 from sqlalchemy import create_engine, text

@@ -10,7 +10,10 @@ from pathlib import Path
 DEPLOY_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(DEPLOY_DIR / "lib"))
 
-from migration_manifest import extract_verified_bundle  # noqa: E402
+from migration_manifest import (  # noqa: E402
+    assert_manifest_repository_revision,
+    extract_verified_bundle,
+)
 
 
 def main() -> int:
@@ -21,6 +24,7 @@ def main() -> int:
     staging = staging_parent / "bundle"
     try:
         manifest = extract_verified_bundle(arguments.bundle.resolve(), staging)
+        assert_manifest_repository_revision(manifest, DEPLOY_DIR.parent / "backend")
     finally:
         shutil.rmtree(staging_parent, ignore_errors=True)
     revision = manifest["alembic_revision"]

@@ -3,6 +3,9 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
+import signal
+import subprocess
 import sys
 import tarfile
 from pathlib import Path
@@ -14,7 +17,14 @@ sys.path.insert(0, str(DEPLOY_LIB))
 
 from migration_manifest import (  # noqa: E402
     BundleValidationError,
+    TerminationRequested,
+    assert_manifest_repository_revision,
+    create_bundle_archive,
     extract_verified_bundle,
+    replace_database_name,
+    replace_directory_atomically,
+    termination_signal_guard,
+    validate_replacement_target,
 )
 
 
@@ -217,3 +227,120 @@ def test_invalid_file_metadata_does_not_write_target(
         extract_verified_bundle(bundle, target)
 
     assert not target.exists()
+
+
+def test_versioned_manifest_revision_must_exist_in_repository(tmp_path: Path) -> None:
+    bundle = tmp_path / "migration.tar"
+    verified = tmp_path / "verified"
+    _bundle(bundle)
+    manifest = extract_verified_bundle(bundle, verified)
+    backend_directory = Path(__file__).resolve().parents[2]
+
+    assert_manifest_repository_revision(manifest, backend_directory)
+    manifest["alembic_revision"] = "not-a-repository-revision"
+
+    with pytest.raises(BundleValidationError):
+        assert_manifest_repository_revision(manifest, backend_directory)
+
+
+def test_verify_bundle_cli_rejects_revision_not_in_repository(tmp_path: Path) -> None:
+    bundle = tmp_path / "migration.tar"
+    _bundle(
+        bundle,
+        manifest_updates={"alembic_revision": "not-a-repository-revision"},
+    )
+    verify_script = (
+        Path(__file__).resolve().parents[3] / "deploy" / "bin" / "verify-bundle"
+    )
+
+    result = subprocess.run(
+        [str(verify_script), str(bundle)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+
+
+@pytest.mark.parametrize("existing_kind", ["file", "symlink"])
+def test_bundle_creation_never_overwrites_existing_output(
+    tmp_path: Path, existing_kind: str
+) -> None:
+    source_bundle = tmp_path / "source.tar"
+    bundle_directory = tmp_path / "bundle-directory"
+    _bundle(source_bundle)
+    extract_verified_bundle(source_bundle, bundle_directory)
+    output = tmp_path / "migration.tar"
+    sentinel = tmp_path / "sentinel"
+    sentinel.write_text("untouched", encoding="utf-8")
+    if existing_kind == "file":
+        output.write_text("existing", encoding="utf-8")
+    else:
+        output.symlink_to(sentinel)
+
+    with pytest.raises(FileExistsError):
+        create_bundle_archive(bundle_directory, output)
+
+    assert sentinel.read_text(encoding="utf-8") == "untouched"
+    if existing_kind == "symlink":
+        assert output.is_symlink()
+    else:
+        assert output.read_text(encoding="utf-8") == "existing"
+
+
+def test_replacement_target_symlink_is_rejected_before_resolution(
+    tmp_path: Path,
+) -> None:
+    real_target = tmp_path / "real-uploads"
+    real_target.mkdir()
+    (real_target / "old.txt").write_text("old", encoding="utf-8")
+    target_symlink = tmp_path / "uploads"
+    target_symlink.symlink_to(real_target, target_is_directory=True)
+
+    with pytest.raises(BundleValidationError):
+        validate_replacement_target(target_symlink)
+
+    assert target_symlink.is_symlink()
+    assert (real_target / "old.txt").read_text(encoding="utf-8") == "old"
+
+
+@pytest.mark.parametrize("signal_number", [signal.SIGINT, signal.SIGTERM])
+def test_signal_during_directory_rename_restores_old_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    signal_number: signal.Signals,
+) -> None:
+    target = tmp_path / "uploads"
+    target.mkdir()
+    (target / "old.txt").write_text("old", encoding="utf-8")
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "new.txt").write_text("new", encoding="utf-8")
+    original_replace = Path.replace
+    signal_sent = False
+
+    def interrupt_after_first_rename(source: Path, destination: Path) -> Path:
+        nonlocal signal_sent
+        result = original_replace(source, destination)
+        if source == target and not signal_sent:
+            signal_sent = True
+            os.kill(os.getpid(), signal_number)
+        return result
+
+    monkeypatch.setattr(Path, "replace", interrupt_after_first_rename)
+
+    with termination_signal_guard(), pytest.raises(TerminationRequested):
+        replace_directory_atomically(staging, target)
+
+    assert target.is_dir()
+    assert (target / "old.txt").read_text(encoding="utf-8") == "old"
+    assert not (target / "new.txt").exists()
+    assert not (tmp_path / ".uploads.previous").exists()
+
+
+def test_replacing_unix_socket_database_name_preserves_three_slashes() -> None:
+    assert (
+        replace_database_name("postgresql:///source", "validation")
+        == "postgresql:///validation"
+    )
