@@ -54,6 +54,11 @@ def main() -> int:
     signal.signal(signal.SIGINT, signal.default_int_handler)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
     signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT, signal.SIGTERM})
+    with termination_signal_guard():
+        return _main()
+
+
+def _main() -> int:
     parser = argparse.ArgumentParser(description="创建 OneTree 部署前快照")
     parser.add_argument("snapshot_root", type=Path)
     parser.add_argument("uploads_source", type=Path)

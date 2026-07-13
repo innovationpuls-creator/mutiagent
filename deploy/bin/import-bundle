@@ -214,6 +214,11 @@ def main() -> int:
     signal.signal(signal.SIGINT, signal.default_int_handler)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
     signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT, signal.SIGTERM})
+    with termination_signal_guard():
+        return _main()
+
+
+def _main() -> int:
     parser = argparse.ArgumentParser(description="导入 OneTree 数据迁移包")
     parser.add_argument("bundle", type=Path)
     parser.add_argument("uploads_target", type=Path, nargs="?")

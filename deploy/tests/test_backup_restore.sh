@@ -299,6 +299,93 @@ with create_engine(os.environ["DATABASE_URL"]).connect() as connection:
 assert username == "user-100"
 PY
 
+VALIDATION_SIGNAL_BIN="$TMP_DIR/validation-signal-bin"
+VALIDATION_SIGNAL_TMP="$TMP_DIR/validation-signal-tmp"
+mkdir "$VALIDATION_SIGNAL_BIN" "$VALIDATION_SIGNAL_TMP"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  'printf "%s\n" validation-restore-started > "$VALIDATION_SIGNAL_MARKER"' \
+  'printf "%s\n" "$$" > "$VALIDATION_SIGNAL_WRAPPER_PID"' \
+  'bash -c '\''exec -a onetree-validation-signal-descendant sleep 30'\'' &' \
+  'descendant=$!' \
+  'printf "%s\n" "$descendant" > "$VALIDATION_SIGNAL_DESCENDANT_PID"' \
+  'ps -o pgid= -p "$$" | tr -d " " > "$VALIDATION_SIGNAL_PGID"' \
+  'trap '\''wait "$descendant" 2>/dev/null || true; exit 143'\'' TERM INT' \
+  'wait "$descendant"' > "$VALIDATION_SIGNAL_BIN/pg_restore"
+chmod 700 "$VALIDATION_SIGNAL_BIN/pg_restore"
+
+for validation_signal in INT TERM; do
+  marker="$TMP_DIR/validation-marker-$validation_signal"
+  wrapper_file="$TMP_DIR/validation-wrapper-$validation_signal"
+  descendant_file="$TMP_DIR/validation-descendant-$validation_signal"
+  pgid_file="$TMP_DIR/validation-pgid-$validation_signal"
+  PATH="$VALIDATION_SIGNAL_BIN:$PATH" TMPDIR="$VALIDATION_SIGNAL_TMP" \
+    VALIDATION_SIGNAL_MARKER="$marker" \
+    VALIDATION_SIGNAL_WRAPPER_PID="$wrapper_file" \
+    VALIDATION_SIGNAL_DESCENDANT_PID="$descendant_file" \
+    VALIDATION_SIGNAL_PGID="$pgid_file" TARGET_DATABASE_URL="$TARGET_URL" \
+    ONETREE_MAINTENANCE_MODE=1 "$REPO_ROOT/deploy/bin/restore" \
+    "$NEW_SNAPSHOT" "$UPLOADS_TARGET" >/dev/null 2>&1 &
+  validation_restore_pid=$!
+  for _ in {1..200}; do
+    if [[ -s "$marker" && -s "$wrapper_file" && -s "$descendant_file" && -s "$pgid_file" ]]; then break; fi
+    sleep 0.05
+  done
+  test "$(<"$marker")" = "validation-restore-started"
+  wrapper_pid="$(<"$wrapper_file")"
+  validation_import_pid="$(ps -o ppid= -p "$wrapper_pid" | tr -d ' ')"
+  test -n "$validation_import_pid"
+  kill -s "$validation_signal" "$validation_import_pid"
+  if wait "$validation_restore_pid"; then
+    printf '%s\n' "validation restore unexpectedly passed $validation_signal" >&2
+    exit 1
+  fi
+  descendant_pid="$(<"$descendant_file")"
+  validation_pgid="$(<"$pgid_file")"
+  for process_id in "$wrapper_pid" "$descendant_pid"; do
+    for _ in {1..100}; do
+      if ! kill -0 "$process_id" 2>/dev/null; then break; fi
+      process_state="$(ps -o stat= -p "$process_id" | tr -d ' ')"
+      if [[ "$process_state" == Z* ]]; then break; fi
+      sleep 0.05
+    done
+    if kill -0 "$process_id" 2>/dev/null; then
+      process_state="$(ps -o stat= -p "$process_id" | tr -d ' ')"
+      if [[ "$process_state" != Z* ]]; then
+        printf '%s\n' "validation left process after $validation_signal" >&2
+        exit 1
+      fi
+    fi
+  done
+  if ps -axo pgid= | awk -v pgid="$validation_pgid" '$1 == pgid { found=1 } END { exit !found }'; then
+    printf '%s\n' "validation left process group after $validation_signal" >&2
+    exit 1
+  fi
+  test "$(<"$UPLOADS_TARGET/chapter/version.txt")" = "snapshot-4"
+  test -z "$(find "$VALIDATION_SIGNAL_TMP" -mindepth 1 ! -name 'uv-*.lock' -print -quit)"
+  find "$VALIDATION_SIGNAL_TMP" -maxdepth 1 -type f -name 'uv-*.lock' -delete
+  test -z "$(find "$(dirname "$UPLOADS_TARGET")" -maxdepth 1 -type d -name '.migration-import.*' -print -quit)"
+done
+
+DATABASE_URL="$TARGET_URL" uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
+import os
+from sqlalchemy import create_engine, text
+with create_engine(os.environ["DATABASE_URL"]).connect() as connection:
+    assert connection.execute(
+        text('SELECT username FROM "user" WHERE identifier = :identifier'),
+        {"identifier": "18771701100"},
+    ).scalar_one() == "user-100"
+PY
+MAINTENANCE_URL="$MAINTENANCE_URL" uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
+import os
+import psycopg2
+with psycopg2.connect(os.environ["MAINTENANCE_URL"]) as connection:
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT count(*) FROM pg_database WHERE datname LIKE 'onetree_import_verify_%'")
+        assert cursor.fetchone() == (0,)
+PY
+
 RESTORE_SIGNAL_BIN="$TMP_DIR/restore-signal-bin"
 RESTORE_SIGNAL_TMP="$TMP_DIR/restore-signal-tmp"
 mkdir "$RESTORE_SIGNAL_BIN" "$RESTORE_SIGNAL_TMP"
