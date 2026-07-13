@@ -127,6 +127,12 @@ graph TD
 
 ## 🚀 快速开始
 
+### 生产部署
+
+Ubuntu Server 24.04 x86_64 的 Docker 一键部署、数据迁移、更新、证书续期和回滚请按[中文生产部署文档](docs/deployment/docker-production.md)执行。
+
+下面的 `uvicorn --reload` 和 `npm run dev` 仅用于本地开发，不是生产部署方式。
+
 > [!IMPORTANT]
 > **本地部署清单** — 开始前请确认以下工具已就绪：
 > | 工具 | 用途 | 最低版本 |
