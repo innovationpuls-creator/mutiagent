@@ -12,7 +12,7 @@ DOCKERFILE="$REPO_ROOT/frontend/Dockerfile"
 COMPOSE_FILE="$REPO_ROOT/deploy/compose.production.yml"
 NGINX_IMAGE="nginx:1.28-alpine"
 PUBLIC_IPV4="192.0.2.10"
-MAINTENANCE_BYPASS_TOKEN="nginx-test-maintenance-bypass"
+MAINTENANCE_BYPASS_TOKEN="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
@@ -112,6 +112,7 @@ for production_template in (production_ip, production):
 
 for directive in (
     "server_tokens off;",
+    "map_hash_bucket_size 128;",
     "client_max_body_size 100m;",
     "limit_req_status 429;",
     "limit_req_zone $binary_remote_addr zone=login_limit:10m rate=10r/m;",
