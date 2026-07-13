@@ -5,6 +5,7 @@ import argparse
 import hmac
 import os
 import shutil
+import signal
 import sys
 import tempfile
 import uuid
@@ -210,6 +211,7 @@ def _validate_dump_in_temporary_database(
 
 
 def main() -> int:
+    signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT, signal.SIGTERM})
     parser = argparse.ArgumentParser(description="导入 OneTree 数据迁移包")
     parser.add_argument("bundle", type=Path)
     parser.add_argument("uploads_target", type=Path, nargs="?")

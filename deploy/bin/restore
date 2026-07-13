@@ -5,6 +5,7 @@ import argparse
 import os
 import secrets
 import shutil
+import signal
 import sys
 import tempfile
 from pathlib import Path
@@ -26,6 +27,7 @@ from migration_manifest import (  # noqa: E402
 
 
 def main() -> int:
+    signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT, signal.SIGTERM})
     parser = argparse.ArgumentParser(description="恢复 OneTree 生产快照")
     parser.add_argument("snapshot", type=Path)
     parser.add_argument("uploads_target", type=Path)
