@@ -353,12 +353,19 @@ for restore_signal in INT TERM; do
     if ! kill -0 "$import_pid" 2>/dev/null; then
       break
     fi
+    import_state="$(ps -o stat= -p "$import_pid" | tr -d ' ')"
+    if [[ "$import_state" == Z* ]]; then
+      break
+    fi
     kill -s "$restore_signal" "$import_pid"
     sleep 0.05
   done
   if kill -0 "$import_pid" 2>/dev/null; then
-    printf '%s\n' "restore import ignored $restore_signal" >&2
-    exit 1
+    import_state="$(ps -o stat= -p "$import_pid" | tr -d ' ')"
+    if [[ "$import_state" != Z* ]]; then
+      printf '%s\n' "restore import ignored $restore_signal" >&2
+      exit 1
+    fi
   fi
   if wait "$restore_pid"; then
     printf '%s\n' "restore unexpectedly passed $restore_signal" >&2
