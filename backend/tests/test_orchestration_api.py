@@ -1358,7 +1358,18 @@ class TestChatEndpoints:
                 outline = _year_course_outline_result(["year_3_course_1"]).model_dump()[
                     "course_outlines"
                 ][0]
-                return AIMessage(content=json.dumps(outline, ensure_ascii=False))
+                naming_payload = {
+                    "personalization_summary": outline["personalization_summary"],
+                    "section_texts": {
+                        section["section_id"]: {
+                            "title": section["title"],
+                            "description": section["description"],
+                            "key_knowledge_points": section["key_knowledge_points"],
+                        }
+                        for section in outline["sections"]
+                    },
+                }
+                return AIMessage(content=json.dumps(naming_payload, ensure_ascii=False))
 
         class CurrentCourseOutlinePrompt:
             def __or__(self, _other):
@@ -1396,6 +1407,20 @@ class TestChatEndpoints:
                         select(User).where(User.identifier == identifier)
                     ).one()
                     year_path = _year_3_path()
+                    current_course_id = year_path["current_learning_course"][
+                        "course_node_id"
+                    ]
+                    course_nodes = year_path["grade_plans"]["year_3"]["course_nodes"]
+                    current_course = next(
+                        course
+                        for course in course_nodes
+                        if course["course_node_id"] == current_course_id
+                    )
+                    other_course = next(
+                        course
+                        for course in course_nodes
+                        if course["course_node_id"] != current_course_id
+                    )
                     session.add(
                         UserProfile(
                             user_uid=user.uid,
@@ -1431,25 +1456,29 @@ class TestChatEndpoints:
                 assert "课程大纲已生成：《AI Agent 开发基础能力搭建》" in response.text
                 assert "course_knowledge_agent" in response.text
                 assert '"has_outline": true' in response.text
-                assert "请为以下课程生成详细的章节大纲" in captured["queries"][0]
-                assert "当前课程输入" in captured["queries"][0]
-                assert (
-                    "请一次性为当前年级的全部课程生成详细章节大纲"
-                    not in captured["queries"][0]
+                query = captured["queries"][0]
+                assert query.startswith(
+                    "请为后端已经确定结构的课程大纲生成中文教学命名。"
                 )
-                assert "全年课程 JSON 形状" not in captured["queries"][0]
-                assert "JSON Schema" not in captured["queries"][0]
-                assert "course_outlines" not in captured["queries"][0]
+                assert "sections_to_name" in query
+                assert current_course["course_or_chapter_theme"] in query
+                assert other_course["course_or_chapter_theme"] not in query
+                assert "请一次性为当前年级的全部课程生成详细章节大纲" not in query
+                assert "全年课程 JSON 形状" not in query
+                assert "JSON Schema" not in query
+                assert "course_outlines" not in query
 
                 with Session(engine) as session:
                     user = session.exec(
                         select(User).where(User.identifier == identifier)
                     ).one()
                     first_row = session.get(
-                        UserCourseKnowledgeOutline, (user.uid, "year_3_course_1")
+                        UserCourseKnowledgeOutline,
+                        (user.uid, current_course["course_node_id"]),
                     )
                     second_row = session.get(
-                        UserCourseKnowledgeOutline, (user.uid, "year_3_course_2")
+                        UserCourseKnowledgeOutline,
+                        (user.uid, other_course["course_node_id"]),
                     )
                     assert first_row is not None
                     assert second_row is None

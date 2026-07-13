@@ -256,7 +256,6 @@ def run_process_group(
         process_stdout, process_stderr = process.communicate()
     except TerminationRequested:
         if process is not None:
-            _request_process_group_termination(process)
             _finish_process_group_termination(process)
         raise
     finally:

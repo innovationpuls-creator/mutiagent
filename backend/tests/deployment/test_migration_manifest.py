@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import io
 import json
@@ -488,6 +489,20 @@ def test_pending_startup_signal_reaps_leader_and_descendant(
         except ProcessLookupError:
             pass
     assert alive_process_ids == []
+
+
+def test_process_group_signal_propagates_permission_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def deny_process_group_signal(_process_group_id: int, _signal_number: int) -> None:
+        raise PermissionError(errno.EPERM, "injected process-group permission error")
+
+    monkeypatch.setattr(os, "killpg", deny_process_group_signal)
+
+    with pytest.raises(PermissionError) as error:
+        migration_manifest_module._signal_process_group(1234, signal.SIGTERM)
+
+    assert error.value.errno == errno.EPERM
 
 
 def test_process_group_kills_term_ignoring_descendant_after_leader_exit(

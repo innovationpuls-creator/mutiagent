@@ -5,10 +5,11 @@ import json
 from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from sqlalchemy.engine import Engine
 from sqlmodel import Session
 
 from app.database import build_engine, init_db, set_engine
-from app.models import UserProfile
+from app.models import User, UserProfile
 from app.orchestration.agents.models import ProfileOutput
 from app.orchestration.agents.profile import (
     _build_local_profile,
@@ -47,6 +48,18 @@ class ScriptedStructuredLlm:
         return invoke
 
 
+def _create_profile_test_user(engine: Engine, user_uid: str) -> None:
+    with Session(engine) as session:
+        session.add(
+            User(
+                uid=user_uid,
+                username="画像测试用户",
+                identifier=user_uid,
+            )
+        )
+        session.commit()
+
+
 def _profile() -> dict:
     return {
         "type": "basic_profile",
@@ -65,7 +78,9 @@ def _profile() -> dict:
             "strengths": "工程实现",
             "weaknesses": "大型项目实战经验、数据库设计能力、英文阅读速度",
             "experience": "平时学习",
-            "short_term_goal": "在 3 个月内独立开发一个具备完整前后端功能的 Web 应用，并部署上线",
+            "short_term_goal": (
+                "在 3 个月内独立开发一个具备完整前后端功能的 Web 应用，并部署上线"
+            ),
             "long_term_goal": "形成 AI 应用开发能力",
             "weekly_available_time": "每周 6-10 小时",
             "constraints": "平时学习节奏",
@@ -184,7 +199,9 @@ def test_rule_engine_chains_intake_in_same_turn_as_profile_generation() -> None:
                         {
                             "name": AGENT_PROFILE,
                             "args": {
-                                "conversation_summary": "用户说：你直接按照默认给我一份基础画像"
+                                "conversation_summary": (
+                                    "用户说：你直接按照默认给我一份基础画像"
+                                )
                             },
                             "id": "tool-profile-1",
                         }
@@ -202,7 +219,7 @@ def test_rule_engine_chains_intake_in_same_turn_as_profile_generation() -> None:
     assert AGENT_LEARNING_PATH in result.blocked_agents
 
 
-def test_rule_engine_does_not_recall_agents_in_same_turn_as_learning_path_generation() -> (
+def test_rule_engine_does_not_recall_agents_in_same_turn_as_learning_path_generation() -> (  # noqa: E501
     None
 ):
     result = evaluate(
@@ -355,6 +372,10 @@ def test_run_profile_agent_returns_collecting_for_unsupported_postgraduate_grade
     set_engine(engine)
     init_db(engine)
 
+    unsupported_grade_message = (
+        "当前学习路径只支持大一到大四。如果你想继续生成学习路径，"
+        "请先告诉我对应的本科年级（大一到大四）。"
+    )
     llm = ScriptedStructuredLlm(
         [
             {
@@ -381,12 +402,12 @@ def test_run_profile_agent_returns_collecting_for_unsupported_postgraduate_grade
                     "constraints": "",
                 },
                 "defaulted_fields": [],
-                "question_md": "当前学习路径只支持大一到大四。如果你想继续生成学习路径，请先告诉我对应的本科年级（大一到大四）。",
+                "question_md": unsupported_grade_message,
                 "question_box": {
-                    "question": "当前学习路径只支持大一到大四。如果你想继续生成学习路径，请先告诉我对应的本科年级（大一到大四）。",
+                    "question": unsupported_grade_message,
                     "options": [],
                 },
-                "text": "当前学习路径只支持大一到大四。如果你想继续生成学习路径，请先告诉我对应的本科年级（大一到大四）。",
+                "text": unsupported_grade_message,
             }
         ]
     )
@@ -396,6 +417,7 @@ def test_run_profile_agent_returns_collecting_for_unsupported_postgraduate_grade
         "query": "研一，软件工程，AI，周末集中",
         "messages": [HumanMessage(content="研一，软件工程，AI，周末集中")],
     }
+    _create_profile_test_user(engine, state["user_id"])
 
     result = asyncio.run(run_profile_agent(state, llm))
 
@@ -415,7 +437,7 @@ def test_run_profile_agent_returns_collecting_for_unsupported_postgraduate_grade
     assert row.profile_data["confirmed_info"]["current_grade"] == "研一"
 
 
-def test_run_profile_agent_updates_explicit_major_field_without_treating_whole_sentence_as_major(
+def test_run_profile_agent_updates_explicit_major_field_without_treating_whole_sentence_as_major(  # noqa: E501
     tmp_path: Path,
 ) -> None:
     profile = _profile()
@@ -442,7 +464,7 @@ def test_run_profile_agent_updates_explicit_major_field_without_treating_whole_s
     assert llm.calls == 0
 
 
-def test_run_profile_agent_rewrites_system_generated_knowledge_foundation_after_major_update(
+def test_run_profile_agent_rewrites_system_generated_knowledge_foundation_after_major_update(  # noqa: E501
     tmp_path: Path,
 ) -> None:
     profile_response = _profile()
@@ -481,7 +503,7 @@ def test_run_profile_agent_rewrites_system_generated_knowledge_foundation_after_
     assert llm.calls == 0
 
 
-def test_run_profile_agent_restores_generated_knowledge_foundation_when_existing_complete_profile_field_is_empty(
+def test_run_profile_agent_restores_generated_knowledge_foundation_when_existing_complete_profile_field_is_empty(  # noqa: E501
     tmp_path: Path,
 ) -> None:
     profile_response = _profile()
@@ -531,9 +553,7 @@ def test_run_profile_agent_updates_multiple_explicit_fields_in_one_sentence(
     profile["text"] = "【基础学习画像总结】大三计算机科学，当前限制为周末集中。"
     llm = ScriptedStructuredLlm([profile])
 
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "profile-explicit-multi-field")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-explicit-multi-field"))
     set_engine(engine)
     init_db(engine)
 
@@ -700,6 +720,7 @@ def test_run_profile_agent_first_profile_requests_missing_major_in_collecting_mo
             HumanMessage(content="我现在大三，你看看我的个人画像，你推荐什么？"),
         ],
     }
+    _create_profile_test_user(engine, state["user_id"])
 
     result = asyncio.run(run_profile_agent(state, llm))
 
@@ -998,9 +1019,7 @@ def test_run_profile_agent_uses_current_collecting_question_to_parse_free_text_a
 def test_run_profile_agent_maps_user_delimited_profile_without_fake_fields(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "profile-delimited-real-input")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-delimited-real-input"))
     set_engine(engine)
     init_db(engine)
 
@@ -1065,9 +1084,7 @@ def test_run_profile_agent_maps_user_delimited_profile_without_fake_fields(
 def test_run_profile_agent_allows_llm_to_judge_brief_profile_input(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "profile-brief-llm-judgement")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-brief-llm-judgement"))
     set_engine(engine)
     init_db(engine)
 
@@ -1177,7 +1194,7 @@ def test_run_profile_agent_maps_major_before_grade_in_delimited_profile(
     assert result["profile"]["question_box"]["question"] == "你目前的学习阶段是？"
 
 
-def test_run_profile_agent_collecting_profile_understands_english_grade_without_corrupting_major(
+def test_run_profile_agent_collecting_profile_understands_english_grade_without_corrupting_major(  # noqa: E501
     tmp_path: Path,
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-english-grade"))
@@ -1223,14 +1240,16 @@ def test_run_profile_agent_collecting_profile_understands_english_grade_without_
         "user_id": "00000000-0000-0000-0000-000000000018",
         "query": (
             "I am a third-year software engineering student. "
-            "I want to study AI application architecture and build a local knowledge-base QA demo."
+            "I want to study AI application architecture and build a local "
+            "knowledge-base QA demo."
         ),
         "messages": [
             HumanMessage(content="开始学习这门课"),
             HumanMessage(
                 content=(
                     "I am a third-year software engineering student. "
-                    "I want to study AI application architecture and build a local knowledge-base QA demo."
+                    "I want to study AI application architecture and build a local "
+                    "knowledge-base QA demo."
                 )
             ),
         ],
@@ -1370,9 +1389,7 @@ def test_run_profile_agent_uses_structured_llm_for_rich_first_profile_message(
 
             return invoke
 
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "profile-rich-first-message")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-rich-first-message"))
     set_engine(engine)
     init_db(engine)
 
@@ -1396,6 +1413,7 @@ def test_run_profile_agent_uses_structured_llm_for_rich_first_profile_message(
         "query": user_text,
         "messages": [HumanMessage(content=user_text)],
     }
+    _create_profile_test_user(engine, state["user_id"])
 
     result = asyncio.run(run_profile_agent(state, llm))
 
@@ -1436,6 +1454,7 @@ def test_run_profile_agent_converts_unknown_values_to_collecting(
         "profile": existing_profile,
         "messages": [HumanMessage(content="和我讨论重新生成个人画像")],
     }
+    _create_profile_test_user(engine, state["user_id"])
 
     llm = ScriptedStructuredLlm(
         [
@@ -1689,7 +1708,7 @@ def test_profile_form_builder_and_submission(tmp_path: Path) -> None:
         "weekly_available_time: 每周 10-15 小时\n",
     ]
     updates = _extract_explicit_profile_updates(texts)
-    # The newest message (latter in texts, processed first in reversed) should take precedence.
+    # The newest message is processed first in reversed order and takes precedence.
     assert updates["learning_stage"] == "项目实践"
     assert updates["content_preference"] == ["代码实践", "项目案例", "AI 对话调试"]
     assert updates["weekly_available_time"] == "每周 10-15 小时"
@@ -1747,7 +1766,8 @@ def test_profile_minimum_completion_routing(tmp_path: Path) -> None:
     assert _has_minimum_dynamic_profile_fields(state) is False
 
     # 2. Test _has_minimum_dynamic_profile_fields when minimum threshold is met:
-    # 7 specific fields: grade, major, learning stage, has clear goal, learning method, weekly time, short term goal
+    # Required: grade, major, stage, goal clarity, method, weekly time,
+    # and short-term goal.
     # plus at least 1 optional basis field (knowledge_foundation or experience)
     state["profile"]["confirmed_info"].update(
         {
@@ -1762,7 +1782,7 @@ def test_profile_minimum_completion_routing(tmp_path: Path) -> None:
     assert _has_minimum_dynamic_profile_fields(state) is True
     assert _should_use_local_profile(state) is True
 
-    # Test run_profile_agent bypasses LLM and routes to local profile, generating basic_profile
+    # The agent bypasses the LLM and generates a local basic profile.
     # We pass a dummy LLM that would raise if called, to verify it is bypassed
     class FailingLlm:
         def with_structured_output(self, *_args, **_kwargs):
@@ -1771,7 +1791,7 @@ def test_profile_minimum_completion_routing(tmp_path: Path) -> None:
     result = asyncio.run(run_profile_agent(state, FailingLlm()))
     assert result["profile"]["type"] == "basic_profile"
     assert result["profile"]["stage"] == "generated"
-    # Unfilled fields like long_term_goal, constraints, weaknesses should have been filled with default values
+    # Unfilled fields receive default values.
     assert result["profile"]["confirmed_info"]["long_term_goal"] != ""
     assert result["profile"]["confirmed_info"]["constraints"] != ""
 
@@ -1902,9 +1922,7 @@ def test_profile_keeps_major_after_strengths_form_submission(tmp_path: Path) -> 
 def test_profile_preserves_data_structure_goal_from_initial_sentence(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "profile-data-structure-goal")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "profile-data-structure-goal"))
     set_engine(engine)
     init_db(engine)
 

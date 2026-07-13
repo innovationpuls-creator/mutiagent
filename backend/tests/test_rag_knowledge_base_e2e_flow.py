@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
+from langchain_core.messages import AIMessage
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.database import set_engine
@@ -154,6 +156,50 @@ def _state(textbook_id: str | None) -> dict:
 
 
 def test_rag_knowledge_base_end_to_end_flow(tmp_path: Path) -> None:
+    captured: dict[str, object] = {"queries": []}
+
+    class RecordingLlm:
+        pass
+
+    class OutlineNamingChain:
+        async def ainvoke(self, payload):
+            captured["queries"].append(payload["query"])
+            naming_payload = {
+                "personalization_summary": "按 FastAPI 教材正文完成课程学习。",
+                "section_texts": {
+                    "1": {
+                        "title": "FastAPI 核心能力",
+                        "description": "建立路由、依赖注入与中间件的整体认识。",
+                        "key_knowledge_points": ["路由设计", "依赖注入", "中间件"],
+                    },
+                    "1.1": {
+                        "title": "路由设计",
+                        "description": "掌握 FastAPI 路由的定义与组织方式。",
+                        "key_knowledge_points": ["路由定义", "请求处理"],
+                    },
+                    "1.2": {
+                        "title": "依赖注入",
+                        "description": "理解依赖声明、解析和复用方式。",
+                        "key_knowledge_points": ["依赖声明", "依赖复用"],
+                    },
+                    "1.3": {
+                        "title": "中间件",
+                        "description": "理解中间件在请求处理链路中的作用。",
+                        "key_knowledge_points": ["请求链路", "横切处理"],
+                    },
+                },
+            }
+            return AIMessage(content=json.dumps(naming_payload, ensure_ascii=False))
+
+    class OutlineNamingPrompt:
+        def __or__(self, _other):
+            return OutlineNamingChain()
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return OutlineNamingPrompt()
+
     engine = _engine(tmp_path)
     set_engine(engine)
     run_schema_upgrades(engine)
@@ -171,7 +217,8 @@ def test_rag_knowledge_base_end_to_end_flow(tmp_path: Path) -> None:
         session.add(_published_section(textbook.textbook_id, "1.3", "1.3 中间件"))
         session.commit()
 
-    context = get_published_textbook_context_for_topic(Session(engine), "FastAPI")
+    with Session(engine) as session:
+        context = get_published_textbook_context_for_topic(session, "FastAPI")
     assert context["gap_id"] is None
     assert context["textbooks"][0]["textbook_id"] == "textbook-published-e2e"
     assert all(
@@ -207,9 +254,18 @@ def test_rag_knowledge_base_end_to_end_flow(tmp_path: Path) -> None:
     assert course_node["source_textbook_title"] == "FastAPI 开发基础"
     assert course_node["source_outline_section_ids"] == ["1.1", "1.2", "1.3"]
 
-    result = asyncio.run(
-        run_course_knowledge_agent(_state("textbook-published-e2e"), object())
-    )
+    import app.orchestration.agents.course_knowledge as course_knowledge_module
+
+    original_factory = course_knowledge_module.ChatPromptTemplate
+    course_knowledge_module.ChatPromptTemplate = PromptFactory
+    try:
+        result = asyncio.run(
+            run_course_knowledge_agent(_state("textbook-published-e2e"), RecordingLlm())
+        )
+    finally:
+        course_knowledge_module.ChatPromptTemplate = original_factory
+
+    assert len(captured["queries"]) == 1
     assert result["course_knowledge"]["course_id"] == "year_3_course_1"
     assert (
         result["course_knowledge"]["sections"][0]["source_textbook_id"]
