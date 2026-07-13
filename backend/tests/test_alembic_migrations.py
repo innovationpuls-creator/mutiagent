@@ -41,7 +41,7 @@ def test_empty_schema_upgrades_to_alembic_head(tmp_path: Path) -> None:
     assert table_names == set(SQLModel.metadata.tables) | {"alembic_version"}
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0002_ingestion_job_leases"
+        assert revision.scalar_one() == "0003_repair_ingestion_job_leases"
 
 
 def test_alembic_prefers_database_url_environment(
@@ -63,7 +63,7 @@ def test_alembic_prefers_database_url_environment(
     engine = create_engine(database_url)
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0002_ingestion_job_leases"
+        assert revision.scalar_one() == "0003_repair_ingestion_job_leases"
 
 
 def test_programmatic_alembic_config_precedes_database_url_environment(
@@ -85,7 +85,7 @@ def test_programmatic_alembic_config_precedes_database_url_environment(
     engine = create_engine(database_url)
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0002_ingestion_job_leases"
+        assert revision.scalar_one() == "0003_repair_ingestion_job_leases"
 
 
 def test_ingestion_job_lease_migration_preserves_existing_job(
@@ -138,6 +138,44 @@ def test_ingestion_job_lease_migration_preserves_existing_job(
     assert stored.max_attempts == 3
     assert stored.available_at is not None
     assert stored.updated_at is not None
+
+
+def test_head_upgrade_repairs_missing_ingestion_job_lease_columns(
+    tmp_path: Path,
+) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    database_url = postgresql_test_url(tmp_path, "alembic-repair-ingestion-lease")
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+    command.upgrade(config, "0002_ingestion_job_leases")
+
+    engine = create_engine(database_url)
+    lease_columns = {
+        "attempt_count",
+        "max_attempts",
+        "available_at",
+        "lease_expires_at",
+        "worker_id",
+        "request_id",
+        "updated_at",
+    }
+    with engine.begin() as connection:
+        for column_name in lease_columns:
+            connection.execute(
+                text(
+                    f'ALTER TABLE knowledgebaseingestionjob DROP COLUMN "{column_name}"'
+                )
+            )
+
+    command.upgrade(config, "head")
+
+    actual_columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("knowledgebaseingestionjob")
+    }
+    assert lease_columns <= actual_columns
 
 
 def test_baseline_unversioned_schema_upgrades_through_ingestion_migration(
