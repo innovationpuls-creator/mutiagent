@@ -1,6 +1,6 @@
 # OneTree Docker 生产部署
 
-本文档用于当前生产环境：Ubuntu Server 24.04 LTS x86_64、root、服务器公网 IP `1.12.69.26`、域名 `onetree.chat` 和 `www.onetree.chat`。
+本文档用于当前生产环境：Ubuntu Server 24.04 LTS x86_64、root、服务器公网 IP `1.12.69.26`。ICP备案通过前，唯一生产入口是 `https://1.12.69.26`。
 
 首次部署只有一个服务器命令。脚本会安装 Docker、配置国内回退源、导入现有数据库和教材、生成数据库/JWT 密钥、申请 HTTPS 证书，并检查服务、数据库和真实登录。
 
@@ -8,11 +8,11 @@
 
 执行部署前确认以下条件已经成立：
 
-- `onetree.chat` 和 `www.onetree.chat` 的 A 记录都解析到 `1.12.69.26`。
 - 腾讯云安全组允许公网访问 `80/tcp` 和 `443/tcp`。
-- 域名实名认证已经完成；ICP备案状态按腾讯云要求处理。
 - 本地 `backend/.env` 精确包含当前可用的 `DATABASE_URL`。
 - 本地 PostgreSQL 18 的 `pg_dump`、`pg_restore` 和 `psql` 可用。
+
+`onetree.chat` 和 `www.onetree.chat` 尚未完成 ICP 备案时，腾讯云会拦截域名 HTTP 请求。该状态不影响 IP HTTPS 部署，不要在此阶段执行域名证书签发。
 
 ## 2. 本地导出数据库和教材
 
@@ -71,11 +71,7 @@ curl -fL --retry 5 --connect-timeout 10 https://raw.githubusercontent.com/innova
 
 若 `/opt/onetree/bin/deploy` 已存在，说明首次部署已经完成，后续更新只使用该命令，不要重新导入迁移包。若首次部署中途失败且该命令尚不存在，重新执行同一条 bootstrap 命令；脚本会复用已生成的数据库和 JWT 密钥、停止未完成部署的业务容器，再从原迁移包安全重试。
 
-成功后访问：
-
-- `https://onetree.chat`
-- `https://www.onetree.chat`
-- `https://1.12.69.26`
+成功后访问 `https://1.12.69.26`。生产配置中的精确模式为 `NGINX_CONFIG_MODE=production-ip`。
 
 ## 5. 部署后检查
 
@@ -83,13 +79,13 @@ curl -fL --retry 5 --connect-timeout 10 https://raw.githubusercontent.com/innova
 
 ```bash
 docker compose --env-file /opt/onetree/.env.production -f /opt/onetree/deploy/compose.production.yml ps
-curl -fsS https://onetree.chat/api/health/live
-curl -fsS https://onetree.chat/api/health/ready
-curl -I http://onetree.chat
-curl -I https://onetree.chat
+curl -fsS https://1.12.69.26/api/health/live
+curl -fsS https://1.12.69.26/api/health/ready
+curl -I http://1.12.69.26
+curl -I https://1.12.69.26
 ```
 
-`http://onetree.chat` 应返回 HTTPS 跳转，live 和 ready 均应成功。
+`http://1.12.69.26` 应返回 HTTPS 跳转，live 和 ready 均应成功。
 
 ## 6. 后续一条命令更新
 
@@ -147,11 +143,22 @@ journalctl -u onetree-cert-renew.service -n 200 --no-pager
 
 ```bash
 cd /opt/onetree
-./deploy/bin/cert-verify onetree-domain
 ./deploy/bin/cert-verify onetree-ip
 ```
 
 脚本会检查完整证书链、SAN、私钥匹配、剩余有效期，以及 nginx 在线证书序列号。
+
+ICP备案通过后，先确认两个域名均解析到 `1.12.69.26`，再执行：
+
+```bash
+cd /opt/onetree
+./deploy/bin/cert-issue all
+sed -i 's/^NGINX_CONFIG_MODE=.*/NGINX_CONFIG_MODE=production/' /opt/onetree/.env.production
+docker compose --env-file /opt/onetree/.env.production -f /opt/onetree/deploy/compose.production.yml up -d --wait --force-recreate nginx
+docker compose --env-file /opt/onetree/.env.production -f /opt/onetree/deploy/compose.production.yml --profile operations run --rm smoke
+```
+
+切换成功后，`onetree-cert-renew.service` 会同时续期和验证 `onetree-domain` 与 `onetree-ip`。
 
 ## 10. 数据库 revision
 
@@ -198,23 +205,23 @@ systemctl status docker --no-pager
 journalctl -u docker -n 200 --no-pager
 ```
 
-域名或证书签发失败：
+IP 证书签发失败：
 
 ```bash
-getent ahostsv4 onetree.chat
-getent ahostsv4 www.onetree.chat
 ufw status verbose
 ss -lntp | grep -E ':(80|443)\b'
+cd /opt/onetree
+./deploy/bin/cert-verify onetree-ip
 ```
 
-两个域名都必须显示 `1.12.69.26`，且服务器和腾讯云安全组都允许 `80/tcp`、`443/tcp`。
+服务器和腾讯云安全组都必须允许 `80/tcp`、`443/tcp`。域名证书只在 ICP 备案通过后处理。
 
 服务不健康或页面返回错误：
 
 ```bash
 docker compose --env-file /opt/onetree/.env.production -f /opt/onetree/deploy/compose.production.yml ps
 docker compose --env-file /opt/onetree/.env.production -f /opt/onetree/deploy/compose.production.yml logs --tail 300 nginx backend worker postgres
-curl -i https://onetree.chat/api/health/ready
+curl -i https://1.12.69.26/api/health/ready
 ```
 
 确认生产配置权限，不要输出文件内容：
