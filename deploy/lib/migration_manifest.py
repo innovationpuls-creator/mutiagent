@@ -12,9 +12,10 @@ import tarfile
 import tempfile
 from collections.abc import Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qsl, quote, unquote, urlsplit, urlunsplit
 
 BUNDLE_MEMBERS = frozenset(
@@ -101,7 +102,7 @@ class TerminationRequested(RuntimeError):
 
 
 @contextmanager
-def termination_signal_guard():
+def termination_signal_guard(on_signal: Callable[[], None] | None = None):
     watched_signals = (signal.SIGINT, signal.SIGTERM)
     previous_handlers = {
         signal_number: signal.getsignal(signal_number)
@@ -109,6 +110,8 @@ def termination_signal_guard():
     }
 
     def handle_signal(signal_number: int, _frame: object) -> None:
+        if on_signal is not None:
+            on_signal()
         raise TerminationRequested(f"收到终止信号 {signal_number}")
 
     for signal_number in watched_signals:
@@ -458,30 +461,72 @@ def validate_replacement_target(target: Path) -> None:
         raise BundleValidationError(f"教材目标不得是 symlink：{target}")
     if target.exists() and not target.is_dir():
         raise BundleValidationError(f"教材目标必须是普通目录：{target}")
-    previous = target.parent / f".{target.name}.previous"
-    if previous.exists() or previous.is_symlink():
-        raise BundleValidationError(f"教材恢复保护路径已经存在：{previous}")
+
+
+@dataclass
+class DirectoryReplacement:
+    target: Path
+    previous: Path | None
+    old_moved: bool = False
+    new_installed: bool = False
+    active: bool = True
+
+    def rollback(self) -> None:
+        if not self.active:
+            return
+        if self.new_installed and self.target.exists():
+            shutil.rmtree(self.target)
+        if self.old_moved and self.previous is not None and self.previous.exists():
+            self.previous.replace(self.target)
+        self.active = False
+
+    def commit(self) -> None:
+        if not self.active:
+            return
+        self.active = False
+        if self.previous is not None and self.previous.exists():
+            shutil.rmtree(self.previous)
+
+
+def begin_directory_replacement(staging: Path, target: Path) -> DirectoryReplacement:
+    validate_replacement_target(target)
+    previous: Path | None = None
+    if target.exists():
+        previous = Path(
+            tempfile.mkdtemp(prefix=f".{target.name}.previous.", dir=target.parent)
+        )
+        previous.rmdir()
+    replacement = DirectoryReplacement(target=target, previous=previous)
+    try:
+        if previous is not None:
+            with _blocked_termination_signals():
+                target.replace(previous)
+                replacement.old_moved = True
+        with _blocked_termination_signals():
+            staging.replace(target)
+            replacement.new_installed = True
+        return replacement
+    except BaseException:
+        replacement.rollback()
+        if previous is not None and previous.exists():
+            previous.rmdir()
+        raise
 
 
 def replace_directory_atomically(staging: Path, target: Path) -> None:
-    validate_replacement_target(target)
-    previous = target.parent / f".{target.name}.previous"
-    if not target.exists():
-        staging.replace(target)
-        return
-    replacement_started = False
+    replacement = begin_directory_replacement(staging, target)
+    replacement.commit()
+
+
+@contextmanager
+def _blocked_termination_signals():
+    previous_mask = signal.pthread_sigmask(
+        signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM}
+    )
     try:
-        replacement_started = True
-        target.replace(previous)
-        staging.replace(target)
-        replacement_started = False
-    except BaseException:
-        if replacement_started and previous.exists():
-            if target.exists():
-                shutil.rmtree(target)
-            previous.replace(target)
-        raise
-    shutil.rmtree(previous)
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
 
 
 def _run_backend_json(

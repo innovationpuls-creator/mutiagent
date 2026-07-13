@@ -186,7 +186,7 @@ Expected: FAIL，因为模块不存在。
 
 - [ ] **Step 4: 实现校验后原子导入**
 
-先在 staging 目录完整验证，再 `pg_restore` 到明确维护态目标库；教材 tar 解压到 staging，拒绝 path traversal，最后原子替换目标目录。
+先在 staging 目录完整验证；`TARGET_DATABASE_URL` 始终是维护态连接，当前角色必须具备 `CREATEDB`，用于创建、拥有和强制删除随机临时校验库。应用数据库仍只允许 Docker 内网访问。目标写入时先保留旧教材目录并切换到新教材，再执行单事务 `pg_restore`；数据库失败或终止信号会恢复旧教材，数据库成功后才删除旧教材目录。
 
 - [ ] **Step 5: 运行 PostgreSQL 18 roundtrip**
 

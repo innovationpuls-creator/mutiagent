@@ -6,10 +6,11 @@ BACKEND_DIR="$REPO_ROOT/backend"
 TMP_DIR="$(mktemp -d)"
 SOURCE_DB="onetree_migration_source_$$"
 TARGET_DB="onetree_migration_target_$$"
+NO_CREATEDB_ROLE="onetree_no_createdb_$$"
 MIGRATION_TEST_MAINTENANCE_URL="${MIGRATION_TEST_MAINTENANCE_URL:-postgresql:///postgres}"
 
 cleanup() {
-  SOURCE_DB="$SOURCE_DB" TARGET_DB="$TARGET_DB" \
+  SOURCE_DB="$SOURCE_DB" TARGET_DB="$TARGET_DB" NO_CREATEDB_ROLE="$NO_CREATEDB_ROLE" \
     MAINTENANCE_URL="$MIGRATION_TEST_MAINTENANCE_URL" \
     uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
 import os
@@ -27,6 +28,14 @@ try:
                 sql.Identifier(database_name)
             )
         )
+    role_name = os.environ["NO_CREATEDB_ROLE"]
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role_name,))
+        if cursor.fetchone() is not None:
+            cursor.execute(
+                sql.SQL("REVOKE {} FROM torch").format(sql.Identifier(role_name))
+            )
+            cursor.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role_name)))
 finally:
     connection.close()
 PY
@@ -36,9 +45,11 @@ trap cleanup EXIT
 
 SOURCE_URL_FILE="$TMP_DIR/source-url"
 TARGET_URL_FILE="$TMP_DIR/target-url"
-SOURCE_DB="$SOURCE_DB" TARGET_DB="$TARGET_DB" \
+NO_CREATEDB_URL_FILE="$TMP_DIR/no-createdb-url"
+SOURCE_DB="$SOURCE_DB" TARGET_DB="$TARGET_DB" NO_CREATEDB_ROLE="$NO_CREATEDB_ROLE" \
   MAINTENANCE_URL="$MIGRATION_TEST_MAINTENANCE_URL" \
   SOURCE_URL_FILE="$SOURCE_URL_FILE" TARGET_URL_FILE="$TARGET_URL_FILE" \
+  NO_CREATEDB_URL_FILE="$NO_CREATEDB_URL_FILE" \
   uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
 import os
 from pathlib import Path
@@ -56,6 +67,13 @@ try:
         connection.cursor().execute(
             sql.SQL("CREATE DATABASE {}").format(sql.Identifier(os.environ[variable]))
         )
+    role_name = os.environ["NO_CREATEDB_ROLE"]
+    connection.cursor().execute(
+        sql.SQL("CREATE ROLE {} NOCREATEDB").format(sql.Identifier(role_name))
+    )
+    connection.cursor().execute(
+        sql.SQL("GRANT {} TO torch").format(sql.Identifier(role_name))
+    )
 finally:
     connection.close()
 
@@ -65,10 +83,16 @@ Path(os.environ["SOURCE_URL_FILE"]).write_text(
 Path(os.environ["TARGET_URL_FILE"]).write_text(
     base_url.set(database=os.environ["TARGET_DB"]).render_as_string(hide_password=False)
 )
+Path(os.environ["NO_CREATEDB_URL_FILE"]).write_text(
+    base_url.set(database=os.environ["TARGET_DB"]).update_query_dict(
+        {"options": f"-c role={os.environ['NO_CREATEDB_ROLE']}"}
+    ).render_as_string(hide_password=False)
+)
 PY
-chmod 600 "$SOURCE_URL_FILE" "$TARGET_URL_FILE"
+chmod 600 "$SOURCE_URL_FILE" "$TARGET_URL_FILE" "$NO_CREATEDB_URL_FILE"
 SOURCE_URL="$(<"$SOURCE_URL_FILE")"
 TARGET_URL="$(<"$TARGET_URL_FILE")"
+NO_CREATEDB_URL="$(<"$NO_CREATEDB_URL_FILE")"
 
 cd "$BACKEND_DIR"
 DATABASE_URL="$SOURCE_URL" uv run --no-env-file python - <<'PY'
@@ -171,6 +195,23 @@ test "$(<"$FIXED_VERIFIED_SENTINEL/sentinel.txt")" = "verified-sentinel"
 test -z "$(find "$TMP_DIR" -maxdepth 1 -type d -name '.migration-*' -print -quit)"
 "$REPO_ROOT/deploy/bin/verify-bundle" "$BUNDLE"
 
+NO_PERMISSION_UPLOADS="$TMP_DIR/no-permission-uploads"
+NO_PERMISSION_ERROR="$TMP_DIR/no-permission-error"
+mkdir "$NO_PERMISSION_UPLOADS"
+printf '%s\n' 'permission-old' > "$NO_PERMISSION_UPLOADS/old.txt"
+if TARGET_DATABASE_URL="$NO_CREATEDB_URL" ONETREE_MAINTENANCE_MODE=1 \
+  "$REPO_ROOT/deploy/bin/import-bundle" "$BUNDLE" "$NO_PERMISSION_UPLOADS" \
+  >/dev/null 2>"$NO_PERMISSION_ERROR"; then
+  printf '%s\n' 'role without CREATEDB unexpectedly accepted' >&2
+  exit 1
+fi
+grep -F '维护态数据库角色必须具备 CREATEDB 权限' "$NO_PERMISSION_ERROR" >/dev/null
+if grep -F "$NO_CREATEDB_URL" "$NO_PERMISSION_ERROR" >/dev/null; then
+  printf '%s\n' 'permission error leaked database URL' >&2
+  exit 1
+fi
+test "$(<"$NO_PERMISSION_UPLOADS/old.txt")" = "permission-old"
+
 SYMLINK_REAL_TARGET="$TMP_DIR/symlink-real-uploads"
 SYMLINK_UPLOAD_TARGET="$TMP_DIR/symlink-uploads"
 mkdir "$SYMLINK_REAL_TARGET"
@@ -221,6 +262,36 @@ directory = Path(os.environ["BAD_SCHEMA_DIRECTORY"])
 write_manifest(directory, "versioned", "0002_ingestion_job_leases")
 create_bundle_archive(directory, Path(os.environ["BAD_SCHEMA_BUNDLE"]))
 PY
+
+VERIFY_SIGNAL_TMP="$TMP_DIR/verify-signal-tmp"
+VERIFY_SIGNAL_BIN="$TMP_DIR/verify-signal-bin"
+VERIFY_SIGNAL_MARKER="$TMP_DIR/verify-signal-marker"
+mkdir "$VERIFY_SIGNAL_TMP" "$VERIFY_SIGNAL_BIN"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  'printf "%s\n" "backend-check-started" > "$VERIFY_SIGNAL_MARKER"' \
+  'sleep 30' \
+  > "$VERIFY_SIGNAL_BIN/uv"
+chmod 700 "$VERIFY_SIGNAL_BIN/uv"
+TMPDIR="$VERIFY_SIGNAL_TMP" PATH="$VERIFY_SIGNAL_BIN:$PATH" \
+  VERIFY_SIGNAL_MARKER="$VERIFY_SIGNAL_MARKER" \
+  "$REPO_ROOT/deploy/bin/verify-bundle" "$BAD_SCHEMA_BUNDLE" >/dev/null 2>&1 &
+VERIFY_SIGNAL_PID=$!
+for _ in {1..100}; do
+  if [[ -f "$VERIFY_SIGNAL_MARKER" ]]; then
+    break
+  fi
+  sleep 0.05
+done
+test -f "$VERIFY_SIGNAL_MARKER"
+test -n "$(find "$VERIFY_SIGNAL_TMP" -maxdepth 1 -type d -name 'onetree-bundle-check.*' -print -quit)"
+kill -TERM "$VERIFY_SIGNAL_PID"
+if wait "$VERIFY_SIGNAL_PID"; then
+  printf '%s\n' 'verify-bundle unexpectedly accepted SIGTERM' >&2
+  exit 1
+fi
+test -z "$(find "$VERIFY_SIGNAL_TMP" -maxdepth 1 -type d -name 'onetree-bundle-check.*' -print -quit)"
 
 TARGET_UPLOADS="$TMP_DIR/restored-uploads"
 mkdir -p "$TARGET_UPLOADS"
@@ -282,27 +353,55 @@ for invalid_bundle in "$MISSING_ACCOUNT_BUNDLE" "$BAD_SCHEMA_BUNDLE"; do
   test -z "$(find "$TMP_DIR" -maxdepth 1 -type d -name '.migration-import.*' -print -quit)"
 done
 
-mkdir "$TMP_DIR/.restored-uploads.previous"
-if TARGET_DATABASE_URL="$TARGET_URL" ONETREE_MAINTENANCE_MODE=1 \
-  "$REPO_ROOT/deploy/bin/import-bundle" "$BUNDLE" "$TARGET_UPLOADS" \
-  >/dev/null 2>&1; then
-  printf '%s\n' 'import unexpectedly accepted an existing protection directory' >&2
-  exit 1
-fi
-DATABASE_URL="$TARGET_URL" uv run --no-env-file python - <<'PY'
-import os
+FIXED_PREVIOUS="$TMP_DIR/.restored-uploads.previous"
+mkdir "$FIXED_PREVIOUS"
+printf '%s\n' 'fixed-previous' > "$FIXED_PREVIOUS/sentinel.txt"
+PG_RESTORE_INJECT_DIR="$TMP_DIR/pg-restore-inject"
+PG_RESTORE_COUNT_FILE="$TMP_DIR/pg-restore-count"
+PG_RESTORE_MARKER="$TMP_DIR/pg-restore-marker"
+REAL_PG_RESTORE="$(command -v pg_restore)"
+mkdir "$PG_RESTORE_INJECT_DIR"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  'count=0' \
+  'if [[ -f "$PG_RESTORE_COUNT_FILE" ]]; then count="$(<"$PG_RESTORE_COUNT_FILE")"; fi' \
+  'count=$((count + 1))' \
+  'printf "%s\n" "$count" > "$PG_RESTORE_COUNT_FILE"' \
+  'if [[ "$count" -eq 2 ]]; then' \
+  '  test -f "$INJECT_UPLOAD_TARGET/高等数学/第一章/极限.txt"' \
+  '  test ! -e "$INJECT_UPLOAD_TARGET/stale.txt"' \
+  '  printf "%s\n" "new-uploads-visible" > "$PG_RESTORE_MARKER"' \
+  '  if [[ "$PG_RESTORE_INJECT_MODE" == "failure" ]]; then exit 97; fi' \
+  '  kill -TERM "$PPID"' \
+  '  sleep 30' \
+  'fi' \
+  'exec "$REAL_PG_RESTORE" "$@"' \
+  > "$PG_RESTORE_INJECT_DIR/pg_restore"
+chmod 700 "$PG_RESTORE_INJECT_DIR/pg_restore"
 
-from sqlalchemy import create_engine, text
+for inject_mode in failure signal; do
+  rm -f "$PG_RESTORE_COUNT_FILE" "$PG_RESTORE_MARKER"
+  if PATH="$PG_RESTORE_INJECT_DIR:$PATH" \
+    PG_RESTORE_COUNT_FILE="$PG_RESTORE_COUNT_FILE" \
+    PG_RESTORE_MARKER="$PG_RESTORE_MARKER" \
+    PG_RESTORE_INJECT_MODE="$inject_mode" \
+    INJECT_UPLOAD_TARGET="$TARGET_UPLOADS" \
+    REAL_PG_RESTORE="$REAL_PG_RESTORE" \
+    TARGET_DATABASE_URL="$TARGET_URL" ONETREE_MAINTENANCE_MODE=1 \
+    "$REPO_ROOT/deploy/bin/import-bundle" "$BUNDLE" "$TARGET_UPLOADS" \
+    >/dev/null 2>&1; then
+    printf '%s\n' 'injected target restore interruption unexpectedly passed' >&2
+    exit 1
+  fi
+  test "$(<"$PG_RESTORE_MARKER")" = "new-uploads-visible"
+  assert_target_unchanged
+  assert_no_validation_databases
+  test "$(<"$TARGET_UPLOADS/stale.txt")" = "stale"
+  test ! -e "$TARGET_UPLOADS/高等数学/第一章/极限.txt"
+done
+test "$(<"$FIXED_PREVIOUS/sentinel.txt")" = "fixed-previous"
 
-with create_engine(os.environ["DATABASE_URL"]).connect() as connection:
-    assert connection.execute(
-        text("SELECT value FROM migration_sentinel")
-    ).scalar_one() == "untouched"
-    assert connection.execute(
-        text("SELECT to_regclass('public.user')")
-    ).scalar_one() is None
-PY
-rmdir "$TMP_DIR/.restored-uploads.previous"
 DATABASE_URL="$TARGET_URL" uv run --no-env-file python - <<'PY'
 import os
 

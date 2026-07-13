@@ -13,6 +13,7 @@ sys.path.insert(0, str(DEPLOY_DIR / "lib"))
 from migration_manifest import (  # noqa: E402
     assert_manifest_repository_revision,
     extract_verified_bundle,
+    termination_signal_guard,
 )
 
 
@@ -22,11 +23,12 @@ def main() -> int:
     arguments = parser.parse_args()
     staging_parent = Path(tempfile.mkdtemp(prefix="onetree-bundle-check."))
     staging = staging_parent / "bundle"
-    try:
-        manifest = extract_verified_bundle(arguments.bundle.resolve(), staging)
-        assert_manifest_repository_revision(manifest, DEPLOY_DIR.parent / "backend")
-    finally:
-        shutil.rmtree(staging_parent, ignore_errors=True)
+    with termination_signal_guard():
+        try:
+            manifest = extract_verified_bundle(arguments.bundle.resolve(), staging)
+            assert_manifest_repository_revision(manifest, DEPLOY_DIR.parent / "backend")
+        finally:
+            shutil.rmtree(staging_parent, ignore_errors=True)
     revision = manifest["alembic_revision"]
     revision_label = revision if revision is not None else "null"
     print(

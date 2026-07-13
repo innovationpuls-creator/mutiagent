@@ -175,7 +175,7 @@ cd mutiagent
 
 **macOS（Homebrew）：**
 ```bash
-brew install postgresql@15 && brew services start postgresql@15
+brew install postgresql@18 && brew services start postgresql@18
 ```
 
 **Windows / Linux：** 参考 [PostgreSQL 官方下载页](https://www.postgresql.org/download/) 安装后启动服务。
@@ -232,7 +232,7 @@ cd frontend && npm install && npm run dev
 
 **`psql: command not found`** — PostgreSQL 未加入 PATH，macOS 执行：
 ```bash
-export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
+export PATH="/opt/homebrew/opt/postgresql@18/bin:$PATH"
 ```
 
 **`database connection refused`** — 检查服务是否运行：`brew services list` 或 `pg_isready`

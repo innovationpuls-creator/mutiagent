@@ -15,13 +15,13 @@ sys.path.insert(0, str(DEPLOY_DIR / "lib"))
 
 from migration_manifest import (  # noqa: E402
     assert_manifest_repository_revision,
+    begin_directory_replacement,
     extract_upload_archive,
     extract_verified_bundle,
     inspect_database_identity,
     migrate_database_to_head,
     postgres_service_environment,
     replace_database_name,
-    replace_directory_atomically,
     repository_revision_sets,
     termination_signal_guard,
     validate_replacement_target,
@@ -77,6 +77,55 @@ def _restore_dump(
     )
 
 
+def _restore_command(dump_path: Path, service_name: str) -> list[str]:
+    return [
+        "pg_restore",
+        "--clean",
+        "--if-exists",
+        "--no-owner",
+        "--no-privileges",
+        "--single-transaction",
+        "--dbname",
+        f"service={service_name}",
+        str(dump_path),
+    ]
+
+
+def _restore_target_with_upload_compensation(
+    dump_path: Path,
+    database_environment: dict[str, str],
+    staged_uploads: Path,
+    uploads_target: Path,
+) -> None:
+    replacement = None
+    restore_process: subprocess.Popen[bytes] | None = None
+    try:
+        replacement = begin_directory_replacement(staged_uploads, uploads_target)
+
+        def compensate_signal() -> None:
+            if restore_process is not None and restore_process.poll() is None:
+                restore_process.kill()
+
+        with termination_signal_guard(compensate_signal):
+            restore_process = subprocess.Popen(
+                _restore_command(dump_path, "onetree_import"),
+                env=database_environment,
+            )
+            return_code = restore_process.wait()
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, restore_process.args)
+            replacement.commit()
+    except BaseException:
+        if restore_process is not None and restore_process.returncode is None:
+            restore_process.wait()
+        if replacement is not None and replacement.active:
+            if restore_process is not None and restore_process.returncode == 0:
+                replacement.commit()
+            else:
+                replacement.rollback()
+        raise
+
+
 def _assert_required_accounts(
     database_environment: dict[str, str], service_name: str
 ) -> None:
@@ -94,6 +143,17 @@ def _assert_required_accounts(
     ]
     if accounts != expected_accounts:
         raise RuntimeError("恢复后的必须保留账号记录不一致")
+
+
+def _assert_createdb_permission(database_environment: dict[str, str]) -> None:
+    permission = _query(
+        database_environment,
+        "onetree_import",
+        "SELECT CASE WHEN rolcreatedb THEN 'allowed' ELSE 'denied' END "
+        "FROM pg_roles WHERE rolname = current_user",
+    )
+    if permission != ["allowed"]:
+        raise RuntimeError("维护态数据库角色必须具备 CREATEDB 权限")
 
 
 def _validate_dump_in_temporary_database(
@@ -186,6 +246,7 @@ def main() -> int:
             database_environment = postgres_service_environment(
                 database_url, staging_root / "pg_service.conf", "onetree_import"
             )
+            _assert_createdb_permission(database_environment)
             manifest = extract_verified_bundle(
                 arguments.bundle.resolve(), verified_bundle
             )
@@ -200,12 +261,12 @@ def main() -> int:
                 staging_root,
                 database_environment,
             )
-            _restore_dump(
+            _restore_target_with_upload_compensation(
                 verified_bundle / "database.dump",
                 database_environment,
-                "onetree_import",
+                staged_uploads,
+                uploads_target,
             )
-            replace_directory_atomically(staged_uploads, uploads_target)
         finally:
             shutil.rmtree(staging_root, ignore_errors=True)
     print("数据库、账号和教材文件导入完成")

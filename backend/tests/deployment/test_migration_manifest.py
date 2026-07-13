@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -19,10 +20,10 @@ from migration_manifest import (  # noqa: E402
     BundleValidationError,
     TerminationRequested,
     assert_manifest_repository_revision,
+    begin_directory_replacement,
     create_bundle_archive,
     extract_verified_bundle,
     replace_database_name,
-    replace_directory_atomically,
     termination_signal_guard,
     validate_replacement_target,
 )
@@ -331,12 +332,62 @@ def test_signal_during_directory_rename_restores_old_target(
     monkeypatch.setattr(Path, "replace", interrupt_after_first_rename)
 
     with termination_signal_guard(), pytest.raises(TerminationRequested):
-        replace_directory_atomically(staging, target)
+        begin_directory_replacement(staging, target)
 
     assert target.is_dir()
     assert (target / "old.txt").read_text(encoding="utf-8") == "old"
     assert not (target / "new.txt").exists()
     assert not (tmp_path / ".uploads.previous").exists()
+
+
+def test_database_failure_rolls_back_begun_directory_replacement(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "uploads"
+    target.mkdir()
+    (target / "old.txt").write_text("old", encoding="utf-8")
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "new.txt").write_text("new", encoding="utf-8")
+
+    replacement = begin_directory_replacement(staging, target)
+    assert (target / "new.txt").read_text(encoding="utf-8") == "new"
+
+    replacement.rollback()
+
+    assert (target / "old.txt").read_text(encoding="utf-8") == "old"
+    assert not (target / "new.txt").exists()
+
+
+def test_previous_cleanup_failure_does_not_block_next_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "uploads"
+    target.mkdir()
+    (target / "old.txt").write_text("old", encoding="utf-8")
+    first_staging = tmp_path / "first-staging"
+    first_staging.mkdir()
+    (first_staging / "first.txt").write_text("first", encoding="utf-8")
+    first_replacement = begin_directory_replacement(first_staging, target)
+    original_rmtree = shutil.rmtree
+
+    def fail_previous_cleanup(path: Path, *args: object, **kwargs: object) -> None:
+        if Path(path) == first_replacement.previous:
+            raise OSError("injected previous cleanup failure")
+        original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", fail_previous_cleanup)
+    with pytest.raises(OSError, match="injected previous cleanup failure"):
+        first_replacement.commit()
+    monkeypatch.setattr(shutil, "rmtree", original_rmtree)
+
+    second_staging = tmp_path / "second-staging"
+    second_staging.mkdir()
+    (second_staging / "second.txt").write_text("second", encoding="utf-8")
+    second_replacement = begin_directory_replacement(second_staging, target)
+    second_replacement.rollback()
+
+    assert (target / "first.txt").read_text(encoding="utf-8") == "first"
 
 
 def test_replacing_unix_socket_database_name_preserves_three_slashes() -> None:

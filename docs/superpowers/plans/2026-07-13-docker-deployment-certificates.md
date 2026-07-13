@@ -14,7 +14,8 @@
 - Compose 服务精确命名：`nginx`, `backend`, `worker`, `postgres`, `certbot`, `migrate`, `smoke`, `backup`, `restore`。
 - 只发布主机 `80:80` 与 `443:443`；不得发布 `8000` 或 `5432`。
 - 管理员上传单个 PDF 或 DOCX 教材最大为 `100 MB`；nginx 和后端必须在读取完整请求体前拒绝超限请求。
-- PostgreSQL 使用 15 主版本。
+- PostgreSQL 使用 18 主版本。
+- `TARGET_DATABASE_URL` 是容器内维护态连接；该角色具备 `CREATEDB`，并拥有导入时创建的随机临时校验库。应用数据库不发布宿主机端口，只允许 Docker 内网访问。
 - swap 精确为 4 GB；UFW 只开放 `80/tcp`、`443/tcp`。
 - secrets 文件 `/opt/onetree/.env.production` 权限 `0600`，不得回显。
 - 正常发布禁止 `down -v`。
