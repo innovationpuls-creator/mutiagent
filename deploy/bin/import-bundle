@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hmac
 import os
 import shutil
 import sys
@@ -213,7 +214,7 @@ def main() -> int:
     parser.add_argument("bundle", type=Path)
     parser.add_argument("uploads_target", type=Path, nargs="?")
     parser.add_argument("--validate-only", action="store_true")
-    parser.add_argument("--cleanup-bundle-parent", action="store_true")
+    parser.add_argument("--cleanup-bundle-parent")
     arguments = parser.parse_args()
     database_url = os.environ.get("TARGET_DATABASE_URL", "")
     if not database_url:
@@ -278,10 +279,19 @@ def main() -> int:
                 and not any(uploads_target.parent.iterdir())
             ):
                 uploads_target.parent.rmdir()
-            if arguments.cleanup_bundle_parent:
+            if arguments.cleanup_bundle_parent is not None:
                 bundle_parent = arguments.bundle.resolve().parent
-                if not bundle_parent.name.startswith(".snapshot-restore."):
-                    raise RuntimeError("restore staging 目录名不正确")
+                marker = bundle_parent / ".onetree-restore-owner"
+                if (
+                    not bundle_parent.name.startswith(".snapshot-restore.")
+                    or marker.is_symlink()
+                    or not marker.is_file()
+                    or not hmac.compare_digest(
+                        marker.read_text(encoding="utf-8"),
+                        arguments.cleanup_bundle_parent,
+                    )
+                ):
+                    raise RuntimeError("restore staging 所有权证明不正确")
                 shutil.rmtree(bundle_parent, ignore_errors=True)
     print("数据库、账号和教材文件导入完成")
     return 0

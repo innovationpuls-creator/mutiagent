@@ -8,6 +8,9 @@ git -C "$SOURCE_REPO_ROOT" diff --quiet HEAD -- \
   deploy/bin/backup deploy/bin/restore deploy/bin/import-bundle \
   deploy/lib/backup_manifest.py deploy/lib/migration_manifest.py \
   backend/migrations backend/app/migration_state.py
+test -z "$(git -C "$SOURCE_REPO_ROOT" ls-files --others --exclude-standard -- \
+  deploy/bin/backup deploy/bin/restore deploy/bin/import-bundle \
+  deploy/lib backend/migrations backend/app/migration_state.py)"
 mkdir "$REPO_ROOT"
 git -C "$SOURCE_REPO_ROOT" archive HEAD | tar -x -C "$REPO_ROOT"
 git -C "$REPO_ROOT" init -q
@@ -63,7 +66,14 @@ try:
         for key in ("SOURCE_DB", "TARGET_DB"):
             cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(os.environ[key])))
         cursor.execute(sql.SQL("CREATE ROLE {} NOCREATEDB").format(sql.Identifier(os.environ["SOURCE_ROLE"])))
-        cursor.execute(sql.SQL("GRANT {} TO torch").format(sql.Identifier(os.environ["SOURCE_ROLE"])))
+        cursor.execute("SELECT current_user")
+        maintenance_role = cursor.fetchone()[0]
+        cursor.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(os.environ["SOURCE_ROLE"]),
+                sql.Identifier(maintenance_role),
+            )
+        )
 finally:
     connection.close()
 base = make_url(os.environ["MAINTENANCE_URL"])
@@ -112,12 +122,55 @@ mkdir -p "$UPLOADS_SOURCE/chapter" "$UPLOADS_TARGET" "$BACKUPS"
 printf '%s\n' 'original textbook' > "$UPLOADS_SOURCE/chapter/textbook.txt"
 printf '%s\n' 'old target' > "$UPLOADS_TARGET/old.txt"
 
+MALICIOUS_STAGING="$TMP_DIR/.snapshot-restore.malicious"
+mkdir "$MALICIOUS_STAGING"
+printf '%s' wrong-token > "$MALICIOUS_STAGING/.onetree-restore-owner"
+chmod 600 "$MALICIOUS_STAGING/.onetree-restore-owner"
+if TARGET_DATABASE_URL="$TARGET_URL" ONETREE_MAINTENANCE_MODE=1 \
+  "$REPO_ROOT/deploy/bin/import-bundle" "$MALICIOUS_STAGING/missing.tar" \
+  "$TMP_DIR/malicious-target/uploads" --cleanup-bundle-parent expected-token \
+  >/dev/null 2>&1; then
+  printf '%s\n' 'invalid ownership token unexpectedly accepted' >&2
+  exit 1
+fi
+test -d "$MALICIOUS_STAGING"
+test "$(<"$MALICIOUS_STAGING/.onetree-restore-owner")" = "wrong-token"
+
 if DATABASE_URL="$SOURCE_BACKUP_URL" ONETREE_MAINTENANCE_MODE=1 \
   "$REPO_ROOT/deploy/bin/backup" "$BACKUPS" "$UPLOADS_SOURCE" \
   >/dev/null 2>&1; then
   printf '%s\n' 'backup without maintenance connection unexpectedly passed' >&2
   exit 1
 fi
+
+PYTHON_FAILURE_SHIM="$TMP_DIR/python-failure-shim"
+mkdir "$PYTHON_FAILURE_SHIM"
+printf '%s\n' \
+  'import os, pathlib, tarfile' \
+  '_tar_open = tarfile.open' \
+  '_path_open = pathlib.Path.open' \
+  'def fail_tar(*args, **kwargs):' \
+  '    if os.environ.get("INJECT_BACKUP_TAR_FAILURE") == "1" and kwargs.get("mode") == "w": raise OSError("injected tar failure")' \
+  '    return _tar_open(*args, **kwargs)' \
+  'def fail_hash(self, mode="r", *args, **kwargs):' \
+  '    if os.environ.get("INJECT_BACKUP_HASH_FAILURE") == "1" and self.name == "database.dump" and mode == "rb": raise OSError("injected hash failure")' \
+  '    return _path_open(self, mode, *args, **kwargs)' \
+  'tarfile.open = fail_tar' \
+  'pathlib.Path.open = fail_hash' > "$PYTHON_FAILURE_SHIM/sitecustomize.py"
+SOURCE_UPLOAD_HASH="$(shasum -a 256 "$UPLOADS_SOURCE/chapter/textbook.txt")"
+for failure_name in TAR HASH; do
+  failure_key="INJECT_BACKUP_${failure_name}_FAILURE"
+  if env PYTHONPATH="$PYTHON_FAILURE_SHIM" "$failure_key=1" \
+    DATABASE_URL="$SOURCE_BACKUP_URL" TARGET_DATABASE_URL="$MAINTENANCE_URL" \
+    ONETREE_MAINTENANCE_MODE=1 "$REPO_ROOT/deploy/bin/backup" \
+    "$BACKUPS" "$UPLOADS_SOURCE" >/dev/null 2>&1; then
+    printf '%s\n' "$failure_name failure unexpectedly passed" >&2
+    exit 1
+  fi
+  test -z "$(find "$BACKUPS" -mindepth 1 -maxdepth 1 ! -name '.*' -print -quit)"
+  test -z "$(find "$BACKUPS" -mindepth 1 -maxdepth 1 -name '.snapshot.*' -print -quit)"
+  test "$(shasum -a 256 "$UPLOADS_SOURCE/chapter/textbook.txt")" = "$SOURCE_UPLOAD_HASH"
+done
 
 for index in 1 2 3 4; do
   printf '%s\n' "snapshot-$index" > "$UPLOADS_SOURCE/chapter/version.txt"
@@ -259,7 +312,12 @@ printf '%s\n' \
   'if [[ "$count" -eq 2 ]]; then' \
   '  printf "%s\n" target-restore-started > "$RESTORE_SIGNAL_MARKER"' \
   '  printf "%s\n" "$$" > "$RESTORE_SIGNAL_CHILD_PID"' \
-  '  sleep 30' \
+  '  bash -c '\''exec -a onetree-restore-signal-descendant sleep 30'\'' &' \
+  '  descendant=$!' \
+  '  printf "%s\n" "$descendant" > "$RESTORE_SIGNAL_DESCENDANT_PID"' \
+  '  ps -o pgid= -p "$$" | tr -d " " > "$RESTORE_SIGNAL_PGID"' \
+  '  trap '\''wait "$descendant" 2>/dev/null || true; exit 143'\'' TERM INT' \
+  '  wait "$descendant"' \
   'fi' \
   'exec "$REAL_PG_RESTORE" "$@"' > "$RESTORE_SIGNAL_BIN/pg_restore"
 chmod 700 "$RESTORE_SIGNAL_BIN/pg_restore"
@@ -268,16 +326,21 @@ for restore_signal in INT TERM; do
   RESTORE_SIGNAL_COUNT="$TMP_DIR/restore-signal-count-$restore_signal"
   RESTORE_SIGNAL_MARKER="$TMP_DIR/restore-signal-marker-$restore_signal"
   RESTORE_SIGNAL_CHILD_PID="$TMP_DIR/restore-signal-child-$restore_signal"
+  RESTORE_SIGNAL_DESCENDANT_PID="$TMP_DIR/restore-signal-descendant-$restore_signal"
+  RESTORE_SIGNAL_PGID="$TMP_DIR/restore-signal-pgid-$restore_signal"
   PATH="$RESTORE_SIGNAL_BIN:$PATH" TMPDIR="$RESTORE_SIGNAL_TMP" \
     RESTORE_SIGNAL_COUNT="$RESTORE_SIGNAL_COUNT" \
     RESTORE_SIGNAL_MARKER="$RESTORE_SIGNAL_MARKER" \
     RESTORE_SIGNAL_CHILD_PID="$RESTORE_SIGNAL_CHILD_PID" \
+    RESTORE_SIGNAL_DESCENDANT_PID="$RESTORE_SIGNAL_DESCENDANT_PID" \
+    RESTORE_SIGNAL_PGID="$RESTORE_SIGNAL_PGID" \
     REAL_PG_RESTORE="$REAL_PG_RESTORE" TARGET_DATABASE_URL="$TARGET_URL" \
     ONETREE_MAINTENANCE_MODE=1 "$REPO_ROOT/deploy/bin/restore" \
     "$NEW_SNAPSHOT" "$UPLOADS_TARGET" >/dev/null 2>&1 &
   restore_pid=$!
   for _ in {1..200}; do
-    if [[ -s "$RESTORE_SIGNAL_MARKER" && -s "$RESTORE_SIGNAL_CHILD_PID" ]]; then
+    if [[ -s "$RESTORE_SIGNAL_MARKER" && -s "$RESTORE_SIGNAL_CHILD_PID" && \
+          -s "$RESTORE_SIGNAL_DESCENDANT_PID" && -s "$RESTORE_SIGNAL_PGID" ]]; then
       break
     fi
     sleep 0.05
@@ -289,18 +352,23 @@ for restore_signal in INT TERM; do
     exit 1
   fi
   child_pid="$(<"$RESTORE_SIGNAL_CHILD_PID")"
-  for _ in {1..100}; do
-    if ! kill -0 "$child_pid" 2>/dev/null; then
-      break
-    fi
-    sleep 0.05
-  done
-  if kill -0 "$child_pid" 2>/dev/null; then
-    child_state="$(ps -o stat= -p "$child_pid" | tr -d ' ')"
-    if [[ "$child_state" != Z* ]]; then
-      printf '%s\n' "restore left running descendant after $restore_signal" >&2
+  descendant_pid="$(<"$RESTORE_SIGNAL_DESCENDANT_PID")"
+  restore_pgid="$(<"$RESTORE_SIGNAL_PGID")"
+  for process_id in "$child_pid" "$descendant_pid"; do
+    for _ in {1..100}; do
+      if ! kill -0 "$process_id" 2>/dev/null; then
+        break
+      fi
+      sleep 0.05
+    done
+    if kill -0 "$process_id" 2>/dev/null; then
+      printf '%s\n' "restore left process $process_id after $restore_signal" >&2
       exit 1
     fi
+  done
+  if kill -0 "-$restore_pgid" 2>/dev/null; then
+    printf '%s\n' "restore left process group after $restore_signal" >&2
+    exit 1
   fi
   upload_version="$(<"$UPLOADS_TARGET/chapter/version.txt")"
   database_username="$(DATABASE_URL="$TARGET_URL" uv --directory "$BACKEND_DIR" run --no-env-file python - <<'PY'
@@ -340,20 +408,24 @@ printf '%s\n' \
   '#!/usr/bin/env bash' \
   'set -euo pipefail' \
   'printf "%s\n" started > "$SIGNAL_MARKER"' \
-  'kill -TERM "$PPID"' \
+  'kill -s "$BACKUP_SIGNAL" "$PPID"' \
   'sleep 1' \
   'exec "$REAL_PG_DUMP" "$@"' > "$SIGNAL_BIN/pg_dump"
 chmod 700 "$SIGNAL_BIN/pg_dump"
-if PATH="$SIGNAL_BIN:$PATH" SIGNAL_MARKER="$SIGNAL_MARKER" \
-  REAL_PG_DUMP="$REAL_PG_DUMP" DATABASE_URL="$SOURCE_BACKUP_URL" \
-  ONETREE_MAINTENANCE_MODE=1 TARGET_DATABASE_URL="$MAINTENANCE_URL" \
-  "$REPO_ROOT/deploy/bin/backup" "$BACKUPS" "$UPLOADS_SOURCE" \
-  >/dev/null 2>&1; then
-  printf '%s\n' 'SIGTERM backup unexpectedly passed' >&2
-  exit 1
-fi
-test "$(<"$SIGNAL_MARKER")" = "started"
-test "$VISIBLE_BEFORE" = "$(find "$BACKUPS" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort)"
-test -z "$(find "$BACKUPS" -mindepth 1 -maxdepth 1 -type d -name '.snapshot.*' -print -quit)"
+for backup_signal in INT TERM; do
+  rm -f "$SIGNAL_MARKER"
+  if PATH="$SIGNAL_BIN:$PATH" SIGNAL_MARKER="$SIGNAL_MARKER" \
+    BACKUP_SIGNAL="$backup_signal" REAL_PG_DUMP="$REAL_PG_DUMP" \
+    DATABASE_URL="$SOURCE_BACKUP_URL" ONETREE_MAINTENANCE_MODE=1 \
+    TARGET_DATABASE_URL="$MAINTENANCE_URL" "$REPO_ROOT/deploy/bin/backup" \
+    "$BACKUPS" "$UPLOADS_SOURCE" >/dev/null 2>&1; then
+    printf '%s\n' "$backup_signal backup unexpectedly passed" >&2
+    exit 1
+  fi
+  test "$(<"$SIGNAL_MARKER")" = "started"
+  test "$VISIBLE_BEFORE" = "$(find "$BACKUPS" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort)"
+  test -z "$(find "$BACKUPS" -mindepth 1 -maxdepth 1 -type d -name '.snapshot.*' -print -quit)"
+  test "$(shasum -a 256 "$UPLOADS_SOURCE/chapter/textbook.txt")" = "$SOURCE_UPLOAD_HASH"
+done
 
 printf '%s\n' 'backup restore roundtrip passed'

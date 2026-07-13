@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import secrets
 import shutil
 import sys
 import tempfile
@@ -42,6 +43,10 @@ def main() -> int:
     verified = staging_root / "verified"
     bundle_directory = staging_root / "bundle-directory"
     bundle = staging_root / "snapshot.tar"
+    cleanup_token = secrets.token_hex(32)
+    ownership_marker = staging_root / ".onetree-restore-owner"
+    ownership_marker.write_text(cleanup_token, encoding="utf-8")
+    ownership_marker.chmod(0o600)
     with termination_signal_guard():
         try:
             validate_snapshot_directory(snapshot)
@@ -65,6 +70,7 @@ def main() -> int:
                     str(bundle),
                     str(arguments.uploads_target),
                     "--cleanup-bundle-parent",
+                    cleanup_token,
                 ],
                 os.environ.copy(),
             )
