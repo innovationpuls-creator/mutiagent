@@ -103,7 +103,7 @@ services:
       - -c
       - >-
         case "$${NGINX_CONFIG_MODE}" in
-          bootstrap|production) ;;
+          bootstrap|production-ip|production) ;;
           *) echo "invalid NGINX_CONFIG_MODE: $${NGINX_CONFIG_MODE}" >&2; exit 64 ;;
         esac;
         envsubst '$${PUBLIC_IPV4} $${MAINTENANCE_BYPASS_TOKEN}'

@@ -1,0 +1,115 @@
+map $http_x_onetree_maintenance_bypass $maintenance_marker {
+    default /var/www/certbot/.onetree-maintenance;
+    "${MAINTENANCE_BYPASS_TOKEN}" /var/www/certbot/.onetree-maintenance-bypassed;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${PUBLIC_IPV4};
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header X-Request-ID $response_request_id always;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    return 444;
+}
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name ${PUBLIC_IPV4};
+
+    ssl_certificate /etc/letsencrypt/live/onetree-ip/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/onetree-ip/privkey.pem;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header X-Request-ID $response_request_id always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    proxy_hide_header X-Request-ID;
+    proxy_intercept_errors on;
+
+    error_page 503 /maintenance/index.html;
+
+    location = /maintenance/index.html {
+        internal;
+    }
+
+    location = /api/auth/login {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
+        limit_req zone=login_limit burst=5 nodelay;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id_header;
+        proxy_pass http://backend:8000;
+    }
+
+    location = /api/auth/register {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
+        limit_req zone=register_limit burst=2 nodelay;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id_header;
+        proxy_pass http://backend:8000;
+    }
+
+    location = /api/admin/knowledge-base/uploads {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
+        client_max_body_size 101m;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id_header;
+        proxy_pass http://backend:8000;
+    }
+
+    location /api {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id_header;
+        proxy_pass http://backend:8000;
+    }
+
+    location / {
+        if (-f $maintenance_marker) {
+            return 503;
+        }
+        try_files $uri $uri/ /index.html;
+    }
+}

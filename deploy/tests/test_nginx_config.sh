@@ -5,6 +5,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NGINX_DIR="$REPO_ROOT/deploy/nginx"
 NGINX_CONF="$NGINX_DIR/nginx.conf"
 BOOTSTRAP_TEMPLATE="$NGINX_DIR/conf.d/bootstrap.conf.template"
+PRODUCTION_IP_TEMPLATE="$NGINX_DIR/conf.d/production-ip.conf.template"
 PRODUCTION_TEMPLATE="$NGINX_DIR/conf.d/production.conf.template"
 MAINTENANCE_PAGE="$NGINX_DIR/maintenance/index.html"
 DOCKERFILE="$REPO_ROOT/frontend/Dockerfile"
@@ -23,6 +24,7 @@ fail() {
 for required_file in \
   "$NGINX_CONF" \
   "$BOOTSTRAP_TEMPLATE" \
+  "$PRODUCTION_IP_TEMPLATE" \
   "$PRODUCTION_TEMPLATE" \
   "$MAINTENANCE_PAGE"; do
   [[ -f "$required_file" ]] || fail "missing required file: $required_file"
@@ -31,6 +33,7 @@ done
 python3 - \
   "$NGINX_CONF" \
   "$BOOTSTRAP_TEMPLATE" \
+  "$PRODUCTION_IP_TEMPLATE" \
   "$PRODUCTION_TEMPLATE" \
   "$DOCKERFILE" \
   "$COMPOSE_FILE" <<'PY'
@@ -92,17 +95,20 @@ def assert_security_headers(block: str, request_id_variable: str) -> None:
         assert directive in block, directive
 
 
-nginx_conf, bootstrap, production, dockerfile, compose = map(read, sys.argv[1:])
-
-assert re.search(
-    r"map\s+\$http_x_onetree_maintenance_bypass\s+\$maintenance_marker\s*\{"
-    r".*?default\s+/var/www/certbot/\.onetree-maintenance;"
-    r'.*?"\$\{MAINTENANCE_BYPASS_TOKEN\}"\s+'
-    r"/var/www/certbot/\.onetree-maintenance-bypassed;"
-    r".*?\}",
-    production,
-    flags=re.DOTALL,
+nginx_conf, bootstrap, production_ip, production, dockerfile, compose = map(
+    read, sys.argv[1:]
 )
+
+for production_template in (production_ip, production):
+    assert re.search(
+        r"map\s+\$http_x_onetree_maintenance_bypass\s+\$maintenance_marker\s*\{"
+        r".*?default\s+/var/www/certbot/\.onetree-maintenance;"
+        r'.*?"\$\{MAINTENANCE_BYPASS_TOKEN\}"\s+'
+        r"/var/www/certbot/\.onetree-maintenance-bypassed;"
+        r".*?\}",
+        production_template,
+        flags=re.DOTALL,
+    )
 
 for directive in (
     "server_tokens off;",
@@ -202,7 +208,55 @@ assert (
 assert "ssl_certificate /etc/letsencrypt/live/onetree-ip/fullchain.pem;" in ip_server
 assert "ssl_certificate_key /etc/letsencrypt/live/onetree-ip/privkey.pem;" in ip_server
 
-for https_server in https_servers:
+production_ip_servers = server_blocks(production_ip)
+assert len(production_ip_servers) == 3, len(production_ip_servers)
+production_ip_http_servers = [
+    block for block in production_ip_servers if "listen 80" in block
+]
+production_ip_https_servers = [
+    block for block in production_ip_servers if "listen 443 ssl" in block
+]
+assert len(production_ip_http_servers) == 2, len(production_ip_http_servers)
+assert len(production_ip_https_servers) == 1, len(production_ip_https_servers)
+assert "onetree-domain" not in production_ip, production_ip
+assert "server_name onetree.chat" not in production_ip, production_ip
+assert "server_name www.onetree.chat" not in production_ip, production_ip
+
+production_ip_http = next(
+    block
+    for block in production_ip_http_servers
+    if "server_name ${PUBLIC_IPV4};" in block
+)
+assert_security_headers(production_ip_http, "response_request_id")
+production_ip_challenge = directive_block(
+    production_ip_http, r"location\s+\^~\s+/\.well-known/acme-challenge/"
+)
+assert "root /var/www/certbot;" in production_ip_challenge
+assert "return 301" not in production_ip_challenge
+production_ip_redirect = directive_block(production_ip_http, r"location\s+/\s*")
+assert "return 301 https://$host$request_uri;" in production_ip_redirect
+
+production_ip_http_default = next(
+    block
+    for block in production_ip_http_servers
+    if "listen 80 default_server;" in block
+)
+assert "server_name _;" in production_ip_http_default
+assert "return 444;" in production_ip_http_default
+
+production_ip_https = production_ip_https_servers[0]
+assert "listen 443 ssl default_server;" in production_ip_https
+assert "server_name ${PUBLIC_IPV4};" in production_ip_https
+assert (
+    "ssl_certificate /etc/letsencrypt/live/onetree-ip/fullchain.pem;"
+    in production_ip_https
+)
+assert (
+    "ssl_certificate_key /etc/letsencrypt/live/onetree-ip/privkey.pem;"
+    in production_ip_https
+)
+
+for https_server in (*https_servers, production_ip_https):
     assert_security_headers(https_server, "response_request_id")
     assert "proxy_hide_header X-Request-ID;" in https_server
     assert "proxy_intercept_errors on;" in https_server
@@ -255,7 +309,7 @@ assert (
     in compose
 )
 assert 'case "$${NGINX_CONFIG_MODE}" in' in compose
-assert "bootstrap|production)" in compose
+assert "bootstrap|production-ip|production)" in compose
 assert "exit 64" in compose
 assert (
     '"/opt/onetree/nginx/conf.d/$${NGINX_CONFIG_MODE}.conf.template"'
@@ -301,6 +355,23 @@ Path(sys.argv[2]).write_text(
 )
 PY
 
+python3 - \
+  "$PRODUCTION_IP_TEMPLATE" \
+  "$TEMP_DIR/production-ip.conf" \
+  "$PUBLIC_IPV4" \
+  "$MAINTENANCE_BYPASS_TOKEN" <<'PY'
+from pathlib import Path
+import sys
+
+template = Path(sys.argv[1]).read_text(encoding="utf-8")
+Path(sys.argv[2]).write_text(
+    template.replace("${PUBLIC_IPV4}", sys.argv[3]).replace(
+        "${MAINTENANCE_BYPASS_TOKEN}", sys.argv[4]
+    ),
+    encoding="utf-8",
+)
+PY
+
 validate_config() {
   local rendered_config="$1"
 
@@ -315,6 +386,7 @@ validate_config() {
 }
 
 validate_config "$BOOTSTRAP_TEMPLATE"
+validate_config "$TEMP_DIR/production-ip.conf"
 validate_config "$TEMP_DIR/production.conf"
 
 export APP_ENV=production
