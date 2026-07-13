@@ -1,0 +1,345 @@
+name: Production readiness
+
+"on":
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env:
+          POSTGRES_USER: mutiagent
+          POSTGRES_PASSWORD: mutiagent
+          POSTGRES_DB: mutiagent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username mutiagent --dbname mutiagent"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      APP_ENV: development
+      DATABASE_URL: postgresql://mutiagent:mutiagent@localhost:5432/mutiagent
+      JWT_SECRET: configured-secret
+      LLM_BASE_URL: https://example.test/source
+      LLM_API_KEY: test-llm-api-key
+      LLM_MODEL: test-llm-model
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: python3 -m pip install uv==0.8.22
+      - name: Sync backend dependencies
+        working-directory: backend
+        run: uv sync --extra test
+      - name: Lint backend
+        working-directory: backend
+        run: uv run ruff check app tests
+      - name: Check backend formatting
+        working-directory: backend
+        run: uv run ruff format --check app tests
+      - name: Test backend
+        working-directory: backend
+        run: uv run pytest -q
+
+  migration:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env:
+          POSTGRES_USER: mutiagent
+          POSTGRES_PASSWORD: mutiagent
+          POSTGRES_DB: mutiagent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username mutiagent --dbname mutiagent"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://mutiagent:mutiagent@localhost:5432/mutiagent
+      CURRENT_DATABASE_URL: postgresql://mutiagent:mutiagent@localhost:5432/alembic-current
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: python3 -m pip install uv==0.8.22
+      - name: Sync backend dependencies
+        working-directory: backend
+        run: uv sync --extra test
+      - name: Upgrade empty database and assert head
+        working-directory: backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-env-file alembic upgrade head
+          expected_head="$(uv run --no-env-file alembic heads)"
+          current_head="$(uv run --no-env-file alembic current)"
+          test "$current_head" = "$expected_head"
+      - name: Create current-model unversioned database
+        working-directory: backend
+        run: |
+          uv run --no-env-file python - <<'PY'
+          import os
+
+          import psycopg2
+          from psycopg2 import sql
+          from sqlalchemy.engine import make_url
+
+          current_url = make_url(os.environ["CURRENT_DATABASE_URL"])
+          database_name = current_url.database
+          if database_name is None:
+              raise RuntimeError("CURRENT_DATABASE_URL must include a database")
+
+          connection = psycopg2.connect(os.environ["DATABASE_URL"])
+          connection.autocommit = True
+          try:
+              with connection.cursor() as cursor:
+                  cursor.execute(
+                      sql.SQL("CREATE DATABASE {}").format(
+                          sql.Identifier(database_name)
+                      )
+                  )
+          finally:
+              connection.close()
+          PY
+      - name: Validate, stamp, and upgrade current-model schema
+        working-directory: backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATABASE_URL="$CURRENT_DATABASE_URL" uv run --no-env-file python - <<'PY'
+          import os
+
+          from sqlmodel import SQLModel, create_engine
+
+          import app.models  # noqa: F401
+          from app.migration_state import inspect_schema_state
+
+          engine = create_engine(os.environ["DATABASE_URL"])
+          SQLModel.metadata.create_all(engine)
+          if inspect_schema_state(engine) != "current_unversioned":
+              raise RuntimeError("current model schema validation failed")
+          PY
+          DATABASE_URL="$CURRENT_DATABASE_URL" uv run --no-env-file alembic stamp head
+          DATABASE_URL="$CURRENT_DATABASE_URL" uv run --no-env-file alembic upgrade head
+          expected_head="$(uv run --no-env-file alembic heads)"
+          current_head="$(
+            DATABASE_URL="$CURRENT_DATABASE_URL" \
+              uv run --no-env-file alembic current
+          )"
+          test "$current_head" = "$expected_head"
+      - name: Test legacy schema migrations
+        working-directory: backend
+        run: >-
+          uv run pytest -q
+          tests/test_alembic_migrations.py
+          tests/test_schema_upgrades.py
+
+  frontend:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env:
+          POSTGRES_USER: mutiagent
+          POSTGRES_PASSWORD: mutiagent
+          POSTGRES_DB: mutiagent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username mutiagent --dbname mutiagent"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      APP_ENV: development
+      DATABASE_URL: postgresql://mutiagent:mutiagent@localhost:5432/mutiagent
+      JWT_SECRET: configured-secret
+      LLM_BASE_URL: https://example.test/source
+      LLM_API_KEY: test-llm-api-key
+      LLM_MODEL: test-llm-model
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install uv
+        run: python3 -m pip install uv==0.8.22
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Check frontend
+        working-directory: frontend
+        run: npx biome check .
+      - name: Test frontend
+        working-directory: frontend
+        run: npm test -- --run
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Check generated API types
+        working-directory: frontend
+        run: |
+          npm run gen:api
+          git -C .. diff --exit-code -- frontend/openapi.json frontend/src/types/api.ts
+
+  containers:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env:
+          POSTGRES_USER: onetree_maintenance
+          POSTGRES_PASSWORD: compose-test-maintenance-password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username onetree_maintenance --dbname postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      APP_ENV: production
+      POSTGRES_MAINTENANCE_PASSWORD: compose-test-maintenance-password
+      POSTGRES_APP_PASSWORD: compose-test-app-password
+      JWT_SECRET: compose-test-jwt-secret
+      LLM_BASE_URL: https://example.test/source
+      LLM_API_KEY: compose-test-llm-api-key
+      LLM_MODEL: compose-test-llm-model
+      ALLOWED_ORIGINS: https://onetree.chat,https://www.onetree.chat
+      PUBLIC_IPV4: 192.0.2.10
+      MAINTENANCE_BYPASS_TOKEN: compose-test-maintenance-bypass
+      NGINX_CONFIG_MODE: bootstrap
+      LETSENCRYPT_EMAIL: compose-test@example.com
+      SMOKE_ACCOUNT: 18771701100
+      SMOKE_PASSWORD: compose-test-password
+      MIGRATION_TEST_MAINTENANCE_URL: postgresql://onetree_maintenance:compose-test-maintenance-password@localhost:5432/postgres
+      BACKUP_TEST_MAINTENANCE_URL: postgresql://onetree_maintenance:compose-test-maintenance-password@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install uv==0.8.22
+          sudo install -d -m 0755 /usr/share/postgresql-common/pgdg
+          curl --fail --silent --show-error --location \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            --output /tmp/pgdg.asc
+          sudo install -m 0644 /tmp/pgdg.asc \
+            /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          . /etc/os-release
+          printf '%s\n' \
+            "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-18 shellcheck
+      - name: Sync backend dependencies
+        working-directory: backend
+        run: uv sync --extra test
+      - name: Shellcheck deployment scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          shell_files=(deploy/lib/*.sh deploy/tests/*.sh)
+          for script in deploy/bin/*; do
+            if [[ "$(head -n 1 "$script")" == "#!/usr/bin/env bash" ]]; then
+              shell_files+=("$script")
+            fi
+          done
+          shellcheck "${shell_files[@]}"
+      - name: Run deployment shell tests sequentially
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test_file in deploy/tests/test_*.sh; do
+            bash "$test_file"
+          done
+      - name: Validate CI Compose
+        run: >-
+          docker compose
+          --profile operations
+          -f deploy/compose.production.yml
+          -f deploy/compose.ci.yml
+          config --quiet
+      - name: Build production-equivalent containers
+        run: >-
+          docker compose
+          -f deploy/compose.production.yml
+          -f deploy/compose.ci.yml
+          build
+
+  smoke:
+    needs: containers
+    runs-on: ubuntu-24.04
+    env:
+      APP_ENV: production
+      POSTGRES_MAINTENANCE_PASSWORD: compose-test-maintenance-password
+      POSTGRES_APP_PASSWORD: compose-test-app-password
+      JWT_SECRET: compose-test-jwt-secret
+      LLM_BASE_URL: https://example.test/source
+      LLM_API_KEY: compose-test-llm-api-key
+      LLM_MODEL: compose-test-llm-model
+      ALLOWED_ORIGINS: https://onetree.chat,https://www.onetree.chat
+      PUBLIC_IPV4: 192.0.2.10
+      MAINTENANCE_BYPASS_TOKEN: compose-test-maintenance-bypass
+      NGINX_CONFIG_MODE: bootstrap
+      LETSENCRYPT_EMAIL: compose-test@example.com
+      SMOKE_ACCOUNT: 18771701100
+      SMOKE_PASSWORD: compose-test-password
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start PostgreSQL
+        run: >-
+          docker compose
+          -f deploy/compose.production.yml
+          -f deploy/compose.ci.yml
+          up -d postgres
+      - name: Build backend migration image
+        run: >-
+          docker compose
+          -f deploy/compose.production.yml
+          -f deploy/compose.ci.yml
+          build backend
+      - name: Run migrations
+        run: >-
+          docker compose
+          -f deploy/compose.production.yml
+          -f deploy/compose.ci.yml
+          --profile operations run --rm migrate
+      - name: Start production-equivalent services
+        run: >-
+          docker compose
+          -f deploy/compose.production.yml
+          -f deploy/compose.ci.yml
+          up -d --build --wait backend worker nginx
+      - name: Run HTTP fixture smoke
+        run: >-
+          docker compose
+          -f deploy/compose.production.yml
+          -f deploy/compose.ci.yml
+          run --rm smoke
+      - name: Show stack diagnostics
+        if: failure()
+        run: >-
+          docker compose
+          -f deploy/compose.production.yml
+          -f deploy/compose.ci.yml
+          logs --no-color
+      - name: Remove non-persistent test stack
+        if: always()
+        run: >-
+          docker compose
+          -f deploy/compose.production.yml
+          -f deploy/compose.ci.yml
+          down -v --remove-orphans

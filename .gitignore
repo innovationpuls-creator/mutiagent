@@ -10,7 +10,10 @@ opencode.json
 .codex-artifacts
 .codex-logs
 .gemini
-.github
+.github/*
+!.github/workflows/
+.github/workflows/*
+!.github/workflows/production.yml
 .kiro/steering
 .qoder
 .mcp.json
