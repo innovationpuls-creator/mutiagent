@@ -346,12 +346,14 @@ for restore_signal in INT TERM; do
     sleep 0.05
   done
   test "$(<"$RESTORE_SIGNAL_MARKER")" = "target-restore-started"
-  kill -s "$restore_signal" "$restore_pid"
+  child_pid="$(<"$RESTORE_SIGNAL_CHILD_PID")"
+  import_pid="$(ps -o ppid= -p "$child_pid" | tr -d ' ')"
+  test -n "$import_pid"
+  kill -s "$restore_signal" "$import_pid"
   if wait "$restore_pid"; then
     printf '%s\n' "restore unexpectedly passed $restore_signal" >&2
     exit 1
   fi
-  child_pid="$(<"$RESTORE_SIGNAL_CHILD_PID")"
   descendant_pid="$(<"$RESTORE_SIGNAL_DESCENDANT_PID")"
   restore_pgid="$(<"$RESTORE_SIGNAL_PGID")"
   for process_id in "$child_pid" "$descendant_pid"; do
@@ -366,7 +368,7 @@ for restore_signal in INT TERM; do
       exit 1
     fi
   done
-  if kill -0 "-$restore_pgid" 2>/dev/null; then
+  if kill -0 -- "-$restore_pgid" 2>/dev/null; then
     printf '%s\n' "restore left process group after $restore_signal" >&2
     exit 1
   fi
