@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ONETREE_ROOT="${ONETREE_ROOT:-/opt/onetree}"
+# shellcheck disable=SC1091
+source "$ONETREE_ROOT/deploy/lib/common.sh"
+
+ONETREE_BACKEND_IMAGE="onetree-backend:production"
+ONETREE_NGINX_IMAGE="onetree-nginx:production"
+
+previous_commit=""
+previous_backend_image=""
+previous_nginx_image=""
+backup_id=""
+migration_executed=0
+maintenance_entered=0
+checked_out_commit=""
+
+recover_failed_deploy() {
+  local recovery_ready=1
+
+  set +e
+  if [[ "$migration_executed" -eq 1 ]]; then
+    if ! stop_business_writes; then
+      recovery_ready=0
+    fi
+  fi
+
+  if [[ "$recovery_ready" -eq 1 && -n "$previous_commit" && \
+    "$checked_out_commit" != "$previous_commit" ]]; then
+    if git checkout --detach "$previous_commit"; then
+      checked_out_commit="$previous_commit"
+    else
+      recovery_ready=0
+    fi
+  fi
+  if [[ "$recovery_ready" -eq 1 && -n "$previous_backend_image" ]]; then
+    restore_image_tag "$previous_backend_image" "$ONETREE_BACKEND_IMAGE" \
+      || recovery_ready=0
+  fi
+  if [[ "$recovery_ready" -eq 1 && -n "$previous_nginx_image" ]]; then
+    restore_image_tag "$previous_nginx_image" "$ONETREE_NGINX_IMAGE" \
+      || recovery_ready=0
+  fi
+  if [[ "$recovery_ready" -eq 1 && "$migration_executed" -eq 1 ]]; then
+    if [[ -z "$backup_id" ]] || \
+      ! restore_deployment_backup "$backup_id" "$target_database_url"; then
+      recovery_ready=0
+    fi
+  fi
+  if [[ "$recovery_ready" -eq 1 && "$maintenance_entered" -eq 1 ]]; then
+    if ! start_production_stack || ! run_production_smoke; then
+      recovery_ready=0
+    fi
+  fi
+
+  if [[ "$recovery_ready" -ne 1 ]]; then
+    deployment_error "automatic recovery did not complete; maintenance remains active"
+  fi
+}
+
+handle_deploy_exit() {
+  local status="$1"
+
+  [[ "$status" -ne 0 ]] || return 0
+  trap - EXIT INT TERM
+  recover_failed_deploy
+  deployment_error "deploy failed; maintenance state was preserved"
+  exit "$status"
+}
+
+for command_name in docker flock git; do
+  require_deployment_command "$command_name" || exit 1
+done
+acquire_deployment_lock || exit 1
+cd "$ONETREE_ROOT"
+
+database_url="$(production_env_value DATABASE_URL)"
+target_database_url="$(production_env_value TARGET_DATABASE_URL)"
+previous_commit="$(git rev-parse HEAD)"
+checked_out_commit="$previous_commit"
+previous_backend_image="$(current_image_id "$ONETREE_BACKEND_IMAGE")"
+previous_nginx_image="$(current_image_id "$ONETREE_NGINX_IMAGE")"
+
+trap 'handle_deploy_exit "$?"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+git fetch --prune origin main
+target_commit="$(git rev-parse FETCH_HEAD)"
+git checkout --detach "$target_commit"
+checked_out_commit="$target_commit"
+compose build
+
+enter_maintenance
+maintenance_entered=1
+stop_business_writes
+git checkout --detach "$previous_commit"
+checked_out_commit="$previous_commit"
+backup_id="$(create_deployment_backup "$database_url" "$target_database_url")"
+git checkout --detach "$target_commit"
+checked_out_commit="$target_commit"
+migration_executed=1
+run_database_migrations
+start_production_stack
+run_production_smoke
+leave_maintenance
+
+trap - EXIT INT TERM
+printf 'deploy completed with backup %s\n' "$backup_id"

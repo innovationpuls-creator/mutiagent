@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ONETREE_ROOT="${ONETREE_ROOT:-/opt/onetree}"
+# shellcheck disable=SC1091
+source "$ONETREE_ROOT/deploy/lib/common.sh"
+
+maintenance_entered=0
+
+handle_rollback_exit() {
+  local status="$1"
+
+  [[ "$status" -ne 0 ]] || return 0
+  trap - EXIT INT TERM
+  if [[ "$maintenance_entered" -eq 1 ]]; then
+    deployment_error "rollback failed; maintenance remains active"
+  else
+    deployment_error "rollback failed before maintenance"
+  fi
+  exit "$status"
+}
+
+if [[ "$#" -ne 1 ]] || ! valid_backup_id "$1"; then
+  deployment_error "usage: rollback <backup-id>"
+  exit 64
+fi
+backup_id="$1"
+
+for command_name in docker flock git; do
+  require_deployment_command "$command_name" || exit 1
+done
+acquire_deployment_lock || exit 1
+cd "$ONETREE_ROOT"
+
+target_database_url="$(production_env_value TARGET_DATABASE_URL)"
+
+trap 'handle_rollback_exit "$?"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+snapshot_commit="$(validate_snapshot_manifest "$backup_id")"
+enter_maintenance
+maintenance_entered=1
+stop_business_writes
+git checkout --detach "$snapshot_commit"
+compose build
+restore_deployment_backup "$backup_id" "$target_database_url"
+start_production_stack
+run_production_smoke
+leave_maintenance
+
+trap - EXIT INT TERM
+printf 'rollback completed from backup %s\n' "$backup_id"
