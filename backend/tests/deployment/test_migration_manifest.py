@@ -17,6 +17,7 @@ import pytest
 DEPLOY_LIB = Path(__file__).resolve().parents[3] / "deploy" / "lib"
 sys.path.insert(0, str(DEPLOY_LIB))
 
+import migration_manifest as migration_manifest_module  # noqa: E402
 from migration_manifest import (  # noqa: E402
     BundleValidationError,
     TerminationRequested,
@@ -425,6 +426,110 @@ def test_process_group_signal_stops_shell_descendant(tmp_path: Path) -> None:
         time.sleep(0.01)
     else:
         pytest.fail("process-group descendant remained alive")
+
+
+def test_pending_startup_signal_reaps_leader_and_descendant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = tmp_path / "startup-window.sh"
+    leader_pid_file = tmp_path / "leader-pid"
+    child_pid_file = tmp_path / "child-pid"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'printf "%s\\n" "$$" > "$LEADER_PID_FILE"\n'
+        "sleep 30 &\n"
+        "child=$!\n"
+        'printf "%s\\n" "$child" > "$CHILD_PID_FILE"\n'
+        'wait "$child"\n',
+        encoding="utf-8",
+    )
+    script.chmod(0o700)
+    environment = os.environ.copy()
+    environment["LEADER_PID_FILE"] = str(leader_pid_file)
+    environment["CHILD_PID_FILE"] = str(child_pid_file)
+    original_popen = subprocess.Popen
+
+    def popen_then_queue_signal(*args: object, **kwargs: object):
+        process = original_popen(*args, **kwargs)
+        for _ in range(200):
+            if leader_pid_file.exists() and child_pid_file.exists():
+                break
+            time.sleep(0.005)
+        else:
+            process.kill()
+            process.wait()
+            pytest.fail("startup process did not publish its process ids")
+        os.kill(os.getpid(), signal.SIGTERM)
+        return process
+
+    monkeypatch.setattr(subprocess, "Popen", popen_then_queue_signal)
+
+    with pytest.raises(TerminationRequested):
+        run_process_group([str(script)], check=True, env=environment)
+
+    process_ids = (
+        int(leader_pid_file.read_text(encoding="utf-8")),
+        int(child_pid_file.read_text(encoding="utf-8")),
+    )
+    alive_process_ids: list[int] = []
+    for process_id in process_ids:
+        for _ in range(100):
+            try:
+                os.kill(process_id, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.01)
+        else:
+            alive_process_ids.append(process_id)
+    for process_id in alive_process_ids:
+        try:
+            os.kill(process_id, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    assert alive_process_ids == []
+
+
+def test_process_group_kills_term_ignoring_descendant_after_leader_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = tmp_path / "leader-exits.sh"
+    child_pid_file = tmp_path / "child-pid"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'bash -c \'trap "" TERM; printf "%s\\n" "$$" > '
+        '"$CHILD_PID_FILE"; while true; do sleep 1; done\' &\n'
+        'while [[ ! -s "$CHILD_PID_FILE" ]]; do sleep 0.01; done\n'
+        'kill -TERM "$PPID"\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o700)
+    environment = os.environ.copy()
+    environment["CHILD_PID_FILE"] = str(child_pid_file)
+    monkeypatch.setattr(
+        migration_manifest_module,
+        "PROCESS_GROUP_TERMINATION_TIMEOUT_SECONDS",
+        0.05,
+        raising=False,
+    )
+
+    with pytest.raises(TerminationRequested):
+        run_process_group([str(script)], check=True, env=environment)
+
+    child_pid = int(child_pid_file.read_text(encoding="utf-8"))
+    child_alive = True
+    for _ in range(100):
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            child_alive = False
+            break
+        time.sleep(0.01)
+    if child_alive:
+        os.kill(child_pid, signal.SIGKILL)
+    assert not child_alive
 
 
 def test_previous_cleanup_failure_does_not_block_next_replacement(

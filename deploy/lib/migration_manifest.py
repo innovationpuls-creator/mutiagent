@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -105,6 +107,9 @@ _termination_guard_depth = 0
 _termination_callbacks: list[Callable[[], None] | None] = []
 _termination_previous_handlers: dict[signal.Signals, Any] = {}
 _termination_handling = False
+PROCESS_GROUP_TERMINATION_TIMEOUT_SECONDS = 5.0
+PROCESS_GROUP_POLL_INTERVAL_SECONDS = 0.05
+PROCESS_GROUP_KILL_WAIT_SECONDS = 1.0
 
 
 @contextmanager
@@ -168,24 +173,51 @@ def blocked_termination_signals():
         signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
 
 
-def _request_process_group_termination(process: subprocess.Popen[Any]) -> None:
-    if process.poll() is not None:
-        return
+def _signal_process_group(process_group_id: int, signal_number: int) -> bool:
     try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
+        os.killpg(process_group_id, signal_number)
+    except OSError as error:
+        if error.errno == errno.ESRCH:
+            return False
+        raise
+    return True
+
+
+def _process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except OSError as error:
+        if error.errno == errno.ESRCH:
+            return False
+        if error.errno == errno.EPERM:
+            return True
+        raise
+    return True
+
+
+def _request_process_group_termination(process: subprocess.Popen[Any]) -> None:
+    _signal_process_group(process.pid, signal.SIGTERM)
 
 
 def _finish_process_group_termination(process: subprocess.Popen[Any]) -> None:
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait()
+    process_group_id = process.pid
+    deadline = time.monotonic() + PROCESS_GROUP_TERMINATION_TIMEOUT_SECONDS
+    while _process_group_exists(process_group_id) and time.monotonic() < deadline:
+        process.poll()
+        time.sleep(PROCESS_GROUP_POLL_INTERVAL_SECONDS)
+    group_killed = False
+    if _process_group_exists(process_group_id):
+        _signal_process_group(process_group_id, signal.SIGKILL)
+        group_killed = True
+    process.wait()
+    if group_killed:
+        kill_deadline = time.monotonic() + PROCESS_GROUP_KILL_WAIT_SECONDS
+        while (
+            _process_group_exists(process_group_id) and time.monotonic() < kill_deadline
+        ):
+            time.sleep(PROCESS_GROUP_POLL_INTERVAL_SECONDS)
+        if _process_group_exists(process_group_id):
+            raise RuntimeError("子进程组在 SIGKILL 后仍未退出")
 
 
 def run_process_group(
@@ -221,12 +253,12 @@ def run_process_group(
                 lambda: _request_process_group_termination(process)
             )
             process_guard.__enter__()
-        try:
-            process_stdout, process_stderr = process.communicate()
-        except TerminationRequested:
+        process_stdout, process_stderr = process.communicate()
+    except TerminationRequested:
+        if process is not None:
             _request_process_group_termination(process)
             _finish_process_group_termination(process)
-            raise
+        raise
     finally:
         if process_guard is not None:
             process_guard.__exit__(*sys.exc_info())
