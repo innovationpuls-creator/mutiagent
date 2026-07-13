@@ -29,16 +29,18 @@ def build_session(tmp_path: Path) -> Session:
 
 
 def test_upsert_year_learning_path_saves_latest_path_data(tmp_path: Path) -> None:
-    session = build_session(tmp_path)
-    first = {"grade_year": "year_1", "courses": []}
-    second = {
-        "grade_year": "year_1",
-        "courses": [{"course_id": "year_1_course_1", "course_name": "Python"}],
-    }
+    with build_session(tmp_path) as session:
+        first = {"grade_year": "year_1", "courses": []}
+        second = {
+            "grade_year": "year_1",
+            "courses": [{"course_id": "year_1_course_1", "course_name": "Python"}],
+        }
 
-    upsert_year_learning_path(session, "user-1", "year_1", "Python", first)
-    saved = upsert_year_learning_path(session, "user-1", "year_1", "Python进阶", second)
-    loaded = get_year_learning_path(session, "user-1", "year_1")
+        upsert_year_learning_path(session, "user-1", "year_1", "Python", first)
+        saved = upsert_year_learning_path(
+            session, "user-1", "year_1", "Python进阶", second
+        )
+        loaded = get_year_learning_path(session, "user-1", "year_1")
 
     assert saved.path_data == second
     assert loaded is not None
@@ -177,10 +179,10 @@ def test_advance_current_learning_course_moves_after_score_above_70(
 ) -> None:
     from app.services.learning_path_service import advance_current_learning_course
 
-    session = build_session(tmp_path)
-    upsert_year_learning_path(session, "user-1", "year_3", "AI", _path())
+    with build_session(tmp_path) as session:
+        upsert_year_learning_path(session, "user-1", "year_3", "AI", _path())
 
-    updated = advance_current_learning_course(session, "user-1", "year_3", 71)
+        updated = advance_current_learning_course(session, "user-1", "year_3", 71)
 
     assert updated["current_learning_course"]["course_node_id"] == "year_3_course_2"
     assert updated["current_learning_course"]["progress_state"] == "in_progress"
@@ -189,10 +191,10 @@ def test_advance_current_learning_course_moves_after_score_above_70(
 def test_advance_current_learning_course_stays_when_score_is_70(tmp_path: Path) -> None:
     from app.services.learning_path_service import advance_current_learning_course
 
-    session = build_session(tmp_path)
-    upsert_year_learning_path(session, "user-1", "year_3", "AI", _path())
+    with build_session(tmp_path) as session:
+        upsert_year_learning_path(session, "user-1", "year_3", "AI", _path())
 
-    updated = advance_current_learning_course(session, "user-1", "year_3", 70)
+        updated = advance_current_learning_course(session, "user-1", "year_3", 70)
 
     assert updated["current_learning_course"]["course_node_id"] == "year_3_course_1"
     assert updated["current_learning_courses"][0]["course_node_id"] == "year_3_course_1"
@@ -201,48 +203,57 @@ def test_advance_current_learning_course_stays_when_score_is_70(tmp_path: Path) 
 def test_get_all_year_learning_paths_orders_latest_updated_path_first(
     tmp_path: Path,
 ) -> None:
-    session = build_session(tmp_path)
-    upsert_year_learning_path(
-        session, "user-1", "year_1", "Python", {"grade_year": "year_1", "courses": []}
-    )
-    upsert_year_learning_path(
-        session, "user-1", "year_4", "AI", {"grade_year": "year_4", "courses": []}
-    )
+    with build_session(tmp_path) as session:
+        upsert_year_learning_path(
+            session,
+            "user-1",
+            "year_1",
+            "Python",
+            {"grade_year": "year_1", "courses": []},
+        )
+        upsert_year_learning_path(
+            session,
+            "user-1",
+            "year_4",
+            "AI",
+            {"grade_year": "year_4", "courses": []},
+        )
 
-    first_row = session.get(
-        __import__(
-            "app.models", fromlist=["UserYearLearningPath"]
-        ).UserYearLearningPath,
-        ("user-1", "year_1"),
-    )
-    second_row = session.get(
-        __import__(
-            "app.models", fromlist=["UserYearLearningPath"]
-        ).UserYearLearningPath,
-        ("user-1", "year_4"),
-    )
-    assert first_row is not None
-    assert second_row is not None
-    first_row.updated_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    second_row.updated_at = datetime(2026, 6, 5, tzinfo=timezone.utc)
-    session.add(first_row)
-    session.add(second_row)
-    session.commit()
+        first_row = session.get(
+            __import__(
+                "app.models", fromlist=["UserYearLearningPath"]
+            ).UserYearLearningPath,
+            ("user-1", "year_1"),
+        )
+        second_row = session.get(
+            __import__(
+                "app.models", fromlist=["UserYearLearningPath"]
+            ).UserYearLearningPath,
+            ("user-1", "year_4"),
+        )
+        assert first_row is not None
+        assert second_row is not None
+        first_row.updated_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        second_row.updated_at = datetime(2026, 6, 5, tzinfo=timezone.utc)
+        session.add(first_row)
+        session.add(second_row)
+        session.commit()
 
-    paths = get_all_year_learning_paths(session, "user-1")
+        paths = get_all_year_learning_paths(session, "user-1")
+        latest_grade_year = get_latest_grade_year(session, "user-1")
 
     assert list(paths.keys()) == ["year_4", "year_1"]
-    assert get_latest_grade_year(session, "user-1") == "year_4"
+    assert latest_grade_year == "year_4"
 
 
 def test_get_year_learning_path_normalizes_current_learning_courses_for_legacy_path(
     tmp_path: Path,
 ) -> None:
-    session = build_session(tmp_path)
-    legacy_path = _path()
-    upsert_year_learning_path(session, "user-1", "year_3", "AI", legacy_path)
+    with build_session(tmp_path) as session:
+        legacy_path = _path()
+        upsert_year_learning_path(session, "user-1", "year_3", "AI", legacy_path)
 
-    loaded = get_year_learning_path(session, "user-1", "year_3")
+        loaded = get_year_learning_path(session, "user-1", "year_3")
 
     assert loaded is not None
     assert (
@@ -254,12 +265,12 @@ def test_get_year_learning_path_normalizes_current_learning_courses_for_legacy_p
 def test_get_all_year_learning_paths_expands_single_row_multi_grade_plan(
     tmp_path: Path,
 ) -> None:
-    session = build_session(tmp_path)
-    upsert_year_learning_path(
-        session, "user-1", "year_3", "AI 应用开发", _multi_year_path()
-    )
+    with build_session(tmp_path) as session:
+        upsert_year_learning_path(
+            session, "user-1", "year_3", "AI 应用开发", _multi_year_path()
+        )
 
-    paths = get_all_year_learning_paths(session, "user-1")
+        paths = get_all_year_learning_paths(session, "user-1")
 
     assert set(paths) == {"year_1", "year_2", "year_3", "year_4"}
     assert (
@@ -275,12 +286,12 @@ def test_get_all_year_learning_paths_expands_single_row_multi_grade_plan(
 def test_get_year_learning_path_reads_expanded_grade_plan_from_single_row(
     tmp_path: Path,
 ) -> None:
-    session = build_session(tmp_path)
-    upsert_year_learning_path(
-        session, "user-1", "year_3", "AI 应用开发", _multi_year_path()
-    )
+    with build_session(tmp_path) as session:
+        upsert_year_learning_path(
+            session, "user-1", "year_3", "AI 应用开发", _multi_year_path()
+        )
 
-    loaded = get_year_learning_path(session, "user-1", "year_1")
+        loaded = get_year_learning_path(session, "user-1", "year_1")
 
     assert loaded is not None
     assert loaded["grade_plans"]["year_1"]["grade_name"] == "大一"
