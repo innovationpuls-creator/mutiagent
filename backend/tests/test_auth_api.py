@@ -6,6 +6,7 @@ from sqlmodel import Session, select
 from app.core.config import load_settings
 from app.database import build_engine
 from app.main import create_app
+from app.migration_state import migrate_to_head
 from app.models import User
 from tests.postgres import postgresql_test_url
 
@@ -114,6 +115,7 @@ def test_init_db_creates_admin_from_env(tmp_path: Path, monkeypatch) -> None:
 
 def test_production_startup_does_not_create_demo_user(tmp_path: Path) -> None:
     database_url = postgresql_test_url(tmp_path, "production-no-demo")
+    migrate_to_head(build_engine(database_url))
     settings = load_settings(
         {
             "APP_ENV": "production",

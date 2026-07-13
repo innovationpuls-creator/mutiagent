@@ -1,14 +1,17 @@
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 
 from app.core.config import load_settings
 from app.main import create_app
+from app.migration_state import migrate_to_head
 from tests.postgres import postgresql_test_url
 
 
 def make_client(tmp_path: Path, allowed_origins: str) -> TestClient:
     database_url = postgresql_test_url(tmp_path, "cors-test")
+    migrate_to_head(create_engine(database_url))
     settings = load_settings(
         {
             "APP_ENV": "production",

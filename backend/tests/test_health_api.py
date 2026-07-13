@@ -8,6 +8,7 @@ from sqlalchemy import create_engine
 
 from app.api.health import create_health_router
 from app.main import create_app
+from app.migration_state import migrate_to_head
 from tests.postgres import postgresql_test_url
 
 
@@ -48,3 +49,28 @@ def test_readiness_and_legacy_health_report_database_state(tmp_path: Path) -> No
 
     assert readiness_response.json() == {"status": "ok", "database": "connected"}
     assert legacy_response.json() == {"status": "ok", "database": "connected"}
+
+
+def test_readiness_fails_when_schema_is_not_at_head(tmp_path: Path) -> None:
+    database_url = postgresql_test_url(tmp_path, "health-schema-behind")
+    engine = create_engine(database_url)
+    app = FastAPI()
+    app.include_router(create_health_router(engine, check_schema_revision=True))
+
+    response = TestClient(app).get("/api/health/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "error", "database": "unavailable"}
+
+
+def test_readiness_succeeds_when_schema_is_at_head(tmp_path: Path) -> None:
+    database_url = postgresql_test_url(tmp_path, "health-schema-head")
+    engine = create_engine(database_url)
+    migrate_to_head(engine)
+    app = FastAPI()
+    app.include_router(create_health_router(engine, check_schema_revision=True))
+
+    response = TestClient(app).get("/api/health/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "database": "connected"}

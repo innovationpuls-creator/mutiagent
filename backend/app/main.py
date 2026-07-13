@@ -26,6 +26,7 @@ from app.database import (
     init_db,
     set_engine,
 )
+from app.migration_state import assert_schema_at_head
 
 DEVELOPMENT_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"]
 
@@ -41,7 +42,10 @@ def create_app(
     )
     engine = build_engine(resolved_database_url)
     set_engine(engine)
-    init_db(engine, seed_users=not resolved_settings.is_production)
+    if resolved_settings.is_production:
+        assert_schema_at_head(engine)
+    else:
+        init_db(engine)
 
     app = FastAPI(title="Mutiagent API", version="0.1.0")
     app.add_middleware(RequestIdMiddleware)
@@ -57,7 +61,11 @@ def create_app(
         allow_headers=["*"],
     )
     app.include_router(create_auth_router(create_session_dependency(engine)))
-    app.include_router(create_health_router(engine))
+    app.include_router(
+        create_health_router(
+            engine, check_schema_revision=resolved_settings.is_production
+        )
+    )
     app.include_router(create_admin_router(create_session_dependency(engine)))
     app.include_router(create_admin_data_router(create_session_dependency(engine)))
     app.include_router(create_teacher_router(create_session_dependency(engine)))
