@@ -310,14 +310,15 @@ printf '%s\n' \
   'count=$((count + 1))' \
   'printf "%s\n" "$count" > "$RESTORE_SIGNAL_COUNT"' \
   'if [[ "$count" -eq 2 ]]; then' \
-  '  printf "%s\n" target-restore-started > "$RESTORE_SIGNAL_MARKER"' \
+  '  "$REAL_PG_RESTORE" "$@"' \
+  '  printf "%s\n" target-restore-committed > "$RESTORE_SIGNAL_MARKER"' \
   '  printf "%s\n" "$$" > "$RESTORE_SIGNAL_CHILD_PID"' \
-  '  bash -c '\''exec -a onetree-restore-signal-descendant sleep 30'\'' &' \
+  '  bash -c '\''exec -a onetree-restore-signal-descendant sleep 1'\'' &' \
   '  descendant=$!' \
   '  printf "%s\n" "$descendant" > "$RESTORE_SIGNAL_DESCENDANT_PID"' \
   '  ps -o pgid= -p "$$" | tr -d " " > "$RESTORE_SIGNAL_PGID"' \
-  '  trap '\''wait "$descendant" 2>/dev/null || true; exit 143'\'' TERM INT' \
   '  wait "$descendant"' \
+  '  exit 0' \
   'fi' \
   'exec "$REAL_PG_RESTORE" "$@"' > "$RESTORE_SIGNAL_BIN/pg_restore"
 chmod 700 "$RESTORE_SIGNAL_BIN/pg_restore"
@@ -345,19 +346,15 @@ for restore_signal in INT TERM; do
     fi
     sleep 0.05
   done
-  test "$(<"$RESTORE_SIGNAL_MARKER")" = "target-restore-started"
+  test "$(<"$RESTORE_SIGNAL_MARKER")" = "target-restore-committed"
   child_pid="$(<"$RESTORE_SIGNAL_CHILD_PID")"
   import_pid="$(ps -o ppid= -p "$child_pid" | tr -d ' ')"
   test -n "$import_pid"
+  kill -s "$restore_signal" "$import_pid"
   for _ in {1..100}; do
-    if ! kill -0 "$import_pid" 2>/dev/null; then
-      break
-    fi
+    if ! kill -0 "$import_pid" 2>/dev/null; then break; fi
     import_state="$(ps -o stat= -p "$import_pid" | tr -d ' ')"
-    if [[ "$import_state" == Z* ]]; then
-      break
-    fi
-    kill -s "$restore_signal" "$import_pid"
+    if [[ "$import_state" == Z* ]]; then break; fi
     sleep 0.05
   done
   if kill -0 "$import_pid" 2>/dev/null; then
@@ -385,7 +382,7 @@ for restore_signal in INT TERM; do
       exit 1
     fi
   done
-  if kill -0 -- "-$restore_pgid" 2>/dev/null; then
+  if ps -axo pgid= | awk -v pgid="$restore_pgid" '$1 == pgid { found=1 } END { exit !found }'; then
     printf '%s\n' "restore left process group after $restore_signal" >&2
     exit 1
   fi
@@ -400,8 +397,7 @@ with create_engine(os.environ["DATABASE_URL"]).connect() as connection:
     ).scalar_one())
 PY
 )"
-  if [[ "$upload_version:$database_username" != "snapshot-4:user-100" && \
-        "$upload_version:$database_username" != "snapshot-5:changed-after-backup" ]]; then
+  if [[ "$upload_version:$database_username" != "snapshot-5:changed-after-backup" ]]; then
     printf '%s\n' "restore left inconsistent data after $restore_signal" >&2
     exit 1
   fi
