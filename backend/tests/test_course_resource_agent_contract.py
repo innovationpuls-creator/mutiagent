@@ -6840,7 +6840,7 @@ def test_video_quality_gate_requires_exact_bilibili_video_url(
     assert issue == expected_issue
 
 
-def test_video_quality_gate_does_not_allow_source_to_bypass_bilibili_url() -> None:
+def test_video_quality_gate_reports_youtube_error_for_non_watch_url() -> None:
     issue = _normalized_video_quality_issue(
         [
             {
@@ -6849,6 +6849,37 @@ def test_video_quality_gate_does_not_allow_source_to_bypass_bilibili_url() -> No
                 "url": "https://evilbilibili.com/video/BV1xx411x7xx",
                 "cover_url": "",
                 "source": "YouTube",
+            }
+        ],
+        [{"video_id": "video_1", "title": "学习目标导入", "purpose": "功能边界"}],
+        _outline()["sections"][1],
+    )
+
+    assert issue == "YouTube 视频 URL 必须为精确 watch 视频页地址。"
+
+
+@pytest.mark.parametrize(
+    ("source", "url"),
+    [
+        ("", "https://evilbilibili.com/video/BV1xx411x7xx"),
+        ("", "https://www.bilibili.com/video/BV1xx411x7xx?from=search"),
+        ("", "https://www.bilibili.com:8443/video/BV1xx411x7xx"),
+        ("Other", "https://evilbilibili.com/video/BV1xx411x7xx"),
+        ("Other", "https://www.bilibili.com/video/BV1xx411x7xx?from=search"),
+        ("Other", "https://www.bilibili.com:8443/video/BV1xx411x7xx"),
+    ],
+)
+def test_video_quality_gate_rejects_non_contract_url_for_any_source(
+    source: str, url: str
+) -> None:
+    issue = _normalized_video_quality_issue(
+        [
+            {
+                "brief_id": "video_1",
+                "title": "AI 应用开发学习目标与功能边界实践讲解",
+                "url": url,
+                "cover_url": "",
+                "source": source,
             }
         ],
         [{"video_id": "video_1", "title": "学习目标导入", "purpose": "功能边界"}],
