@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -5143,7 +5144,112 @@ def test_run_section_video_search_agent_marks_unavailable_when_verified_search_s
         section_video["failure_reason"]
         == "未找到合格视频：视频资源为空或未绑定 brief。"
     )
+
+
+def test_run_section_video_search_agent_converges_when_verified_search_times_out(
+    tmp_path, monkeypatch, caplog
+) -> None:
+    class RecordingLlm:
+        pass
+
+    async def slow_verified_search(_video_briefs, _section, _outline=None):
+        await asyncio.sleep(0.05)
+        return []
+
+    outline = _outline()
+    outline["section_markdowns"] = {
+        "1.1": {
+            "section_id": "1.1",
+            "parent_section_id": "1",
+            "title": "学习目标",
+            "markdown": _complete_section_markdown("1.1", "学习目标"),
+            "video_briefs": [
+                {
+                    "video_id": "video_1",
+                    "title": "学习目标导入视频",
+                    "purpose": "帮助学习者建立功能边界与验收标准的直觉",
+                }
+            ],
+            "animation_briefs": [],
+            "generated_at": "2026-06-06T00:00:00Z",
+        }
+    }
+    engine = build_engine(postgresql_test_url(tmp_path, "section-video-search-timeout"))
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid="user-1",
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name="AI 应用开发",
+                outline_data=outline,
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+
+    monkeypatch.setattr(
+        module, "_find_verified_video_from_search", slow_verified_search
+    )
+    monkeypatch.setattr(module, "_VIDEO_SECTION_TIMEOUT_SECONDS", 0.001)
+
+    result = asyncio.run(
+        run_section_video_search_agent(
+            {
+                "user_id": "user-1",
+                "course_knowledge": outline,
+                "course_resource_plan": {
+                    "course_id": "year_3_course_1",
+                    "target_section_ids": ["1.1"],
+                },
+                "messages": [],
+            },
+            RecordingLlm(),
+        )
+    )
+
+    section_video = result["course_knowledge"]["section_video_links"]["1.1"]
+    assert section_video["status"] == "unavailable"
+    assert section_video["failure_reason"] == "未找到合格视频：视频检索超时。"
     assert section_video["videos"] == []
+    assert "Video search timed out for section 1.1" in caplog.text
+
+
+def test_find_verified_video_from_search_logs_platform_latency(monkeypatch, caplog):
+    import app.orchestration.agents.course_resources as module
+
+    caplog.set_level(
+        logging.INFO, logger="app.orchestration.agents.course_resources.video"
+    )
+
+    async def empty_search(_query):
+        return []
+
+    monkeypatch.setattr(module, "_search_bilibili_video_results", empty_search)
+    monkeypatch.setattr(module, "_search_youtube_video_results", empty_search)
+
+    result = asyncio.run(
+        _find_verified_video_from_search(
+            [{"video_id": "video_1", "title": "学习目标导入视频"}],
+            {
+                "section_id": "1.1",
+                "title": "学习目标",
+                "description": "明确本节学习目标。",
+                "key_knowledge_points": ["功能边界"],
+            },
+            {},
+        )
+    )
+
+    assert result == []
+    assert "platform=bilibili" in caplog.text
+    assert "platform=youtube" in caplog.text
 
 
 def test_run_section_video_search_agent_rejects_missing_textbook_evidence(

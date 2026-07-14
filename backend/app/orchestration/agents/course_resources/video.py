@@ -5,6 +5,8 @@ import asyncio
 import json
 import logging
 import re
+import time
+from collections.abc import Awaitable, Callable
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -1078,9 +1080,27 @@ async def _find_verified_video_from_search(
         ]:
             import app.orchestration.agents.course_resources as cr_pkg
 
+            async def search_platform(
+                platform: str,
+                search: Callable[[str], Awaitable[list[dict]]],
+            ) -> list[dict]:
+                started_at = time.monotonic()
+                results = await search(query)
+                elapsed_ms = round((time.monotonic() - started_at) * 1000, 1)
+                logger.info(
+                    "Video search completed platform=%s section=%s query=%s "
+                    "elapsed_ms=%s result_count=%s",
+                    platform,
+                    _clean_text(section.get("section_id")),
+                    query,
+                    elapsed_ms,
+                    len(results),
+                )
+                return results
+
             bilibili_results, youtube_results = await asyncio.gather(
-                cr_pkg._search_bilibili_video_results(query),
-                cr_pkg._search_youtube_video_results(query),
+                search_platform("bilibili", cr_pkg._search_bilibili_video_results),
+                search_platform("youtube", cr_pkg._search_youtube_video_results),
             )
             search_results = [*bilibili_results, *youtube_results]
             for search_result in search_results:
@@ -1385,28 +1405,47 @@ async def run_section_video_search_agent(
         query = " | ".join(_video_search_queries(video_briefs, section, outline)[:3])
         videos: list[dict] = []
         quality_issue = "视频资源为空或未绑定 brief。"
-        for _verified_attempt in range(2):
-            try:
-                import app.orchestration.agents.course_resources as cr_pkg
+        import app.orchestration.agents.course_resources as cr_pkg
 
-                verified_videos = await cr_pkg._find_verified_video_from_search(
-                    video_briefs, section, outline
+        async def search_verified_videos() -> tuple[list[dict], str]:
+            current_videos: list[dict] = []
+            current_quality_issue = quality_issue
+            for _verified_attempt in range(2):
+                try:
+                    verified_videos = await cr_pkg._find_verified_video_from_search(
+                        video_briefs, section, outline
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Verified video search failed for section %s: %s",
+                        target_section_id,
+                        exc,
+                    )
+                    continue
+                if not verified_videos:
+                    continue
+                current_videos = _normalize_videos(verified_videos, video_briefs)
+                current_quality_issue = await _normalized_video_quality_issue_async(
+                    current_videos, video_briefs, section, outline
                 )
-            except Exception as exc:
-                logger.warning(
-                    "Verified video search failed for section %s: %s",
-                    target_section_id,
-                    exc,
-                )
-                continue
-            if not verified_videos:
-                continue
-            videos = _normalize_videos(verified_videos, video_briefs)
-            quality_issue = await _normalized_video_quality_issue_async(
-                videos, video_briefs, section, outline
+                if not current_quality_issue:
+                    break
+            return current_videos, current_quality_issue
+
+        started_at = time.monotonic()
+        try:
+            videos, quality_issue = await asyncio.wait_for(
+                search_verified_videos(),
+                timeout=cr_pkg._VIDEO_SECTION_TIMEOUT_SECONDS,
             )
-            if not quality_issue:
-                break
+        except asyncio.TimeoutError:
+            elapsed_ms = round((time.monotonic() - started_at) * 1000, 1)
+            logger.warning(
+                "Video search timed out for section %s after %sms",
+                target_section_id,
+                elapsed_ms,
+            )
+            quality_issue = "视频检索超时。"
 
         if quality_issue:
             logger.warning(
