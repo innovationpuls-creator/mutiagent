@@ -1135,9 +1135,11 @@ async def _find_verified_video_from_search(
         best_video: dict | None = None
         best_score = -1
         seen_urls: set[str] = set()
-        for query in _video_search_queries([brief], section, outline)[
-            :_VIDEO_VERIFIED_QUERY_LIMIT
-        ]:
+        for query_index, query in enumerate(
+            _video_search_queries([brief], section, outline)[
+                :_VIDEO_VERIFIED_QUERY_LIMIT
+            ]
+        ):
             import app.orchestration.agents.course_resources as cr_pkg
 
             async def search_platform(
@@ -1158,10 +1160,16 @@ async def _find_verified_video_from_search(
                 )
                 return results
 
-            bilibili_results, youtube_results = await asyncio.gather(
-                search_platform("bilibili", cr_pkg._search_bilibili_video_results),
-                search_platform("youtube", cr_pkg._search_youtube_video_results),
-            )
+            if query_index == 0:
+                bilibili_results, youtube_results = await asyncio.gather(
+                    search_platform("bilibili", cr_pkg._search_bilibili_video_results),
+                    search_platform("youtube", cr_pkg._search_youtube_video_results),
+                )
+            else:
+                bilibili_results = await search_platform(
+                    "bilibili", cr_pkg._search_bilibili_video_results
+                )
+                youtube_results = []
             search_results = [*bilibili_results, *youtube_results]
             for search_result in search_results:
                 url = _clean_text(search_result.get("url"))
@@ -1573,6 +1581,21 @@ async def run_section_video_search_agent(
     updated_plan = dict(resource_plan) if isinstance(resource_plan, dict) else {}
     updated_plan["target_section_ids"] = target_section_ids
     updated_plan["video_section_ids"] = list(section_video_links.keys())
+
+    unavailable_section_ids = [
+        section_id
+        for section_id, value in section_video_links.items()
+        if value.get("status") != "available" or not value.get("videos")
+    ]
+    if unavailable_section_ids:
+        section_list = "、".join(unavailable_section_ids)
+        return {
+            "error": f"课程资源生成失败：小节 {section_list} 未找到合格视频。",
+            "hard_error": True,
+            "user_id": state.get("user_id", ""),
+            "course_knowledge": updated_outline,
+            "course_resource_plan": updated_plan,
+        }
 
     return {
         "user_id": state.get("user_id", ""),

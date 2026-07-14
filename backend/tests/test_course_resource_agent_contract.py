@@ -4356,11 +4356,19 @@ def test_stream_chapter_resource_generation_reports_error_when_resource_llm_fail
     module.ChatPromptTemplate = PromptFactory
     module.run_section_markdown_agent = markdown_agent
 
-    async def empty_verified_search(_video_briefs, _section, _outline=None):
-        return []
+    async def verified_search(video_briefs, section, _outline=None):
+        brief = video_briefs[0]
+        return [
+            {
+                "brief_id": brief["video_id"],
+                "title": (f"{brief['title']} {section['title']} {brief['purpose']}"),
+                "url": "https://www.youtube.com/watch?v=resource-animation-test",
+                "source": "YouTube",
+            }
+        ]
 
     original_verified_search = module._find_verified_video_from_search
-    module._find_verified_video_from_search = empty_verified_search
+    module._find_verified_video_from_search = verified_search
     monkeypatch.setattr(
         animation_module, "_deterministic_animation_data", lambda *_args: []
     )
@@ -5382,7 +5390,7 @@ def test_run_section_video_search_agent_accepts_section_topic_match_without_cour
     assert videos[0]["url"] == "https://www.youtube.com/watch?v=dummy-langgraph-state"
 
 
-def test_run_section_video_search_agent_marks_unavailable_when_verified_search_stays_empty(
+def test_run_section_video_search_agent_returns_hard_error_when_verified_search_stays_empty(
     tmp_path, monkeypatch
 ) -> None:
     class RecordingLlm:
@@ -5448,7 +5456,8 @@ def test_run_section_video_search_agent_marks_unavailable_when_verified_search_s
         )
     )
 
-    assert "error" not in result
+    assert result["hard_error"] is True
+    assert result["error"] == "课程资源生成失败：小节 1.1 未找到合格视频。"
     section_video = result["course_knowledge"]["section_video_links"]["1.1"]
     assert section_video["status"] == "unavailable"
     assert (
@@ -5457,7 +5466,7 @@ def test_run_section_video_search_agent_marks_unavailable_when_verified_search_s
     )
 
 
-def test_run_section_video_search_agent_converges_when_verified_search_times_out(
+def test_run_section_video_search_agent_returns_hard_error_when_verified_search_times_out(
     tmp_path, monkeypatch, caplog
 ) -> None:
     class RecordingLlm:
@@ -5525,11 +5534,57 @@ def test_run_section_video_search_agent_converges_when_verified_search_times_out
         )
     )
 
+    assert result["hard_error"] is True
+    assert result["error"] == "课程资源生成失败：小节 1.1 未找到合格视频。"
     section_video = result["course_knowledge"]["section_video_links"]["1.1"]
     assert section_video["status"] == "unavailable"
     assert section_video["failure_reason"] == "未找到合格视频：视频检索超时。"
     assert section_video["videos"] == []
     assert "Video search timed out for section 1.1" in caplog.text
+
+
+def test_find_verified_video_from_search_only_waits_for_youtube_on_first_query(
+    monkeypatch,
+) -> None:
+    import app.orchestration.agents.course_resources as module
+
+    platform_calls = {"bilibili": 0, "youtube": 0}
+
+    async def bilibili_search(_query: str) -> list[dict]:
+        platform_calls["bilibili"] += 1
+        return []
+
+    async def youtube_search(_query: str) -> list[dict]:
+        platform_calls["youtube"] += 1
+        return []
+
+    monkeypatch.setattr(module, "_search_bilibili_video_results", bilibili_search)
+    monkeypatch.setattr(module, "_search_youtube_video_results", youtube_search)
+
+    videos = asyncio.run(
+        _find_verified_video_from_search(
+            [
+                {
+                    "video_id": "video_1",
+                    "title": "算法效率",
+                    "purpose": "理解算法效率的必要性",
+                }
+            ],
+            {
+                "section_id": "1.1",
+                "title": "效率需求的背景",
+                "description": "解释算法效率的必要性。",
+                "key_knowledge_points": ["算法效率"],
+            },
+            None,
+        )
+    )
+
+    assert videos == []
+    assert platform_calls == {
+        "bilibili": video_module._VIDEO_VERIFIED_QUERY_LIMIT,
+        "youtube": 1,
+    }
 
 
 def test_find_verified_video_from_search_logs_platform_latency(monkeypatch, caplog):
