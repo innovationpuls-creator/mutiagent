@@ -6859,6 +6859,36 @@ def test_video_quality_gate_reports_youtube_error_for_non_watch_url() -> None:
 
 
 @pytest.mark.parametrize(
+    "url",
+    [
+        "http://www.youtube.com/watch?v=video-id",
+        "https://www.youtube.com/watch",
+        "https://www.youtube.com/watch?feature=share",
+        "https://www.youtube.com/watch?v=",
+        "https://www.youtube.com/watch?v=video-id&feature=share",
+        "https://user:password@www.youtube.com/watch?v=video-id",
+        "https://www.youtube.com:8443/watch?v=video-id",
+        "https://www.youtube.com/watch?v=video-id#fragment",
+        "https://youtube.com/watch?v=video-id",
+        "https://m.youtube.com/watch?v=video-id",
+    ],
+)
+def test_is_youtube_watch_url_rejects_non_contract_urls(url: str) -> None:
+    assert video_module._is_youtube_watch_url(url) is False
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.youtube.com/watch?v=video-id",
+        "https://www.youtube.com:443/watch?v=video-id",
+    ],
+)
+def test_is_youtube_watch_url_accepts_exact_watch_urls(url: str) -> None:
+    assert video_module._is_youtube_watch_url(url) is True
+
+
+@pytest.mark.parametrize(
     ("source", "url"),
     [
         ("", "https://evilbilibili.com/video/BV1xx411x7xx"),

@@ -7,7 +7,7 @@ import logging
 import re
 import time
 from collections.abc import Awaitable, Callable
-from urllib.parse import quote, urlparse
+from urllib.parse import parse_qsl, quote, urlparse
 
 import httpx
 from langchain_core.language_models import BaseChatModel
@@ -642,8 +642,24 @@ def _video_metadata_topic_issue(
 
 
 def _is_youtube_watch_url(url: str) -> bool:
-    parsed = urlparse(url)
-    return parsed.hostname == "www.youtube.com" and parsed.path == "/watch"
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except ValueError:
+        return False
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "www.youtube.com"
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in {None, 443}
+        or parsed.path != "/watch"
+        or parsed.fragment
+        or parsed.query.count("&")
+    ):
+        return False
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    return len(query) == 1 and query[0][0] == "v" and bool(query[0][1])
 
 
 def _normalized_video_quality_issue(
