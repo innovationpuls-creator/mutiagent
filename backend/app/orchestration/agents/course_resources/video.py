@@ -35,11 +35,6 @@ from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
 
-_BILIBILI_VIDEO_SEARCH_SCOPE = (
-    "只检索 Bilibili 精确视频稿件页；来源 URL 必须形如 "
-    "https://www.bilibili.com/video/BV...；排除专栏、动态、课程、搜索页和用户页。"
-)
-
 _VIDEO_TOPIC_STOPWORDS = {
     "视频",
     "教程",
@@ -1147,34 +1142,48 @@ async def _find_verified_video_from_search(
         if not brief_id:
             return None
 
-        section_scope = "\n".join(
-            [
-                _BILIBILI_VIDEO_SEARCH_SCOPE,
-                json.dumps(
-                    {
-                        "course_name": _clean_text((outline or {}).get("course_name")),
-                        "parent_section": section_summary(parent),
-                        "section": section_summary(section),
-                        "video_brief": {
-                            key: brief[key]
-                            for key in (
-                                "video_id",
-                                "title",
-                                "purpose",
-                                "target_markdown_heading",
-                                "target_paragraph_summary",
-                                "search_terms",
-                            )
-                            if key in brief
-                        },
-                    },
-                    ensure_ascii=False,
-                ),
-            ]
+        section_scope = json.dumps(
+            {
+                "course_name": _clean_text((outline or {}).get("course_name")),
+                "parent_section": section_summary(parent),
+                "section": section_summary(section),
+                "video_brief": {
+                    key: brief[key]
+                    for key in (
+                        "video_id",
+                        "title",
+                        "purpose",
+                        "target_markdown_heading",
+                        "target_paragraph_summary",
+                        "search_terms",
+                    )
+                    if key in brief
+                },
+            },
+            ensure_ascii=False,
         )
+        search_queries = _video_search_queries([brief], section, outline)
+        if not search_queries:
+            logger.warning(
+                "DashScope Bilibili search skipped section=%s brief=%s "
+                "reason=no_search_query",
+                _clean_text(section.get("section_id")),
+                brief_id,
+            )
+            return None
+        search_query = search_queries[0]
         import app.orchestration.agents.course_resources as cr_pkg
 
-        sources = await cr_pkg._search_aliyun_bilibili_sources(section_scope)
+        sources = await cr_pkg._search_aliyun_bilibili_sources(
+            search_query,
+            section_scope,
+        )
+        logger.info(
+            "DashScope Bilibili search resolved section=%s brief=%s source_count=%s",
+            _clean_text(section.get("section_id")),
+            brief_id,
+            len(sources),
+        )
 
         async def validate_source(source: object) -> dict | None:
             source_url = _clean_text(getattr(source, "url", ""))

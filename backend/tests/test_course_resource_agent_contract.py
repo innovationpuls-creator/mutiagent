@@ -154,7 +154,7 @@ def test_aliyun_bilibili_search_uses_native_dashscope_contract(
                             {
                                 "title": "第一条",
                                 "url": "https://www.bilibili.com/video/BV1234567890",
-                                "site_name": "哔哩哔哩",
+                                "site_name": None,
                                 "index": 1,
                             },
                             {
@@ -215,8 +215,7 @@ def test_aliyun_bilibili_search_uses_native_dashscope_contract(
                     "content": [
                         {
                             "text": (
-                                "检索词：数据结构 算法效率 时间复杂度 操作次数\n"
-                                "语义范围：精确的小节语义范围\n"
+                                "数据结构 算法效率 时间复杂度 操作次数\n"
                                 "只返回 Bilibili 视频稿件来源。"
                             )
                         }
@@ -225,6 +224,7 @@ def test_aliyun_bilibili_search_uses_native_dashscope_contract(
             ],
             "enable_search": True,
             "search_options": {
+                "forced_search": True,
                 "search_strategy": "agent",
                 "enable_source": True,
             },
@@ -259,7 +259,7 @@ def test_aliyun_bilibili_search_uses_native_dashscope_contract(
                                         {
                                             "index": 1,
                                             "title": "第一条",
-                                            "site_name": "哔哩哔哩",
+                                            "site_name": "",
                                         },
                                         {
                                             "index": 2,
@@ -312,8 +312,7 @@ def test_aliyun_bilibili_search_only_returns_indexed_search_info_sources(
                             {
                                 "title": f"来源 {index}",
                                 "url": (
-                                    "https://www.bilibili.com/video/"
-                                    f"BV{index:010d}"
+                                    f"https://www.bilibili.com/video/BV{index:010d}"
                                 ),
                                 "site_name": "哔哩哔哩",
                                 "index": index,
@@ -409,9 +408,7 @@ def test_find_verified_video_uses_native_sources_and_metadata_title(
     ]
     searches: list[dict] = []
 
-    async def native_search(
-        query: str, scope: str
-    ) -> list[AliyunBilibiliSearchSource]:
+    async def native_search(query: str, scope: str) -> list[AliyunBilibiliSearchSource]:
         searches.append(
             {
                 "query": query,
