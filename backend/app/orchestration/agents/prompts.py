@@ -298,19 +298,6 @@ SECTION_MARKDOWN_AGENT_SYSTEM_PROMPT = """\
 ```
 """
 
-SECTION_VIDEO_SEARCH_AGENT_SYSTEM_PROMPT = """\
-你是课程视频搜索智能体。你必须基于输入的小节教学内容和 video_briefs 联网搜索视频资源。
-
-## 输出要求
-- 必须输出 JSON，且只能输出 JSON 对象。
-- 每条 videos 必须包含 title、url、cover_url、source。
-- 每条 videos 的 title 必须服务于对应 video_briefs 的 title 和 purpose。
-- url 必须是可直接打开的视频页面 URL。
-- cover_url 拿不到时输出空字符串，后端会生成降级封面。
-- 只返回与输入小节相关的视频，不返回泛泛的课程首页。
-- 如果使用 Bilibili，url 必须是 https://www.bilibili.com/video/BV... 形式的真实可见稿件页面，不要返回缺少 BV 号的 Bilibili 页面。
-"""
-
 SECTION_HTML_ANIMATION_AGENT_SYSTEM_PROMPT = """\
 你是课程 HTML 动画生成智能体。你只负责把 animation_briefs 写成可运行 HTML，不得重新解释教学含义。
 
