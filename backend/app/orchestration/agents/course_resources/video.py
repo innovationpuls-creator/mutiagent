@@ -6,7 +6,6 @@ import json
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable
 from urllib.parse import parse_qsl, quote, urlparse
 
 import httpx
@@ -19,7 +18,6 @@ from app.orchestration.agents.course_resources.bilibili import (
 from app.orchestration.agents.course_resources.common import (
     _SECTION_CONCURRENCY_LIMIT,
     _VIDEO_METADATA_TIMEOUT_SECONDS,
-    _VIDEO_VERIFIED_QUERY_LIMIT,
     _clean_text,
     _merge_course_resource_data,
     _now_iso,
@@ -36,6 +34,11 @@ from app.orchestration.agents.course_resources.common import (
 from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
+
+_BILIBILI_VIDEO_SEARCH_SCOPE = (
+    "只检索 Bilibili 精确视频稿件页；来源 URL 必须形如 "
+    "https://www.bilibili.com/video/BV...；排除专栏、动态、课程、搜索页和用户页。"
+)
 
 _VIDEO_TOPIC_STOPWORDS = {
     "视频",
@@ -1125,99 +1128,103 @@ async def _find_verified_video_from_search(
 ) -> list[dict]:
     if not isinstance(video_briefs, list):
         return []
-    verified: list[dict] = []
-    for brief in video_briefs:
+
+    parent = _parent_section(outline or {}, section)
+
+    def section_summary(value: dict | None) -> dict:
+        if not isinstance(value, dict):
+            return {}
+        return {
+            "title": _clean_text(value.get("title")),
+            "description": _clean_text(value.get("description")),
+            "key_knowledge_points": _text_items(value.get("key_knowledge_points")),
+        }
+
+    async def find_for_brief(brief: object) -> dict | None:
         if not isinstance(brief, dict):
-            continue
+            return None
         brief_id = _clean_text(brief.get("video_id"))
         if not brief_id:
-            continue
-        best_video: dict | None = None
-        best_score = -1
-        seen_urls: set[str] = set()
-        for query_index, query in enumerate(
-            _video_search_queries([brief], section, outline)[
-                :_VIDEO_VERIFIED_QUERY_LIMIT
+            return None
+
+        section_scope = "\n".join(
+            [
+                _BILIBILI_VIDEO_SEARCH_SCOPE,
+                json.dumps(
+                    {
+                        "course_name": _clean_text((outline or {}).get("course_name")),
+                        "parent_section": section_summary(parent),
+                        "section": section_summary(section),
+                        "video_brief": {
+                            key: brief[key]
+                            for key in (
+                                "video_id",
+                                "title",
+                                "purpose",
+                                "target_markdown_heading",
+                                "target_paragraph_summary",
+                                "search_terms",
+                            )
+                            if key in brief
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
             ]
-        ):
-            import app.orchestration.agents.course_resources as cr_pkg
+        )
+        import app.orchestration.agents.course_resources as cr_pkg
 
-            async def search_platform(
-                platform: str,
-                search: Callable[[str], Awaitable[list[dict]]],
-            ) -> list[dict]:
-                started_at = time.monotonic()
-                results = await search(query)
-                elapsed_ms = round((time.monotonic() - started_at) * 1000, 1)
-                logger.info(
-                    "Video search completed platform=%s section=%s query=%s "
-                    "elapsed_ms=%s result_count=%s",
-                    platform,
-                    _clean_text(section.get("section_id")),
-                    query,
-                    elapsed_ms,
-                    len(results),
-                )
-                return results
+        sources = await cr_pkg._search_aliyun_bilibili_sources(section_scope)
 
-            if query_index == 0:
-                bilibili_results, youtube_results = await asyncio.gather(
-                    search_platform("bilibili", cr_pkg._search_bilibili_video_results),
-                    search_platform("youtube", cr_pkg._search_youtube_video_results),
-                )
-            else:
-                bilibili_results = await search_platform(
-                    "bilibili", cr_pkg._search_bilibili_video_results
-                )
-                youtube_results = []
-            search_results = [*bilibili_results, *youtube_results]
-            query_videos: list[dict] = []
-            for search_result in search_results:
-                url = _clean_text(search_result.get("url"))
-                if not url or url in seen_urls:
-                    continue
-                seen_urls.add(url)
-                query_videos.append({"brief_id": brief_id, **search_result})
+        async def validate_source(source: object) -> dict | None:
+            source_url = _clean_text(getattr(source, "url", ""))
+            url = source_url.removesuffix("/")
+            if not _bilibili_bvid_from_url(url):
+                return None
+            metadata = await cr_pkg._verify_bilibili_video_metadata(url)
+            if metadata.get("status") != "ok":
+                return None
+            title = _clean_text(metadata.get("title"))
+            if not title:
+                return None
+            return {
+                "brief_id": brief_id,
+                "title": title,
+                "url": url,
+                "source": "Bilibili",
+            }
 
-            async def validate_candidate(video: dict) -> dict | None:
-                issue = await _normalized_video_quality_issue_async(
-                    [video], [brief], section, outline
-                )
-                return video if issue is None else None
+        validated = await asyncio.gather(
+            *(validate_source(source) for source in sources)
+        )
+        return next((video for video in validated if video is not None), None)
 
-            validated_videos = await asyncio.gather(
-                *(validate_candidate(video) for video in query_videos)
-            )
-            for video in validated_videos:
-                if video is None:
-                    continue
-                score = _video_candidate_score(
-                    " ".join(
-                        [
-                            _clean_text(video.get("title")),
-                            _clean_text(video.get("source")),
-                        ]
-                    ),
-                    section,
-                    [brief],
-                    outline,
-                )
-                if score > best_score:
-                    best_score = score
-                    best_video = video
-                    if score >= 40 and _is_high_confidence_video_candidate(
-                        video, brief, section, outline
-                    ):
-                        verified.append(best_video)
-                        break
-            if best_video is not None and brief_id in {
-                _clean_text(v.get("brief_id")) for v in verified
-            }:
-                break
-        if best_video is not None:
-            if brief_id not in {_clean_text(v.get("brief_id")) for v in verified}:
-                verified.append(best_video)
-    return verified
+    results = await asyncio.gather(*(find_for_brief(brief) for brief in video_briefs))
+    return [video for video in results if video is not None]
+
+
+def _native_video_quality_issue(videos: list[dict], video_briefs: object) -> str | None:
+    if not videos:
+        return "视频资源为空。"
+    if not isinstance(video_briefs, list):
+        return "视频资源未完整绑定 brief。"
+    expected_ids = {
+        _clean_text(brief.get("video_id"))
+        for brief in video_briefs
+        if isinstance(brief, dict) and _clean_text(brief.get("video_id"))
+    }
+    video_ids = {
+        _clean_text(video.get("brief_id"))
+        for video in videos
+        if _clean_text(video.get("brief_id"))
+    }
+    if not expected_ids or video_ids != expected_ids:
+        return "视频资源未完整绑定 brief。"
+    if any(
+        not _bilibili_bvid_from_url(_clean_text(video.get("url"))) for video in videos
+    ):
+        return "Bilibili 视频 URL 必须为精确视频页地址。"
+    return None
 
 
 def _video_relevance_score(text: str, topic_terms: list[str]) -> int:
@@ -1410,7 +1417,7 @@ def _existing_video_value(
     if not isinstance(value, dict):
         return None
     videos = _normalize_videos(value.get("videos"), video_briefs)
-    issue = _normalized_video_quality_issue(videos, video_briefs, section, outline)
+    issue = _native_video_quality_issue(videos, video_briefs)
     if issue:
         return None
     existing_value = dict(value)
@@ -1501,8 +1508,8 @@ async def run_section_video_search_agent(
                 if not verified_videos:
                     continue
                 current_videos = _normalize_videos(verified_videos, video_briefs)
-                current_quality_issue = await _normalized_video_quality_issue_async(
-                    current_videos, video_briefs, section, outline
+                current_quality_issue = _native_video_quality_issue(
+                    current_videos, video_briefs
                 )
                 if not current_quality_issue:
                     break

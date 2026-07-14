@@ -5,12 +5,13 @@
 > 远程仓库：`innovationpuls-creator/mutiagent`，默认分支 `main`  
 > 交付用途：为中国软件杯六章技术文档建立可追溯事实、数据需求、验证结果与人工资料清单。本文不是最终参赛技术文档。
 > 工作区说明：任务开始时 `git status --short` 为空；2026-07-14 16:02 后另一个并发工作流写入 3 个视频资源生产文件和 1 个对应测试文件。本报告保留这些改动，不把它们归为本任务产物，并在相关结论中单独标注。
+> 评分基线：已于 2026-07-14 逐页核验 `/Users/torch/Downloads/评分表-A3-基于大模型的个性化资源生成与学习多智能体系统开发-0710.pdf`，共 3 页，基础分 100 分、附加分 10 分。评分表不是赛题任务原文，也不替代申报要求或技术文档模板。
 
 ## 1. 执行摘要
 
 本仓库已具备编写“核心技术”“系统架构与实现”主体的源码依据：React/FastAPI 双端结构、13 个 router factory、55 条 OpenAPI paths、19 张 SQLModel 表、1 个 supervisor 与 7 个 LangGraph worker、多阶段 SSE、资源质量与恢复字段、知识库准入/发布/缺口闭环、Docker 生产基线均可定位到当前生产源码。第三章可先写架构事实；第二章可写实现机制，但必须保留检索、引用、持久化和恢复限制。
 
-第一章仍缺赛题原文、立项依据、用户调研和真实使用规模；第四章仍缺单模型对比、知识库启停对比、人工准确性评价；第五章已有本次真实测试结果，但缺性能、并发、安全和真实外部模型验证；第六章缺团队分工、开发时间线、用户反馈与经确认的未来规划。因此，当前可以开始撰写有源码依据的技术章节，不具备直接完成整份正式文档的证据条件。
+第一章仍缺赛题任务原文、立项依据、用户调研和真实使用规模；官方评分表已经取得并形成本文“官方评分项覆盖矩阵”。第四章仍缺单模型对比、知识库启停对比、人工准确性评价；第五章已有本次真实测试结果，但缺性能、并发、安全和真实外部模型验证；第六章缺团队分工、开发时间线、用户反馈与经确认的未来规划。因此，当前可以开始撰写有源码依据的技术章节，不具备直接完成整份正式文档的证据条件。
 
 最高优先级事实冲突如下：
 
@@ -630,7 +631,7 @@ ORDER BY attempt_date;
 
 ### P0
 
-1. 获取软件杯赛题原文、申报要求、技术文档模板与评分点；没有权威边界，第一章和整篇结构无法定稿。
+1. 获取软件杯赛题任务原文、申报要求与技术文档模板；评分点已经由 2026-07-10 官方评分表锁定，但评分表不能替代任务原文和提交格式要求。
 2. 由团队确认项目名称、两角色口径、当前部署模式、团队成员/分工、开发时间线、License；删除正式文档中的 teacher 独立角色与未经授权的 MIT 断言。
 3. 确认本地数据库 3 个用户、2 个培养方案、2 本教材等记录的数据性质；建立 seed/test/演示/真实数据标记。未确认前不得引用规模数字。
 4. 解决本地 Alembic 无 current revision 的验收状态并保留迁移日志；这是生产启动的直接阻断证据。本阶段只记录，修复需另开任务。
@@ -658,3 +659,131 @@ ORDER BY attempt_date;
 6. 在团队确认后形成未来路线图，每项包含负责人、截止时间、验收标准和证据位置。
 
 完成 P0 后，可开始正式技术文档的全章撰写；P1 决定第四、第五章可信度；P2 用于增强展示和可维护性。
+
+## 资源类型与评分要求覆盖表
+
+本节只按学生实际获得的学习资源形态计数，不按 Agent 名称或执行阶段计数。官方评分表原文要求“学习资源生成类型不少于 5 种（思维导图、文档、视频、习题、代码等）”，并同时要求至少 5 个资源生成案例和质量评估。`compose_resource` 只把已有 Markdown、视频和动画按占位符组装为 `blocks`，不产生新的教学内容，不能计入学习资源类型。证据：`backend/app/orchestration/agents/course_resources/common.py:1130-1205`、`backend/app/orchestration/agents/course_resources/main.py:542-583`。
+
+| 资源类型 | 用户实际看到的形态 | 生成或获取方式 | 是否独立资源 | 后端实现 | 前端展示 | 持久化字段 | 对应测试 | 当前状态 | 能否计入评分表5种资源 | 限制 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 教学文档或 Markdown | Leaf 小节中的标题、正文、表格、任务清单、公式与来源 | `section_markdown_agent` 基于小节、画像、学习路径资源契约和教材证据包调用 LLM 生成 | 是 | `backend/app/orchestration/agents/course_resources/markdown.py:47-186,399-434`; `backend/app/orchestration/agents/prompts.py:209-299` | `frontend/src/pages/leaf/LeafContent.tsx:231-250,308-320`; `frontend/src/components/markdown/MarkdownRenderer.tsx:337-383` | `usercourseknowledgeoutline.outline_data.section_markdowns[section_id]`; `outline_data.section_composed_markdowns[section_id]` | `backend/tests/test_course_resource_agent_contract.py:2617-2763`; `frontend/src/pages/leaf/LeafPage.test.tsx:220-235` | 真实生成并接入页面 | 是 | 真实模型内容准确性仍需人工评价；失败写入 `outline_data.section_resource_errors[section_id]`，不会用旧兜底冒充成功，证据：`backend/tests/test_course_resource_agent_contract.py:2766-2995` |
+| 代码示例 | Markdown fenced code block，显示语言标签、代码正文和 `COPY` 按钮 | 由 `section_markdown_agent` 写入 `SectionMarkdownOutput.markdown`；不是独立代码 Agent 调用 | 是，按用户资源形态独立统计 | `backend/app/orchestration/agents/models.py:1063-1124`; `backend/app/orchestration/agents/prompts.py:219-249`; `backend/app/orchestration/agents/course_resources/markdown.py:113-126` | `frontend/src/pages/leaf/LeafContent.tsx:231-240`; `frontend/src/components/markdown/MarkdownRenderer.tsx:73-98,253-335`; `frontend/src/components/markdown/hooks/usePrism.ts:1-40`; `frontend/src/components/markdown/utils/clipboard.ts:1-18` | 与教学文档共存于 `outline_data.section_markdowns[section_id].markdown`，拼装后仍位于 `outline_data.section_composed_markdowns[section_id].blocks[*].markdown` | `frontend/src/pages/leaf/LeafPage.test.tsx:197-274`; 后端未找到代码示例专用测试，代码生成随 Markdown 契约测试覆盖 | 真实生成但嵌入其他资源 | 是 | 支持 Prism 语法高亮与复制；课程 Leaf 没有运行或预览代码的组件。Markdown 质量门禁只要求“表格或 fenced code block”二选一，因此并非每个小节都保证生成代码 |
+| 视频资源 | Leaf 视频封面卡片，点击后在新标签页打开视频页面 | `section_video_search_agent` 根据 `video_briefs` 搜索外部视频，不生成视频文件 | 是 | `backend/app/orchestration/agents/course_resources/video.py`; `backend/app/orchestration/agents/models.py:1127-1161`; `backend/app/orchestration/agents/course_resources/main.py:381-459` | `frontend/src/pages/leaf/LeafContent.tsx:47-130` | `outline_data.section_video_links[section_id]`; 拼装后为 `outline_data.section_composed_markdowns[section_id].blocks[*]` 的 `type=video` | `backend/tests/test_course_resource_agent_contract.py:6880-7416`; `frontend/src/pages/leaf/LeafPage.test.tsx:276-405` | 搜索或引用外部资源 | 是 | 外部链接可用性与相关性依赖搜索结果；无结果显示失败态，不能写成“视频由系统生成” |
+| HTML 交互动画 | Leaf 中可交互的 HTML/SVG 教学画布 | `section_html_animation_agent` 按 `animation_briefs` 生成 HTML，并经过结构与安全规范化 | 是 | `backend/app/orchestration/agents/course_resources/animation.py`; `backend/app/orchestration/agents/models.py:1164-1197`; `backend/app/orchestration/agents/course_resources/main.py:461-540` | `frontend/src/pages/leaf/LeafContent.tsx:134-179`，通过 `iframe sandbox="allow-scripts"` 与 `srcDoc` 展示 | `outline_data.section_html_animations[section_id]`; 拼装后为 `outline_data.section_composed_markdowns[section_id].blocks[*]` 的 `type=animation` | `backend/tests/test_course_resource_agent_contract.py:5804-6007,6287-6313`; `frontend/src/pages/leaf/LeafPage.test.tsx:114-143` | 真实生成并接入页面 | 是 | 真实浏览器交互正确性和教学准确性仍缺逐案例验收；生成失败为 hard error，不计成功资源 |
+| 习题或章节测验 | Forest 题目页中的单选题、代码题、图片上传题，提交后显示分数、反馈与薄弱点 | `generate_quiz_questions` 调用 LLM 生成；`normalize_quiz_questions` 只接受 `single_choice`、`code`、`image_upload` | 是 | `backend/app/orchestration/agents/quiz.py:7-9,102-147,185-244`; `backend/app/api/forest.py`; `backend/app/services/forest_service.py` | `frontend/src/pages/forest/ForestQuizPage.tsx`; `frontend/src/components/forest/ForestQuizOverlay.tsx` | `chapterquiz.questions`; `chapterquizattempt.answers`; `chapterquizattempt.grading_result` | `backend/tests/test_quiz_agent_contract.py:15-153`; `backend/tests/test_forest_api.py:154-340`; `frontend/src/pages/forest/ForestQuizPage.test.tsx:114-260` | 真实生成并接入页面 | 是 | `build_fallback_quiz_questions` 是固定题型兜底，案例审计必须标明是否由真实 LLM 生成；题目与批改准确性仍需人工评价 |
+| 独立思维导图学习资源 | 仓库没有学生可打开的独立思维导图资源 | 未找到独立思维导图 Agent、独立输出模型、独立持久化字段或生成调用 | 否 | `backend/app/orchestration/agents/models.py:37-47` 的 Agent/资源枚举不含思维导图；资源主链只调用 Markdown、视频、HTML 动画，证据：`backend/app/orchestration/agents/course_resources/main.py:312-583` | 无独立页面 | 无 | 无独立生成测试 | 无法从源码确认 | 否 | 不得用学习路径图、章节导航树或 Mermaid 渲染能力替代独立思维导图案例 |
+| Leaf 课程—章节结构导航 | Leaf 左侧递归章节树，显示章节标题、生成状态与资源徽标 | 根据 `LeafCourseResponse.sections` 和 `section_composed_markdowns` 确定性渲染 | 否，仅导航 | 后端由 `backend/app/services/leaf_service.py` 返回 outline sections | `frontend/src/pages/leaf/LeafMarkmap.tsx:99-273`; `frontend/src/pages/leaf/LeafPage.tsx:427-451` | `outline_data.sections`; 前端折叠状态存 `localStorage` 的 `mutiagent-leaf-markmap-*` 键 | `frontend/src/pages/leaf/LeafPage.test.tsx` 覆盖 Leaf 页面，但未找到独立思维导图验收测试 | 由结构化数据确定性渲染 | 否 | 组件名虽为 `LeafMarkmap`，页面文案明确为“章节导航”；它不是 markmap 库生成的思维导图，也没有独立教学内容 |
+| 学习路径图 | Branch 展示课程顺序、当前课程和锁定状态 | 根据 `useryearlearningpath.path_data` 确定性渲染 | 否，仅路径规划与导航 | `backend/app/orchestration/agents/learning_path.py:1025-1070`; `backend/app/api/branch.py:140-205` | `frontend/src/pages/branch/BranchPage.tsx`; `frontend/src/components/learning/LearningPathCard.tsx` | `useryearlearningpath.path_data` | `backend/tests/test_learning_path_agent_contract.py`; `frontend/src/pages/branch/BranchPage.test.tsx` | 由结构化数据确定性渲染 | 否 | 学习路径图回答“先学什么”，不能当作独立思维导图学习资源 |
+| Mermaid 结构图 | Markdown 中语言为 `mermaid` 的 fenced block 可转成 SVG | 渲染器具备 Mermaid 动态加载能力；当前 Markdown prompt 没有要求生成 Mermaid | 否，尚无稳定生成契约 | 没有 Mermaid 输出字段或独立生成 Agent | `frontend/src/components/markdown/MarkdownRenderer.tsx:208-250,299-325`; `frontend/src/components/markdown/hooks/useMermaid.ts:1-36`; Leaf 已启用 `enableMermaid`，证据：`frontend/src/pages/leaf/LeafContent.tsx:235-240,313-318` | 若出现则仍嵌在 Markdown 字符串 | 未找到 Leaf Mermaid 生成案例测试 | 已实现但未形成可验证生成案例 | 否 | 只有渲染能力，没有 prompt 保证、持久化类型、独立案例和质量评价 |
+
+### 代码示例专项结论
+
+- 负责生成代码示例的实际执行单元是 `section_markdown_agent` 对应的 `run_section_markdown_agent`，代码作为 fenced code block 写进 `SectionMarkdownOutput.markdown`。`code_example_agent` 只存在于后端 `ResourceAgent` 契约、前端类型和学习路径卡片测试数据中，仓库未找到同名可执行实现或调用。证据：`backend/app/orchestration/agents/models.py:37-47,1063-1124`、`frontend/src/types/chat.ts:340-352`、`frontend/src/components/learning/LearningPathCard.test.tsx:140-154`、`backend/app/orchestration/agents/course_resources/main.py:312-333`。
+- 生成输入来自课程大纲小节的 `title`、`description`、`key_knowledge_points`、教材证据字段，以及学习路径中的 `resource_generation_contract.resource_directions`。当前确定性学习路径构造器把资源方向写为“文档”，没有一个“仅当知识点标记为代码示例才生成”的过滤条件。证据：`backend/app/orchestration/agents/course_resources/common.py:953-1013`、`backend/app/orchestration/agents/learning_path.py:909-927`。
+- Markdown prompt 要求“步骤讲解”必须包含 Markdown 表格或 fenced code block，质量门禁也采用同一二选一规则；因此源码不保证每个小节都有代码，也不把代码限制在某个“代码示例”知识点标记上。证据：`backend/app/orchestration/agents/prompts.py:219-229`、`backend/app/orchestration/agents/course_resources/markdown.py:113-126`。
+- 输出字段是 `markdown`；持久化位置是 `usercourseknowledgeoutline.outline_data.section_markdowns[section_id].markdown`，拼装后进入 `outline_data.section_composed_markdowns[section_id].blocks[*].markdown`。Leaf 使用 `MarkdownRenderer` 展示，Prism 支持 C、C++、Java、Python、JavaScript、JSON 等已加载语言，复制由 `navigator.clipboard.writeText` 完成。证据：`backend/app/models.py:133-145`、`frontend/src/components/markdown/hooks/usePrism.ts:1-40`、`frontend/src/components/markdown/utils/clipboard.ts:1-18`。
+- Leaf 课程页支持语法高亮和复制；仓库未找到针对课程代码块的运行、编译或预览组件。Forest 的 `code` 题是答案输入与 LLM 批改，不是 Leaf 代码示例执行器。证据：`frontend/src/pages/leaf/LeafContent.tsx:231-240`、`frontend/src/pages/forest/ForestQuizPage.tsx`、`backend/app/orchestration/agents/quiz.py:7-9,134-145`。
+- 代码随 Markdown 一起重试和失败；质量反复不合格时返回错误并写 `section_resource_errors`，不会单独补一份代码资源。证据：`backend/tests/test_course_resource_agent_contract.py:2766-2995,3601-3696`。
+
+生成阶段可能属于 Markdown 管线，但从用户资源形态和评分标准看，应独立统计为代码资源。
+
+### 思维导图专项结论
+
+1. **学习路径图**：由学习路径结构与 Branch 页面展示，表达课程先后、当前焦点和解锁状态，属于路径规划功能，不是思维导图资源。证据：`backend/app/orchestration/agents/learning_path.py:1025-1070`、`frontend/src/pages/branch/BranchPage.tsx`。
+2. **课程—章节—知识点结构图**：`LeafMarkmap` 递归渲染 `sections`，页面标题是“章节导航”；`LearningPathCard` 以列表展示 `knowledge_hierarchy` 和 `knowledge_relations`。二者都是结构化数据的确定性展示，没有独立生成 Agent、资源输出字段或案例包。证据：`frontend/src/pages/leaf/LeafMarkmap.tsx:99-273`、`frontend/src/components/learning/LearningPathCard.tsx:193-287`。
+3. **独立思维导图学习资源**：当前不存在可由学生独立获得并验收的实现。Mermaid 渲染器虽已接入 Leaf，但生成 prompt 不要求 Mermaid，仓库也没有独立 Mermaid 案例测试，所以不能计入本次 5 种资源。证据：`frontend/src/components/markdown/MarkdownRenderer.tsx:208-250,299-325`、`frontend/src/pages/leaf/LeafContent.tsx:231-240`、`backend/app/orchestration/agents/prompts.py:209-299`。
+
+### 四种数量口径
+
+| 数量对象 | 当前数字 | 计算口径 | 证据 |
+|---|---:|---|---|
+| 主图 Agent 数量 | 7 | LangGraph 注册的 worker：画像、草案、路径、大纲、Markdown、视频、动画；`supervisor` 单列，不计 worker | `backend/app/orchestration/graph.py:42-60,159-195`; `backend/app/orchestration/contracts.py:6-45` |
+| 资源生成管线阶段数量 | 4 | `markdown`、`video`、`animation`、`compose`；其中 `compose` 是程序拼装阶段 | `backend/app/orchestration/agents/course_resources/main.py:312-583` |
+| 用户可见且当前可计分的资源类型数量 | **5** | 教学文档、代码示例、外部视频资源、HTML 交互动画、章节测验；不含 compose、导航树、路径图和无案例的 Mermaid | 本节资源类型表 |
+| 独立课程资源 Agent 数量 | 3 | `section_markdown_agent`、`section_video_search_agent`、`section_html_animation_agent`；测验由 Forest API 调用 quiz 生成函数，不是资源主链 worker | `backend/app/orchestration/agents/course_resources/main.py:312-583`; `backend/app/orchestration/agents/quiz.py:185-244` |
+
+**不少于 5 种资源结论：源码实现与页面接入口径下已经满足，当前总数为 5。评分表的完整 10 分资源项仍未满足直接举证条件，因为仓库没有按 5 个真实案例归档原始输出、截图、来源与逐案例质量评价。**
+
+## 官方评分项覆盖矩阵
+
+评分项与分值均取自 `/Users/torch/Downloads/评分表-A3-基于大模型的个性化资源生成与学习多智能体系统开发-0710.pdf`。评分表将智能辅导和学习效果评估明确标为“加分项，各 5 分”；附加分另列 10 分。下表不把功能存在等同于数量、案例、截图或质量证据达标。
+
+| 评分项 | 分值 | 评分硬指标 | 当前实现证据 | 当前验证证据 | 仍缺案例或数据 | 风险等级 | 下一步动作 |
+|---|---:|---|---|---|---|---|---|
+| 功能实用性 | 10 | 完整稳定运行；交互合理；贴合大学学习；多端、多角色、云端部署 | React/FastAPI 主流程与 student/admin 两角色：`frontend/src/App.tsx:97-136`; `backend/app/main.py:34-81`; `deploy/compose.production.yml` | 后端、前端测试和构建已有结果；Playwright 仍有 3 个失败，见本文第 9 节 | 真实云端验收、多端截图、真实学生试用与稳定性数据 | 高 | 完成云端全流程验收并归档设备、角色、commit、截图与日志 |
+| 方案创新性 | 15 | 个性化学习闭环；与传统方式有明显区分；教育理念；资源幻觉防控 | 画像→路径→资源→测验→反馈链及教材证据包：`backend/app/orchestration/graph.py`; `backend/app/orchestration/agents/course_resources/markdown.py:47-110`; `backend/app/services/knowledge_base_service.py` | 契约测试存在；本文第 14 节记录尚未执行的对照实验 | 传统方案对照、教育理念效果证据、知识库启停的幻觉率评价 | 高 | 执行同任务配对实验和双人盲评 |
+| 技术创新性 | 10 | 多智能体、多端、多模态、深度协同；说明技术选型对比 | 1 supervisor+7 worker、SSE、Markdown/视频/HTML：`backend/app/orchestration/graph.py:42-60,159-195`; `backend/app/orchestration/agents/course_resources/main.py:312-583` | Agent 契约与资源测试已存在 | 单模型与多智能体对照、技术选型量化差异、真实多模态案例 | 高 | 固定模型与任务集做对照并保留原始 trace |
+| 系统完善度 | 10 | 画像构建、资源生成、路径规划、资源推送、学习验证、智能辅导、效果评估全流程 | 页面路由：`frontend/src/App.tsx:97-136`; 后端 API：`backend/app/api/` | 视频成片与分段素材存在：`backend/.codex-artifacts/video-production/final/最终版.mp4`; `backend/.codex-artifacts/video-production/raw/` | 同一真实用户的一镜到底验收记录；异常态与恢复证据 | 中 | 建立单用户端到端验收清单并逐步截图 |
+| 画像不少于6维 | 8 | 以参赛队员为例；对话自主构建；不少于 6 维；可分析、更新 | `ConfirmedInfoOutput` 有 16 个字段：`backend/app/orchestration/agents/models.py:52-105`; 显式更新逻辑：`backend/app/orchestration/agents/profile.py:1402-1453` | profile contract/API tests 存在；视频脚本记录单一演示：`docs/superpowers/specs/2026-07-03-onetree-software-cup-video-design.md:606-612` | 参赛队员真实画像原始对话、画像截图、更新前后对比 | 高 | 采集 P-01 并脱敏归档 |
+| 资源类型不少于5种 | 10 | 不少于 5 种；多模态；无明显错误；至少 5 个资源案例；质量评价 | 当前可计 5 类，见“资源类型与评分要求覆盖表” | 资源契约、Leaf、Forest 测试存在 | 5 个完整真实资源案例、每例截图/原始输出/来源/人工质量评分；自动质量分仅评结构，证据：`backend/app/services/resource_quality_service.py:10-166` | 高 | 按 R-01 至 R-05 建立案例包并双人评价 |
+| 3—5个路径和资源推荐案例 | 3 | 根据画像精准推荐路径和资源；3—5 个案例 | 路径读取画像并生成资源契约：`backend/app/orchestration/agents/learning_path.py:538-567,884-927` | learning path contract tests 存在 | 3—5 个不同画像/目标的路径差异、推荐理由、截图和匹配度评价 | 高 | 采集 L-01 至 L-05 配对案例 |
+| 至少5个智能辅导案例 | 加分项 5 | 不同类型、多模态、精准、引导式；至少 5 个答疑案例 | Forest AI 支持文本、图片附件和上下文解析：`frontend/src/pages/forest/ForestQuizPage.tsx:358-480`; `backend/app/api/forest.py` | `frontend/src/pages/forest/ForestQuizPage.test.tsx:122-221`; `backend/tests/test_forest_api.py:580-664` | 5 个不同问题类型的真实对话、答案准确性与引导性评分 | 高 | 采集 T-01 至 T-05 并人工复核 |
+| 至少3个学习效果评估案例 | 加分项 5 | 达成率、掌握率、热力图、雷达图；动态调整；至少 3 个案例 | 分数、通过、薄弱点、解锁与成长数据存在：`backend/app/models.py:170-220`; `backend/app/services/forest_service.py`; `frontend/src/pages/canopy/` | forest/canopy tests 存在 | 当前未形成达成率与掌握率定义；未找到热力图或雷达图实现；缺 3 个前后对比案例 | 高 | 先定义指标口径，再采集 E-01 至 E-03；热力图/雷达图需另行实现任务 |
+| 功能创新 | 5 | 赛题要求外的关联智能体或个性化创新功能 | 知识库管理、缺口跟进、SSE 恢复、成长树：`backend/app/api/knowledge_base.py`; `backend/app/orchestration/recovery.py`; `frontend/src/pages/canopy/` | 对应后端/前端测试存在 | 创新点与基线系统差异、用户价值和效果数据 | 中 | 每个创新点建立“问题—实现—案例—效果”证据卡 |
+| 开发说明书 | 配套文档 10 分合计内未细分 | 标准开发文档且清楚说明前沿 AI 技术 | `docs/backend/backend-tech-stack.md`; `docs/process/技术栈.md`; `docs/backend/agent逻辑.md` | 文件存在，但与当前源码存在本文第 12 节所列冲突 | 一份按当前源码校正的开发说明书 | 高 | 后续文档任务中修订，不在本次编写最终文档 |
+| 测试说明书 | 配套文档 10 分合计内未细分 | 标准测试文档 | 测试源码位于 `backend/tests/`、`frontend/src/**/*.test.tsx`、`frontend/e2e/` | 本文第 9 节有执行结果 | 仓库未找到独立测试说明书；缺环境、范围、用例编号、预期结果和缺陷闭环 | 高 | 建立测试说明书并链接原始测试报告 |
+| 部署说明书 | 配套文档 10 分合计内未细分 | 标准部署文档 | `docs/deployment/docker-production.md`; `deploy/compose.production.yml` | 生产 smoke/CI 仍未全通过，见本文第 9、12 节 | 真实云端部署记录、回滚与验收证据 | 中 | 在目标环境执行部署验收并保留日志 |
+| 测试知识库数据集 | 配套文档 10 分合计内未细分 | 配套文件包含测试知识库数据集 | 知识库模型与测试 fixture：`backend/app/models.py:314-471`; `backend/tests/test_knowledge_base_api.py` | 本地教材和小节有开发库记录，见本文第 1、8 节 | 仓库未找到可单独提交、带来源许可与期望结果的测试知识库数据集 | 高 | 导出脱敏测试集、来源许可、schema 与验收答案 |
+| 架构图 | 配套文档 10 分合计内未细分 | 系统设计文档至少含系统架构图 | `backend/.codex-artifacts/video-production/architecture/onetree-architecture-frontend-backend.png`; `backend/.codex-artifacts/video-production/architecture/onetree-architecture-agents.png` | 图片文件存在 | 图与当前 7 worker/19 表/知识库边界的版本校验记录 | 中 | 对照当前源码复核图中文字与版本 |
+| 功能结构图 | 配套文档 10 分合计内未细分 | 系统设计文档至少含功能结构图 | 页面与 API 清单可用于绘图：本文第 3—5 节 | 仓库未找到明确命名且覆盖当前功能的功能结构图 | 正式功能结构图及版本说明 | 高 | 后续文档任务中绘制并评审 |
+| 技术栈 | 配套文档 10 分合计内未细分 | 系统设计文档说明实现技术栈 | `docs/process/技术栈.md`; `docs/backend/backend-tech-stack.md`; `frontend/package.json`; `backend/pyproject.toml` | 源码依赖可核 | 统一版本表与选型对比 | 中 | 从锁文件和运行环境生成版本清单 |
+| 用户视角完整学习流程 | 配套文档 10 分合计内未细分 | 完整个性化学习场景全流程案例演示验证 | 视频设计与真实录屏分段：`docs/superpowers/specs/2026-07-03-onetree-software-cup-video-design.md:517-693`; `backend/.codex-artifacts/video-production/raw/` | `backend/.codex-artifacts/video-production/final/最终版.mp4` 存在 | 可审计的同一用户原始数据、步骤结果与异常说明 | 中 | 把视频步骤映射到数据库记录与截图编号 |
+| 系统效果截图 | 配套文档 10 分合计内未细分 | 设计文档包含相应系统效果截图 | `docs/screenshots/login.png`; `docs/screenshots/student.png`; `docs/screenshots/admin.png`; `backend/.codex-artifacts/video-production/reference-frames/` | 文件存在 | 当前截图未按评分项和案例编号建立映射；缺资源、路径、辅导、评估的成组截图 | 高 | 按 P/R/L/T/E 编号归档截图 |
+| 视频中系统演示占比不低于60% | 演示视频与PPT 10 分合计内未细分 | 清晰、解说逻辑清晰，系统实际操作占比 ≥60% | 最终成片：`backend/.codex-artifacts/video-production/final/最终版.mp4`; 分段脚本：`backend/.codex-artifacts/video-production/scripts/` | 成片文件存在 | 仓库没有对最终成片逐段标注后计算的系统演示占比验收表 | 高 | 对最终版建立逐秒分类表并计算占比 |
+| PPT必含内容 | 演示视频与PPT 10 分合计内未细分 | 应用价值、架构图、功能结构图、技术栈、核心功能、创新点、幻觉降低，且 AI 味低 | 架构图和视频设计素材可复用 | 仓库未找到 `.ppt` 或 `.pptx` 文件 | PPT 本体、必含内容核对表、人工表达质量审查 | 高 | 后续单独制作 PPT，不在本次开始编写 |
+| 附加分项目 | 10 | 讯飞工具/模型、前沿技术、实际场景测试、幻觉防控、自建智能体、私有知识库、外部接口、软硬结合、国产模型/数据库、AI Coding 说明等 | 已有多智能体、教材知识库、Qwen/OpenAI-compatible 接入与反幻觉门禁：`backend/app/orchestration/`; `backend/app/services/knowledge_base_service.py`; `backend/app/orchestration/llm.py` | 实现和测试只覆盖其中部分 | 未找到讯飞调用、软硬结合、正式外部接口说明和 AI Coding 使用说明；实际场景测试与量化效果不足 | 中 | 只申报已有且能用案例证明的附加项，逐项附调用日志或说明 |
+
+## 必须准备的案例资产
+
+案例资产必须固定 commit、模型、prompt、知识库版本和用户标识脱敏规则。截图不能单独代替原始输出，自动结构分也不能代替人工内容质量评价。
+
+### 画像案例
+
+- 参赛队员真实画像 1 套。
+- `ConfirmedInfoOutput` 中至少 6 个维度有真实值；当前模型定义 16 个字段，证据：`backend/app/orchestration/agents/models.py:71-105`。
+- 同一画像至少保存一次更新前后对比与触发对话。
+
+### 资源案例
+
+- 至少 5 个完整知识点或章节案例；每例必须列出学生实际看到的资源类型。
+- 每例同时保存截图、`outline_data` 原始输出、教材来源和人工质量评价。
+- `courseresourcequality` 的自动分仅检查大纲结构、难度启发式和完整性，不能替代内容准确性评价。证据：`backend/app/services/resource_quality_service.py:10-166`。
+
+### 路径推荐案例
+
+- 准备 3—5 个不同画像或不同目标案例，保持知识库和模型版本一致。
+- 对每例说明路径差异、资源推荐差异与画像字段之间的可追溯关系。
+
+### 智能辅导案例
+
+- 至少 5 个不同类型案例，覆盖文本追问、错因分析、代码题、图片输入和引导式追问。
+- 每例保存题目、学生答案、评分结果、辅导对话与人工准确性/引导性评价。
+
+### 效果评估案例
+
+- 至少 3 个包含达成率、掌握率、图表或路径调整结果的案例。
+- 当前已有分数、通过、薄弱点、解锁和成长记录字段，但未形成热力图/雷达图与统一达成率、掌握率口径，不能以成长树截图替代全部指标。
+
+| 案例编号 | 用户画像 | 学习目标 | 涉及功能 | 资源类型 | 原始数据位置 | 截图位置 | 质量评价 | 当前是否具备 |
+|---|---|---|---|---|---|---|---|---|
+| P-01 | 参赛队员真实画像，至少 6 维 | 完成画像构建并验证更新 | Sprout 对话、画像保存、画像更新 | 不适用 | `userprofile.profile_data`; `conversationsession.messages` | 仓库未找到与真实画像原始数据绑定的截图 | 维度完整性、抽取准确性、更新一致性 | 功能具备；案例包未建立 |
+| R-01 | 待记录 | 待记录的知识点或章节 1 | Leaf 资源生成与展示 | 文档、代码示例、视频、HTML 动画、测验中的实际集合 | `usercourseknowledgeoutline.outline_data`; `chapterquiz.questions` | 现有 `backend/.codex-artifacts/video-production/raw/segment-07-resource-display.mov` 未建立与原始 JSONB 的一一映射 | 内容准确性、来源一致性、难度适配、完整性 | 单一录屏素材存在；完整案例包未建立 |
+| R-02 | 待记录 | 待记录的知识点或章节 2 | Leaf 资源生成与展示 | 按实际输出记录 | `usercourseknowledgeoutline.outline_data`; `chapterquiz.questions` | 仓库未找到对应截图 | 同 R-01 | 未建立 |
+| R-03 | 待记录 | 待记录的知识点或章节 3 | Leaf 资源生成与展示 | 按实际输出记录 | `usercourseknowledgeoutline.outline_data`; `chapterquiz.questions` | 仓库未找到对应截图 | 同 R-01 | 未建立 |
+| R-04 | 待记录 | 待记录的知识点或章节 4 | Leaf 资源生成与展示 | 按实际输出记录 | `usercourseknowledgeoutline.outline_data`; `chapterquiz.questions` | 仓库未找到对应截图 | 同 R-01 | 未建立 |
+| R-05 | 待记录 | 待记录的知识点或章节 5 | Leaf 资源生成与展示 | 按实际输出记录 | `usercourseknowledgeoutline.outline_data`; `chapterquiz.questions` | 仓库未找到对应截图 | 同 R-01 | 未建立 |
+| L-01 | 画像组合 1，待采集 | 学习目标 1，待采集 | 路径规划、资源推荐 | 路径关联的实际资源类型 | `useryearlearningpath.path_data`; `usercourseknowledgeoutline.outline_data` | 仓库未找到对应截图 | 路径合理性、推荐匹配度 | 未建立 |
+| L-02 | 画像组合 2，待采集 | 学习目标 2，待采集 | 路径规划、资源推荐 | 路径关联的实际资源类型 | 同 L-01 | 仓库未找到对应截图 | 同 L-01 | 未建立 |
+| L-03 | 画像组合 3，待采集 | 学习目标 3，待采集 | 路径规划、资源推荐 | 路径关联的实际资源类型 | 同 L-01 | 仓库未找到对应截图 | 同 L-01 | 未建立 |
+| L-04 | 画像组合 4，待采集 | 学习目标 4，待采集 | 路径规划、资源推荐 | 路径关联的实际资源类型 | 同 L-01 | 仓库未找到对应截图 | 同 L-01 | 未建立 |
+| L-05 | 画像组合 5，待采集 | 学习目标 5，待采集 | 路径规划、资源推荐 | 路径关联的实际资源类型 | 同 L-01 | 仓库未找到对应截图 | 同 L-01 | 未建立 |
+| T-01 | 待记录 | 单选题错因分析 | Forest AI 智能辅导 | 习题、文本辅导 | `chapterquiz.questions`; `chapterquizattempt.grading_result`; `conversationsession.messages` | 现有 `backend/.codex-artifacts/video-production/raw/segment-08-09-10-quiz-tutoring-pass.mp4` 未拆为独立案例证据 | 答案准确性、引导性 | 单一流程录屏存在；案例包未建立 |
+| T-02 | 待记录 | 代码题辅导 | Forest AI 智能辅导 | 代码题、文本辅导 | 同 T-01 | 仓库未找到对应截图 | 同 T-01 | 未建立 |
+| T-03 | 待记录 | 图片输入辅导 | Forest AI 智能辅导 | 图片、文本辅导 | 同 T-01 | 仓库未找到对应截图 | 同 T-01 | 未建立 |
+| T-04 | 待记录 | 概念澄清与引导式追问 | Forest AI 智能辅导 | 文本辅导 | 同 T-01 | 仓库未找到对应截图 | 同 T-01 | 未建立 |
+| T-05 | 待记录 | 复习策略与下一步建议 | Forest AI 智能辅导 | 文本辅导、路径建议 | 同 T-01 | 仓库未找到对应截图 | 同 T-01 | 未建立 |
+| E-01 | 待记录 | 评估案例 1 | 作答、薄弱点、解锁、路径调整 | 习题、评估结果 | `chapterquizattempt`; `chapterweakness`; `chapterprogress`; `useryearlearningpath.path_data` | 仓库未找到与完整原始数据绑定的截图 | 达成率、掌握率、调整正确性 | 功能字段存在；完整案例未建立 |
+| E-02 | 待记录 | 评估案例 2 | 同 E-01 | 习题、评估结果 | 同 E-01 | 仓库未找到对应截图 | 同 E-01 | 未建立 |
+| E-03 | 待记录 | 评估案例 3 | 同 E-01 | 习题、评估结果 | 同 E-01 | 仓库未找到对应截图 | 同 E-01 | 未建立 |
+
+当前最直接的硬指标缺口是：5 个完整资源案例及逐案例质量评价、3—5 个路径/资源推荐案例、5 个智能辅导案例、3 个效果评估案例、参赛队员画像更新前后证据、热力图/雷达图、测试说明书、可提交的测试知识库数据集、功能结构图、按案例编号组织的系统截图、最终视频系统演示占比计算表和 PPT。

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from langchain_core.prompts import ChatPromptTemplate
 
+from app.orchestration.agents.course_resources.aliyun_bilibili_search import (
+    _search_aliyun_bilibili_sources,
+)
 from app.orchestration.agents.course_resources.animation import (
     _animation_input,
     _deterministic_animation_html,
@@ -107,6 +110,7 @@ __all__ = [
     "_verify_bilibili_video_metadata",
     "_search_bilibili_video_results",
     "_search_youtube_video_results",
+    "_search_aliyun_bilibili_sources",
     "_normalize_markdown_heading_variants",
     "_normalize_markdown_step_blocks",
     "_normalize_markdown_video_briefs",

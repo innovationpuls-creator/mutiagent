@@ -1,6 +1,24 @@
 # Agent 逻辑与主流程拆解
 
-本文只描述当前仓库中已经存在的前后端主流程。
+本文描述当前仓库中已经存在的前后端主流程，同时保留历史问题复盘。源码核对日期：2026-07-15。
+
+> 当前事实快照：LangGraph 编排图包含 `profile_agent`、`learning_path_intake_agent`、`learning_path_agent`、`course_knowledge_agent`、`section_markdown_agent`、`section_video_search_agent`、`section_html_animation_agent` 七个 Worker。课程资源阶段由 `backend/app/orchestration/agents/course_resources/main.py` 负责计划和确定性组合；知识库教材整理由独立 `python -m app.workers` 进程消费 `KnowledgeBaseIngestionJob`。本文较后面的历史章节如果与当前源码冲突，以源码、测试和 [项目现状](../project-overview.md) 为准。
+
+当前后端主链的简化图：
+
+```mermaid
+flowchart TD
+  A[POST /api/chat/message] --> B[加载会话 / 画像 / 路径 / 课程上下文]
+  B --> C[Supervisor]
+  C --> D[画像或课程草案]
+  C --> E[学习路径或课程大纲]
+  C --> F[小节文档]
+  F --> G[视频搜索]
+  G --> H[HTML 动画]
+  H --> I[资源质量契约与确定性 compose]
+  C --> J[SSE message_completed]
+  I --> J
+```
 
 ---
 
@@ -1785,7 +1803,7 @@ graph TD
   H --> K["course_knowledge_agent"]
 ```
 
-三个 worker 当前的真实输入边界分别是：
+早期三类核心 worker 的历史输入边界记录如下；当前完整 Worker 清单见本文顶部快照：
 
 - `profile_agent`
   - 输入来源：最近几轮 `HumanMessage` + `query` + 已有 `profile.confirmed_info`
@@ -1846,7 +1864,7 @@ sequenceDiagram
 
 ### 3.6 worker 的真实输出边界
 
-当前三个 worker 的输出边界并不完全一致：
+早期三类核心 worker 的历史输出边界并不完全一致；当前资源 Worker 输出以资源契约和 `course_resources/` 实现为准：
 
 - `profile_agent`
   - 可能返回 `profile(type=collecting)`

@@ -4,13 +4,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
 
 import httpx
 import pytest
+from sqlmodel import Session
 
+from app.database import build_engine, init_db, set_engine
+from app.models import User, UserCourseKnowledgeOutline
 from app.orchestration.agents.course_resources import (
     _ANIMATION_TIMEOUT_SECONDS,
     _MARKDOWN_TIMEOUT_SECONDS,
@@ -34,17 +38,39 @@ from app.orchestration.agents.course_resources import (
     _video_input,
     _video_repair_input,
     _video_search_queries,
+    run_section_markdown_agent,
+)
+from app.orchestration.agents.course_resources import (
+    aliyun_bilibili_search as aliyun_bilibili_search_module,
 )
 from app.orchestration.agents.course_resources import animation as animation_module
 from app.orchestration.agents.course_resources import bilibili as bilibili_module
 from app.orchestration.agents.course_resources import video as video_module
+from app.orchestration.agents.course_resources.aliyun_bilibili_search import (
+    AliyunBilibiliSearchSource,
+    _search_aliyun_bilibili_sources,
+)
 from app.orchestration.agents.course_resources.common import (
     SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT,
     _resource_query_with_prompt_budget,
     _section_markdown_data_from_plain_text,
 )
+from app.orchestration.agents.models import (
+    SectionHtmlAnimationOutput,
+    SectionMarkdownOutput,
+    SectionVideoSearchOutput,
+)
 from app.orchestration.agents.prompts import SECTION_VIDEO_SEARCH_AGENT_SYSTEM_PROMPT
 from tests.postgres import postgresql_test_url
+
+
+class _DashScopeResponse:
+    def __init__(self, *, content: object, search_results: object) -> None:
+        self.status_code = 200
+        self.output = {
+            "choices": [{"message": {"content": content}}],
+            "search_info": {"search_results": search_results},
+        }
 
 
 def _outline() -> dict:
@@ -112,6 +138,407 @@ def _outline() -> dict:
         "learning_sequence": ["第一章：需求拆解", "第二章：接口接入"],
         "total_estimated_hours": "8 小时",
     }
+
+
+def test_aliyun_bilibili_search_uses_native_dashscope_contract(
+    monkeypatch,
+) -> None:
+    calls: list[dict] = []
+
+    def conversation_call(**kwargs):
+        calls.append(kwargs)
+        return _DashScopeResponse(
+            content=[{"text": '```json\n{"indexes":[2,1]}\n```'}],
+            search_results=[
+                {
+                    "title": "第一条",
+                    "url": "https://www.bilibili.com/video/BV1234567890",
+                    "site_name": "哔哩哔哩",
+                    "index": 1,
+                },
+                {
+                    "title": "第二条",
+                    "url": "https://www.bilibili.com/video/BV0987654321",
+                    "site_name": "哔哩哔哩",
+                    "index": 2,
+                },
+            ],
+        )
+
+    monkeypatch.setenv("LLM_API_KEY", "native-search-key")
+    monkeypatch.setenv("LLM_MODEL", "qwen-search-model")
+    monkeypatch.setattr(
+        aliyun_bilibili_search_module.MultiModalConversation,
+        "call",
+        conversation_call,
+    )
+
+    results = asyncio.run(_search_aliyun_bilibili_sources("精确的小节语义范围"))
+
+    assert [result.index for result in results] == [2, 1]
+    assert calls == [
+        {
+            "api_key": "native-search-key",
+            "model": "qwen-search-model",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "text": (
+                                "根据小节语义，对联网搜索来源按相关性从高到低排序。"
+                                "返回所有语义相关来源的索引，不判断 URL 形态，"
+                                "不遗漏较低排名来源。"
+                                '只返回严格 JSON：{"indexes":[整数索引]}。'
+                            )
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [{"text": "精确的小节语义范围"}],
+                },
+            ],
+            "enable_search": True,
+            "result_format": "message",
+            "search_options": {
+                "forced_search": True,
+                "search_strategy": "turbo",
+                "enable_source": True,
+                "assigned_site_list": ["bilibili.com"],
+                "intention_options": {"prompt_intervene": "精确的小节语义范围"},
+            },
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("content", "expected_indexes"),
+    [
+        ('{"indexes":[3,1,3,2]}', [3, 1, 2]),
+        ('{"indexes":[true,1,"2",2]}', [1, 2]),
+        ('{"indexes":[99]}', []),
+        ('{"indexes":"1"}', []),
+        ('{"url":"https://www.bilibili.com/video/BV0000000000"}', []),
+        ("", []),
+        ("not-json", []),
+    ],
+)
+def test_aliyun_bilibili_search_only_returns_indexed_search_info_sources(
+    monkeypatch,
+    content: str,
+    expected_indexes: list[int],
+) -> None:
+    response = _DashScopeResponse(
+        content=[{"text": content}],
+        search_results=[
+            {
+                "title": f"来源 {index}",
+                "url": f"https://www.bilibili.com/video/BV{index:010d}",
+                "site_name": "哔哩哔哩",
+                "index": index,
+            }
+            for index in (1, 2, 3)
+        ],
+    )
+    monkeypatch.setenv("LLM_API_KEY", "key")
+    monkeypatch.setenv("LLM_MODEL", "model")
+    monkeypatch.setattr(
+        aliyun_bilibili_search_module.MultiModalConversation,
+        "call",
+        lambda **_kwargs: response,
+    )
+
+    results = asyncio.run(_search_aliyun_bilibili_sources("scope"))
+
+    assert [result.index for result in results] == expected_indexes
+    assert all("BV0000000000" not in result.url for result in results)
+
+
+def test_aliyun_bilibili_search_rejects_invalid_response_contract(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_API_KEY", "key")
+    monkeypatch.setenv("LLM_MODEL", "model")
+    invalid_responses = [
+        _DashScopeResponse(content='{"indexes":[1]}', search_results=None),
+        _DashScopeResponse(
+            content='{"indexes":[1]}',
+            search_results=[
+                {
+                    "title": "标题",
+                    "url": "https://www.bilibili.com/video/BV0000000001",
+                    "site_name": "哔哩哔哩",
+                    "index": "1",
+                }
+            ],
+        ),
+    ]
+    invalid_responses[0].status_code = 503
+
+    for response in invalid_responses:
+        monkeypatch.setattr(
+            aliyun_bilibili_search_module.MultiModalConversation,
+            "call",
+            lambda **_kwargs: response,
+        )
+        assert asyncio.run(_search_aliyun_bilibili_sources("scope")) == []
+
+
+def test_aliyun_bilibili_search_returns_empty_without_config_or_on_sdk_error(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    assert asyncio.run(_search_aliyun_bilibili_sources("scope")) == []
+
+    monkeypatch.setenv("LLM_API_KEY", "key")
+    monkeypatch.setenv("LLM_MODEL", "model")
+
+    def fail_call(**_kwargs):
+        raise TimeoutError("search timeout")
+
+    monkeypatch.setattr(
+        aliyun_bilibili_search_module.MultiModalConversation,
+        "call",
+        fail_call,
+    )
+    assert asyncio.run(_search_aliyun_bilibili_sources("scope")) == []
+
+
+def test_find_verified_video_uses_native_sources_and_metadata_title(
+    monkeypatch,
+) -> None:
+    outline = _outline()
+    section = outline["sections"][1]
+    briefs = [
+        {
+            "video_id": "video_1",
+            "title": "功能边界实战",
+            "purpose": "通过示例理解功能边界。",
+            "target_markdown_heading": "## 功能边界",
+            "target_paragraph_summary": "区分范围内与范围外的功能。",
+            "search_terms": ["功能边界", "需求分析"],
+        }
+    ]
+    scopes: list[dict] = []
+
+    async def native_search(scope: str) -> list[AliyunBilibiliSearchSource]:
+        scope_constraint, scope_payload = scope.split("\n", maxsplit=1)
+        scopes.append(
+            {
+                "constraint": scope_constraint,
+                "payload": json.loads(scope_payload),
+            }
+        )
+        return [
+            AliyunBilibiliSearchSource(
+                title="模型来源标题一",
+                url="https://www.bilibili.com/video/BV0000000001",
+                site_name="哔哩哔哩",
+                index=7,
+            ),
+            AliyunBilibiliSearchSource(
+                title="模型来源标题二",
+                url="https://www.bilibili.com/video/BV0000000002",
+                site_name="哔哩哔哩",
+                index=3,
+            ),
+        ]
+
+    async def verify_metadata(url: str) -> dict:
+        if url.endswith("1"):
+            return {"status": "invalid", "reason": "稿件不可见"}
+        return {
+            "status": "ok",
+            "title": "稿件接口真实标题",
+            "text": "稿件接口真实标题与简介",
+        }
+
+    async def old_search(_query: str) -> list[dict]:
+        raise AssertionError("旧本地搜索链路不应被调用")
+
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources._search_bilibili_video_results",
+        old_search,
+    )
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources._search_youtube_video_results",
+        old_search,
+    )
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources._search_aliyun_bilibili_sources",
+        native_search,
+    )
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources._verify_bilibili_video_metadata",
+        verify_metadata,
+    )
+
+    result = asyncio.run(_find_verified_video_from_search(briefs, section, outline))
+
+    assert result == [
+        {
+            "brief_id": "video_1",
+            "title": "稿件接口真实标题",
+            "url": "https://www.bilibili.com/video/BV0000000002",
+            "source": "Bilibili",
+        }
+    ]
+    assert scopes == [
+        {
+            "constraint": (
+                "只检索 Bilibili 精确视频稿件页；来源 URL 必须形如 "
+                "https://www.bilibili.com/video/BV...；排除专栏、动态、课程、"
+                "搜索页和用户页。"
+            ),
+            "payload": {
+                "course_name": "AI 应用开发",
+                "parent_section": {
+                    "title": "需求拆解",
+                    "description": "确认功能边界与验收标准。",
+                    "key_knowledge_points": ["功能边界", "验收标准"],
+                },
+                "section": {
+                    "title": "学习目标",
+                    "description": "明确本节学习目标。",
+                    "key_knowledge_points": ["功能边界"],
+                },
+                "video_brief": briefs[0],
+            },
+        }
+    ]
+
+
+def test_find_verified_video_searches_briefs_and_verifies_sources_concurrently(
+    monkeypatch,
+) -> None:
+    outline = _outline()
+    section = outline["sections"][1]
+    briefs = [
+        {"video_id": "video_1", "title": "主题一", "search_terms": ["一"]},
+        {"video_id": "video_2", "title": "主题二", "search_terms": ["二"]},
+    ]
+    search_started = 0
+    searches_started = asyncio.Event()
+    verification_started = 0
+    verifications_started = asyncio.Event()
+
+    async def native_search(scope: str) -> list[AliyunBilibiliSearchSource]:
+        nonlocal search_started
+        search_started += 1
+        if search_started == 2:
+            searches_started.set()
+        await asyncio.wait_for(searches_started.wait(), timeout=0.2)
+        brief = json.loads(scope.split("\n", maxsplit=1)[1])["video_brief"]
+        suffix = "1" if brief["video_id"] == "video_1" else "2"
+        return [
+            AliyunBilibiliSearchSource(
+                title=f"来源 {suffix}-{rank}",
+                url=f"https://www.bilibili.com/video/BV{suffix * 9}{rank}",
+                site_name="哔哩哔哩",
+                index=rank,
+            )
+            for rank in (1, 2)
+        ]
+
+    async def verify_metadata(url: str) -> dict:
+        nonlocal verification_started
+        verification_started += 1
+        if verification_started == 4:
+            verifications_started.set()
+        await asyncio.wait_for(verifications_started.wait(), timeout=0.2)
+        return {"status": "ok", "title": f"真实标题 {url[-1]}", "text": ""}
+
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources._search_aliyun_bilibili_sources",
+        native_search,
+    )
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources._verify_bilibili_video_metadata",
+        verify_metadata,
+    )
+
+    result = asyncio.run(_find_verified_video_from_search(briefs, section, outline))
+
+    assert search_started == 2
+    assert verification_started == 4
+    assert [video["brief_id"] for video in result] == ["video_1", "video_2"]
+    assert [video["url"][-1] for video in result] == ["1", "1"]
+
+
+def test_find_verified_video_rejects_non_exact_bilibili_urls(monkeypatch) -> None:
+    invalid_urls = [
+        "http://www.bilibili.com/video/BV0000000001",
+        "https://bilibili.com/video/BV0000000002",
+        "https://www.bilibili.com/video/BV0000000003?from=search",
+        "https://www.bilibili.com/video/BV0000000004#reply",
+        "https://www.bilibili.com/video/av123",
+        "https://www.youtube.com/watch?v=video",
+    ]
+
+    async def native_search(_scope: str) -> list[AliyunBilibiliSearchSource]:
+        return [
+            AliyunBilibiliSearchSource("标题", url, "哔哩哔哩", index)
+            for index, url in enumerate(invalid_urls, start=1)
+        ]
+
+    async def verify_metadata(_url: str) -> dict:
+        raise AssertionError("无效 URL 不应调用稿件接口")
+
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources._search_aliyun_bilibili_sources",
+        native_search,
+    )
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources._verify_bilibili_video_metadata",
+        verify_metadata,
+    )
+
+    result = asyncio.run(
+        _find_verified_video_from_search(
+            [{"video_id": "video_1", "title": "主题"}],
+            _outline()["sections"][1],
+            _outline(),
+        )
+    )
+
+    assert result == []
+
+
+def test_find_verified_video_canonicalizes_exact_bilibili_trailing_slash(
+    monkeypatch,
+) -> None:
+    async def native_search(_scope: str) -> list[AliyunBilibiliSearchSource]:
+        return [
+            AliyunBilibiliSearchSource(
+                "标题",
+                "https://www.bilibili.com/video/BV0000000001/",
+                "哔哩哔哩",
+                1,
+            )
+        ]
+
+    async def verify_metadata(url: str) -> dict:
+        assert url == "https://www.bilibili.com/video/BV0000000001"
+        return {"status": "ok", "title": "稿件接口真实标题", "text": ""}
+
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources._search_aliyun_bilibili_sources",
+        native_search,
+    )
+    monkeypatch.setattr(
+        "app.orchestration.agents.course_resources._verify_bilibili_video_metadata",
+        verify_metadata,
+    )
+
+    result = asyncio.run(
+        _find_verified_video_from_search(
+            [{"video_id": "video_1", "title": "主题"}],
+            _outline()["sections"][1],
+            _outline(),
+        )
+    )
+
+    assert result[0]["url"] == "https://www.bilibili.com/video/BV0000000001"
 
 
 def test_markdown_expansion_prompt_allows_english_evidence_but_requires_chinese_output() -> (
@@ -1522,360 +1949,6 @@ def test_video_search_queries_prioritize_asyncio_blocking_terms_for_checkpoint()
 
     assert "Python asyncio 阻塞事件循环 最佳实践 教程" in queries
     assert "Python 异步编程 阻塞事件循环 稳定性 教程" in queries
-
-
-def test_find_verified_video_from_search_prefers_brief_specific_title_over_generic_vector_db(
-    monkeypatch,
-) -> None:
-    outline = {
-        "course_id": "year_3_course_1",
-        "course_name": "AI 应用基础架构：向量数据库与非结构化数据处理",
-        "grade_year": "year_3",
-        "sections": [
-            {
-                "section_id": "1",
-                "parent_section_id": None,
-                "depth": 1,
-                "title": "环境搭建与 Embedding 原理验证",
-                "order_index": 1,
-                "description": "围绕向量数据库环境搭建与 Embedding 原理验证展开。",
-                "key_knowledge_points": ["Embedding 模型的选择与维度映射原理"],
-            },
-            {
-                "section_id": "1.2",
-                "parent_section_id": "1",
-                "depth": 2,
-                "title": "任务拆解",
-                "order_index": 2,
-                "description": "把环境搭建与 Embedding 验证拆成可执行任务。",
-                "key_knowledge_points": ["向量数据库", "Embedding", "RAG"],
-            },
-        ],
-    }
-    section = _section_by_id(outline, "1.2")
-
-    assert section is not None
-
-    briefs = [
-        {
-            "video_id": "video_1",
-            "title": "RAG 架构全景与 Embedding 在其中的角色",
-            "purpose": "帮助学习者理解环境搭建与 Embedding 验证在 RAG 链路中的位置。",
-        }
-    ]
-
-    import app.orchestration.agents.course_resources as module
-
-    async def fake_search(_query: str) -> list[dict]:
-        return [
-            {
-                "title": "Pinecone向量数据库入门 - OpenAI Embedding向量数据存储",
-                "url": "https://www.bilibili.com/video/BV1Pinecone1",
-                "cover_url": "",
-                "source": "Bilibili",
-            },
-            {
-                "title": "RAG 架构全景与 Embedding 在其中的角色 LangChain 教程",
-                "url": "https://www.bilibili.com/video/BV1RagGuide2",
-                "cover_url": "",
-                "source": "Bilibili",
-            },
-        ]
-
-    async def fake_verify(url: str) -> dict:
-        if url == "https://www.bilibili.com/video/BV1Pinecone1":
-            return {
-                "status": "ok",
-                "text": "Pinecone向量数据库入门 OpenAI Embedding 向量数据存储 教程",
-                "title": "Pinecone向量数据库入门 - OpenAI Embedding向量数据存储",
-            }
-        if url == "https://www.bilibili.com/video/BV1RagGuide2":
-            return {
-                "status": "ok",
-                "text": "RAG 架构全景与 Embedding 在其中的角色 LangChain 教程 环境搭建",
-                "title": "RAG 架构全景与 Embedding 在其中的角色 LangChain 教程",
-            }
-        raise AssertionError(f"unexpected url: {url}")
-
-    async def fake_youtube_search(_query: str) -> list[dict]:
-        return []
-
-    monkeypatch.setattr(module, "_search_bilibili_video_results", fake_search)
-    monkeypatch.setattr(module, "_search_youtube_video_results", fake_youtube_search)
-    monkeypatch.setattr(module, "_verify_bilibili_video_metadata", fake_verify)
-
-    verified = asyncio.run(_find_verified_video_from_search(briefs, section, outline))
-
-    assert len(verified) == 1
-    assert verified[0]["brief_id"] == "video_1"
-    assert verified[0]["url"] == "https://www.bilibili.com/video/BV1RagGuide2"
-
-
-def test_find_verified_video_from_search_keeps_scanning_later_queries_for_better_match(
-    monkeypatch,
-) -> None:
-    outline = {
-        "course_id": "year_3_course_1",
-        "course_name": "AI 应用基础架构：向量数据库与非结构化数据处理",
-        "grade_year": "year_3",
-        "sections": [
-            {
-                "section_id": "1",
-                "parent_section_id": None,
-                "depth": 1,
-                "title": "环境搭建与 Embedding 原理验证",
-                "order_index": 1,
-                "description": "围绕向量数据库环境搭建与 Embedding 原理验证展开。",
-                "key_knowledge_points": ["Embedding 模型的选择与维度映射原理"],
-            },
-            {
-                "section_id": "1.2",
-                "parent_section_id": "1",
-                "depth": 2,
-                "title": "任务拆解",
-                "order_index": 2,
-                "description": "把环境搭建与 Embedding 验证拆成可执行任务。",
-                "key_knowledge_points": ["向量数据库", "Embedding", "RAG"],
-            },
-        ],
-    }
-    section = _section_by_id(outline, "1.2")
-
-    assert section is not None
-
-    briefs = [
-        {
-            "video_id": "video_1",
-            "title": "RAG 架构全景与 Embedding 在其中的角色",
-            "purpose": "帮助学习者理解环境搭建与 Embedding 验证在 RAG 链路中的位置。",
-        }
-    ]
-
-    import app.orchestration.agents.course_resources as module
-
-    queries_seen: list[str] = []
-
-    async def fake_search(query: str) -> list[dict]:
-        queries_seen.append(query)
-        if len(queries_seen) == 1:
-            return [
-                {
-                    "title": "Pinecone向量数据库入门 - OpenAI Embedding向量数据存储",
-                    "url": "https://www.bilibili.com/video/BV1Pinecone1",
-                    "cover_url": "",
-                    "source": "Bilibili",
-                }
-            ]
-        return [
-            {
-                "title": "15分钟弄懂Token和Embedding -- 详解LLM与RAG的数据处理机制",
-                "url": "https://www.bilibili.com/video/BV1TokenEmb2",
-                "cover_url": "",
-                "source": "Bilibili",
-            }
-        ]
-
-    async def fake_verify(url: str) -> dict:
-        if url == "https://www.bilibili.com/video/BV1Pinecone1":
-            return {
-                "status": "ok",
-                "text": "Pinecone向量数据库入门 OpenAI Embedding 向量数据存储 教程",
-                "title": "Pinecone向量数据库入门 - OpenAI Embedding向量数据存储",
-            }
-        if url == "https://www.bilibili.com/video/BV1TokenEmb2":
-            return {
-                "status": "ok",
-                "text": "15分钟弄懂Token和Embedding 详解LLM与RAG的数据处理机制 环境搭建",
-                "title": "15分钟弄懂Token和Embedding -- 详解LLM与RAG的数据处理机制",
-            }
-        raise AssertionError(f"unexpected url: {url}")
-
-    async def fake_youtube_search(_query: str) -> list[dict]:
-        return []
-
-    monkeypatch.setattr(module, "_search_bilibili_video_results", fake_search)
-    monkeypatch.setattr(module, "_search_youtube_video_results", fake_youtube_search)
-    monkeypatch.setattr(module, "_verify_bilibili_video_metadata", fake_verify)
-
-    verified = asyncio.run(_find_verified_video_from_search(briefs, section, outline))
-
-    assert len(queries_seen) >= 2
-    assert len(verified) == 1
-    assert verified[0]["url"] == "https://www.bilibili.com/video/BV1TokenEmb2"
-
-
-def test_find_verified_video_from_search_prefers_dimension_mismatch_debug_video_over_generic_embedding(
-    monkeypatch,
-) -> None:
-    outline = {
-        "course_id": "year_3_course_1",
-        "course_name": "RAG Core: Embeddings & Vector Search Engine",
-        "grade_year": "year_3",
-        "sections": [
-            {
-                "section_id": "1",
-                "parent_section_id": None,
-                "depth": 1,
-                "title": "Data Ingestion & Chunking Strategy",
-                "order_index": 1,
-                "description": "围绕数据摄取与分块策略展开。",
-                "key_knowledge_points": [
-                    "Text splitting strategies (recursive character vs semantic)"
-                ],
-            },
-            {
-                "section_id": "1.3",
-                "parent_section_id": "1",
-                "depth": 2,
-                "title": "检查点",
-                "order_index": 3,
-                "description": "确认这一章是否真正学会。",
-                "key_knowledge_points": [
-                    "Debugging dimension mismatches between query and document embeddings",
-                    "A Python script that loads a PDF/Text file, chunks it, generates embeddings, and stores them in a local Vector DB.",
-                ],
-            },
-        ],
-    }
-    section = _section_by_id(outline, "1.3")
-
-    assert section is not None
-
-    briefs = [
-        {
-            "video_id": "video_1",
-            "title": "RAG 调试实战：维度不匹配错误排查",
-            "purpose": "通过屏幕录制演示，展示当 Query 和 Document 向量维度不一致时，Python 控制台的具体报错信息（如 ValueError: Dimension mismatch），并逐步演示如何通过打印 shape 和统一模型实例来定位和修复该问题。",
-        }
-    ]
-
-    import app.orchestration.agents.course_resources as module
-
-    async def fake_search(_query: str) -> list[dict]:
-        return [
-            {
-                "title": "Qwen3 Embedding 模型详解：文本嵌入与重排序性能全面超越SOTA",
-                "url": "https://www.bilibili.com/video/BV1generic1234",
-                "cover_url": "",
-                "source": "Bilibili",
-            },
-            {
-                "title": "RAG 调试实战：维度不匹配错误排查",
-                "url": "https://www.bilibili.com/video/BV1abcde1234",
-                "cover_url": "",
-                "source": "Bilibili",
-            },
-        ]
-
-    async def fake_verify(url: str) -> dict:
-        if url == "https://www.bilibili.com/video/BV1generic1234":
-            return {
-                "status": "ok",
-                "text": "Qwen3 Embedding 模型详解 文本嵌入 重排序 检索增强生成 大模型RAG 通义千问",
-                "title": "Qwen3 Embedding 模型详解：文本嵌入与重排序性能全面超越SOTA",
-            }
-        if url == "https://www.bilibili.com/video/BV1abcde1234":
-            return {
-                "status": "ok",
-                "text": "RAG 调试实战 维度不匹配 错误排查 Query Document Embedding shape ValueError Dimension mismatch",
-                "title": "RAG 调试实战：维度不匹配错误排查",
-            }
-        raise AssertionError(f"unexpected url: {url}")
-
-    async def fake_youtube_search(_query: str) -> list[dict]:
-        return []
-
-    monkeypatch.setattr(module, "_search_bilibili_video_results", fake_search)
-    monkeypatch.setattr(module, "_search_youtube_video_results", fake_youtube_search)
-    monkeypatch.setattr(module, "_verify_bilibili_video_metadata", fake_verify)
-
-    verified = asyncio.run(_find_verified_video_from_search(briefs, section, outline))
-
-    assert len(verified) == 1
-    assert verified[0]["url"] == "https://www.bilibili.com/video/BV1abcde1234"
-
-
-def test_find_verified_video_from_search_uses_youtube_when_bilibili_has_no_verified_match(
-    monkeypatch,
-) -> None:
-    outline = {
-        "course_id": "year_3_course_1",
-        "course_name": "RAG Core: Embeddings & Vector Search Engine",
-        "grade_year": "year_3",
-        "sections": [
-            {
-                "section_id": "1",
-                "parent_section_id": None,
-                "depth": 1,
-                "title": "Data Ingestion & Chunking Strategy",
-                "order_index": 1,
-                "description": "围绕数据摄取与分块策略展开。",
-                "key_knowledge_points": [
-                    "Text splitting strategies (recursive character vs semantic)"
-                ],
-            },
-            {
-                "section_id": "1.3",
-                "parent_section_id": "1",
-                "depth": 2,
-                "title": "检查点",
-                "order_index": 3,
-                "description": "确认这一章是否真正学会。",
-                "key_knowledge_points": [
-                    "Debugging dimension mismatches between query and document embeddings",
-                    "A Python script that loads a PDF/Text file, chunks it, generates embeddings, and stores them in a local Vector DB.",
-                ],
-            },
-        ],
-    }
-    section = _section_by_id(outline, "1.3")
-
-    assert section is not None
-
-    briefs = [
-        {
-            "video_id": "video_1",
-            "title": "RAG 调试实战：维度不匹配错误排查",
-            "purpose": "通过屏幕录制演示，展示当 Query 和 Document 向量维度不一致时，Python 控制台的具体报错信息（如 ValueError: Dimension mismatch），并逐步演示如何通过打印 shape 和统一模型实例来定位和修复该问题。",
-        }
-    ]
-
-    import app.orchestration.agents.course_resources as module
-
-    async def fake_bilibili_search(_query: str) -> list[dict]:
-        return []
-
-    async def fake_youtube_search(_query: str) -> list[dict]:
-        return [
-            {
-                "title": "How to solve n8n Supabase Vector Dimensions Embedding error",
-                "url": "https://www.youtube.com/watch?v=w6HDiP5eHt0",
-                "cover_url": "",
-                "source": "YouTube",
-            }
-        ]
-
-    monkeypatch.setattr(module, "_search_bilibili_video_results", fake_bilibili_search)
-    monkeypatch.setattr(module, "_search_youtube_video_results", fake_youtube_search)
-
-    verified = asyncio.run(_find_verified_video_from_search(briefs, section, outline))
-
-    assert len(verified) == 1
-    assert verified[0]["url"] == "https://www.youtube.com/watch?v=w6HDiP5eHt0"
-
-
-import asyncio
-
-from sqlmodel import Session
-
-from app.database import build_engine, init_db, set_engine
-from app.models import User, UserCourseKnowledgeOutline
-from app.orchestration.agents.course_resources import run_section_markdown_agent
-from app.orchestration.agents.models import (
-    SectionHtmlAnimationOutput,
-    SectionMarkdownOutput,
-    SectionVideoSearchOutput,
-)
 
 
 def _payload_from_query(query: str) -> dict:
@@ -4362,8 +4435,8 @@ def test_stream_chapter_resource_generation_reports_error_when_resource_llm_fail
             {
                 "brief_id": brief["video_id"],
                 "title": (f"{brief['title']} {section['title']} {brief['purpose']}"),
-                "url": "https://www.youtube.com/watch?v=resource-animation-test",
-                "source": "YouTube",
+                "url": "https://www.bilibili.com/video/BV0000000001",
+                "source": "Bilibili",
             }
         ]
 
@@ -4430,7 +4503,7 @@ def test_run_section_video_search_agent_writes_url_and_fallback_cover(
                     {
                         "brief_id": "video_1",
                         "title": "AI 应用开发需求边界与验收标准学习目标讲解",
-                        "url": "https://www.youtube.com/watch?v=dummy-video",
+                        "url": "https://www.bilibili.com/video/BV0000000001",
                         "cover_url": "",
                         "source": "example.com",
                     }
@@ -4452,7 +4525,7 @@ def test_run_section_video_search_agent_writes_url_and_fallback_cover(
             {
                 "brief_id": "video_1",
                 "title": "AI 应用开发需求边界与验收标准学习目标讲解",
-                "url": "https://www.youtube.com/watch?v=dummy-video",
+                "url": "https://www.bilibili.com/video/BV0000000001",
                 "cover_url": "",
                 "source": "example.com",
             }
@@ -4524,7 +4597,7 @@ def test_run_section_video_search_agent_writes_url_and_fallback_cover(
     assert captured["verified_search"] == 1
     videos = result["course_knowledge"]["section_video_links"]["1.1"]["videos"]
     assert videos[0]["brief_id"] == "video_1"
-    assert videos[0]["url"] == "https://www.youtube.com/watch?v=dummy-video"
+    assert videos[0]["url"] == "https://www.bilibili.com/video/BV0000000001"
     assert videos[0]["cover_status"] == "fallback"
     assert videos[0]["cover_url"].startswith("data:image/svg+xml;utf8,")
 
@@ -4548,7 +4621,7 @@ def test_run_section_video_search_agent_retries_transient_search_failure(
                     {
                         "brief_id": "video_1",
                         "title": "需求边界导入视频：需求边界与验收标准重试讲解",
-                        "url": "https://www.youtube.com/watch?v=dummy-retried-video",
+                        "url": "https://www.bilibili.com/video/BV0000000002",
                         "cover_url": "https://example.com/cover.png",
                         "source": "example.com",
                     }
@@ -4572,7 +4645,7 @@ def test_run_section_video_search_agent_retries_transient_search_failure(
             {
                 "brief_id": "video_1",
                 "title": "需求边界导入视频：需求边界与验收标准重试讲解",
-                "url": "https://www.youtube.com/watch?v=dummy-retried-video",
+                "url": "https://www.bilibili.com/video/BV0000000002",
                 "cover_url": "https://example.com/cover.png",
                 "source": "example.com",
             }
@@ -4641,7 +4714,7 @@ def test_run_section_video_search_agent_retries_transient_search_failure(
     assert captured["attempts"] == 0
     assert captured["search_attempts"] == 2
     videos = result["course_knowledge"]["section_video_links"]["1.1"]["videos"]
-    assert videos[0]["url"] == "https://www.youtube.com/watch?v=dummy-retried-video"
+    assert videos[0]["url"] == "https://www.bilibili.com/video/BV0000000002"
 
 
 def test_run_section_video_search_agent_retries_when_first_search_result_fails_quality(
@@ -4662,7 +4735,7 @@ def test_run_section_video_search_agent_retries_when_first_search_result_fails_q
                         {
                             "brief_id": "video_1",
                             "title": "通用课程首页",
-                            "url": "https://www.youtube.com/watch?v=dummy-generic-video",
+                            "url": "https://search.bilibili.com/video?keyword=generic",
                             "cover_url": "",
                             "source": "example.com",
                         }
@@ -4675,7 +4748,7 @@ def test_run_section_video_search_agent_retries_when_first_search_result_fails_q
                     {
                         "brief_id": "video_1",
                         "title": "学习目标：功能边界与验收标准实战讲解",
-                        "url": "https://www.youtube.com/watch?v=dummy-repaired-video",
+                        "url": "https://www.bilibili.com/video/BV0000000003",
                         "cover_url": "",
                         "source": "example.com",
                     }
@@ -4698,7 +4771,7 @@ def test_run_section_video_search_agent_retries_when_first_search_result_fails_q
                 {
                     "brief_id": "video_1",
                     "title": "通用课程首页",
-                    "url": "https://www.youtube.com/watch?v=dummy-generic-video",
+                    "url": "https://search.bilibili.com/video?keyword=generic",
                     "cover_url": "",
                     "source": "example.com",
                 }
@@ -4707,7 +4780,7 @@ def test_run_section_video_search_agent_retries_when_first_search_result_fails_q
             {
                 "brief_id": "video_1",
                 "title": "学习目标：功能边界与验收标准实战讲解",
-                "url": "https://www.youtube.com/watch?v=dummy-repaired-video",
+                "url": "https://www.bilibili.com/video/BV0000000003",
                 "cover_url": "",
                 "source": "example.com",
             }
@@ -4777,7 +4850,7 @@ def test_run_section_video_search_agent_retries_when_first_search_result_fails_q
     assert captured["attempts"] == 0
     assert captured["search_attempts"] == 2
     videos = result["course_knowledge"]["section_video_links"]["1.1"]["videos"]
-    assert videos[0]["url"] == "https://www.youtube.com/watch?v=dummy-repaired-video"
+    assert videos[0]["url"] == "https://www.bilibili.com/video/BV0000000003"
 
 
 def test_run_section_video_search_agent_uses_verified_search_when_llm_videos_stay_bad(
@@ -5296,7 +5369,7 @@ def test_run_section_video_search_agent_accepts_section_topic_match_without_cour
             {
                 "brief_id": "video_1",
                 "title": "State对象设计与序列化约束 TypedDict 与 Pydantic 实战讲解",
-                "url": "https://www.youtube.com/watch?v=dummy-langgraph-state",
+                "url": "https://www.bilibili.com/video/BV0000000004",
                 "cover_url": "",
                 "source": "LangGraph 教学",
             }
@@ -5387,7 +5460,7 @@ def test_run_section_video_search_agent_accepts_section_topic_match_without_cour
 
     assert "error" not in result
     videos = result["course_knowledge"]["section_video_links"]["1.2"]["videos"]
-    assert videos[0]["url"] == "https://www.youtube.com/watch?v=dummy-langgraph-state"
+    assert videos[0]["url"] == "https://www.bilibili.com/video/BV0000000004"
 
 
 def test_run_section_video_search_agent_returns_hard_error_when_verified_search_stays_empty(
@@ -5541,151 +5614,6 @@ def test_run_section_video_search_agent_returns_hard_error_when_verified_search_
     assert section_video["failure_reason"] == "未找到合格视频：视频检索超时。"
     assert section_video["videos"] == []
     assert "Video search timed out for section 1.1" in caplog.text
-
-
-def test_find_verified_video_from_search_only_waits_for_youtube_on_first_query(
-    monkeypatch,
-) -> None:
-    import app.orchestration.agents.course_resources as module
-
-    platform_calls = {"bilibili": 0, "youtube": 0}
-
-    async def bilibili_search(_query: str) -> list[dict]:
-        platform_calls["bilibili"] += 1
-        return []
-
-    async def youtube_search(_query: str) -> list[dict]:
-        platform_calls["youtube"] += 1
-        return []
-
-    monkeypatch.setattr(module, "_search_bilibili_video_results", bilibili_search)
-    monkeypatch.setattr(module, "_search_youtube_video_results", youtube_search)
-
-    videos = asyncio.run(
-        _find_verified_video_from_search(
-            [
-                {
-                    "video_id": "video_1",
-                    "title": "算法效率",
-                    "purpose": "理解算法效率的必要性",
-                }
-            ],
-            {
-                "section_id": "1.1",
-                "title": "效率需求的背景",
-                "description": "解释算法效率的必要性。",
-                "key_knowledge_points": ["算法效率"],
-            },
-            None,
-        )
-    )
-
-    assert videos == []
-    assert platform_calls == {
-        "bilibili": video_module._VIDEO_VERIFIED_QUERY_LIMIT,
-        "youtube": 1,
-    }
-
-
-def test_find_verified_video_from_search_validates_query_candidates_concurrently(
-    monkeypatch,
-) -> None:
-    import app.orchestration.agents.course_resources as module
-
-    active_validations = 0
-    max_active_validations = 0
-
-    async def bilibili_search(_query: str) -> list[dict]:
-        return [
-            {
-                "title": "算法效率与基本操作计数入门",
-                "url": "https://www.bilibili.com/video/BV1AlgoEff01",
-                "cover_url": "",
-                "source": "Bilibili",
-            },
-            {
-                "title": "算法效率与基本操作计数进阶",
-                "url": "https://www.bilibili.com/video/BV1AlgoEff02",
-                "cover_url": "",
-                "source": "Bilibili",
-            },
-        ]
-
-    async def youtube_search(_query: str) -> list[dict]:
-        return []
-
-    async def verify_metadata(url: str) -> dict:
-        nonlocal active_validations, max_active_validations
-        active_validations += 1
-        max_active_validations = max(max_active_validations, active_validations)
-        await asyncio.sleep(0.01)
-        active_validations -= 1
-        return {
-            "status": "ok",
-            "text": "算法效率 基本操作计数 处理器速度 复杂度",
-            "title": (
-                "算法效率与基本操作计数入门"
-                if url.endswith("01")
-                else "算法效率与基本操作计数进阶"
-            ),
-        }
-
-    monkeypatch.setattr(module, "_search_bilibili_video_results", bilibili_search)
-    monkeypatch.setattr(module, "_search_youtube_video_results", youtube_search)
-    monkeypatch.setattr(module, "_verify_bilibili_video_metadata", verify_metadata)
-
-    videos = asyncio.run(
-        _find_verified_video_from_search(
-            [
-                {
-                    "video_id": "video_1",
-                    "title": "算法效率与基本操作计数",
-                    "purpose": "理解算法效率的必要性与基本操作计数",
-                }
-            ],
-            {
-                "section_id": "1.1",
-                "title": "效率需求的背景",
-                "description": "解释算法效率的必要性。",
-                "key_knowledge_points": ["算法效率", "基本操作计数"],
-            },
-            None,
-        )
-    )
-
-    assert videos
-    assert max_active_validations == 2
-
-
-def test_find_verified_video_from_search_logs_platform_latency(monkeypatch, caplog):
-    import app.orchestration.agents.course_resources as module
-
-    caplog.set_level(
-        logging.INFO, logger="app.orchestration.agents.course_resources.video"
-    )
-
-    async def empty_search(_query):
-        return []
-
-    monkeypatch.setattr(module, "_search_bilibili_video_results", empty_search)
-    monkeypatch.setattr(module, "_search_youtube_video_results", empty_search)
-
-    result = asyncio.run(
-        _find_verified_video_from_search(
-            [{"video_id": "video_1", "title": "学习目标导入视频"}],
-            {
-                "section_id": "1.1",
-                "title": "学习目标",
-                "description": "明确本节学习目标。",
-                "key_knowledge_points": ["功能边界"],
-            },
-            {},
-        )
-    )
-
-    assert result == []
-    assert "platform=bilibili" in caplog.text
-    assert "platform=youtube" in caplog.text
 
 
 def test_run_section_video_search_agent_rejects_missing_textbook_evidence(
@@ -7742,7 +7670,7 @@ def test_stream_chapter_resource_generation_generates_bound_resources_for_each_c
                         {
                             "brief_id": brief["video_id"],
                             "title": f"{parent_title}{brief['title']}：{section['key_knowledge_points'][0]}实践讲解",
-                            "url": f"https://www.youtube.com/watch?v=dummy-{section_id.replace('.', '-')}",
+                            "url": "https://www.bilibili.com/video/BV0000000005",
                             "cover_url": "",
                             "source": f"example.com {title}",
                         }
@@ -7776,7 +7704,6 @@ def test_stream_chapter_resource_generation_generates_bound_resources_for_each_c
 
     async def verified_search(video_briefs, section, _outline=None):
         brief = video_briefs[0]
-        section_id = section["section_id"]
         parent_title = next(
             (
                 item["title"]
@@ -7789,7 +7716,7 @@ def test_stream_chapter_resource_generation_generates_bound_resources_for_each_c
             {
                 "brief_id": brief["video_id"],
                 "title": f"{parent_title}{brief['title']}：{section['key_knowledge_points'][0]}实践讲解",
-                "url": f"https://www.youtube.com/watch?v=dummy-{section_id.replace('.', '-')}",
+                "url": "https://www.bilibili.com/video/BV0000000005",
                 "cover_url": "",
                 "source": f"example.com {section['title']}",
             }
@@ -7874,7 +7801,7 @@ def test_stream_chapter_resource_generation_generates_bound_resources_for_each_c
             is None
         )
         assert video["brief_id"] == markdown["video_briefs"][0]["video_id"]
-        assert video["url"].startswith("https://www.youtube.com/watch?v=dummy-")
+        assert video["url"] == "https://www.bilibili.com/video/BV0000000005"
         assert (
             animation["animation_id"] == markdown["animation_briefs"][0]["animation_id"]
         )
@@ -7921,7 +7848,7 @@ def test_stream_chapter_resource_generation_accepts_plain_markdown_and_html_outp
                         {
                             "brief_id": brief["video_id"],
                             "title": f"{title}：{section['key_knowledge_points'][0]}实践讲解",
-                            "url": f"https://www.youtube.com/watch?v=dummy-{section_id.replace('.', '-')}",
+                            "url": "https://www.bilibili.com/video/BV0000000006",
                             "cover_url": "",
                             "source": "example.com",
                         }
@@ -7946,7 +7873,6 @@ def test_stream_chapter_resource_generation_accepts_plain_markdown_and_html_outp
 
     async def verified_search(video_briefs, section, _outline=None):
         brief = video_briefs[0]
-        section_id = section["section_id"]
         parent_title = next(
             (
                 item["title"]
@@ -7959,7 +7885,7 @@ def test_stream_chapter_resource_generation_accepts_plain_markdown_and_html_outp
             {
                 "brief_id": brief["video_id"],
                 "title": f"{parent_title}{section['title']}：{section['key_knowledge_points'][0]}实践讲解",
-                "url": f"https://www.youtube.com/watch?v=dummy-{section_id.replace('.', '-')}",
+                "url": "https://www.bilibili.com/video/BV0000000006",
                 "cover_url": "",
                 "source": "example.com",
             }
