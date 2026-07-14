@@ -14,6 +14,7 @@ from langchain_core.language_models import BaseChatModel
 
 from app.orchestration.agents.course_resources.bilibili import (
     _bilibili_bvid_from_url,
+    _is_bilibili_search_placeholder_title,
 )
 from app.orchestration.agents.course_resources.common import (
     _SECTION_CONCURRENCY_LIMIT,
@@ -57,6 +58,26 @@ _VIDEO_TOPIC_STOPWORDS = {
     "任务拆解",
     "检查点",
 }
+
+_VIDEO_QUALITY_GENERIC_KEYWORDS = {
+    "ai",
+    "agent",
+    "openaiapi",
+    "openai",
+    "智能体",
+    "大模型",
+    "llm",
+    "api",
+    "apikey",
+    "测试",
+    "评测",
+    "标准",
+    "测试用例",
+    "可靠性",
+    "验收标准",
+}
+
+_VIDEO_DOMAIN_KEYWORDS = ("AI", "Agent", "OpenAI", "智能体", "大模型", "LLM", "API")
 
 _VIDEO_TOPIC_SYNONYMS = {
     "检查点": ["测试", "评测", "检查", "测试用例"],
@@ -148,6 +169,52 @@ def _fallback_cover_data_url(title: str) -> str:
     )
 
 
+def _fallback_video_search_url(query: str) -> str:
+    clean_query = _clean_text(query) or "课程教学视频"
+    return f"https://search.bilibili.com/video?keyword={quote(clean_query)}"
+
+
+def _fallback_videos_for_briefs(
+    video_briefs: object,
+    section: dict,
+    outline: dict | None = None,
+) -> list[dict]:
+    if not isinstance(video_briefs, list):
+        return []
+
+    fallback_videos: list[dict] = []
+    section_title = _clean_text(section.get("title")) or "教学小节"
+    knowledge_points = _text_items(section.get("key_knowledge_points"))
+
+    for brief in video_briefs:
+        if not isinstance(brief, dict):
+            continue
+        brief_id = _clean_text(brief.get("video_id"))
+        if not brief_id:
+            continue
+        brief_title = _clean_text(brief.get("title"))
+        brief_purpose = _clean_text(brief.get("purpose"))
+        title = brief_title or section_title
+        if knowledge_points:
+            title = f"{title}：{knowledge_points[0]}"
+        query = next(
+            iter(_video_search_queries([brief], section, outline)),
+            f"{section_title} 教程",
+        )
+        fallback_videos.append(
+            {
+                "brief_id": brief_id,
+                "title": title,
+                "url": _fallback_video_search_url(query),
+                "cover_url": _fallback_cover_data_url(title),
+                "cover_status": "fallback",
+                "source": "Bilibili 搜索兜底",
+                "summary": brief_purpose,
+            }
+        )
+    return fallback_videos
+
+
 def _video_topic_terms(
     video_briefs: object, section: dict, outline: dict | None = None
 ) -> list[str]:
@@ -196,6 +263,21 @@ def _video_topic_keywords(topic_terms: list[str]) -> list[str]:
     return unique_keywords
 
 
+def _video_quality_keywords(keywords: list[str]) -> list[str]:
+    filtered: list[str] = []
+    seen: set[str] = set()
+    for keyword in keywords:
+        clean_keyword = _clean_text(keyword)
+        lowered = clean_keyword.lower()
+        if not clean_keyword or lowered in seen:
+            continue
+        if lowered in _VIDEO_QUALITY_GENERIC_KEYWORDS:
+            continue
+        filtered.append(clean_keyword)
+        seen.add(lowered)
+    return filtered
+
+
 def _video_term_fragments(term: str) -> list[str]:
     clean_term = _clean_text(term)
     if not clean_term:
@@ -238,6 +320,15 @@ def _video_focus_query_terms(keywords: list[str]) -> list[str]:
     return focus_terms
 
 
+def _video_domain_keywords(topic_terms: list[str]) -> list[str]:
+    keywords = list(_VIDEO_DOMAIN_KEYWORDS)
+    for term in topic_terms:
+        clean_term = _clean_text(term)
+        if clean_term and len(clean_term) >= 2:
+            keywords.append(clean_term)
+    return _video_topic_keywords(keywords)
+
+
 def _video_domain_anchor_terms(section: dict, outline: dict | None = None) -> list[str]:
     terms: list[str] = []
     if isinstance(outline, dict):
@@ -260,6 +351,26 @@ def _video_brief_anchor_terms(video_briefs: object) -> list[str]:
         terms.append(_clean_text(brief.get("title")))
         terms.append(_clean_text(brief.get("purpose")))
     return _video_topic_keywords([term for term in terms if term])
+
+
+def _strip_html_tags(text: str) -> str:
+    return re.sub(r"<[^>]+>", "", _clean_text(text))
+
+
+def _matched_video_keywords(text: str, keywords: list[str]) -> list[str]:
+    compact_text = re.sub(r"\s+", "", _strip_html_tags(text))
+    lower_text = compact_text.lower()
+    matches: list[str] = []
+    seen: set[str] = set()
+    for keyword in keywords:
+        clean_keyword = _clean_text(keyword)
+        lowered = clean_keyword.lower()
+        if not clean_keyword or lowered in seen:
+            continue
+        if clean_keyword in compact_text or lowered in lower_text:
+            matches.append(clean_keyword)
+            seen.add(lowered)
+    return matches
 
 
 def _is_generic_video_term(term: str) -> bool:
@@ -355,6 +466,181 @@ def _video_specific_brief_terms(
     return specific_terms
 
 
+def _video_specific_brief_technical_tokens(
+    video_briefs: object,
+    section: dict,
+    outline: dict | None = None,
+) -> list[str]:
+    return [
+        term
+        for term in _video_specific_brief_terms(video_briefs, section, outline)
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9.+_-]*", term)
+    ]
+
+
+def _requires_specific_video_brief_match(
+    video_briefs: object,
+    section: dict,
+    outline: dict | None = None,
+) -> bool:
+    technical_tokens = _video_specific_brief_technical_tokens(
+        video_briefs, section, outline
+    )
+    if len(technical_tokens) >= 2:
+        return True
+    specific_terms = _video_specific_brief_terms(video_briefs, section, outline)
+    technical_markers = (
+        "环境变量",
+        "初始化",
+        "api key",
+        "apikey",
+        "异步调用",
+        "阻塞事件循环",
+        "排查",
+        "维度不匹配",
+        "Chunking",
+        "PDF",
+        "Vector",
+        "Loader",
+        "Splitter",
+        "Embedder",
+    )
+    return any(
+        marker.lower() in term.lower()
+        for term in specific_terms
+        for marker in technical_markers
+    )
+
+
+def _has_strong_video_keyword_match(text: str, keywords: list[str]) -> bool:
+    matches = _matched_video_keywords(text, keywords)
+    if not matches:
+        return False
+    if any(len(match) >= 6 for match in matches):
+        return True
+    return len(matches) >= 2
+
+
+def _has_strong_video_brief_match(
+    text: str,
+    video_briefs: object,
+    section: dict,
+    outline: dict | None = None,
+) -> bool:
+    specific_terms = _video_specific_brief_terms(video_briefs, section, outline)
+    if not specific_terms:
+        return False
+    specific_keywords = _video_quality_keywords(_video_topic_keywords(specific_terms))
+    return _has_strong_video_keyword_match(text, specific_keywords or specific_terms)
+
+
+def _has_related_video_topic(
+    text: str,
+    video_briefs: object,
+    section: dict,
+    outline: dict | None = None,
+) -> bool:
+    domain_keywords = _video_quality_keywords(
+        _video_domain_anchor_terms(section, outline)
+    )
+    brief_keywords = _video_quality_keywords(_video_brief_anchor_terms(video_briefs))
+    topic_keywords = _video_quality_keywords(
+        _video_topic_keywords(_video_topic_terms(video_briefs, section, outline))
+    )
+    matched_domain = _matched_video_keywords(text, domain_keywords)
+    matched_brief = _matched_video_keywords(text, brief_keywords)
+    matched_topic = _matched_video_keywords(text, topic_keywords)
+    matched_focus = _matched_video_keywords(
+        text,
+        _video_focus_query_terms([*domain_keywords, *brief_keywords, *topic_keywords]),
+    )
+    return (
+        len(matched_domain) >= 2
+        or len(matched_topic) >= 3
+        or (
+            bool(matched_focus)
+            and (bool(matched_domain) or bool(matched_brief) or len(matched_topic) >= 2)
+        )
+    )
+
+
+def _matches_video_domain_or_section_topic(
+    text: str,
+    section: dict,
+    outline: dict | None = None,
+) -> bool:
+    domain_anchor_terms = _video_quality_keywords(
+        _video_domain_anchor_terms(section, outline)
+    )
+    section_terms = _video_quality_keywords(
+        _video_topic_keywords(
+            [
+                _clean_text(section.get("title")),
+                *_text_items(section.get("key_knowledge_points")),
+            ]
+        )
+    )
+    matched_domain = _matched_video_keywords(text, domain_anchor_terms)
+    matched_section = _matched_video_keywords(text, section_terms)
+    return bool(matched_domain) or bool(matched_section)
+
+
+def _contains_any_video_keyword(text: str, keywords: list[str]) -> bool:
+    return bool(_matched_video_keywords(text, keywords))
+
+
+def _video_domain_issue(metadata_text: str, topic_terms: list[str]) -> str | None:
+    normalized_text = re.sub(r"<[^>]+>", "", metadata_text)
+    normalized_compact = re.sub(r"\s+", "", normalized_text)
+    normalized_lower = normalized_text.lower()
+    domain_keywords = _video_quality_keywords(_video_domain_keywords(topic_terms))
+    if any(
+        keyword in normalized_compact or keyword.lower() in normalized_lower
+        for keyword in domain_keywords
+    ):
+        return None
+    return "视频平台真实标题或简介未体现当前课程主题。"
+
+
+def _video_metadata_topic_issue(
+    metadata_text: str,
+    topic_terms: list[str],
+    section: dict,
+    video_briefs: object,
+    outline: dict | None = None,
+) -> str | None:
+    specific_brief_terms = _video_specific_brief_terms(video_briefs, section, outline)
+    if specific_brief_terms and _requires_specific_video_brief_match(
+        video_briefs, section, outline
+    ):
+        if not _has_strong_video_brief_match(
+            metadata_text, video_briefs, section, outline
+        ):
+            if _has_related_video_topic(metadata_text, video_briefs, section, outline):
+                return None
+            return "视频平台真实标题或简介未体现小节主题。"
+        return None
+    domain_issue = _video_domain_issue(metadata_text, topic_terms)
+    if domain_issue:
+        return domain_issue
+    domain_anchor_terms = _video_domain_anchor_terms(section, outline)
+    if domain_anchor_terms and not _contains_any_video_keyword(
+        metadata_text, domain_anchor_terms
+    ):
+        return "视频平台真实标题或简介未体现当前课程主题。"
+    brief_anchor_terms = _video_brief_anchor_terms(video_briefs)
+    if brief_anchor_terms and not _contains_any_video_keyword(
+        metadata_text, brief_anchor_terms
+    ):
+        return "视频平台真实标题或简介未体现小节主题。"
+    topic_keywords = _video_topic_keywords(topic_terms)
+    if not topic_keywords:
+        return None
+    if _contains_any_video_keyword(metadata_text, topic_keywords):
+        return None
+    return "视频平台真实标题或简介未体现小节主题。"
+
+
 def _is_youtube_watch_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
@@ -382,7 +668,6 @@ def _normalized_video_quality_issue(
     section: dict,
     outline: dict | None = None,
 ) -> str | None:
-    _ = section, outline
     if not videos:
         return "视频资源为空。"
     expected_ids = {
@@ -397,6 +682,7 @@ def _normalized_video_quality_issue(
     }
     if expected_ids and video_ids != expected_ids:
         return "视频资源未完整绑定 brief。"
+    topic_terms = _video_topic_terms(video_briefs, section, outline)
     for video in videos:
         url = _clean_text(video.get("url"))
         parsed = urlparse(url)
@@ -411,29 +697,53 @@ def _normalized_video_quality_issue(
             return "视频 URL 必须是可直接打开的 HTTP(S) 地址。"
         if not bilibili_bvid and not is_youtube_watch_url:
             return "Bilibili 视频 URL 必须为精确视频页地址。"
-    return None
-
-
-async def _verify_youtube_video_page(url: str) -> str | None:
-    video_id = dict(parse_qsl(urlparse(url).query, keep_blank_values=True)).get("v", "")
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-    }
-    try:
-        async with httpx.AsyncClient(
-            timeout=_VIDEO_METADATA_TIMEOUT_SECONDS, follow_redirects=True
-        ) as client:
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-    except Exception as exc:
-        logger.warning("YouTube page validation failed for %s: %s", url, exc)
-        return "YouTube 视频页面校验失败。"
-    if not video_id or video_id not in response.text:
-        return "YouTube 视频页面未匹配目标视频。"
+        title = _clean_text(video.get("title"))
+        specific_brief_terms = _video_specific_brief_terms(
+            video_briefs, section, outline
+        )
+        if not bilibili_bvid:
+            title_source = (
+                f"{_clean_text(video.get('title'))} {_clean_text(video.get('source'))}"
+            )
+            if specific_brief_terms and _requires_specific_video_brief_match(
+                video_briefs, section, outline
+            ):
+                if not _has_strong_video_brief_match(
+                    title_source, video_briefs, section, outline
+                ):
+                    if _has_related_video_topic(
+                        title_source, video_briefs, section, outline
+                    ):
+                        continue
+                    return "视频标题未体现小节主题或 brief 目的。"
+                continue
+            title_source = (
+                f"{_clean_text(video.get('title'))} {_clean_text(video.get('source'))}"
+            )
+            title_keywords = _video_quality_keywords(_video_topic_keywords(topic_terms))
+            if title_keywords and not _contains_any_video_keyword(
+                title_source, title_keywords
+            ):
+                return "视频标题未体现小节主题或 brief 目的。"
+        if bilibili_bvid and _is_bilibili_search_placeholder_title(title):
+            continue
+        title_source = f"{title} {_clean_text(video.get('source'))}"
+        if specific_brief_terms and _requires_specific_video_brief_match(
+            video_briefs, section, outline
+        ):
+            if not _has_strong_video_brief_match(
+                title_source, video_briefs, section, outline
+            ):
+                if _has_related_video_topic(
+                    title_source, video_briefs, section, outline
+                ):
+                    continue
+                return "视频标题未体现小节主题或 brief 目的。"
+            continue
+        if not _matches_video_domain_or_section_topic(title_source, section, outline):
+            if _has_related_video_topic(title_source, video_briefs, section, outline):
+                continue
+            return "视频标题未体现当前课程领域或小节主题。"
     return None
 
 
@@ -446,13 +756,9 @@ async def _normalized_video_quality_issue_async(
     issue = _normalized_video_quality_issue(videos, video_briefs, section, outline)
     if issue:
         return issue
+    topic_terms = _video_topic_terms(video_briefs, section, outline)
     for video in videos:
         url = _clean_text(video.get("url"))
-        if _is_youtube_watch_url(url):
-            youtube_issue = await _verify_youtube_video_page(url)
-            if youtube_issue:
-                return youtube_issue
-            continue
         if not _bilibili_bvid_from_url(url):
             continue
         import app.orchestration.agents.course_resources as cr_pkg
@@ -460,9 +766,18 @@ async def _normalized_video_quality_issue_async(
         metadata = await cr_pkg._verify_bilibili_video_metadata(url)
         status = metadata.get("status")
         if status == "skip":
-            return "Bilibili 视频页面未完成校验。"
+            continue
         if status != "ok":
             return _clean_text(metadata.get("reason")) or "视频平台元数据校验失败。"
+        metadata_issue = _video_metadata_topic_issue(
+            _clean_text(metadata.get("text")),
+            topic_terms,
+            section,
+            video_briefs,
+            outline,
+        )
+        if metadata_issue:
+            return metadata_issue
         metadata_title = _clean_text(metadata.get("title"))
         if metadata_title:
             video["title"] = metadata_title
@@ -522,6 +837,25 @@ def _english_video_focus_queries(
     if "embedding" in {term.lower() for term in focus_terms} and not queries:
         add("Embedding tutorial for RAG")
     return queries
+
+
+def _is_high_confidence_video_candidate(
+    video: dict, brief: dict, section: dict, outline: dict | None = None
+) -> bool:
+    title = _clean_text(video.get("title")).lower()
+    source = _clean_text(video.get("source")).lower()
+    brief_title = _clean_text(brief.get("title")).lower()
+    if brief_title in title or brief_title.replace("视频", "") in title:
+        return True
+    specific_terms = _video_specific_brief_terms([brief], section, outline)
+    if specific_terms:
+        specific_keywords = _video_quality_keywords(
+            _video_topic_keywords(specific_terms)
+        )
+        matched = _matched_video_keywords(f"{title} {source}", specific_keywords)
+        if len(matched) >= len(specific_keywords) * 0.7:
+            return True
+    return False
 
 
 def _prioritize_video_query_terms(terms: list[str]) -> list[str]:
@@ -798,6 +1132,8 @@ async def _find_verified_video_from_search(
         brief_id = _clean_text(brief.get("video_id"))
         if not brief_id:
             continue
+        best_video: dict | None = None
+        best_score = -1
         seen_urls: set[str] = set()
         for query_index, query in enumerate(
             _video_search_queries([brief], section, outline)[
@@ -853,12 +1189,82 @@ async def _find_verified_video_from_search(
                 *(validate_candidate(video) for video in query_videos)
             )
             for video in validated_videos:
-                if video is not None:
-                    verified.append(video)
-                    break
-            if verified and _clean_text(verified[-1].get("brief_id")) == brief_id:
+                if video is None:
+                    continue
+                score = _video_candidate_score(
+                    " ".join(
+                        [
+                            _clean_text(video.get("title")),
+                            _clean_text(video.get("source")),
+                        ]
+                    ),
+                    section,
+                    [brief],
+                    outline,
+                )
+                if score > best_score:
+                    best_score = score
+                    best_video = video
+                    if score >= 40 and _is_high_confidence_video_candidate(
+                        video, brief, section, outline
+                    ):
+                        verified.append(best_video)
+                        break
+            if best_video is not None and brief_id in {
+                _clean_text(v.get("brief_id")) for v in verified
+            }:
                 break
+        if best_video is not None:
+            if brief_id not in {_clean_text(v.get("brief_id")) for v in verified}:
+                verified.append(best_video)
     return verified
+
+
+def _video_relevance_score(text: str, topic_terms: list[str]) -> int:
+    keywords = _video_topic_keywords(topic_terms)
+    compact_text = re.sub(r"\s+", "", _strip_html_tags(text))
+    lower_text = compact_text.lower()
+    score = 0
+    for keyword in keywords:
+        matched = keyword in compact_text or keyword.lower() in lower_text
+        if not matched:
+            continue
+        if len(keyword) >= 12:
+            score += 5
+        elif len(keyword) >= 6:
+            score += 2
+        else:
+            score += 1
+    return score
+
+
+def _video_candidate_score(
+    text: str,
+    section: dict,
+    video_briefs: object,
+    outline: dict | None = None,
+) -> int:
+    topic_score = _video_relevance_score(
+        text, _video_topic_terms(video_briefs, section, outline)
+    )
+    brief_score = _video_relevance_score(text, _video_brief_anchor_terms(video_briefs))
+    domain_score = _video_relevance_score(
+        text, _video_domain_anchor_terms(section, outline)
+    )
+    focus_terms = _video_focus_query_terms(_video_brief_anchor_terms(video_briefs))
+    focus_score = _video_relevance_score(text, focus_terms)
+    focus_match_count = sum(
+        1
+        for keyword in focus_terms
+        if keyword in re.sub(r"\s+", "", _strip_html_tags(text))
+        or keyword.lower() in re.sub(r"\s+", "", _strip_html_tags(text)).lower()
+    )
+    focus_bonus = focus_match_count * 5
+    if focus_match_count >= 2:
+        focus_bonus += 5
+    return (
+        topic_score + (brief_score * 2) + domain_score + (focus_score * 2) + focus_bonus
+    )
 
 
 def _video_input(state: OrchestrationState, outline: dict, section: dict) -> str:
@@ -886,6 +1292,56 @@ def _video_input(state: OrchestrationState, outline: dict, section: dict) -> str
         "请为输入小节联网搜索可直接打开的视频教程资源。\n\n"
         "必须以 section_markdowns 中的 video_briefs 为检索计划："
         "每个 brief 的 search_terms、target_paragraph_summary、purpose 都要进入查询判断。"
+    )
+    return _resource_query_with_prompt_budget(
+        instruction,
+        payload,
+        phase="video",
+        protected_fragments=[
+            _clean_text(section.get("source_textbook_id")),
+            "、".join(_text_items(section.get("source_section_ids"))),
+        ],
+    )
+
+
+def _video_repair_input(
+    state: OrchestrationState,
+    outline: dict,
+    section: dict,
+    quality_issue: str,
+    previous_videos: object,
+) -> str:
+    section_id = _clean_text(section.get("section_id"))
+    section_markdowns = outline.get("section_markdowns")
+    target_markdowns = {}
+    if isinstance(section_markdowns, dict):
+        section_markdown = section_markdowns.get(section_id)
+        if isinstance(section_markdown, dict):
+            target_markdowns[section_id] = section_markdown
+
+    context = _resource_context(
+        state,
+        outline,
+        section,
+        include_textbook_evidence=False,
+    )
+    payload = {
+        **context,
+        "parent_section": _parent_section(outline, section),
+        "target_section": section,
+        "section_markdowns": target_markdowns,
+        "video_quality_issue": quality_issue,
+        "previous_videos": previous_videos if isinstance(previous_videos, list) else [],
+    }
+    instruction = (
+        "上一版视频资源未通过质量检查。请只基于同一个小节和 video_briefs 重新搜索视频资源。\n\n"
+        "硬性要求：每条 videos.brief_id 必须等于对应 video_briefs.video_id；"
+        "title 必须包含小节主题、关键知识点或 brief 目的中的具体词；"
+        "url 必须来自联网搜索结果中已经存在的视频页面 HTTP(S) 地址；"
+        "禁止编造 BV 号、av 号、YouTube ID 或任何看似合法的 URL；"
+        "如果使用 Bilibili，url 必须是 https://www.bilibili.com/video/BV... 形式的真实可见稿件页面，"
+        "平台真实标题或简介必须体现当前小节主题；"
+        "不要返回课程首页、搜索页、泛泛合集首页、短链、缺少 BV 号的 Bilibili 页面或与当前小节无关的视频。"
     )
     return _resource_query_with_prompt_budget(
         instruction,

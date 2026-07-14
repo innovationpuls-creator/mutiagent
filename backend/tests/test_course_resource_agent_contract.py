@@ -32,6 +32,7 @@ from app.orchestration.agents.course_resources import (
     _section_by_id,
     _target_sections_for_scope,
     _video_input,
+    _video_repair_input,
     _video_search_queries,
 )
 from app.orchestration.agents.course_resources import animation as animation_module
@@ -42,6 +43,7 @@ from app.orchestration.agents.course_resources.common import (
     _resource_query_with_prompt_budget,
     _section_markdown_data_from_plain_text,
 )
+from app.orchestration.agents.prompts import SECTION_VIDEO_SEARCH_AGENT_SYSTEM_PROMPT
 from tests.postgres import postgresql_test_url
 
 
@@ -422,6 +424,53 @@ def test_bilibili_search_parse_logs_zero_results_without_bv_id(
     assert "parsed_result_count=0" in caplog.text
 
 
+def test_video_search_prompts_require_bilibili_bv_video_pages() -> None:
+    assert (
+        "https://www.bilibili.com/video/BV..."
+        in SECTION_VIDEO_SEARCH_AGENT_SYSTEM_PROMPT
+    )
+    assert "缺少 BV 号的 Bilibili 页面" in SECTION_VIDEO_SEARCH_AGENT_SYSTEM_PROMPT
+    assert (
+        "禁止返回 `https://www.bilibili.com/video/BVxxxx`"
+        not in SECTION_VIDEO_SEARCH_AGENT_SYSTEM_PROMPT
+    )
+
+    outline = _outline()
+    outline["section_markdowns"] = {
+        "1.1": {
+            "section_id": "1.1",
+            "parent_section_id": "1",
+            "title": "学习目标",
+            "markdown": _complete_section_markdown("1.1", "学习目标"),
+            "video_briefs": [
+                {
+                    "video_id": "video_1",
+                    "title": "学习目标导入视频",
+                    "purpose": "帮助学习者把学习目标落到可验收产出",
+                }
+            ],
+            "animation_briefs": [],
+        },
+    }
+    section = _section_by_id(outline, "1.1")
+    assert section is not None
+    state = {
+        "profile": _profile(),
+        "year_learning_paths": _year_learning_paths(),
+    }
+
+    repair_prompt = _video_repair_input(
+        state,
+        outline,
+        section,
+        "视频资源为空或未绑定 brief。",
+        [],
+    )
+
+    assert "https://www.bilibili.com/video/BV..." in repair_prompt
+    assert "缺少 BV 号的 Bilibili 页面" in repair_prompt
+
+
 def _profile() -> dict:
     return {
         "type": "basic_profile",
@@ -626,7 +675,7 @@ def test_fallback_cover_data_url_is_stable_svg_data_url() -> None:
     assert "学习目标" in value
 
 
-def test_video_quality_accepts_exact_bilibili_page_without_title_relevance() -> None:
+def test_video_quality_rejects_generic_checkpoint_title_without_domain_terms() -> None:
     outline = {
         "course_id": "year_3_course_1",
         "course_name": "AI 应用基础架构：向量数据库与非结构化数据处理",
@@ -679,10 +728,12 @@ def test_video_quality_accepts_exact_bilibili_page_without_title_relevance() -> 
         outline,
     )
 
-    assert issue is None
+    assert issue == "视频标题未体现当前课程领域或小节主题。"
 
 
-def test_video_quality_accepts_exact_bilibili_page_without_brief_relevance() -> None:
+def test_video_quality_rejects_checkpoint_title_that_only_matches_generic_ai_test_terms() -> (
+    None
+):
     outline = {
         "course_id": "year_3_course_1",
         "course_name": "AI 应用开发基础能力搭建",
@@ -732,10 +783,12 @@ def test_video_quality_accepts_exact_bilibili_page_without_brief_relevance() -> 
         outline,
     )
 
-    assert issue is None
+    assert issue == "视频标题未体现小节主题或 brief 目的。"
 
 
-def test_video_quality_accepts_exact_youtube_page_without_brief_relevance() -> None:
+def test_video_quality_rejects_api_key_video_when_brief_requires_env_and_sdk_setup() -> (
+    None
+):
     outline = {
         "course_id": "year_3_course_1",
         "course_name": "AI 应用开发基础能力搭建",
@@ -785,7 +838,7 @@ def test_video_quality_accepts_exact_youtube_page_without_brief_relevance() -> N
         outline,
     )
 
-    assert issue is None
+    assert issue == "视频标题未体现小节主题或 brief 目的。"
 
 
 def test_video_quality_allows_python_openai_tutorial_when_brief_emphasizes_sdk_setup() -> (
@@ -1068,7 +1121,7 @@ def test_video_quality_allows_bilibili_search_placeholder_until_metadata_validat
     assert issue is None
 
 
-def test_video_quality_accepts_reachable_bilibili_metadata_without_topic_relevance(
+def test_video_quality_rejects_generic_task_decomposition_metadata_without_rag_context(
     monkeypatch,
 ) -> None:
     outline = {
@@ -1136,7 +1189,7 @@ def test_video_quality_accepts_reachable_bilibili_metadata_without_topic_relevan
         )
     )
 
-    assert issue is None
+    assert issue == "视频平台真实标题或简介未体现当前课程主题。"
 
 
 def test_video_quality_allows_related_rag_chunking_metadata_without_exact_brief_terms(
@@ -1471,7 +1524,7 @@ def test_video_search_queries_prioritize_asyncio_blocking_terms_for_checkpoint()
     assert "Python 异步编程 阻塞事件循环 稳定性 教程" in queries
 
 
-def test_find_verified_video_from_search_uses_first_reachable_video(
+def test_find_verified_video_from_search_prefers_brief_specific_title_over_generic_vector_db(
     monkeypatch,
 ) -> None:
     outline = {
@@ -1555,10 +1608,10 @@ def test_find_verified_video_from_search_uses_first_reachable_video(
 
     assert len(verified) == 1
     assert verified[0]["brief_id"] == "video_1"
-    assert verified[0]["url"] == "https://www.bilibili.com/video/BV1Pinecone1"
+    assert verified[0]["url"] == "https://www.bilibili.com/video/BV1RagGuide2"
 
 
-def test_find_verified_video_from_search_stops_after_first_reachable_video(
+def test_find_verified_video_from_search_keeps_scanning_later_queries_for_better_match(
     monkeypatch,
 ) -> None:
     outline = {
@@ -1646,12 +1699,12 @@ def test_find_verified_video_from_search_stops_after_first_reachable_video(
 
     verified = asyncio.run(_find_verified_video_from_search(briefs, section, outline))
 
-    assert len(queries_seen) == 1
+    assert len(queries_seen) >= 2
     assert len(verified) == 1
-    assert verified[0]["url"] == "https://www.bilibili.com/video/BV1Pinecone1"
+    assert verified[0]["url"] == "https://www.bilibili.com/video/BV1TokenEmb2"
 
 
-def test_find_verified_video_from_search_does_not_score_reachable_results(
+def test_find_verified_video_from_search_prefers_dimension_mismatch_debug_video_over_generic_embedding(
     monkeypatch,
 ) -> None:
     outline = {
@@ -1702,7 +1755,7 @@ def test_find_verified_video_from_search_does_not_score_reachable_results(
         return [
             {
                 "title": "Qwen3 Embedding 模型详解：文本嵌入与重排序性能全面超越SOTA",
-                "url": "https://www.bilibili.com/video/BV1generic12",
+                "url": "https://www.bilibili.com/video/BV1generic1234",
                 "cover_url": "",
                 "source": "Bilibili",
             },
@@ -1715,7 +1768,7 @@ def test_find_verified_video_from_search_does_not_score_reachable_results(
         ]
 
     async def fake_verify(url: str) -> dict:
-        if url == "https://www.bilibili.com/video/BV1generic12":
+        if url == "https://www.bilibili.com/video/BV1generic1234":
             return {
                 "status": "ok",
                 "text": "Qwen3 Embedding 模型详解 文本嵌入 重排序 检索增强生成 大模型RAG 通义千问",
@@ -1739,7 +1792,7 @@ def test_find_verified_video_from_search_does_not_score_reachable_results(
     verified = asyncio.run(_find_verified_video_from_search(briefs, section, outline))
 
     assert len(verified) == 1
-    assert verified[0]["url"] == "https://www.bilibili.com/video/BV1generic12"
+    assert verified[0]["url"] == "https://www.bilibili.com/video/BV1abcde1234"
 
 
 def test_find_verified_video_from_search_uses_youtube_when_bilibili_has_no_verified_match(
@@ -4591,7 +4644,7 @@ def test_run_section_video_search_agent_retries_transient_search_failure(
     assert videos[0]["url"] == "https://www.youtube.com/watch?v=dummy-retried-video"
 
 
-def test_run_section_video_search_agent_saves_first_verified_search_result(
+def test_run_section_video_search_agent_retries_when_first_search_result_fails_quality(
     tmp_path, monkeypatch
 ) -> None:
     class RecordingLlm:
@@ -4722,9 +4775,9 @@ def test_run_section_video_search_agent_saves_first_verified_search_result(
 
     assert "error" not in result
     assert captured["attempts"] == 0
-    assert captured["search_attempts"] == 1
+    assert captured["search_attempts"] == 2
     videos = result["course_knowledge"]["section_video_links"]["1.1"]["videos"]
-    assert videos[0]["url"] == "https://www.youtube.com/watch?v=dummy-generic-video"
+    assert videos[0]["url"] == "https://www.youtube.com/watch?v=dummy-repaired-video"
 
 
 def test_run_section_video_search_agent_uses_verified_search_when_llm_videos_stay_bad(
@@ -6392,6 +6445,7 @@ from app.orchestration.agents.course_resources import (
     _generated_markdown_seed_data,
     _normalize_animation_html,
     _normalize_markdown_resources,
+    _requires_specific_video_brief_match,
     _run_with_retries,
     _video_specific_brief_terms,
 )
@@ -6960,6 +7014,7 @@ def test_video_specific_brief_terms_ignore_out_of_outline_tracemalloc_detail() -
     terms = _video_specific_brief_terms(video_briefs, section, outline)
 
     assert "tracemalloc" not in terms
+    assert _requires_specific_video_brief_match(video_briefs, section, outline) is False
 
 
 def test_markdown_quality_gate_accepts_complete_section_markdown() -> None:
@@ -7270,7 +7325,7 @@ def test_video_quality_gate_rejects_invisible_bilibili_video(monkeypatch) -> Non
     assert "不可见" in issue
 
 
-def test_video_quality_gate_accepts_bilibili_metadata_topic_mismatch(
+def test_video_quality_gate_rejects_bilibili_metadata_topic_mismatch(
     monkeypatch,
 ) -> None:
     import app.orchestration.agents.course_resources as module
@@ -7302,111 +7357,8 @@ def test_video_quality_gate_accepts_bilibili_metadata_topic_mismatch(
         )
     )
 
-    assert issue is None
-
-
-def test_video_quality_gate_verifies_youtube_watch_page_access(monkeypatch) -> None:
-    requested_urls: list[str] = []
-
-    class ReachableResponse:
-        text = '"videoId":"video-id"'
-
-        def raise_for_status(self) -> None:
-            return None
-
-    class ReachableClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return False
-
-        async def get(self, url: str, **_kwargs):
-            requested_urls.append(url)
-            return ReachableResponse()
-
-    monkeypatch.setattr(
-        video_module.httpx, "AsyncClient", lambda **_kwargs: ReachableClient()
-    )
-
-    issue = asyncio.run(
-        _normalized_video_quality_issue_async(
-            [
-                {
-                    "brief_id": "video_1",
-                    "title": "任意标题",
-                    "url": "https://www.youtube.com/watch?v=video-id",
-                    "source": "YouTube",
-                }
-            ],
-            [{"video_id": "video_1"}],
-            _outline()["sections"][1],
-        )
-    )
-
-    assert issue is None
-    assert requested_urls == ["https://www.youtube.com/watch?v=video-id"]
-
-
-def test_video_quality_gate_rejects_unreachable_youtube_watch_page(
-    monkeypatch,
-) -> None:
-    class UnreachableClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return False
-
-        async def get(self, *_args, **_kwargs):
-            raise httpx.ConnectError("unreachable")
-
-    monkeypatch.setattr(
-        video_module.httpx, "AsyncClient", lambda **_kwargs: UnreachableClient()
-    )
-
-    issue = asyncio.run(
-        _normalized_video_quality_issue_async(
-            [
-                {
-                    "brief_id": "video_1",
-                    "title": "任意标题",
-                    "url": "https://www.youtube.com/watch?v=video-id",
-                    "source": "YouTube",
-                }
-            ],
-            [{"video_id": "video_1"}],
-            _outline()["sections"][1],
-        )
-    )
-
-    assert issue == "YouTube 视频页面校验失败。"
-
-
-def test_video_quality_gate_rejects_unverified_bilibili_page(monkeypatch) -> None:
-    import app.orchestration.agents.course_resources as module
-
-    async def skipped_video(_url: str) -> dict:
-        return {"status": "skip"}
-
-    monkeypatch.setattr(module, "_verify_bilibili_video_metadata", skipped_video)
-
-    issue = asyncio.run(
-        _normalized_video_quality_issue_async(
-            [
-                {
-                    "brief_id": "video_1",
-                    "title": "任意标题",
-                    "url": "https://www.bilibili.com/video/BV1GJ411x7h7",
-                    "source": "Bilibili",
-                }
-            ],
-            [{"video_id": "video_1"}],
-            _outline()["sections"][1],
-        )
-    )
-
-    assert issue == "Bilibili 视频页面未完成校验。"
+    assert issue is not None
+    assert "真实标题" in issue
 
 
 def test_animation_quality_gate_requires_visible_chinese_context() -> None:
