@@ -6802,6 +6802,22 @@ def test_video_quality_gate_requires_bound_url_and_topic_text() -> None:
             "https://evilbilibili.com/video/BV1xx411x7xx",
             "Bilibili 视频 URL 必须为精确视频页地址。",
         ),
+        (
+            "https://www.bilibili.com/video/BV1xx411x7xx?from=search",
+            "Bilibili 视频 URL 必须为精确视频页地址。",
+        ),
+        (
+            "https://www.bilibili.com/video/BV1xx411x7xx#fragment",
+            "Bilibili 视频 URL 必须为精确视频页地址。",
+        ),
+        (
+            "https://user:password@www.bilibili.com/video/BV1xx411x7xx",
+            "Bilibili 视频 URL 必须为精确视频页地址。",
+        ),
+        (
+            "https://www.bilibili.com:8443/video/BV1xx411x7xx",
+            "Bilibili 视频 URL 必须为精确视频页地址。",
+        ),
     ],
 )
 def test_video_quality_gate_requires_exact_bilibili_video_url(
@@ -6822,6 +6838,24 @@ def test_video_quality_gate_requires_exact_bilibili_video_url(
     )
 
     assert issue == expected_issue
+
+
+def test_video_quality_gate_does_not_allow_source_to_bypass_bilibili_url() -> None:
+    issue = _normalized_video_quality_issue(
+        [
+            {
+                "brief_id": "video_1",
+                "title": "AI 应用开发学习目标与功能边界实践讲解",
+                "url": "https://evilbilibili.com/video/BV1xx411x7xx",
+                "cover_url": "",
+                "source": "YouTube",
+            }
+        ],
+        [{"video_id": "video_1", "title": "学习目标导入", "purpose": "功能边界"}],
+        _outline()["sections"][1],
+    )
+
+    assert issue == "Bilibili 视频 URL 必须为精确视频页地址。"
 
 
 def test_video_quality_gate_accepts_exact_bilibili_video_url_shape() -> None:
