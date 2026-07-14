@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from http import HTTPStatus
 
-from dashscope import MultiModalConversation
+from dashscope import Generation, MultiModalConversation
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,11 @@ _SELECTION_SYSTEM_PROMPT = (
     "根据小节语义，对给定的真实搜索来源按相关性从高到低排序。"
     "返回所有语义相关来源的索引，不判断 URL 形态，不遗漏较低排名来源。"
     '只返回严格 JSON：{"indexes":[整数索引]}。'
+)
+_TEXT_ENDPOINT_ERROR_CODE = "InvalidParameter"
+_TEXT_ENDPOINT_ERROR_MESSAGE = (
+    "url error, please check url！ For details, see: "
+    "https://help.aliyun.com/zh/model-studio/error-code#error-url"
 )
 
 
@@ -112,7 +117,34 @@ def _selected_sources(
     return selected
 
 
-def _search_stream_sources(
+def _collect_stream_sources(
+    responses: object,
+) -> tuple[object, str, str, dict[int, AliyunBilibiliSearchSource]]:
+    if not hasattr(responses, "__iter__"):
+        return None, "", "", {}
+    status_code: object = None
+    code = ""
+    message = ""
+    try:
+        for response in responses:
+            status_code = _response_value(response, "status_code")
+            code_value = _response_value(response, "code")
+            message_value = _response_value(response, "message")
+            code = code_value if isinstance(code_value, str) else ""
+            message = message_value if isinstance(message_value, str) else ""
+            if status_code != HTTPStatus.OK:
+                return status_code, code, message, {}
+            sources = _search_sources(_response_value(response, "output"))
+            if sources:
+                return status_code, code, message, sources
+    finally:
+        close = getattr(responses, "close", None)
+        if callable(close):
+            close()
+    return status_code, code, message, {}
+
+
+def _search_multimodal_stream_sources(
     api_key: str,
     model: str,
     search_query: str,
@@ -141,26 +173,47 @@ def _search_stream_sources(
         stream=True,
         incremental_output=True,
     )
-    status_code: object = None
-    code = ""
-    message = ""
-    try:
-        for response in responses:
-            status_code = _response_value(response, "status_code")
-            code_value = _response_value(response, "code")
-            message_value = _response_value(response, "message")
-            code = code_value if isinstance(code_value, str) else ""
-            message = message_value if isinstance(message_value, str) else ""
-            if status_code != HTTPStatus.OK:
-                return status_code, code, message, {}
-            sources = _search_sources(_response_value(response, "output"))
-            if sources:
-                return status_code, code, message, sources
-    finally:
-        close = getattr(responses, "close", None)
-        if callable(close):
-            close()
-    return status_code, code, message, {}
+    return _collect_stream_sources(responses)
+
+
+def _search_generation_stream_sources(
+    api_key: str,
+    model: str,
+    search_query: str,
+) -> tuple[object, str, str, dict[int, AliyunBilibiliSearchSource]]:
+    responses = Generation.call(
+        api_key=api_key,
+        model=model,
+        messages=[
+            {"role": "system", "content": _SEARCH_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": f"{search_query}\n只返回 Bilibili 视频稿件来源。",
+            },
+        ],
+        enable_search=True,
+        result_format="message",
+        search_options={
+            "forced_search": True,
+            "search_strategy": "agent",
+            "enable_source": True,
+        },
+        stream=True,
+        incremental_output=True,
+    )
+    return _collect_stream_sources(responses)
+
+
+def _requires_generation_endpoint(
+    status_code: object,
+    code: str,
+    message: str,
+) -> bool:
+    return (
+        status_code == HTTPStatus.BAD_REQUEST
+        and code == _TEXT_ENDPOINT_ERROR_CODE
+        and message == _TEXT_ENDPOINT_ERROR_MESSAGE
+    )
 
 
 def _selection_input(
@@ -194,7 +247,7 @@ async def _search_aliyun_bilibili_sources(
 
     try:
         status_code, code, message, sources = await asyncio.to_thread(
-            _search_stream_sources,
+            _search_multimodal_stream_sources,
             api_key,
             model,
             search_query,
@@ -205,6 +258,27 @@ async def _search_aliyun_bilibili_sources(
             type(exc).__name__,
         )
         return []
+
+    use_generation_endpoint = _requires_generation_endpoint(
+        status_code,
+        code,
+        message,
+    )
+    if use_generation_endpoint:
+        logger.info("DashScope Bilibili search switching to text model endpoint")
+        try:
+            status_code, code, message, sources = await asyncio.to_thread(
+                _search_generation_stream_sources,
+                api_key,
+                model,
+                search_query,
+            )
+        except Exception as exc:
+            logger.warning(
+                "DashScope Bilibili text search failed error_type=%s",
+                type(exc).__name__,
+            )
+            return []
 
     if status_code != HTTPStatus.OK:
         logger.warning(
@@ -219,21 +293,36 @@ async def _search_aliyun_bilibili_sources(
         return []
 
     try:
-        selection_response = await asyncio.to_thread(
-            MultiModalConversation.call,
-            api_key=api_key,
-            model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": [{"text": _SELECTION_SYSTEM_PROMPT}],
-                },
-                {
-                    "role": "user",
-                    "content": [{"text": _selection_input(section_scope, sources)}],
-                },
-            ],
-        )
+        if use_generation_endpoint:
+            selection_response = await asyncio.to_thread(
+                Generation.call,
+                api_key=api_key,
+                model=model,
+                messages=[
+                    {"role": "system", "content": _SELECTION_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": _selection_input(section_scope, sources),
+                    },
+                ],
+                result_format="message",
+            )
+        else:
+            selection_response = await asyncio.to_thread(
+                MultiModalConversation.call,
+                api_key=api_key,
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": [{"text": _SELECTION_SYSTEM_PROMPT}],
+                    },
+                    {
+                        "role": "user",
+                        "content": [{"text": _selection_input(section_scope, sources)}],
+                    },
+                ],
+            )
     except Exception as exc:
         logger.warning(
             "DashScope Bilibili source ranking failed error_type=%s",

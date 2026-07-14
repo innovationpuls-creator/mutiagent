@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from dashscope import Generation
 from sqlmodel import Session
 
 from app.database import build_engine, init_db, set_engine
@@ -276,6 +277,91 @@ def test_aliyun_bilibili_search_uses_native_dashscope_contract(
             ],
         },
     ]
+
+
+def test_aliyun_bilibili_search_uses_generation_for_text_model_endpoint(
+    monkeypatch,
+) -> None:
+    endpoint_error = _DashScopeResponse(content=[], search_results=[])
+    endpoint_error.status_code = 400
+    endpoint_error.code = "InvalidParameter"
+    endpoint_error.message = (
+        "url error, please check url！ For details, see: "
+        "https://help.aliyun.com/zh/model-studio/error-code#error-url"
+    )
+    multimodal_calls: list[dict] = []
+    generation_calls: list[dict] = []
+    generation_responses = iter(
+        [
+            iter(
+                [
+                    _DashScopeResponse(
+                        content=[],
+                        search_results=[
+                            {
+                                "title": "算法复杂度课程",
+                                "url": "https://www.bilibili.com/video/BV1234567890",
+                                "site_name": None,
+                                "index": 4,
+                            }
+                        ],
+                    )
+                ]
+            ),
+            _DashScopeResponse(
+                content='{"indexes":[4]}',
+                search_results=[],
+            ),
+        ]
+    )
+
+    def multimodal_call(**kwargs):
+        multimodal_calls.append(kwargs)
+        return iter([endpoint_error])
+
+    def generation_call(**kwargs):
+        generation_calls.append(kwargs)
+        return next(generation_responses)
+
+    monkeypatch.setenv("LLM_API_KEY", "key")
+    monkeypatch.setenv("LLM_MODEL", "text-model")
+    monkeypatch.setattr(
+        aliyun_bilibili_search_module.MultiModalConversation,
+        "call",
+        multimodal_call,
+    )
+    monkeypatch.setattr(Generation, "call", generation_call)
+
+    results = asyncio.run(
+        _search_aliyun_bilibili_sources("数据结构 时间复杂度", "小节语义")
+    )
+
+    assert [source.index for source in results] == [4]
+    assert len(multimodal_calls) == 1
+    assert len(generation_calls) == 2
+    assert generation_calls[0]["messages"] == [
+        {
+            "role": "system",
+            "content": aliyun_bilibili_search_module._SEARCH_SYSTEM_PROMPT,
+        },
+        {
+            "role": "user",
+            "content": "数据结构 时间复杂度\n只返回 Bilibili 视频稿件来源。",
+        },
+    ]
+    assert generation_calls[0]["enable_search"] is True
+    assert generation_calls[0]["result_format"] == "message"
+    assert generation_calls[0]["search_options"] == {
+        "forced_search": True,
+        "search_strategy": "agent",
+        "enable_source": True,
+    }
+    assert generation_calls[0]["stream"] is True
+    assert generation_calls[0]["incremental_output"] is True
+    assert generation_calls[1]["messages"][0] == {
+        "role": "system",
+        "content": aliyun_bilibili_search_module._SELECTION_SYSTEM_PROMPT,
+    }
 
 
 @pytest.mark.parametrize(
