@@ -108,3 +108,31 @@ cd backend && uv run ruff format --check app/orchestration/agents/course_resourc
 - 精确验证：`6 passed, 111 deselected`，包含既有 YouTube watch URL 回归。
 - 覆盖验证发现两条存量“已验证视频”夹具的 BV 号不完整；已改为完整 BV 号，并为这两条完整路径显式 mock Bilibili 元数据成功响应，避免网络依赖。两个受影响 nodeid：`2 passed`。
 - 最终验证：`uv run pytest tests/test_course_resource_agent_contract.py -q` 为 `117 passed`；Ruff 规则检查和格式检查通过；`git diff --check` 通过。
+
+## 复审修复记录：Bilibili URL 边界与 source 绕过
+
+- 新增失败测试覆盖：
+  - `source=YouTube` 搭配 `https://evilbilibili.com/video/BV1xx411x7xx`。
+  - Bilibili URL 的 query、fragment、username/password 和非默认端口。
+  - 保留 `https://www.bilibili.com/video/BV1xx411x7xx` 正常通过测试。
+- TDD 红灯：
+
+  ```bash
+  cd backend && uv run pytest tests/test_course_resource_agent_contract.py -k 'requires_exact_bilibili_video_url or does_not_allow_source_to_bypass_bilibili_url or accepts_exact_bilibili_video_url_shape or video_quality_gate_accepts_youtube_watch_url' -q
+  ```
+
+  结果：`5 failed, 5 passed, 112 deselected`。新增的四类 URL 边界和 source 绕过均被当前实现错误放行。
+- 最小修复：`_bilibili_bvid_from_url` 现在只接受 `scheme=https`、`hostname=www.bilibili.com`、无凭据、无 query/fragment、无显式端口或默认端口 `443`，以及完整 `/video/BV...` 路径；质量门拒绝 `source=YouTube` 的非 YouTube watch 地址，未改变 YouTube watch URL 的既有通过逻辑。
+- TDD 绿灯：同一命令结果为 `10 passed, 112 deselected`。
+- 定向验证：
+
+  ```bash
+  cd backend && uv run pytest tests/test_course_resource_agent_contract.py -k 'video_quality or find_verified_video_from_search_uses_youtube_when_bilibili_has_no_verified_match' -q
+  ```
+
+  结果：`24 passed, 98 deselected`。
+- 完整验证：`cd backend && uv run pytest tests/test_course_resource_agent_contract.py -q`，结果：`122 passed in 17.77s`。
+- Ruff 与差异检查：`uv run ruff check --fix`、`uv run ruff format`、`uv run ruff check`、`uv run ruff format --check` 均通过；两个生产文件格式化后保持不变；`git diff --check` 通过。
+- TDD 测试检查点：`cb92a6f test: cover exact bilibili video URL boundaries`。
+- 实现提交：`b2a3628 fix: harden bilibili video URL validation`。
+- 本次改动文件：`backend/app/orchestration/agents/course_resources/bilibili.py`、`backend/app/orchestration/agents/course_resources/video.py`、`backend/tests/test_course_resource_agent_contract.py`。
