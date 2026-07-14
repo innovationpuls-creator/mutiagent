@@ -3,9 +3,11 @@ from __future__ import annotations
 from fastapi import HTTPException, status
 from sqlmodel import Session
 
+from app.models import User
 from app.schemas import LeafCourseRead, LeafCourseReadResponse, LeafGenerationStatusRead
 from app.services.course_generation_status_service import get_course_generation_status
 from app.services.course_knowledge_service import get_user_course_knowledge_outline
+from app.services.cultivation_program_service import get_matched_program_for_student
 from app.services.forest_service import first_generatable_chapter_id
 from app.services.learning_path_service import (
     compare_grade_years,
@@ -73,15 +75,61 @@ def _find_course(
     return None
 
 
+def _grade_id_for_program_course(course: dict) -> str:
+    time_arrangement = course.get("time_arrangement")
+    semester_scope = (
+        time_arrangement.get("semester_scope")
+        if isinstance(time_arrangement, dict)
+        else None
+    )
+    try:
+        semester = int(semester_scope or "1")
+    except (TypeError, ValueError):
+        semester = 0
+    if semester >= 7:
+        return "year_4"
+    if semester >= 5:
+        return "year_3"
+    if semester >= 3:
+        return "year_2"
+    return "year_1"
+
+
+def _find_matched_program_course(
+    session: Session, user_uid: str, course_node_id: str
+) -> tuple[str, dict, str] | None:
+    student = session.get(User, user_uid)
+    if student is None:
+        return None
+    program = get_matched_program_for_student(session, student)
+    if program is None:
+        return None
+    for course in program.courses:
+        if not isinstance(course, dict):
+            continue
+        if course.get("course_node_id") != course_node_id:
+            continue
+        course_status = (
+            "completed" if course.get("status") == "completed" else "current"
+        )
+        return _grade_id_for_program_course(course), course, course_status
+    return None
+
+
 def read_leaf_course(
     session: Session, user_uid: str, course_node_id: str
 ) -> LeafCourseReadResponse:
     year_paths = get_all_year_learning_paths(session, user_uid)
     found = _find_course(year_paths, course_node_id)
     if found is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="课程不存在")
-
-    _path_data, grade_id, course, _index, course_status = found
+        matched_course = _find_matched_program_course(session, user_uid, course_node_id)
+        if matched_course is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="课程不存在"
+            )
+        grade_id, course, course_status = matched_course
+    else:
+        _path_data, grade_id, course, _index, course_status = found
     outline = get_user_course_knowledge_outline(session, user_uid, course_node_id)
     has_outline = isinstance(outline, dict)
     sections = (

@@ -239,6 +239,61 @@ def test_leaf_course_returns_current_course_with_outline_and_composed_content(
     assert body["generation_status"] is None
 
 
+def test_leaf_course_returns_matched_published_program_course(
+    tmp_path: Path,
+) -> None:
+    database_url = postgresql_test_url(tmp_path, "leaf-program-course")
+    client = TestClient(create_app(database_url=database_url))
+    admin_response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "人培管理员",
+            "identifier": "leaf-program-admin@example.com",
+            "password": "test-password-123",
+            "confirm_password": "test-password-123",
+            "role": "admin",
+            "school": "测试大学",
+            "major": "软件工程",
+            "class_name": "三班",
+        },
+    )
+    assert admin_response.status_code == 201, admin_response.text
+    student_token, _ = _register(client, "leaf-program-student@example.com")
+
+    publish_response = client.post(
+        "/api/teacher/program/publish",
+        headers={"Authorization": f"Bearer {admin_response.json()['access_token']}"},
+        json={
+            "courses": [
+                {
+                    "course_node_id": "comp_org_1",
+                    "course_or_chapter_theme": "计算机组成原理",
+                    "course_goal": "完成计算机组成原理学习",
+                    "status": "locked",
+                    "has_outline": False,
+                    "time_arrangement": {
+                        "semester_scope": "5",
+                        "duration": "64学时/4学分",
+                    },
+                }
+            ]
+        },
+    )
+    assert publish_response.status_code == 200, publish_response.text
+
+    response = client.get(
+        "/api/leaf/courses/comp_org_1",
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["access_state"] == "available"
+    assert body["course"]["course_node_id"] == "comp_org_1"
+    assert body["course"]["grade_id"] == "year_3"
+    assert body["course"]["status"] == "current"
+
+
 def test_leaf_course_opens_next_generatable_chapter_after_quiz_pass(
     tmp_path: Path,
 ) -> None:
@@ -294,7 +349,10 @@ def test_leaf_course_keeps_sections_empty_when_composed_content_missing(
                 "section_id": "1.1",
                 "parent_section_id": "1",
                 "title": "学习目标",
-                "markdown": "# 学习目标\n\n正文内容\n\n<!-- video:id=video_1 -->\n\n<!-- animation:id=anim_1 -->",
+                "markdown": (
+                    "# 学习目标\n\n正文内容\n\n<!-- video:id=video_1 -->\n\n"
+                    "<!-- animation:id=anim_1 -->"
+                ),
                 "video_briefs": [
                     {"video_id": "video_1", "title": "导入视频", "purpose": "建立直觉"}
                 ],
