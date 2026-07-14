@@ -24,8 +24,22 @@ def _is_bilibili_search_placeholder_title(title: str) -> bool:
 
 
 def _bilibili_bvid_from_url(url: str) -> str:
-    parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname != "www.bilibili.com":
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except ValueError:
+        return ""
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "www.bilibili.com"
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in {None, 443}
+        or parsed.query
+        or parsed.fragment
+        or "?" in url
+        or "#" in url
+    ):
         return ""
     match = _BILIBILI_VIDEO_PATH_PATTERN.fullmatch(parsed.path)
     return match.group(1) if match else ""

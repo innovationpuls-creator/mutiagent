@@ -641,6 +641,11 @@ def _video_metadata_topic_issue(
     return "视频平台真实标题或简介未体现小节主题。"
 
 
+def _is_youtube_watch_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.hostname == "www.youtube.com" and parsed.path == "/watch"
+
+
 def _normalized_video_quality_issue(
     videos: list[dict],
     video_briefs: object,
@@ -666,7 +671,10 @@ def _normalized_video_quality_issue(
         url = _clean_text(video.get("url"))
         parsed = urlparse(url)
         bilibili_bvid = _bilibili_bvid_from_url(url)
-        if _clean_text(video.get("source")) == "Bilibili" and not bilibili_bvid:
+        source = _clean_text(video.get("source"))
+        if source == "Bilibili" and not bilibili_bvid:
+            return "Bilibili 视频 URL 必须为精确视频页地址。"
+        if source == "YouTube" and not _is_youtube_watch_url(url):
             return "Bilibili 视频 URL 必须为精确视频页地址。"
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             return "视频 URL 必须是可直接打开的 HTTP(S) 地址。"
