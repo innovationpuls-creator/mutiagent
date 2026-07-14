@@ -1032,7 +1032,7 @@ def test_video_quality_allows_similar_topic_title_without_exact_brief_name() -> 
             {
                 "brief_id": "video_1",
                 "title": "RAG 文档切分 Chunking、chunk_size 与 overlap 实战教程",
-                "url": "https://example.com/rag-chunking",
+                "url": "https://www.youtube.com/watch?v=dummy-rag-chunking",
                 "cover_url": "",
                 "source": "example.com",
             }
@@ -4220,7 +4220,7 @@ def test_run_section_video_search_agent_writes_url_and_fallback_cover(
                     {
                         "brief_id": "video_1",
                         "title": "AI 应用开发需求边界与验收标准学习目标讲解",
-                        "url": "https://example.com/video",
+                        "url": "https://www.youtube.com/watch?v=dummy-video",
                         "cover_url": "",
                         "source": "example.com",
                     }
@@ -4242,7 +4242,7 @@ def test_run_section_video_search_agent_writes_url_and_fallback_cover(
             {
                 "brief_id": "video_1",
                 "title": "AI 应用开发需求边界与验收标准学习目标讲解",
-                "url": "https://example.com/video",
+                "url": "https://www.youtube.com/watch?v=dummy-video",
                 "cover_url": "",
                 "source": "example.com",
             }
@@ -4314,7 +4314,7 @@ def test_run_section_video_search_agent_writes_url_and_fallback_cover(
     assert captured["verified_search"] == 1
     videos = result["course_knowledge"]["section_video_links"]["1.1"]["videos"]
     assert videos[0]["brief_id"] == "video_1"
-    assert videos[0]["url"] == "https://example.com/video"
+    assert videos[0]["url"] == "https://www.youtube.com/watch?v=dummy-video"
     assert videos[0]["cover_status"] == "fallback"
     assert videos[0]["cover_url"].startswith("data:image/svg+xml;utf8,")
 
@@ -4338,7 +4338,7 @@ def test_run_section_video_search_agent_retries_transient_search_failure(
                     {
                         "brief_id": "video_1",
                         "title": "需求边界导入视频：需求边界与验收标准重试讲解",
-                        "url": "https://example.com/retried-video",
+                        "url": "https://www.youtube.com/watch?v=dummy-retried-video",
                         "cover_url": "https://example.com/cover.png",
                         "source": "example.com",
                     }
@@ -4362,7 +4362,7 @@ def test_run_section_video_search_agent_retries_transient_search_failure(
             {
                 "brief_id": "video_1",
                 "title": "需求边界导入视频：需求边界与验收标准重试讲解",
-                "url": "https://example.com/retried-video",
+                "url": "https://www.youtube.com/watch?v=dummy-retried-video",
                 "cover_url": "https://example.com/cover.png",
                 "source": "example.com",
             }
@@ -4431,7 +4431,7 @@ def test_run_section_video_search_agent_retries_transient_search_failure(
     assert captured["attempts"] == 0
     assert captured["search_attempts"] == 2
     videos = result["course_knowledge"]["section_video_links"]["1.1"]["videos"]
-    assert videos[0]["url"] == "https://example.com/retried-video"
+    assert videos[0]["url"] == "https://www.youtube.com/watch?v=dummy-retried-video"
 
 
 def test_run_section_video_search_agent_retries_when_first_search_result_fails_quality(
@@ -4452,7 +4452,7 @@ def test_run_section_video_search_agent_retries_when_first_search_result_fails_q
                         {
                             "brief_id": "video_1",
                             "title": "通用课程首页",
-                            "url": "https://example.com/generic-video",
+                            "url": "https://www.youtube.com/watch?v=dummy-generic-video",
                             "cover_url": "",
                             "source": "example.com",
                         }
@@ -4465,7 +4465,7 @@ def test_run_section_video_search_agent_retries_when_first_search_result_fails_q
                     {
                         "brief_id": "video_1",
                         "title": "学习目标：功能边界与验收标准实战讲解",
-                        "url": "https://example.com/repaired-video",
+                        "url": "https://www.youtube.com/watch?v=dummy-repaired-video",
                         "cover_url": "",
                         "source": "example.com",
                     }
@@ -4488,7 +4488,7 @@ def test_run_section_video_search_agent_retries_when_first_search_result_fails_q
                 {
                     "brief_id": "video_1",
                     "title": "通用课程首页",
-                    "url": "https://example.com/generic-video",
+                    "url": "https://www.youtube.com/watch?v=dummy-generic-video",
                     "cover_url": "",
                     "source": "example.com",
                 }
@@ -4497,7 +4497,7 @@ def test_run_section_video_search_agent_retries_when_first_search_result_fails_q
             {
                 "brief_id": "video_1",
                 "title": "学习目标：功能边界与验收标准实战讲解",
-                "url": "https://example.com/repaired-video",
+                "url": "https://www.youtube.com/watch?v=dummy-repaired-video",
                 "cover_url": "",
                 "source": "example.com",
             }
@@ -4567,7 +4567,7 @@ def test_run_section_video_search_agent_retries_when_first_search_result_fails_q
     assert captured["attempts"] == 0
     assert captured["search_attempts"] == 2
     videos = result["course_knowledge"]["section_video_links"]["1.1"]["videos"]
-    assert videos[0]["url"] == "https://example.com/repaired-video"
+    assert videos[0]["url"] == "https://www.youtube.com/watch?v=dummy-repaired-video"
 
 
 def test_run_section_video_search_agent_uses_verified_search_when_llm_videos_stay_bad(
@@ -4587,7 +4587,7 @@ def test_run_section_video_search_agent_uses_verified_search_when_llm_videos_sta
                     {
                         "brief_id": "video_1",
                         "title": "通用课程首页",
-                        "url": "https://example.com/generic-video",
+                        "url": "https://www.youtube.com/watch?v=dummy-generic-video",
                         "cover_url": "",
                         "source": "example.com",
                     }
@@ -5086,7 +5086,7 @@ def test_run_section_video_search_agent_accepts_section_topic_match_without_cour
             {
                 "brief_id": "video_1",
                 "title": "State对象设计与序列化约束 TypedDict 与 Pydantic 实战讲解",
-                "url": "https://example.com/langgraph-state",
+                "url": "https://www.youtube.com/watch?v=dummy-langgraph-state",
                 "cover_url": "",
                 "source": "LangGraph 教学",
             }
@@ -5177,7 +5177,7 @@ def test_run_section_video_search_agent_accepts_section_topic_match_without_cour
 
     assert "error" not in result
     videos = result["course_knowledge"]["section_video_links"]["1.2"]["videos"]
-    assert videos[0]["url"] == "https://example.com/langgraph-state"
+    assert videos[0]["url"] == "https://www.youtube.com/watch?v=dummy-langgraph-state"
 
 
 def test_run_section_video_search_agent_marks_unavailable_when_verified_search_stays_empty(
@@ -7388,7 +7388,7 @@ def test_stream_chapter_resource_generation_generates_bound_resources_for_each_c
                         {
                             "brief_id": brief["video_id"],
                             "title": f"{parent_title}{brief['title']}：{section['key_knowledge_points'][0]}实践讲解",
-                            "url": f"https://example.com/videos/{section_id.replace('.', '-')}",
+                            "url": f"https://www.youtube.com/watch?v=dummy-{section_id.replace('.', '-')}",
                             "cover_url": "",
                             "source": f"example.com {title}",
                         }
@@ -7435,7 +7435,7 @@ def test_stream_chapter_resource_generation_generates_bound_resources_for_each_c
             {
                 "brief_id": brief["video_id"],
                 "title": f"{parent_title}{brief['title']}：{section['key_knowledge_points'][0]}实践讲解",
-                "url": f"https://example.com/videos/{section_id.replace('.', '-')}",
+                "url": f"https://www.youtube.com/watch?v=dummy-{section_id.replace('.', '-')}",
                 "cover_url": "",
                 "source": f"example.com {section['title']}",
             }
@@ -7520,7 +7520,7 @@ def test_stream_chapter_resource_generation_generates_bound_resources_for_each_c
             is None
         )
         assert video["brief_id"] == markdown["video_briefs"][0]["video_id"]
-        assert video["url"].startswith("https://example.com/videos/")
+        assert video["url"].startswith("https://www.youtube.com/watch?v=dummy-")
         assert (
             animation["animation_id"] == markdown["animation_briefs"][0]["animation_id"]
         )
@@ -7567,7 +7567,7 @@ def test_stream_chapter_resource_generation_accepts_plain_markdown_and_html_outp
                         {
                             "brief_id": brief["video_id"],
                             "title": f"{title}：{section['key_knowledge_points'][0]}实践讲解",
-                            "url": f"https://example.com/videos/{section_id.replace('.', '-')}",
+                            "url": f"https://www.youtube.com/watch?v=dummy-{section_id.replace('.', '-')}",
                             "cover_url": "",
                             "source": "example.com",
                         }
@@ -7605,7 +7605,7 @@ def test_stream_chapter_resource_generation_accepts_plain_markdown_and_html_outp
             {
                 "brief_id": brief["video_id"],
                 "title": f"{parent_title}{section['title']}：{section['key_knowledge_points'][0]}实践讲解",
-                "url": f"https://example.com/videos/{section_id.replace('.', '-')}",
+                "url": f"https://www.youtube.com/watch?v=dummy-{section_id.replace('.', '-')}",
                 "cover_url": "",
                 "source": "example.com",
             }
