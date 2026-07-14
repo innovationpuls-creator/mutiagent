@@ -136,3 +136,13 @@ cd backend && uv run ruff format --check app/orchestration/agents/course_resourc
 - TDD 测试检查点：`cb92a6f test: cover exact bilibili video URL boundaries`。
 - 实现提交：`b2a3628 fix: harden bilibili video URL validation`。
 - 本次改动文件：`backend/app/orchestration/agents/course_resources/bilibili.py`、`backend/app/orchestration/agents/course_resources/video.py`、`backend/tests/test_course_resource_agent_contract.py`。
+
+## 2026-07-14 复审记录：source 无差别精确 URL 质量门
+
+- 覆盖检查确认无需新增测试：`test_video_quality_gate_rejects_non_contract_url_for_any_source` 已覆盖 `source=""` 和 `source="Other"` 搭配非精确 URL 的拒绝，并断言精确 Bilibili URL 错误；`test_video_quality_gate_reports_youtube_error_for_non_watch_url` 已覆盖 `source="YouTube"` 的专属错误。
+- 保留现有 `video.py` 质量门修复，以及测试中将非契约 URL 夹具改为合法 YouTube watch URL 的必要同步改动。
+- 定向测试：`uv run pytest tests/test_course_resource_agent_contract.py::test_video_quality_gate_rejects_non_contract_url_for_any_source tests/test_course_resource_agent_contract.py::test_video_quality_gate_reports_youtube_error_for_non_watch_url tests/test_course_resource_agent_contract.py::test_video_quality_gate_requires_exact_bilibili_video_url tests/test_course_resource_agent_contract.py::test_video_quality_gate_accepts_exact_bilibili_video_url_shape -q`，结果 `16 passed in 0.84s`。
+- 完整契约测试：`uv run pytest tests/test_course_resource_agent_contract.py -q`，结果 `128 passed in 19.09s`。
+- 质量检查：`uv run ruff check --fix` 通过；`uv run ruff format` 报告 `2 files left unchanged`；`uv run ruff check` 通过；`uv run ruff format --check` 报告 `2 files already formatted`；`git diff --check` 通过。
+- fix commit：`e22e2bb`（`fix: enforce exact video source URLs`）。
+- 本次未修改 `docs/report-data-inventory.md`、`.DS_Store` 或 `docs/.DS_Store`。
