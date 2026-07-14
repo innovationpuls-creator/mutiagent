@@ -144,26 +144,39 @@ def test_aliyun_bilibili_search_uses_native_dashscope_contract(
     monkeypatch,
 ) -> None:
     calls: list[dict] = []
+    responses = iter(
+        [
+            iter(
+                [
+                    _DashScopeResponse(
+                        content=[],
+                        search_results=[
+                            {
+                                "title": "第一条",
+                                "url": "https://www.bilibili.com/video/BV1234567890",
+                                "site_name": "哔哩哔哩",
+                                "index": 1,
+                            },
+                            {
+                                "title": "第二条",
+                                "url": "https://www.bilibili.com/video/BV0987654321",
+                                "site_name": "哔哩哔哩",
+                                "index": 2,
+                            },
+                        ],
+                    )
+                ]
+            ),
+            _DashScopeResponse(
+                content=[{"text": '```json\n{"indexes":[2,1]}\n```'}],
+                search_results=[],
+            ),
+        ]
+    )
 
     def conversation_call(**kwargs):
         calls.append(kwargs)
-        return _DashScopeResponse(
-            content=[{"text": '```json\n{"indexes":[2,1]}\n```'}],
-            search_results=[
-                {
-                    "title": "第一条",
-                    "url": "https://www.bilibili.com/video/BV1234567890",
-                    "site_name": "哔哩哔哩",
-                    "index": 1,
-                },
-                {
-                    "title": "第二条",
-                    "url": "https://www.bilibili.com/video/BV0987654321",
-                    "site_name": "哔哩哔哩",
-                    "index": 2,
-                },
-            ],
-        )
+        return next(responses)
 
     monkeypatch.setenv("LLM_API_KEY", "native-search-key")
     monkeypatch.setenv("LLM_MODEL", "qwen-search-model")
@@ -173,7 +186,12 @@ def test_aliyun_bilibili_search_uses_native_dashscope_contract(
         conversation_call,
     )
 
-    results = asyncio.run(_search_aliyun_bilibili_sources("精确的小节语义范围"))
+    results = asyncio.run(
+        _search_aliyun_bilibili_sources(
+            "数据结构 算法效率 时间复杂度 操作次数",
+            "精确的小节语义范围",
+        )
+    )
 
     assert [result.index for result in results] == [2, 1]
     assert calls == [
@@ -186,7 +204,43 @@ def test_aliyun_bilibili_search_uses_native_dashscope_contract(
                     "content": [
                         {
                             "text": (
-                                "根据小节语义，对联网搜索来源按相关性从高到低排序。"
+                                "使用联网搜索查找与输入小节语义最相关的 "
+                                "Bilibili 教学视频。"
+                            )
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "text": (
+                                "检索词：数据结构 算法效率 时间复杂度 操作次数\n"
+                                "语义范围：精确的小节语义范围\n"
+                                "只返回 Bilibili 视频稿件来源。"
+                            )
+                        }
+                    ],
+                },
+            ],
+            "enable_search": True,
+            "search_options": {
+                "search_strategy": "agent",
+                "enable_source": True,
+            },
+            "stream": True,
+            "incremental_output": True,
+        },
+        {
+            "api_key": "native-search-key",
+            "model": "qwen-search-model",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "text": (
+                                "根据小节语义，对给定的真实搜索来源按相关性从高到低排序。"
                                 "返回所有语义相关来源的索引，不判断 URL 形态，"
                                 "不遗漏较低排名来源。"
                                 '只返回严格 JSON：{"indexes":[整数索引]}。'
@@ -196,19 +250,31 @@ def test_aliyun_bilibili_search_uses_native_dashscope_contract(
                 },
                 {
                     "role": "user",
-                    "content": [{"text": "精确的小节语义范围"}],
+                    "content": [
+                        {
+                            "text": json.dumps(
+                                {
+                                    "section_scope": "精确的小节语义范围",
+                                    "search_results": [
+                                        {
+                                            "index": 1,
+                                            "title": "第一条",
+                                            "site_name": "哔哩哔哩",
+                                        },
+                                        {
+                                            "index": 2,
+                                            "title": "第二条",
+                                            "site_name": "哔哩哔哩",
+                                        },
+                                    ],
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    ],
                 },
             ],
-            "enable_search": True,
-            "result_format": "message",
-            "search_options": {
-                "forced_search": True,
-                "search_strategy": "turbo",
-                "enable_source": True,
-                "assigned_site_list": ["bilibili.com"],
-                "intention_options": {"prompt_intervene": "精确的小节语义范围"},
-            },
-        }
+        },
     ]
 
 
@@ -229,27 +295,49 @@ def test_aliyun_bilibili_search_only_returns_indexed_search_info_sources(
     content: str,
     expected_indexes: list[int],
 ) -> None:
-    response = _DashScopeResponse(
-        content=[{"text": content}],
-        search_results=[
-            {
-                "title": f"来源 {index}",
-                "url": f"https://www.bilibili.com/video/BV{index:010d}",
-                "site_name": "哔哩哔哩",
-                "index": index,
-            }
-            for index in (1, 2, 3)
-        ],
+    responses = iter(
+        [
+            iter(
+                [
+                    _DashScopeResponse(
+                        content=[
+                            {
+                                "text": (
+                                    '{"url":"https://www.bilibili.com/video/'
+                                    'BV0000000000"}'
+                                )
+                            }
+                        ],
+                        search_results=[
+                            {
+                                "title": f"来源 {index}",
+                                "url": (
+                                    "https://www.bilibili.com/video/"
+                                    f"BV{index:010d}"
+                                ),
+                                "site_name": "哔哩哔哩",
+                                "index": index,
+                            }
+                            for index in (1, 2, 3)
+                        ],
+                    )
+                ]
+            ),
+            _DashScopeResponse(
+                content=[{"text": content}],
+                search_results=[],
+            ),
+        ]
     )
     monkeypatch.setenv("LLM_API_KEY", "key")
     monkeypatch.setenv("LLM_MODEL", "model")
     monkeypatch.setattr(
         aliyun_bilibili_search_module.MultiModalConversation,
         "call",
-        lambda **_kwargs: response,
+        lambda **_kwargs: next(responses),
     )
 
-    results = asyncio.run(_search_aliyun_bilibili_sources("scope"))
+    results = asyncio.run(_search_aliyun_bilibili_sources("query", "scope"))
 
     assert [result.index for result in results] == expected_indexes
     assert all("BV0000000000" not in result.url for result in results)
@@ -278,9 +366,9 @@ def test_aliyun_bilibili_search_rejects_invalid_response_contract(monkeypatch) -
         monkeypatch.setattr(
             aliyun_bilibili_search_module.MultiModalConversation,
             "call",
-            lambda **_kwargs: response,
+            lambda **_kwargs: iter([response]),
         )
-        assert asyncio.run(_search_aliyun_bilibili_sources("scope")) == []
+        assert asyncio.run(_search_aliyun_bilibili_sources("query", "scope")) == []
 
 
 def test_aliyun_bilibili_search_returns_empty_without_config_or_on_sdk_error(
@@ -288,7 +376,7 @@ def test_aliyun_bilibili_search_returns_empty_without_config_or_on_sdk_error(
 ) -> None:
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     monkeypatch.delenv("LLM_MODEL", raising=False)
-    assert asyncio.run(_search_aliyun_bilibili_sources("scope")) == []
+    assert asyncio.run(_search_aliyun_bilibili_sources("query", "scope")) == []
 
     monkeypatch.setenv("LLM_API_KEY", "key")
     monkeypatch.setenv("LLM_MODEL", "model")
@@ -301,7 +389,7 @@ def test_aliyun_bilibili_search_returns_empty_without_config_or_on_sdk_error(
         "call",
         fail_call,
     )
-    assert asyncio.run(_search_aliyun_bilibili_sources("scope")) == []
+    assert asyncio.run(_search_aliyun_bilibili_sources("query", "scope")) == []
 
 
 def test_find_verified_video_uses_native_sources_and_metadata_title(
@@ -319,14 +407,15 @@ def test_find_verified_video_uses_native_sources_and_metadata_title(
             "search_terms": ["功能边界", "需求分析"],
         }
     ]
-    scopes: list[dict] = []
+    searches: list[dict] = []
 
-    async def native_search(scope: str) -> list[AliyunBilibiliSearchSource]:
-        scope_constraint, scope_payload = scope.split("\n", maxsplit=1)
-        scopes.append(
+    async def native_search(
+        query: str, scope: str
+    ) -> list[AliyunBilibiliSearchSource]:
+        searches.append(
             {
-                "constraint": scope_constraint,
-                "payload": json.loads(scope_payload),
+                "query": query,
+                "payload": json.loads(scope),
             }
         )
         return [
@@ -383,13 +472,9 @@ def test_find_verified_video_uses_native_sources_and_metadata_title(
             "source": "Bilibili",
         }
     ]
-    assert scopes == [
+    assert searches == [
         {
-            "constraint": (
-                "只检索 Bilibili 精确视频稿件页；来源 URL 必须形如 "
-                "https://www.bilibili.com/video/BV...；排除专栏、动态、课程、"
-                "搜索页和用户页。"
-            ),
+            "query": _video_search_queries(briefs, section, outline)[0],
             "payload": {
                 "course_name": "AI 应用开发",
                 "parent_section": {
@@ -422,13 +507,15 @@ def test_find_verified_video_searches_briefs_and_verifies_sources_concurrently(
     verification_started = 0
     verifications_started = asyncio.Event()
 
-    async def native_search(scope: str) -> list[AliyunBilibiliSearchSource]:
+    async def native_search(
+        _query: str, scope: str
+    ) -> list[AliyunBilibiliSearchSource]:
         nonlocal search_started
         search_started += 1
         if search_started == 2:
             searches_started.set()
         await asyncio.wait_for(searches_started.wait(), timeout=0.2)
-        brief = json.loads(scope.split("\n", maxsplit=1)[1])["video_brief"]
+        brief = json.loads(scope)["video_brief"]
         suffix = "1" if brief["video_id"] == "video_1" else "2"
         return [
             AliyunBilibiliSearchSource(
@@ -475,7 +562,9 @@ def test_find_verified_video_rejects_non_exact_bilibili_urls(monkeypatch) -> Non
         "https://www.youtube.com/watch?v=video",
     ]
 
-    async def native_search(_scope: str) -> list[AliyunBilibiliSearchSource]:
+    async def native_search(
+        _query: str, _scope: str
+    ) -> list[AliyunBilibiliSearchSource]:
         return [
             AliyunBilibiliSearchSource("标题", url, "哔哩哔哩", index)
             for index, url in enumerate(invalid_urls, start=1)
@@ -507,7 +596,9 @@ def test_find_verified_video_rejects_non_exact_bilibili_urls(monkeypatch) -> Non
 def test_find_verified_video_canonicalizes_exact_bilibili_trailing_slash(
     monkeypatch,
 ) -> None:
-    async def native_search(_scope: str) -> list[AliyunBilibiliSearchSource]:
+    async def native_search(
+        _query: str, _scope: str
+    ) -> list[AliyunBilibiliSearchSource]:
         return [
             AliyunBilibiliSearchSource(
                 "标题",
