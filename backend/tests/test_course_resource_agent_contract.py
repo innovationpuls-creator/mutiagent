@@ -5587,6 +5587,76 @@ def test_find_verified_video_from_search_only_waits_for_youtube_on_first_query(
     }
 
 
+def test_find_verified_video_from_search_validates_query_candidates_concurrently(
+    monkeypatch,
+) -> None:
+    import app.orchestration.agents.course_resources as module
+
+    active_validations = 0
+    max_active_validations = 0
+
+    async def bilibili_search(_query: str) -> list[dict]:
+        return [
+            {
+                "title": "算法效率与基本操作计数入门",
+                "url": "https://www.bilibili.com/video/BV1AlgoEff01",
+                "cover_url": "",
+                "source": "Bilibili",
+            },
+            {
+                "title": "算法效率与基本操作计数进阶",
+                "url": "https://www.bilibili.com/video/BV1AlgoEff02",
+                "cover_url": "",
+                "source": "Bilibili",
+            },
+        ]
+
+    async def youtube_search(_query: str) -> list[dict]:
+        return []
+
+    async def verify_metadata(url: str) -> dict:
+        nonlocal active_validations, max_active_validations
+        active_validations += 1
+        max_active_validations = max(max_active_validations, active_validations)
+        await asyncio.sleep(0.01)
+        active_validations -= 1
+        return {
+            "status": "ok",
+            "text": "算法效率 基本操作计数 处理器速度 复杂度",
+            "title": (
+                "算法效率与基本操作计数入门"
+                if url.endswith("01")
+                else "算法效率与基本操作计数进阶"
+            ),
+        }
+
+    monkeypatch.setattr(module, "_search_bilibili_video_results", bilibili_search)
+    monkeypatch.setattr(module, "_search_youtube_video_results", youtube_search)
+    monkeypatch.setattr(module, "_verify_bilibili_video_metadata", verify_metadata)
+
+    videos = asyncio.run(
+        _find_verified_video_from_search(
+            [
+                {
+                    "video_id": "video_1",
+                    "title": "算法效率与基本操作计数",
+                    "purpose": "理解算法效率的必要性与基本操作计数",
+                }
+            ],
+            {
+                "section_id": "1.1",
+                "title": "效率需求的背景",
+                "description": "解释算法效率的必要性。",
+                "key_knowledge_points": ["算法效率", "基本操作计数"],
+            },
+            None,
+        )
+    )
+
+    assert videos
+    assert max_active_validations == 2
+
+
 def test_find_verified_video_from_search_logs_platform_latency(monkeypatch, caplog):
     import app.orchestration.agents.course_resources as module
 

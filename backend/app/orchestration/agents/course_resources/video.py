@@ -1171,37 +1171,45 @@ async def _find_verified_video_from_search(
                 )
                 youtube_results = []
             search_results = [*bilibili_results, *youtube_results]
+            query_videos: list[dict] = []
             for search_result in search_results:
                 url = _clean_text(search_result.get("url"))
                 if not url or url in seen_urls:
                     continue
                 seen_urls.add(url)
-                video = {"brief_id": brief_id, **search_result}
-                if (
-                    await _normalized_video_quality_issue_async(
-                        [video], [brief], section, outline
-                    )
-                    is None
-                ):
-                    score = _video_candidate_score(
-                        " ".join(
-                            [
-                                _clean_text(video.get("title")),
-                                _clean_text(video.get("source")),
-                            ]
-                        ),
-                        section,
-                        [brief],
-                        outline,
-                    )
-                    if score > best_score:
-                        best_score = score
-                        best_video = video
-                        if score >= 40 and _is_high_confidence_video_candidate(
-                            video, brief, section, outline
-                        ):
-                            verified.append(best_video)
-                            break
+                query_videos.append({"brief_id": brief_id, **search_result})
+
+            async def validate_candidate(video: dict) -> dict | None:
+                issue = await _normalized_video_quality_issue_async(
+                    [video], [brief], section, outline
+                )
+                return video if issue is None else None
+
+            validated_videos = await asyncio.gather(
+                *(validate_candidate(video) for video in query_videos)
+            )
+            for video in validated_videos:
+                if video is None:
+                    continue
+                score = _video_candidate_score(
+                    " ".join(
+                        [
+                            _clean_text(video.get("title")),
+                            _clean_text(video.get("source")),
+                        ]
+                    ),
+                    section,
+                    [brief],
+                    outline,
+                )
+                if score > best_score:
+                    best_score = score
+                    best_video = video
+                    if score >= 40 and _is_high_confidence_video_candidate(
+                        video, brief, section, outline
+                    ):
+                        verified.append(best_video)
+                        break
             if best_video is not None and brief_id in {
                 _clean_text(v.get("brief_id")) for v in verified
             }:
