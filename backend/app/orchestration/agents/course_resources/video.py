@@ -665,11 +665,13 @@ def _normalized_video_quality_issue(
     for video in videos:
         url = _clean_text(video.get("url"))
         parsed = urlparse(url)
+        bilibili_bvid = _bilibili_bvid_from_url(url)
+        if _clean_text(video.get("source")) == "Bilibili" and not bilibili_bvid:
+            return "Bilibili 视频 URL 必须为精确视频页地址。"
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             return "视频 URL 必须是可直接打开的 HTTP(S) 地址。"
         if parsed.hostname == "search.bilibili.com":
             return "Bilibili 搜索页不能作为真实视频 URL。"
-        bilibili_bvid = _bilibili_bvid_from_url(url)
         title = _clean_text(video.get("title"))
         specific_brief_terms = _video_specific_brief_terms(
             video_briefs, section, outline
@@ -732,6 +734,8 @@ async def _normalized_video_quality_issue_async(
     topic_terms = _video_topic_terms(video_briefs, section, outline)
     for video in videos:
         url = _clean_text(video.get("url"))
+        if not _bilibili_bvid_from_url(url):
+            continue
         import app.orchestration.agents.course_resources as cr_pkg
 
         metadata = await cr_pkg._verify_bilibili_video_metadata(url)

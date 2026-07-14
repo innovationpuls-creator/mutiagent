@@ -4609,7 +4609,7 @@ def test_run_section_video_search_agent_uses_verified_search_when_llm_videos_sta
             {
                 "brief_id": "video_1",
                 "title": "学习目标：功能边界与验收标准真实视频",
-                "url": "https://www.bilibili.com/video/BV1verified",
+                "url": "https://www.bilibili.com/video/BV1verified0",
                 "cover_url": "",
                 "source": "Bilibili",
             }
@@ -4656,9 +4656,17 @@ def test_run_section_video_search_agent_uses_verified_search_when_llm_videos_sta
 
     import app.orchestration.agents.course_resources as module
 
+    async def verified_metadata(_url: str) -> dict:
+        return {
+            "status": "ok",
+            "text": "AI 应用开发 学习目标 功能边界 验收标准",
+            "title": "学习目标：功能边界与验收标准真实视频",
+        }
+
     original_factory = module.ChatPromptTemplate
     module.ChatPromptTemplate = PromptFactory
     monkeypatch.setattr(module, "_find_verified_video_from_search", verified_search)
+    monkeypatch.setattr(module, "_verify_bilibili_video_metadata", verified_metadata)
     try:
         result = asyncio.run(
             run_section_video_search_agent(
@@ -4681,7 +4689,7 @@ def test_run_section_video_search_agent_uses_verified_search_when_llm_videos_sta
     assert captured["attempts"] == 0
     assert captured["verified_search"] == 1
     videos = result["course_knowledge"]["section_video_links"]["1.1"]["videos"]
-    assert videos[0]["url"] == "https://www.bilibili.com/video/BV1verified"
+    assert videos[0]["url"] == "https://www.bilibili.com/video/BV1verified0"
 
 
 def test_run_section_video_search_agent_uses_verified_search_when_llm_returns_empty_videos(
@@ -4860,7 +4868,7 @@ def test_run_section_video_search_agent_retries_verified_search_when_first_scan_
             {
                 "brief_id": "video_1",
                 "title": "学习目标：功能边界与验收标准真实视频",
-                "url": "https://www.bilibili.com/video/BV1verified",
+                "url": "https://www.bilibili.com/video/BV1verified0",
                 "cover_url": "",
                 "source": "Bilibili",
             }
@@ -4907,9 +4915,17 @@ def test_run_section_video_search_agent_retries_verified_search_when_first_scan_
 
     import app.orchestration.agents.course_resources as module
 
+    async def verified_metadata(_url: str) -> dict:
+        return {
+            "status": "ok",
+            "text": "AI 应用开发 学习目标 功能边界 验收标准",
+            "title": "学习目标：功能边界与验收标准真实视频",
+        }
+
     original_factory = module.ChatPromptTemplate
     module.ChatPromptTemplate = PromptFactory
     monkeypatch.setattr(module, "_find_verified_video_from_search", verified_search)
+    monkeypatch.setattr(module, "_verify_bilibili_video_metadata", verified_metadata)
     try:
         result = asyncio.run(
             run_section_video_search_agent(
@@ -4932,7 +4948,7 @@ def test_run_section_video_search_agent_retries_verified_search_when_first_scan_
     assert captured["attempts"] == 0
     assert captured["verified_search"] == 2
     videos = result["course_knowledge"]["section_video_links"]["1.1"]["videos"]
-    assert videos[0]["url"] == "https://www.bilibili.com/video/BV1verified"
+    assert videos[0]["url"] == "https://www.bilibili.com/video/BV1verified0"
 
 
 def test_run_section_video_search_agent_accepts_course_specific_video_metadata(
@@ -6768,6 +6784,62 @@ def test_video_quality_gate_requires_bound_url_and_topic_text() -> None:
 
     assert issue is not None
     assert "URL" in issue
+
+
+@pytest.mark.parametrize(
+    ("url", "expected_issue"),
+    [
+        ("https://www.bilibili.com", "Bilibili 视频 URL 必须为精确视频页地址。"),
+        (
+            "https://www.bilibili.com/search?keyword=AI",
+            "Bilibili 视频 URL 必须为精确视频页地址。",
+        ),
+        (
+            "bilibili.com/video/BV1xx411x7xx",
+            "Bilibili 视频 URL 必须为精确视频页地址。",
+        ),
+        (
+            "https://evilbilibili.com/video/BV1xx411x7xx",
+            "Bilibili 视频 URL 必须为精确视频页地址。",
+        ),
+    ],
+)
+def test_video_quality_gate_requires_exact_bilibili_video_url(
+    url: str, expected_issue: str
+) -> None:
+    issue = _normalized_video_quality_issue(
+        [
+            {
+                "brief_id": "video_1",
+                "title": "AI 应用开发学习目标与功能边界实践讲解",
+                "url": url,
+                "cover_url": "",
+                "source": "Bilibili",
+            }
+        ],
+        [{"video_id": "video_1", "title": "学习目标导入", "purpose": "功能边界"}],
+        _outline()["sections"][1],
+    )
+
+    assert issue == expected_issue
+
+
+def test_video_quality_gate_accepts_exact_bilibili_video_url_shape() -> None:
+    issue = _normalized_video_quality_issue(
+        [
+            {
+                "brief_id": "video_1",
+                "title": "Bilibili 搜索结果 BV1xx411x7xx",
+                "url": "https://www.bilibili.com/video/BV1xx411x7xx",
+                "cover_url": "",
+                "source": "Bilibili",
+            }
+        ],
+        [{"video_id": "video_1", "title": "学习目标导入", "purpose": "功能边界"}],
+        _outline()["sections"][1],
+    )
+
+    assert issue is None
 
 
 def test_existing_video_value_rejects_bilibili_search_page_url() -> None:

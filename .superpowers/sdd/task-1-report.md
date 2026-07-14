@@ -88,3 +88,23 @@ cd backend && uv run ruff format --check app/orchestration/agents/course_resourc
 - 覆盖验证：`112 passed`。
 - Ruff：`uv run ruff check --fix ...`、`uv run ruff format ...`、`uv run ruff check ...` 与 `uv run ruff format --check ...` 均通过。
 - `git diff --check` 通过。
+
+## Important 修复记录：Bilibili 精确视频 URL 合同
+
+- 新增参数化回归测试，拒绝下列 `source=Bilibili` URL：
+  - `https://www.bilibili.com`
+  - `https://www.bilibili.com/search?keyword=AI`
+  - `bilibili.com/video/BV1xx411x7xx`
+  - `https://evilbilibili.com/video/BV1xx411x7xx`
+- 同时新增真实 URL 形态通过测试：`https://www.bilibili.com/video/BV1xx411x7xx`。
+- TDD 红灯：
+
+  ```bash
+  cd backend && uv run pytest tests/test_course_resource_agent_contract.py -k 'requires_exact_bilibili_video_url or accepts_exact_bilibili_video_url_shape' -q
+  ```
+
+  结果：`4 failed, 1 passed, 112 deselected`。四类无效 URL 未被精确 Bilibili 合同拒绝。
+- 最小修复：BV 提取仅接受 `https`、`www.bilibili.com` 和完整 `/video/BV...` 路径；`source=Bilibili` 的质量门要求该精确形态；异步质量门只为已确认的 Bilibili 视频执行 Bilibili 元数据校验，其他平台不再经由 Bilibili `status=skip` 分支。
+- 精确验证：`6 passed, 111 deselected`，包含既有 YouTube watch URL 回归。
+- 覆盖验证发现两条存量“已验证视频”夹具的 BV 号不完整；已改为完整 BV 号，并为这两条完整路径显式 mock Bilibili 元数据成功响应，避免网络依赖。两个受影响 nodeid：`2 passed`。
+- 最终验证：`uv run pytest tests/test_course_resource_agent_contract.py -q` 为 `117 passed`；Ruff 规则检查和格式检查通过；`git diff --check` 通过。

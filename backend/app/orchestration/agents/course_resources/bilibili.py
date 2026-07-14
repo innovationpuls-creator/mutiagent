@@ -15,6 +15,7 @@ from app.orchestration.agents.course_resources.common import (
 logger = logging.getLogger(__name__)
 
 _BILIBILI_BVID_PATTERN = re.compile(r"\b(BV[0-9A-Za-z]{10})\b")
+_BILIBILI_VIDEO_PATH_PATTERN = re.compile(r"^/video/(BV[0-9A-Za-z]{10})$")
 
 
 def _is_bilibili_search_placeholder_title(title: str) -> bool:
@@ -24,9 +25,9 @@ def _is_bilibili_search_placeholder_title(title: str) -> bool:
 
 def _bilibili_bvid_from_url(url: str) -> str:
     parsed = urlparse(url)
-    if not parsed.netloc.endswith("bilibili.com"):
+    if parsed.scheme != "https" or parsed.hostname != "www.bilibili.com":
         return ""
-    match = _BILIBILI_BVID_PATTERN.search(parsed.path)
+    match = _BILIBILI_VIDEO_PATH_PATTERN.fullmatch(parsed.path)
     return match.group(1) if match else ""
 
 
