@@ -1037,7 +1037,11 @@ async def _search_youtube_video_results(query: str) -> list[dict]:
     try:
         initial_data = json.loads(initial_data_match.group(1))
     except Exception as exc:
-        logger.warning("YouTube initial data parse failed for query %s: %s", query, exc)
+        logger.warning(
+            "YouTube initial data parse failed for query=%s parsed_result_count=0 error=%s",
+            query,
+            exc,
+        )
         return []
 
     search_results: list[dict] = []

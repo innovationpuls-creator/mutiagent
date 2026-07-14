@@ -355,6 +355,39 @@ def test_youtube_search_request_logs_http_failure_type(monkeypatch, caplog) -> N
     assert "ConnectError" in caplog.text
 
 
+def test_youtube_search_parse_logs_zero_results_on_invalid_initial_data(
+    monkeypatch, caplog
+) -> None:
+    caplog.set_level(logging.INFO)
+
+    class InvalidSearchResponse:
+        status_code = 200
+        text = "<script>var ytInitialData = {invalid json};</script>"
+
+        def raise_for_status(self):
+            return None
+
+    class SearchClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, *_args, **_kwargs):
+            return InvalidSearchResponse()
+
+    monkeypatch.setattr(
+        video_module.httpx, "AsyncClient", lambda **_kwargs: SearchClient()
+    )
+
+    results = asyncio.run(video_module._search_youtube_video_results("算法效率"))
+
+    assert results == []
+    assert "YouTube search parse" in caplog.text
+    assert "parsed_result_count=0" in caplog.text
+
+
 def test_bilibili_search_parse_logs_zero_results_without_bv_id(
     monkeypatch, caplog
 ) -> None:
