@@ -8,6 +8,7 @@ import json
 import logging
 from pathlib import Path
 
+import httpx
 import pytest
 
 from app.orchestration.agents.course_resources import (
@@ -34,6 +35,8 @@ from app.orchestration.agents.course_resources import (
     _video_repair_input,
     _video_search_queries,
 )
+from app.orchestration.agents.course_resources import bilibili as bilibili_module
+from app.orchestration.agents.course_resources import video as video_module
 from app.orchestration.agents.course_resources.common import (
     SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT,
     _resource_query_with_prompt_budget,
@@ -328,6 +331,63 @@ def test_invoke_resource_chain_parses_chat_message_content_before_model_dump() -
 
     assert result["section_id"] == "1.1"
     assert result["animations"][0]["animation_id"] == "anim_1"
+
+
+def test_youtube_search_request_logs_http_failure_type(monkeypatch, caplog) -> None:
+    class FailingClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, *_args, **_kwargs):
+            raise httpx.ConnectError("dns failure")
+
+    monkeypatch.setattr(
+        video_module.httpx, "AsyncClient", lambda **_kwargs: FailingClient()
+    )
+
+    results = asyncio.run(video_module._search_youtube_video_results("算法效率"))
+
+    assert results == []
+    assert "YouTube search request failed" in caplog.text
+    assert "ConnectError" in caplog.text
+
+
+def test_bilibili_search_parse_logs_zero_results_without_bv_id(
+    monkeypatch, caplog
+) -> None:
+    caplog.set_level(logging.INFO)
+
+    class EmptySearchResponse:
+        status_code = 200
+        text = "搜索结果正文不含视频标识"
+
+        def raise_for_status(self):
+            return None
+
+    class SearchClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, *_args, **_kwargs):
+            return EmptySearchResponse()
+
+    monkeypatch.setattr(
+        bilibili_module.httpx, "AsyncClient", lambda **_kwargs: SearchClient()
+    )
+
+    results = asyncio.run(
+        bilibili_module._search_bilibili_video_page_results("算法效率", {})
+    )
+
+    assert results == []
+    assert "Bilibili search parse" in caplog.text
+    assert "result_count=0" in caplog.text
 
 
 def test_video_search_prompts_require_bilibili_bv_video_pages() -> None:

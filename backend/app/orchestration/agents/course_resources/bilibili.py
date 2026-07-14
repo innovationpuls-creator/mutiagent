@@ -139,16 +139,32 @@ async def _search_bilibili_video_page_results(
             response.raise_for_status()
             page_text = response.text
     except Exception as exc:
-        logger.warning("Bilibili search page failed for query %s: %s", query, exc)
+        logger.warning(
+            "Bilibili search request failed query=%s error_type=%s error=%s",
+            query,
+            type(exc).__name__,
+            exc,
+        )
         return []
 
+    logger.info(
+        "Bilibili search response received query=%s status_code=%s",
+        query,
+        response.status_code,
+    )
+    raw_bvids = _BILIBILI_BVID_PATTERN.findall(page_text)
+    logger.info(
+        "Bilibili search parse query=%s raw_result_count=%s",
+        query,
+        len(raw_bvids),
+    )
     bvids: list[str] = []
-    for bvid in _BILIBILI_BVID_PATTERN.findall(page_text):
+    for bvid in raw_bvids:
         if bvid not in bvids:
             bvids.append(bvid)
         if len(bvids) >= 12:
             break
-    return [
+    results = [
         {
             "title": f"Bilibili 搜索结果 {bvid}",
             "url": f"https://www.bilibili.com/video/{bvid}",
@@ -157,3 +173,9 @@ async def _search_bilibili_video_page_results(
         }
         for bvid in bvids
     ]
+    logger.info(
+        "Bilibili search parse query=%s parsed_result_count=%s",
+        query,
+        len(results),
+    )
+    return results
