@@ -1045,13 +1045,13 @@ async def _search_youtube_video_results(query: str) -> list[dict]:
         )
         return []
 
-    logger.info(
+    logger.warning(
         "YouTube search response received query=%s status_code=%s",
         query,
         response.status_code,
     )
     raw_result_count = page_text.count('"videoRenderer"')
-    logger.info(
+    logger.warning(
         "YouTube search parse query=%s raw_result_count=%s",
         query,
         raw_result_count,
@@ -1060,7 +1060,7 @@ async def _search_youtube_video_results(query: str) -> list[dict]:
         r"var ytInitialData = (\{.*?\});</script>", page_text, re.S
     )
     if not initial_data_match:
-        logger.info(
+        logger.warning(
             "YouTube search parse query=%s parsed_result_count=0",
             query,
         )
@@ -1069,7 +1069,7 @@ async def _search_youtube_video_results(query: str) -> list[dict]:
         initial_data = json.loads(initial_data_match.group(1))
     except Exception as exc:
         logger.warning(
-            "YouTube initial data parse failed for query=%s parsed_result_count=0 error=%s",
+            "YouTube search parse failed query=%s parsed_result_count=0 error=%s",
             query,
             exc,
         )
@@ -1110,7 +1110,7 @@ async def _search_youtube_video_results(query: str) -> list[dict]:
                 collect(item)
 
     collect(initial_data)
-    logger.info(
+    logger.warning(
         "YouTube search parse query=%s parsed_result_count=%s",
         query,
         len(search_results),

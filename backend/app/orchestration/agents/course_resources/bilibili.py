@@ -162,13 +162,13 @@ async def _search_bilibili_video_page_results(
         )
         return []
 
-    logger.info(
+    logger.warning(
         "Bilibili search response received query=%s status_code=%s",
         query,
         response.status_code,
     )
     raw_bvids = _BILIBILI_BVID_PATTERN.findall(page_text)
-    logger.info(
+    logger.warning(
         "Bilibili search parse query=%s raw_result_count=%s",
         query,
         len(raw_bvids),
@@ -188,7 +188,7 @@ async def _search_bilibili_video_page_results(
         }
         for bvid in bvids
     ]
-    logger.info(
+    logger.warning(
         "Bilibili search parse query=%s parsed_result_count=%s",
         query,
         len(results),

@@ -359,7 +359,7 @@ def test_youtube_search_request_logs_http_failure_type(monkeypatch, caplog) -> N
 def test_youtube_search_parse_logs_zero_results_on_invalid_initial_data(
     monkeypatch, caplog
 ) -> None:
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.WARNING)
 
     class InvalidSearchResponse:
         status_code = 200
@@ -392,7 +392,7 @@ def test_youtube_search_parse_logs_zero_results_on_invalid_initial_data(
 def test_bilibili_search_parse_logs_zero_results_without_bv_id(
     monkeypatch, caplog
 ) -> None:
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.WARNING)
 
     class EmptySearchResponse:
         status_code = 200
