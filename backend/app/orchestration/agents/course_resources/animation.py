@@ -37,6 +37,11 @@ from app.orchestration.state import OrchestrationState
 
 logger = logging.getLogger(__name__)
 
+_ENCODED_COLOR_TEXT_PATTERN = re.compile(
+    r"&(?:oklch|rgba?|hsla?)\s*\([^)]*\)", re.IGNORECASE
+)
+_ANIMATION_COLOR_TOKEN_PATTERN = re.compile(r"(?i)\boklch\s*\(|var\(\s*--")
+
 
 def _animation_resource_context(
     state: OrchestrationState,
@@ -55,6 +60,8 @@ def _animation_resource_context(
 
 
 def _raw_animation_text(value: object) -> str:
+    if value is None:
+        return ""
     return str(value).strip()
 
 
@@ -288,24 +295,27 @@ def _deterministic_animation_data(
 def _html_contains_visual_entity(html_text: str, entity: dict) -> bool:
     entity_id = _raw_animation_text(entity.get("id"))
     label = _raw_animation_text(entity.get("label"))
-    fields = _text_items(entity.get("fields"))
     if entity_id and (
         f'data-entity-id="{entity_id}"' in html_text
         or f"data-entity-id='{entity_id}'" in html_text
-        or entity_id in html_text
     ):
         return True
-    if label and label in html_text:
-        return True
-    return bool(fields and all(field in html_text for field in fields))
+    return bool(label and label in html_text)
 
 
 def _html_contains_visual_relation(html_text: str, relation: dict) -> bool:
     source = _raw_animation_text(relation.get("from"))
     target = _raw_animation_text(relation.get("to"))
-    if source and target and source in html_text and target in html_text:
-        return True
-    return "line" in html_text or "connector" in html_text or "arrow" in html_text
+    has_connector = (
+        "<line" in html_text or "connector" in html_text or "arrow" in html_text
+    )
+    return bool(
+        source
+        and target
+        and source in html_text
+        and target in html_text
+        and has_connector
+    )
 
 
 def _animation_simulation_issue(html_text: str, brief: dict) -> str | None:
@@ -331,12 +341,17 @@ def _animation_simulation_issue(html_text: str, brief: dict) -> str | None:
     timeline = brief.get("timeline")
     if not isinstance(timeline, list) or not timeline:
         return "动画 brief 缺少 timeline。"
-    if (
-        "data-step" not in html_text
-        and "data-timeline" not in html_text
-        and "setInterval" not in html_text
-    ):
-        return "动画 HTML 未实现 timeline 或步骤状态。"
+    for index, item in enumerate(timeline, start=1):
+        if not isinstance(item, dict):
+            return "动画 HTML 未实现 timeline 或步骤状态。"
+        step = _clean_text(item.get("step")) or str(index)
+        if not (
+            f'data-step="{step}"' in html_text
+            or f"data-step='{step}'" in html_text
+            or f'data-timeline="{step}"' in html_text
+            or f"data-timeline='{step}'" in html_text
+        ):
+            return "动画 HTML 未实现 timeline 或步骤状态。"
     if _clean_text(brief.get("simulation_type")) == "data_structure_linked_list":
         required_terms = ("head", "data", "next", "None")
         if not all(
@@ -404,13 +419,17 @@ def _normalized_animation_quality_issue(
             return "动画 HTML 缺少 section-animation 根节点。"
         if "animation-context" not in html_text or not _contains_chinese(html_text):
             return "动画 HTML 缺少中文上下文。"
+        if _ENCODED_COLOR_TEXT_PATTERN.search(html_text):
+            return "动画 HTML 包含编码颜色文本。"
+        if _DISALLOWED_ANIMATION_COLOR_PATTERN.search(html_text):
+            return "动画 HTML 使用了 HEX/RGB/HSL 硬编码颜色。"
         if (
             "opacity: 1 !important" not in html_text
             or "transform: none !important" not in html_text
         ):
             return "动画 HTML 缺少可见兜底样式。"
-        if _DISALLOWED_ANIMATION_COLOR_PATTERN.search(html_text):
-            return "动画 HTML 使用了 HEX/RGB/HSL 硬编码颜色。"
+        if "prefers-reduced-motion" not in html_text:
+            return "动画 HTML 缺少 prefers-reduced-motion 降级。"
         if brief_terms and not any(term in html_text for term in brief_terms):
             return "动画 HTML 未体现 brief 内容。"
         brief = briefs_by_id.get(
@@ -428,6 +447,8 @@ def _normalized_animation_quality_issue(
                 simulation_issue = _animation_simulation_issue(html_text, brief)
                 if simulation_issue:
                     return simulation_issue
+        if not _ANIMATION_COLOR_TOKEN_PATTERN.search(html_text):
+            return "动画 HTML 缺少 OKLCH/CSS 变量颜色。"
     return None
 
 
@@ -588,6 +609,8 @@ def _normalize_animation_colors(html_text: str) -> str:
 def _normalize_animation_html(html_str: str, brief: dict | None = None) -> str:
     normalized = _clean_text(html_str)
     if not normalized:
+        return ""
+    if _ENCODED_COLOR_TEXT_PATTERN.search(normalized):
         return ""
     normalized = _normalize_animation_colors(normalized)
     visible_fallback = (
@@ -825,9 +848,31 @@ async def run_section_html_animation_agent(
                     animations, raw_animation_briefs, section
                 )
             ):
-                return target_section_id, {
-                    "error": f"{target_section_id} HTML 动画未生成。"
-                }
+                try:
+                    deterministic_animations = _normalize_animations(
+                        _deterministic_animation_data(animation_briefs, section),
+                        animation_briefs,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Deterministic animation rebuild failed for section %s: %s",
+                        target_section_id,
+                        exc,
+                    )
+                    deterministic_animations = []
+                deterministic_issue = _normalized_animation_quality_issue(
+                    deterministic_animations, raw_animation_briefs, section
+                )
+                if deterministic_issue:
+                    logger.warning(
+                        "Deterministic animation quality issue for section %s: %s",
+                        target_section_id,
+                        deterministic_issue,
+                    )
+                    return target_section_id, {
+                        "error": f"{target_section_id} HTML 动画未生成。"
+                    }
+                animations = deterministic_animations
         if isinstance(animation_briefs, list) and animation_briefs and not animations:
             return target_section_id, {
                 "error": f"{target_section_id} HTML 动画生成失败。"

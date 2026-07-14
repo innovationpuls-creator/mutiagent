@@ -35,6 +35,7 @@ from app.orchestration.agents.course_resources import (
     _video_repair_input,
     _video_search_queries,
 )
+from app.orchestration.agents.course_resources import animation as animation_module
 from app.orchestration.agents.course_resources import bilibili as bilibili_module
 from app.orchestration.agents.course_resources import video as video_module
 from app.orchestration.agents.course_resources.common import (
@@ -2215,7 +2216,7 @@ def test_animation_quality_accepts_linked_list_simulation_html() -> None:
       <line data-relation-from="node_1.next" data-relation-to="node_2"></line>
       <line data-relation-from="node_2.next" data-relation-to="none"></line>
     </svg>
-    <button data-step="1">1</button><button data-step="2">2</button>
+    <button data-step="1">1</button><button data-step="2">2</button><button data-step="3">3</button>
     </section></body></html>"""
 
     issue = _normalized_animation_quality_issue(
@@ -2225,6 +2226,204 @@ def test_animation_quality_accepts_linked_list_simulation_html() -> None:
     )
 
     assert issue is None
+
+
+def _animation_structure_html(body: str) -> str:
+    return (
+        '<!doctype html><html><head><meta charset="utf-8"></head><body>'
+        '<section class="section-animation">'
+        "<style>@media (prefers-reduced-motion: reduce){.section-animation *{"
+        "opacity: 1 !important;transform: none !important;}}</style>"
+        f'<div class="animation-context">单链表结构动画</div>{body}'
+        "</section></body></html>"
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_issue"),
+    [
+        (
+            '<div data-entity-id="head">head</div>'
+            '<div data-entity-id="node_1">data next</div>'
+            '<div data-entity-id="none">None</div>',
+            "动画 HTML 未实现 visual_model.entities。",
+        ),
+        (
+            '<div data-entity-id="head">head</div>'
+            '<div data-entity-id="node_1">data next</div>'
+            '<div data-entity-id="node_2">data next</div>'
+            '<div data-entity-id="none">None</div>',
+            "动画 HTML 未实现 visual_model.relations。",
+        ),
+        (
+            '<div data-entity-id="head">head</div>'
+            '<div data-entity-id="node_1">data next node_1.next</div>'
+            '<div data-entity-id="node_2">data next node_2.next</div>'
+            '<div data-entity-id="none">None</div>'
+            '<svg><line data-relation-from="head" data-relation-to="node_1"></line>'
+            '<line data-relation-from="node_1.next" data-relation-to="node_2"></line>'
+            '<line data-relation-from="node_2.next" data-relation-to="none"></line></svg>',
+            "动画 HTML 未实现 timeline 或步骤状态。",
+        ),
+    ],
+)
+def test_animation_structure_quality_gate_rejects_missing_visual_parts(
+    body: str, expected_issue: str
+) -> None:
+    issue = _normalized_animation_quality_issue(
+        [
+            {
+                "animation_id": "anim_1",
+                "html": _animation_structure_html(body),
+            }
+        ],
+        [_linked_list_animation_brief()],
+        {"title": "单链表"},
+    )
+
+    assert issue == expected_issue
+
+
+def test_normalize_animation_html_rejects_encoded_color_text() -> None:
+    html_text = (
+        '<section class="section-animation">'
+        "<div>&oklch(72% 0.08 240); 主题</div>"
+        "</section>"
+    )
+
+    normalized = animation_module._normalize_animation_html(
+        html_text, _linked_list_animation_brief()
+    )
+
+    assert normalized == ""
+
+
+def _run_animation_agent_with_model_html(
+    monkeypatch: pytest.MonkeyPatch,
+    model_html: str,
+    deterministic_data: list[dict] | None = None,
+) -> dict:
+    class RecordingLlm:
+        pass
+
+    class AnimationChain:
+        async def ainvoke(self, _payload):
+            return SectionHtmlAnimationOutput(
+                section_id="1.1",
+                animations=[
+                    {
+                        "animation_id": "anim_1",
+                        "title": "单链表节点指针串联动画",
+                        "html": model_html,
+                    }
+                ],
+            )
+
+    class AnimationPrompt:
+        def __or__(self, _other):
+            return AnimationChain()
+
+    class PromptFactory:
+        @staticmethod
+        def from_messages(_messages):
+            return AnimationPrompt()
+
+    import app.orchestration.agents.course_resources as course_resources_module
+
+    outline = _outline()
+    outline["sections"][1].update(
+        {
+            "title": "单链表",
+            "description": "说明节点通过指针串联的线性结构。",
+            "key_knowledge_points": ["节点", "next 指针", "None"],
+        }
+    )
+    brief = _linked_list_animation_brief()
+    outline["section_markdowns"] = {
+        "1.1": {
+            "section_id": "1.1",
+            "parent_section_id": "1",
+            "title": "单链表",
+            "markdown": "# 单链表\n\n完整教学内容",
+            "video_briefs": [],
+            "animation_briefs": [brief],
+        }
+    }
+    monkeypatch.setattr(course_resources_module, "ChatPromptTemplate", PromptFactory)
+    monkeypatch.setattr(animation_module, "_persist_outline", lambda *_args: None)
+    if deterministic_data is not None:
+        monkeypatch.setattr(
+            animation_module,
+            "_deterministic_animation_data",
+            lambda *_args: deterministic_data,
+        )
+
+    return asyncio.run(
+        animation_module.run_section_html_animation_agent(
+            {
+                "user_id": "user-1",
+                "course_knowledge": outline,
+                "profile": _profile(),
+                "year_learning_paths": _year_learning_paths(),
+                "course_resource_plan": {
+                    "course_id": "year_3_course_1",
+                    "target_section_ids": ["1.1"],
+                },
+                "messages": [],
+            },
+            RecordingLlm(),
+        )
+    )
+
+
+def test_run_animation_agent_rebuilds_deterministic_structure_after_bad_model_html(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_html = _animation_structure_html(
+        "<p>&oklch(72% 0.08 240); 模型只返回文字。</p>"
+    )
+
+    result = _run_animation_agent_with_model_html(monkeypatch, model_html)
+
+    animations = result["course_knowledge"]["section_html_animations"]["1.1"][
+        "animations"
+    ]
+    html = animations[0]["html"]
+    assert 'data-entity-id="head"' in html
+    assert 'data-relation="true"' in html
+    assert "<line" in html
+    assert "data-timeline=" in html
+    assert "prefers-reduced-motion" in html
+    assert "单链表" in html
+    assert "&oklch" not in html
+    assert (
+        _normalized_animation_quality_issue(
+            animations, [_linked_list_animation_brief()], {"title": "单链表"}
+        )
+        is None
+    )
+
+
+def test_run_animation_agent_keeps_failure_when_deterministic_rebuild_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_html = _animation_structure_html("<p>模型只返回文字。</p>")
+    invalid_deterministic_data = [
+        {
+            "animation_id": "anim_1",
+            "title": "单链表节点指针串联动画",
+            "html": _animation_structure_html("<p>确定性构造仍缺少结构。</p>"),
+        }
+    ]
+
+    result = _run_animation_agent_with_model_html(
+        monkeypatch, model_html, invalid_deterministic_data
+    )
+
+    assert result == {
+        "error": "课程资源生成失败：HTML 动画未生成，请稍后重试。",
+        "hard_error": True,
+    }
 
 
 def test_plain_text_markdown_parse_keeps_rich_resource_brief_schema() -> None:
@@ -4091,7 +4290,7 @@ def test_run_section_markdown_agent_returns_error_when_failed_section_cannot_be_
 
 
 def test_stream_chapter_resource_generation_reports_error_when_resource_llm_fails(
-    tmp_path,
+    tmp_path, monkeypatch
 ) -> None:
     class ResourceLlm:
         pass
@@ -4162,6 +4361,9 @@ def test_stream_chapter_resource_generation_reports_error_when_resource_llm_fail
 
     original_verified_search = module._find_verified_video_from_search
     module._find_verified_video_from_search = empty_verified_search
+    monkeypatch.setattr(
+        animation_module, "_deterministic_animation_data", lambda *_args: []
+    )
     try:
 
         async def collect_events():
@@ -5910,7 +6112,7 @@ def test_run_section_html_animation_agent_generates_chapter_sections_concurrentl
     assert result["course_resource_result"]["animation_count"] == 3
 
 
-def test_run_section_html_animation_agent_returns_error_when_llm_unavailable(
+def test_run_section_html_animation_agent_rebuilds_when_llm_unavailable(
     tmp_path,
 ) -> None:
     class RecordingLlm:
@@ -5998,15 +6200,15 @@ def test_run_section_html_animation_agent_returns_error_when_llm_unavailable(
         module.ChatPromptTemplate = original_factory
 
     assert len(captured["queries"]) >= 2
-    assert result.get("error") == "课程资源生成失败：HTML 动画未生成，请稍后重试。"
-    assert result.get("hard_error") is True
+    assert "error" not in result
+    assert result["course_resource_result"]["animation_count"] == 1
     with Session(engine) as session:
         row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
     assert row is not None
-    assert "section_html_animations" not in row.outline_data
+    assert "section_html_animations" in row.outline_data
 
 
-def test_resource_agents_reuse_existing_markdown_and_video_but_fail_when_animation_missing(
+def test_resource_agents_reuse_existing_resources_and_rebuild_missing_animation(
     tmp_path, monkeypatch
 ) -> None:
     class RecordingLlm:
@@ -6109,11 +6311,8 @@ def test_resource_agents_reuse_existing_markdown_and_video_but_fail_when_animati
     finally:
         module.ChatPromptTemplate = original_factory
 
-    assert (
-        animation_result.get("error")
-        == "课程资源生成失败：HTML 动画未生成，请稍后重试。"
-    )
-    assert animation_result.get("hard_error") is True
+    assert "error" not in animation_result
+    assert animation_result["course_resource_result"]["animation_count"] == 3
 
 
 from app.orchestration.agents.course_resources import (
