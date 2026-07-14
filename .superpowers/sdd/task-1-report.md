@@ -72,3 +72,19 @@ cd backend && uv run ruff format --check app/orchestration/agents/course_resourc
   结果：`1 failed`，失败原因是 JSON 解析异常分支缺少 `parsed_result_count=0`。
 - 最小修复：YouTube `json.loads` 异常日志增加 `parsed_result_count=0`，未改变其他视频筛选行为。
 - 验证：精确回归测试 `1 passed`；覆盖测试 `111 passed`；Ruff 检查与格式检查通过；`git diff --check` 通过。
+
+## 复审修复记录：存量 Bilibili 搜索页与解析计数断言
+
+- P1：新增 `test_existing_video_value_rejects_bilibili_search_page_url`。红灯命令：
+
+  ```bash
+  cd backend && uv run pytest tests/test_course_resource_agent_contract.py -k 'bilibili_search_parse_logs_zero_results_without_bv_id or existing_video_value_rejects_bilibili_search_page_url' -q
+  ```
+
+  结果：`1 failed, 1 passed, 110 deselected`。失败证明 `_existing_video_value` 会把 `https://search.bilibili.com/video?...` 复用为已有视频。
+- 最小修复：`_normalized_video_quality_issue` 在 HTTP(S) 校验后拒绝 `search.bilibili.com`，使搜索页不能作为真实视频 URL；真实 Bilibili 视频页的既有 BV 校验路径未改动。
+- P2：Bilibili 无 BV 号测试将宽泛的 `result_count=0` 子串改为完整字段 `parsed_result_count=0`。该字段在现有日志中已经存在，因此该项测试在红灯运行中通过，表明修改收紧了断言而非修复生产行为。
+- 定向验证：`2 passed, 110 deselected`。
+- 覆盖验证：`112 passed`。
+- Ruff：`uv run ruff check --fix ...`、`uv run ruff format ...`、`uv run ruff check ...` 与 `uv run ruff format --check ...` 均通过。
+- `git diff --check` 通过。

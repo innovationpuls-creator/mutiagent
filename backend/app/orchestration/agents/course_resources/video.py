@@ -667,6 +667,8 @@ def _normalized_video_quality_issue(
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             return "视频 URL 必须是可直接打开的 HTTP(S) 地址。"
+        if parsed.hostname == "search.bilibili.com":
+            return "Bilibili 搜索页不能作为真实视频 URL。"
         bilibili_bvid = _bilibili_bvid_from_url(url)
         title = _clean_text(video.get("title"))
         specific_brief_terms = _video_specific_brief_terms(

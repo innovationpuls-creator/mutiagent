@@ -420,7 +420,7 @@ def test_bilibili_search_parse_logs_zero_results_without_bv_id(
 
     assert results == []
     assert "Bilibili search parse" in caplog.text
-    assert "result_count=0" in caplog.text
+    assert "parsed_result_count=0" in caplog.text
 
 
 def test_video_search_prompts_require_bilibili_bv_video_pages() -> None:
@@ -6768,6 +6768,36 @@ def test_video_quality_gate_requires_bound_url_and_topic_text() -> None:
 
     assert issue is not None
     assert "URL" in issue
+
+
+def test_existing_video_value_rejects_bilibili_search_page_url() -> None:
+    outline = _outline()
+    section = outline["sections"][1]
+    video_briefs = [
+        {
+            "video_id": "video_1",
+            "title": "学习目标导入",
+            "purpose": "帮助学习者理解功能边界。",
+        }
+    ]
+    outline["section_video_links"] = {
+        "1.1": {
+            "section_id": "1.1",
+            "videos": [
+                {
+                    "brief_id": "video_1",
+                    "title": "AI 应用开发学习目标与功能边界实践讲解",
+                    "url": "https://search.bilibili.com/video?keyword=AI%20应用开发",
+                    "cover_url": "",
+                    "source": "Bilibili",
+                }
+            ],
+        }
+    }
+
+    existing_value = video_module._existing_video_value(outline, section, video_briefs)
+
+    assert existing_value is None
 
 
 def test_video_quality_gate_rejects_invisible_bilibili_video(monkeypatch) -> None:
