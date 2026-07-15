@@ -5713,15 +5713,25 @@ def test_run_section_video_search_agent_returns_hard_error_when_verified_search_
     )
 
 
-def test_run_section_video_search_agent_returns_hard_error_when_verified_search_times_out(
-    tmp_path, monkeypatch, caplog
+def test_run_section_video_search_agent_does_not_apply_section_deadline(
+    tmp_path, monkeypatch
 ) -> None:
     class RecordingLlm:
         pass
 
     async def slow_verified_search(_video_briefs, _section, _outline=None):
-        await asyncio.sleep(0.05)
-        return []
+        await asyncio.sleep(0.01)
+        return [
+            {
+                "brief_id": "video_1",
+                "title": "功能边界与验收标准",
+                "url": "https://www.bilibili.com/video/BV0000000001",
+                "source": "Bilibili",
+            }
+        ]
+
+    async def forbidden_wait_for(*_args, **_kwargs):
+        raise AssertionError("视频搜索不应由小节级硬截止取消。")
 
     outline = _outline()
     outline["section_markdowns"] = {
@@ -5764,7 +5774,7 @@ def test_run_section_video_search_agent_returns_hard_error_when_verified_search_
     monkeypatch.setattr(
         module, "_find_verified_video_from_search", slow_verified_search
     )
-    monkeypatch.setattr(module, "_VIDEO_SECTION_TIMEOUT_SECONDS", 0.001)
+    monkeypatch.setattr(video_module.asyncio, "wait_for", forbidden_wait_for)
 
     result = asyncio.run(
         run_section_video_search_agent(
@@ -5781,13 +5791,11 @@ def test_run_section_video_search_agent_returns_hard_error_when_verified_search_
         )
     )
 
-    assert result["hard_error"] is True
-    assert result["error"] == "课程资源生成失败：小节 1.1 未找到合格视频。"
+    assert "error" not in result
     section_video = result["course_knowledge"]["section_video_links"]["1.1"]
-    assert section_video["status"] == "unavailable"
-    assert section_video["failure_reason"] == "未找到合格视频：视频检索超时。"
-    assert section_video["videos"] == []
-    assert "Video search timed out for section 1.1" in caplog.text
+    assert section_video["status"] == "available"
+    assert section_video["failure_reason"] == ""
+    assert section_video["videos"][0]["brief_id"] == "video_1"
 
 
 def test_run_section_video_search_agent_rejects_missing_textbook_evidence(
