@@ -5713,6 +5713,180 @@ def test_run_section_video_search_agent_returns_hard_error_when_verified_search_
     )
 
 
+def test_video_search_passes_when_majority_sections_have_videos(
+    tmp_path, monkeypatch
+) -> None:
+    """ceil(3/2)=2 sections need videos. 2 available + 1 unavailable -> pass."""
+    from app.orchestration.agents.course_resources import run_section_video_search_agent
+
+    class RecordingLlm:
+        pass
+
+    call_count = 0
+
+    async def verified_search(_video_briefs, section, _outline=None):
+        nonlocal call_count
+        call_count += 1
+        sid = section.get("section_id", "")
+        if sid == "1.3":
+            return []
+        return [
+            {
+                "brief_id": "video_1",
+                "title": f"视频 {sid}",
+                "url": f"https://www.bilibili.com/video/BV000000000{call_count}",
+                "source": "Bilibili",
+            }
+        ]
+
+    outline = _outline()
+    for sid in ["1.1", "1.2", "1.3"]:
+        outline.setdefault("section_markdowns", {})[sid] = {
+            "section_id": sid,
+            "parent_section_id": "1",
+            "title": f"小节{sid}",
+            "markdown": _complete_section_markdown(sid, f"小节{sid}"),
+            "video_briefs": [
+                {
+                    "video_id": "video_1",
+                    "title": f"视频 {sid}",
+                    "purpose": "教学视频",
+                }
+            ],
+            "animation_briefs": [],
+            "generated_at": "2026-06-06T00:00:00Z",
+        }
+
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "video-threshold-pass")
+    )
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid="user-1",
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name=outline["course_name"],
+                outline_data=outline,
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+
+    monkeypatch.setattr(module, "_find_verified_video_from_search", verified_search)
+
+    result = asyncio.run(
+        run_section_video_search_agent(
+            {
+                "user_id": "user-1",
+                "course_knowledge": outline,
+                "course_resource_plan": {
+                    "course_id": "year_3_course_1",
+                    "target_section_ids": ["1.1", "1.2", "1.3"],
+                },
+                "messages": [],
+            },
+            RecordingLlm(),
+        )
+    )
+
+    assert "error" not in result
+    assert result["course_resource_plan"]["video_unavailable_section_ids"] == ["1.3"]
+    assert result["course_knowledge"]["section_video_links"]["1.1"]["status"] == "available"
+    assert result["course_knowledge"]["section_video_links"]["1.2"]["status"] == "available"
+    assert result["course_knowledge"]["section_video_links"]["1.3"]["status"] == "unavailable"
+
+
+def test_video_search_fails_when_below_majority_threshold(
+    tmp_path, monkeypatch
+) -> None:
+    """ceil(3/2)=2 sections need videos. Only 1 available -> hard_error."""
+    from app.orchestration.agents.course_resources import run_section_video_search_agent
+
+    class RecordingLlm:
+        pass
+
+    async def verified_search(_video_briefs, section, _outline=None):
+        sid = section.get("section_id", "")
+        if sid == "1.1":
+            return [
+                {
+                    "brief_id": "video_1",
+                    "title": "视频 1.1",
+                    "url": "https://www.bilibili.com/video/BV0000000001",
+                    "source": "Bilibili",
+                }
+            ]
+        return []
+
+    outline = _outline()
+    for sid in ["1.1", "1.2", "1.3"]:
+        outline.setdefault("section_markdowns", {})[sid] = {
+            "section_id": sid,
+            "parent_section_id": "1",
+            "title": f"小节{sid}",
+            "markdown": _complete_section_markdown(sid, f"小节{sid}"),
+            "video_briefs": [
+                {
+                    "video_id": "video_1",
+                    "title": f"视频 {sid}",
+                    "purpose": "教学视频",
+                }
+            ],
+            "animation_briefs": [],
+            "generated_at": "2026-06-06T00:00:00Z",
+        }
+
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "video-threshold-fail")
+    )
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid="user-1",
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name=outline["course_name"],
+                outline_data=outline,
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+
+    monkeypatch.setattr(module, "_find_verified_video_from_search", verified_search)
+
+    result = asyncio.run(
+        run_section_video_search_agent(
+            {
+                "user_id": "user-1",
+                "course_knowledge": outline,
+                "course_resource_plan": {
+                    "course_id": "year_3_course_1",
+                    "target_section_ids": ["1.1", "1.2", "1.3"],
+                },
+                "messages": [],
+            },
+            RecordingLlm(),
+        )
+    )
+
+    assert result["hard_error"] is True
+    assert "1.2" in result["error"]
+    assert "1.3" in result["error"]
+
+
 def test_run_section_video_search_agent_does_not_apply_section_deadline(
     tmp_path, monkeypatch
 ) -> None:

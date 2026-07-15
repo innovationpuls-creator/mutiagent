@@ -413,6 +413,12 @@ async def stream_chapter_resource_generation(
         )
         return
     state.update(video_result)
+    resource_plan_after_video = state.get("course_resource_plan")
+    video_unavailable_ids = set(
+        resource_plan_after_video.get("video_unavailable_section_ids", [])
+        if isinstance(resource_plan_after_video, dict)
+        else []
+    )
     for section_id in section_ids:
         outline_after_video = state.get("course_knowledge")
         output_refs = (
@@ -420,6 +426,7 @@ async def stream_chapter_resource_generation(
             if isinstance(outline_after_video, dict)
             else {}
         )
+        is_unavailable = section_id in video_unavailable_ids
         _record_section_checkpoint(
             state,
             section_id=section_id,
@@ -428,35 +435,67 @@ async def stream_chapter_resource_generation(
             output_refs=output_refs,
         )
         section = sections_by_id.get(section_id, {})
-        yield build_agent_event(
-            event="agent_result",
-            agent="section_video_search_agent",
-            phase="video",
-            status="completed",
-            step_id=f"leaf-section-{section_id}-video",
-            message="视频检索已完成，正在交接给 HTML 动画智能体",
-            depends_on=["section_markdown_agent"],
-            input_refs=_section_input_refs(
-                course_id=course_id,
-                chapter_section_id=chapter_section_id,
-                section=section,
-            ),
-            output_refs=output_refs,
-            quality_result=quality_passed(),
-            extra={
-                "kind": "course_resource_section",
-                "label": f"{section_id} 视频",
-                "success": True,
-                "trace": build_trace(
-                    agent="section_video_search_agent",
-                    phase="video",
-                    section_id=section_id,
-                    input_refs={"course_id": course_id},
-                    output_refs=output_refs,
-                    quality_result=quality_passed().to_dict(),
+        if is_unavailable:
+            yield build_agent_event(
+                event="agent_result",
+                agent="section_video_search_agent",
+                phase="video",
+                status="completed",
+                step_id=f"leaf-section-{section_id}-video",
+                message="该小节未找到合格视频，已跳过",
+                depends_on=["section_markdown_agent"],
+                input_refs=_section_input_refs(
+                    course_id=course_id,
+                    chapter_section_id=chapter_section_id,
+                    section=section,
                 ),
-            },
-        )
+                output_refs=output_refs,
+                quality_result=quality_passed(),
+                extra={
+                    "kind": "course_resource_section",
+                    "label": f"{section_id} 视频",
+                    "success": True,
+                    "video_unavailable": True,
+                    "trace": build_trace(
+                        agent="section_video_search_agent",
+                        phase="video",
+                        section_id=section_id,
+                        input_refs={"course_id": course_id},
+                        output_refs=output_refs,
+                        quality_result=quality_passed().to_dict(),
+                    ),
+                },
+            )
+        else:
+            yield build_agent_event(
+                event="agent_result",
+                agent="section_video_search_agent",
+                phase="video",
+                status="completed",
+                step_id=f"leaf-section-{section_id}-video",
+                message="视频检索已完成，正在交接给 HTML 动画智能体",
+                depends_on=["section_markdown_agent"],
+                input_refs=_section_input_refs(
+                    course_id=course_id,
+                    chapter_section_id=chapter_section_id,
+                    section=section,
+                ),
+                output_refs=output_refs,
+                quality_result=quality_passed(),
+                extra={
+                    "kind": "course_resource_section",
+                    "label": f"{section_id} 视频",
+                    "success": True,
+                    "trace": build_trace(
+                        agent="section_video_search_agent",
+                        phase="video",
+                        section_id=section_id,
+                        input_refs={"course_id": course_id},
+                        output_refs=output_refs,
+                        quality_result=quality_passed().to_dict(),
+                    ),
+                },
+            )
 
     for section_id in section_ids:
         section = sections_by_id.get(section_id, {})

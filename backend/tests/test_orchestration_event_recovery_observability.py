@@ -167,7 +167,13 @@ def test_stream_chapter_resource_generation_uses_unified_events_and_checkpoints(
                 ],
             }
         }
-        return {"course_knowledge": updated_outline}
+        existing_plan = state_arg.get("course_resource_plan") or {}
+        updated_plan = dict(existing_plan) if isinstance(existing_plan, dict) else {}
+        updated_plan["video_unavailable_section_ids"] = ["1.1"]
+        return {
+            "course_knowledge": updated_outline,
+            "course_resource_plan": updated_plan,
+        }
 
     async def fake_animation_agent(state_arg, _llm):
         updated_outline = dict(state_arg["course_knowledge"])

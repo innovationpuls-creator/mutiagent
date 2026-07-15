@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 from urllib.parse import parse_qsl, quote, urlparse
 
@@ -1590,7 +1591,12 @@ async def run_section_video_search_agent(
         for section_id, value in section_video_links.items()
         if value.get("status") != "available" or not value.get("videos")
     ]
-    if unavailable_section_ids:
+
+    total = len(section_video_links)
+    available_count = total - len(unavailable_section_ids)
+    required_count = math.ceil(total / 2) if total > 0 else 0
+
+    if available_count < required_count:
         section_list = "、".join(unavailable_section_ids)
         return {
             "error": f"课程资源生成失败：小节 {section_list} 未找到合格视频。",
@@ -1599,6 +1605,8 @@ async def run_section_video_search_agent(
             "course_knowledge": updated_outline,
             "course_resource_plan": updated_plan,
         }
+
+    updated_plan["video_unavailable_section_ids"] = unavailable_section_ids
 
     return {
         "user_id": state.get("user_id", ""),
