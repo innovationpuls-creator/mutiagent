@@ -5798,6 +5798,102 @@ def test_run_section_video_search_agent_does_not_apply_section_deadline(
     assert section_video["videos"][0]["brief_id"] == "video_1"
 
 
+def test_run_section_video_search_agent_starts_all_target_sections_concurrently(
+    tmp_path, monkeypatch
+) -> None:
+    class RecordingLlm:
+        pass
+
+    target_section_ids = ["1.1", "1.2", "1.3", "2.1"]
+    searches_started = 0
+    all_searches_started = asyncio.Event()
+
+    async def verified_search(video_briefs, _section, _outline=None):
+        nonlocal searches_started
+        searches_started += 1
+        if searches_started == len(target_section_ids):
+            all_searches_started.set()
+        await asyncio.wait_for(all_searches_started.wait(), timeout=0.2)
+        brief = video_briefs[0]
+        return [
+            {
+                "brief_id": brief["video_id"],
+                "title": brief["title"],
+                "url": "https://www.bilibili.com/video/BV0000000001",
+                "source": "Bilibili",
+            }
+        ]
+
+    outline = _outline()
+    sections_by_id = {
+        section["section_id"]: section for section in outline["sections"]
+    }
+    outline["section_markdowns"] = {
+        section_id: {
+            "section_id": section_id,
+            "parent_section_id": sections_by_id[section_id]["parent_section_id"],
+            "title": sections_by_id[section_id]["title"],
+            "markdown": _complete_section_markdown(
+                section_id, sections_by_id[section_id]["title"]
+            ),
+            "video_briefs": [
+                {
+                    "video_id": "video_1",
+                    "title": f"{sections_by_id[section_id]['title']}教学视频",
+                    "purpose": sections_by_id[section_id]["description"],
+                }
+            ],
+            "animation_briefs": [],
+            "generated_at": "2026-06-06T00:00:00Z",
+        }
+        for section_id in target_section_ids
+    }
+    engine = build_engine(
+        postgresql_test_url(tmp_path, "section-video-dynamic-concurrency")
+    )
+    set_engine(engine)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            User(uid="user-1", username="课程用户", identifier="course@example.com")
+        )
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid="user-1",
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name="AI 应用开发",
+                outline_data=outline,
+            )
+        )
+        session.commit()
+
+    import app.orchestration.agents.course_resources as module
+
+    monkeypatch.setattr(module, "_find_verified_video_from_search", verified_search)
+
+    result = asyncio.run(
+        run_section_video_search_agent(
+            {
+                "user_id": "user-1",
+                "course_knowledge": outline,
+                "course_resource_plan": {
+                    "course_id": "year_3_course_1",
+                    "target_section_ids": target_section_ids,
+                },
+                "messages": [],
+            },
+            RecordingLlm(),
+        )
+    )
+
+    assert searches_started == len(target_section_ids)
+    assert "error" not in result
+    assert set(result["course_knowledge"]["section_video_links"]) == set(
+        target_section_ids
+    )
+
+
 def test_run_section_video_search_agent_rejects_missing_textbook_evidence(
     tmp_path,
     monkeypatch,
