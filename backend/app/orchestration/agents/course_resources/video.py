@@ -5,7 +5,6 @@ import asyncio
 import json
 import logging
 import re
-import time
 from urllib.parse import parse_qsl, quote, urlparse
 
 import httpx
@@ -16,7 +15,6 @@ from app.orchestration.agents.course_resources.bilibili import (
     _is_bilibili_search_placeholder_title,
 )
 from app.orchestration.agents.course_resources.common import (
-    _SECTION_CONCURRENCY_LIMIT,
     _VIDEO_METADATA_TIMEOUT_SECONDS,
     _clean_text,
     _merge_course_resource_data,
@@ -1524,20 +1522,7 @@ async def run_section_video_search_agent(
                     break
             return current_videos, current_quality_issue
 
-        started_at = time.monotonic()
-        try:
-            videos, quality_issue = await asyncio.wait_for(
-                search_verified_videos(),
-                timeout=cr_pkg._VIDEO_SECTION_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            elapsed_ms = round((time.monotonic() - started_at) * 1000, 1)
-            logger.warning(
-                "Video search timed out for section %s after %sms",
-                target_section_id,
-                elapsed_ms,
-            )
-            quality_issue = "视频检索超时。"
+        videos, quality_issue = await search_verified_videos()
 
         if quality_issue:
             logger.warning(
@@ -1570,14 +1555,8 @@ async def run_section_video_search_agent(
         }
 
     section_video_links: dict[str, dict] = {}
-    _sem = asyncio.Semaphore(_SECTION_CONCURRENCY_LIMIT)
-
-    async def _limited_video(section: dict) -> tuple[str, dict]:
-        async with _sem:
-            return await generate_video_links(section)
-
     video_results = await asyncio.gather(
-        *(_limited_video(section) for section in target_sections)
+        *(generate_video_links(section) for section in target_sections)
     )
     for target_section_id, video_value in video_results:
         if not target_section_id:

@@ -5825,9 +5825,7 @@ def test_run_section_video_search_agent_starts_all_target_sections_concurrently(
         ]
 
     outline = _outline()
-    sections_by_id = {
-        section["section_id"]: section for section in outline["sections"]
-    }
+    sections_by_id = {section["section_id"]: section for section in outline["sections"]}
     outline["section_markdowns"] = {
         section_id: {
             "section_id": section_id,
