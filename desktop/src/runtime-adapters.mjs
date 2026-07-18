@@ -123,7 +123,7 @@ export function createEmbeddedDatabase({
 					[DATABASE_NAME],
 				);
 				if (result.rowCount === 0) {
-					await instance.createDatabase(DATABASE_NAME);
+					await client.query('CREATE DATABASE "onetree"');
 				}
 			} finally {
 				await client.end();
