@@ -63,6 +63,12 @@ describe("startDesktopApplication", () => {
 			"http://127.0.0.1:8000",
 		);
 		expect(result.window.show).toHaveBeenCalledOnce();
+		expect(harness.dependencies.createDatabase).toHaveBeenCalledWith(
+			expect.objectContaining({
+				postgresLogPath:
+					"C:\\Users\\judge\\AppData\\Roaming\\OneTree\\logs\\postgres.log",
+			}),
+		);
 		expect(harness.BrowserWindow).toHaveBeenCalledWith(
 			expect.objectContaining({
 				height: 900,

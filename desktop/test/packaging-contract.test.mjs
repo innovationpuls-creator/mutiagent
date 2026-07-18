@@ -22,11 +22,9 @@ describe("Windows package contract", () => {
 		expect(workflow).toContain(
 			"path: ${{ runner.temp }}/onetree-smoke-logs",
 		);
+		expect(workflow).not.toContain("New-LocalUser");
 		expect(workflow).toContain(
-			"New-LocalUser -Name $smokeUserName",
-		);
-		expect(workflow).toContain(
-			"Start-Process -FilePath $executable -Credential $credential -LoadUserProfile -PassThru",
+			"Start-Process -FilePath $executable -PassThru",
 		);
 	});
 

@@ -117,6 +117,62 @@ describe("createEmbeddedDatabase", () => {
 		expect(database.instance.start).toHaveBeenCalledOnce();
 		expect(database.instance.stop).toHaveBeenCalledOnce();
 	});
+
+	it("starts and stops Windows PostgreSQL through pg_ctl", async () => {
+		const spawn = vi.fn(() => successfulChild());
+		const loadPostgresControl = vi.fn(async () =>
+			"C:\\OneTree\\postgres\\pg_ctl.exe",
+		);
+		const database = createEmbeddedDatabase({
+			PostgresClass: FakePostgres,
+			access: vi.fn(),
+			databaseDir: "C:\\OneTreeData\\database",
+			loadPostgresControl,
+			mkdir: vi.fn(),
+			platform: "win32",
+			postgresLogPath: "C:\\OneTreeData\\logs\\postgres.log",
+			spawn,
+		});
+
+		await database.start();
+		await database.stop();
+
+		expect(loadPostgresControl).toHaveBeenCalledTimes(2);
+		expect(spawn).toHaveBeenNthCalledWith(
+			1,
+			"C:\\OneTree\\postgres\\pg_ctl.exe",
+			[
+				"start",
+				"-D",
+				"C:\\OneTreeData\\database",
+				"-l",
+				"C:\\OneTreeData\\logs\\postgres.log",
+				"-o",
+				"-p 55432 -h 127.0.0.1",
+				"-w",
+				"-t",
+				"60",
+			],
+			{ windowsHide: true },
+		);
+		expect(spawn).toHaveBeenNthCalledWith(
+			2,
+			"C:\\OneTree\\postgres\\pg_ctl.exe",
+			[
+				"stop",
+				"-D",
+				"C:\\OneTreeData\\database",
+				"-m",
+				"fast",
+				"-w",
+				"-t",
+				"60",
+			],
+			{ windowsHide: true },
+		);
+		expect(database.instance.start).not.toHaveBeenCalled();
+		expect(database.instance.stop).not.toHaveBeenCalled();
+	});
 });
 
 describe("createProcessAdapter", () => {
