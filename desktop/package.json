@@ -1,0 +1,23 @@
+{
+	"name": "onetree-desktop",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"main": "src/main.mjs",
+	"scripts": {
+		"test": "vitest run --coverage",
+		"test:unit": "vitest run",
+		"build:frontend": "npm --prefix ../frontend run build",
+		"pack:dir": "electron-builder --dir --win x64",
+		"pack:zip": "electron-builder --win zip --x64"
+	},
+	"dependencies": {
+		"embedded-postgres": "18.4.0-beta.17"
+	},
+	"devDependencies": {
+		"@vitest/coverage-v8": "4.1.10",
+		"electron": "43.1.1",
+		"electron-builder": "26.15.3",
+		"vitest": "4.1.10"
+	}
+}
