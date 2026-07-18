@@ -48,6 +48,42 @@ jobs:
       - name: Build exact competition ZIP
         working-directory: desktop
         run: npm run pack:zip
+      - name: Smoke packaged OneTree executable
+        shell: pwsh
+        run: |
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "onetree-smoke"
+          Expand-Archive -LiteralPath "desktop/dist/11017810作品.zip" -DestinationPath $smokeRoot
+          $executable = Join-Path $smokeRoot "OneTree.exe"
+          $process = Start-Process -FilePath $executable -PassThru
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 90; $attempt++) {
+              if ($process.HasExited) {
+                throw "OneTree.exe exited before readiness"
+              }
+              try {
+                $response = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/health/ready" -TimeoutSec 2
+                if ($response.status -eq "ok") {
+                  $ready = $true
+                  break
+                }
+              } catch {
+                Start-Sleep -Seconds 2
+              }
+            }
+            if (-not $ready) {
+              throw "OneTree.exe did not become ready"
+            }
+            $loginBody = @{
+              account = "demo@mutiagent.local"
+              password = "demo123456"
+            } | ConvertTo-Json
+            Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/auth/login" -ContentType "application/json" -Body $loginBody | Out-Null
+          } finally {
+            if (-not $process.HasExited) {
+              & taskkill.exe /pid $process.Id /t /f | Out-Null
+            }
+          }
       - name: Build exact source ZIP
         shell: pwsh
         run: git archive --format=zip --output="desktop/dist/11017810源码.zip" HEAD
