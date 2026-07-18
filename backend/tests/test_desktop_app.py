@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.desktop import create_desktop_app
+from tests.postgres import postgresql_test_url
 
 
 def _write_frontend(frontend_dist: Path) -> None:
@@ -19,7 +20,7 @@ def test_desktop_app_serves_api_assets_and_spa_routes(tmp_path: Path) -> None:
     frontend_dist = tmp_path / "frontend"
     _write_frontend(frontend_dist)
     app = create_desktop_app(
-        database_url=f"sqlite:///{tmp_path / 'desktop.db'}",
+        database_url=postgresql_test_url(tmp_path, "desktop-static"),
         frontend_dist=frontend_dist,
     )
 
@@ -38,7 +39,7 @@ def test_desktop_app_rejects_missing_frontend_index(tmp_path: Path) -> None:
 
     try:
         create_desktop_app(
-            database_url=f"sqlite:///{tmp_path / 'desktop.db'}",
+            database_url=postgresql_test_url(tmp_path, "desktop-missing-frontend"),
             frontend_dist=frontend_dist,
         )
     except RuntimeError as error:
