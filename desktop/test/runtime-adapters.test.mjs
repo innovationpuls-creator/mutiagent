@@ -42,11 +42,15 @@ describe("createEmbeddedDatabase", () => {
 	it("initialises a new persistent local-only cluster", async () => {
 		const access = vi.fn().mockRejectedValueOnce(new Error("missing"));
 		const mkdir = vi.fn();
+		const onError = vi.fn();
+		const onLog = vi.fn();
 		const database = createEmbeddedDatabase({
 			PostgresClass: FakePostgres,
 			access,
 			databaseDir: "C:\\OneTreeData\\database",
 			mkdir,
+			onError,
+			onLog,
 		});
 
 		await database.initialise();
@@ -59,6 +63,8 @@ describe("createEmbeddedDatabase", () => {
 			persistent: true,
 			port: 55432,
 			postgresFlags: ["-h", "127.0.0.1"],
+			onError,
+			onLog,
 		});
 		expect(database.instance.initialise).toHaveBeenCalledOnce();
 	});

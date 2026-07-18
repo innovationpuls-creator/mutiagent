@@ -38,6 +38,7 @@ function createHarness() {
 		buildEnvironment: vi.fn(() => ({ APP_ENV: "production" })),
 		createController: vi.fn(() => controller),
 		createDatabase: vi.fn(() => ({ database: true })),
+		createLogger: vi.fn(() => ({ error: vi.fn(), info: vi.fn() })),
 		createProcesses: vi.fn(() => ({ processes: true })),
 		dialog: { showErrorBox: vi.fn() },
 		loadBuildConfiguration: vi.fn(async () => ({
@@ -101,6 +102,8 @@ describe("startDesktopApplication", () => {
 			"OneTree 启动失败",
 			"startup failed",
 		);
+		const logger = harness.dependencies.createLogger.mock.results[0].value;
+		expect(logger.error).toHaveBeenCalledWith(expect.any(Error));
 	});
 
 	it("focuses the existing window for a second launch", async () => {
