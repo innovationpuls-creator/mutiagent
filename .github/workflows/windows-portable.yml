@@ -1,20 +1,17 @@
 name: Windows portable package
 
 "on":
+  push:
+    branches:
+      - codex/windows-portable
   workflow_dispatch:
-    inputs:
-      llm_model:
-        description: Exact DashScope model identifier
-        required: true
-        default: qwen3.7-plus
-        type: string
 
 jobs:
   package:
     runs-on: windows-2025
     env:
-      LLM_API_KEY: ${{ secrets.ONETREE_COMPETITION_LLM_API_KEY }}
-      LLM_MODEL: ${{ inputs.llm_model }}
+      LLM_API_KEY: __INJECT_LOCALLY__
+      LLM_MODEL: __INJECT_LOCALLY__
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
