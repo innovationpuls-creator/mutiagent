@@ -8,6 +8,7 @@
 		"test": "vitest run --coverage",
 		"test:unit": "vitest run",
 		"build:frontend": "npm --prefix ../frontend run build",
+		"write:runtime-config": "node scripts/write-runtime-config.mjs",
 		"pack:dir": "electron-builder --dir --win x64",
 		"pack:zip": "electron-builder --win zip --x64"
 	},
@@ -19,5 +20,46 @@
 		"electron": "43.1.1",
 		"electron-builder": "26.15.3",
 		"vitest": "4.1.10"
+	},
+	"build": {
+		"appId": "cn.onetree.desktop",
+		"artifactName": "11017810作品.${ext}",
+		"asar": true,
+		"asarUnpack": [
+			"node_modules/@embedded-postgres/**/*"
+		],
+		"directories": {
+			"output": "dist"
+		},
+		"extraResources": [
+			{
+				"from": "../frontend/dist",
+				"to": "frontend"
+			},
+			{
+				"from": "build/backend/OneTreeRuntime",
+				"to": "backend"
+			},
+			{
+				"from": "build/runtime-config.json",
+				"to": "runtime-config.json"
+			},
+			{
+				"from": "../frontend/public/logo.png",
+				"to": "logo.png"
+			}
+		],
+		"files": [
+			"src/**/*.mjs",
+			"package.json"
+		],
+		"productName": "OneTree",
+		"win": {
+			"executableName": "OneTree",
+			"icon": "../frontend/public/logo.png",
+			"target": [
+				"zip"
+			]
+		}
 	}
 }

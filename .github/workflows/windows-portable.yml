@@ -1,0 +1,82 @@
+name: Windows portable package
+
+"on":
+  workflow_dispatch:
+    inputs:
+      llm_model:
+        description: Exact DashScope model identifier
+        required: true
+        default: qwen3.7-plus
+        type: string
+
+jobs:
+  package:
+    runs-on: windows-2025
+    env:
+      LLM_API_KEY: ${{ secrets.ONETREE_COMPETITION_LLM_API_KEY }}
+      LLM_MODEL: ${{ inputs.llm_model }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: python -m pip install uv==0.8.22
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Build Windows backend runtime
+        working-directory: backend
+        run: |
+          uv sync --extra desktop
+          uv run pyinstaller OneTreeRuntime.spec --noconfirm --clean --distpath ../desktop/build/backend --workpath ../desktop/build/pyinstaller
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+      - name: Test desktop runtime
+        working-directory: desktop
+        run: npm test
+      - name: Write embedded competition configuration
+        working-directory: desktop
+        run: npm run write:runtime-config
+      - name: Build exact competition ZIP
+        working-directory: desktop
+        run: npm run pack:zip
+      - name: Build exact source ZIP
+        shell: pwsh
+        run: git archive --format=zip --output="desktop/dist/11017810源码.zip" HEAD
+      - name: Verify submission artifacts
+        shell: pwsh
+        run: |
+          $work = Get-Item "desktop/dist/11017810作品.zip"
+          $source = Get-Item "desktop/dist/11017810源码.zip"
+          if ($work.Length -gt 1GB) { throw "11017810作品.zip exceeds 1GB" }
+          if ($source.Length -gt 1GB) { throw "11017810源码.zip exceeds 1GB" }
+          $verify = Join-Path $env:RUNNER_TEMP "onetree-package"
+          Expand-Archive -LiteralPath $work.FullName -DestinationPath $verify
+          if (-not (Test-Path (Join-Path $verify "OneTree.exe"))) {
+            throw "OneTree.exe is missing from package root"
+          }
+          if (-not (Test-Path (Join-Path $verify "resources/backend/OneTreeRuntime.exe"))) {
+            throw "OneTreeRuntime.exe is missing"
+          }
+          if (-not (Test-Path (Join-Path $verify "resources/runtime-config.json"))) {
+            throw "runtime-config.json is missing"
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 11017810-submission
+          path: |
+            desktop/dist/11017810作品.zip
+            desktop/dist/11017810源码.zip
+          if-no-files-found: error
+          retention-days: 7
