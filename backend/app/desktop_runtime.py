@@ -7,6 +7,7 @@ from pathlib import Path
 
 import uvicorn
 
+from app.database import build_engine, ensure_demo_user
 from app.desktop import create_desktop_app
 from app.migration_cli import main as migrate_database
 from app.workers.knowledge_base_worker import run_worker as run_knowledge_worker
@@ -31,7 +32,19 @@ def run_worker() -> None:
 
 
 def run_migration() -> int:
-    return migrate_database()
+    migration_result = migrate_database()
+    if migration_result != 0:
+        return migration_result
+
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required")
+    engine = build_engine(database_url)
+    try:
+        ensure_demo_user(engine)
+    finally:
+        engine.dispose()
+    return 0
 
 
 def main(arguments: Sequence[str] | None = None) -> int:

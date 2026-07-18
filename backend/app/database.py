@@ -17,6 +17,10 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://mutiagent:mutiagent@localhost:5432/mutiagent"
 )
 
+DEMO_USER_UID = "00000000-0000-0000-0000-000000000001"
+DEMO_USER_IDENTIFIER = "demo@mutiagent.local"
+DEMO_USER_PASSWORD = "demo123456"
+
 
 _engine: Engine | None = None
 
@@ -65,20 +69,25 @@ def init_db(engine: Engine, *, seed_users: bool = True) -> None:
 
     with Session(engine) as session:
         _ensure_admin_user(session)
+    ensure_demo_user(engine)
+
+
+def ensure_demo_user(engine: Engine) -> None:
+    with Session(engine) as session:
         existing = session.exec(
-            select(User).where(User.identifier == "demo@mutiagent.local"),
+            select(User).where(User.identifier == DEMO_USER_IDENTIFIER),
         ).first()
         if existing:
             return
 
         session.add(
             User(
-                uid="00000000-0000-0000-0000-000000000001",
+                uid=DEMO_USER_UID,
                 username="体验同学",
-                identifier="demo@mutiagent.local",
+                identifier=DEMO_USER_IDENTIFIER,
                 role="student",
                 provider="password",
-                password_hash=hash_password("demo123456"),
+                password_hash=hash_password(DEMO_USER_PASSWORD),
             ),
         )
         session.commit()
