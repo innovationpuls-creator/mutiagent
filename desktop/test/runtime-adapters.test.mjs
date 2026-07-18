@@ -87,6 +87,7 @@ describe("createEmbeddedDatabase", () => {
 			access: vi.fn(),
 			databaseDir: "C:\\OneTreeData\\database",
 			mkdir: vi.fn(),
+			platform: "darwin",
 		});
 
 		await database.initialise();
@@ -118,6 +119,7 @@ describe("createEmbeddedDatabase", () => {
 			access: vi.fn(),
 			databaseDir: "C:\\OneTreeData\\database",
 			mkdir: vi.fn(),
+			platform: "darwin",
 		});
 		database.instance.client.query.mockResolvedValueOnce({ rowCount: 1 });
 
