@@ -28,7 +28,9 @@ function createHarness() {
 		start: vi.fn(async () => ({ url: "http://127.0.0.1:8000" })),
 		stop: vi.fn(),
 	};
-	const BrowserWindow = vi.fn((options) => new FakeWindow(options));
+	const BrowserWindow = vi.fn(function BrowserWindow(options) {
+		return new FakeWindow(options);
+	});
 	const dependencies = {
 		BrowserWindow,
 		app,
