@@ -31,6 +31,7 @@ describe("Windows package contract", () => {
 
 		expect(packageJson.build).toMatchObject({
 			artifactName: "11017810作品.${ext}",
+			asar: false,
 			productName: "OneTree",
 			win: {
 				executableName: "OneTree",
