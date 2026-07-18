@@ -49,6 +49,12 @@
 				"to": "logo.png"
 			}
 		],
+		"extraFiles": [
+			{
+				"from": "resources/使用说明.pdf",
+				"to": "使用说明.pdf"
+			}
+		],
 		"files": [
 			"src/**/*.mjs",
 			"package.json"

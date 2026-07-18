@@ -35,6 +35,10 @@ describe("Windows package contract", () => {
 				}),
 			]),
 		);
+		expect(packageJson.build.extraFiles).toContainEqual({
+			from: "resources/使用说明.pdf",
+			to: "使用说明.pdf",
+		});
 	});
 });
 
