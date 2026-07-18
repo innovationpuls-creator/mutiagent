@@ -83,10 +83,23 @@ jobs:
             if (-not $process.HasExited) {
               & taskkill.exe /pid $process.Id /t /f | Out-Null
             }
+            $logSource = Join-Path $env:APPDATA "OneTree\logs"
+            $logDestination = Join-Path $env:RUNNER_TEMP "onetree-smoke-logs"
+            if (Test-Path $logSource) {
+              New-Item -ItemType Directory -Path $logDestination -Force | Out-Null
+              Copy-Item -Path (Join-Path $logSource "*") -Destination $logDestination -Recurse -Force
+            }
           }
+      - name: Upload Windows smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onetree-windows-smoke-logs
+          path: ${{ runner.temp }}/onetree-smoke-logs
+          if-no-files-found: warn
       - name: Build exact source ZIP
         shell: pwsh
-        run: git archive --format=zip --output="desktop/dist/11017810源码.zip" HEAD
+        run: git archive --format=zip --output="desktop/dist/11017810源码.zip" HEAD frontend backend desktop .github/workflows/windows-portable.yml
       - name: Verify submission artifacts
         shell: pwsh
         run: |

@@ -18,6 +18,10 @@ describe("Windows package contract", () => {
 		expect(workflow).toContain(
 			'git archive --format=zip --output="desktop/dist/11017810源码.zip" HEAD frontend backend desktop .github/workflows/windows-portable.yml',
 		);
+		expect(workflow).toContain("name: Upload Windows smoke logs");
+		expect(workflow).toContain(
+			"path: ${{ runner.temp }}/onetree-smoke-logs",
+		);
 	});
 
 	it("builds the exact competition artifact and executable names", async () => {
