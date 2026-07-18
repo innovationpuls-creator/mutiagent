@@ -8,14 +8,24 @@ import EmbeddedPostgres from "embedded-postgres";
 const DATABASE_NAME = "onetree";
 const DATABASE_PORT = 55432;
 const HEALTH_URL = "http://127.0.0.1:8000/api/health/ready";
+const WINDOWS_POSTGRES_PACKAGE = "@embedded-postgres/windows-x64";
+
+async function loadWindowsPostgresControl() {
+	const binaries = await import(WINDOWS_POSTGRES_PACKAGE);
+	return binaries.pg_ctl;
+}
 
 export function createEmbeddedDatabase({
 	PostgresClass = EmbeddedPostgres,
 	access = nodeAccess,
 	databaseDir,
+	loadPostgresControl = loadWindowsPostgresControl,
 	mkdir = nodeMkdir,
 	onError = console.error,
 	onLog = console.log,
+	platform = process.platform,
+	postgresLogPath = path.win32.join(databaseDir, "postgres.log"),
+	spawn = nodeSpawn,
 }) {
 	const instance = new PostgresClass({
 		authMethod: "scram-sha-256",
@@ -30,6 +40,67 @@ export function createEmbeddedDatabase({
 		user: "onetree",
 	});
 
+	async function runPostgresControl(command, arguments_) {
+		const postgresControl = await loadPostgresControl();
+		const child = spawn(postgresControl, [command, ...arguments_], {
+			windowsHide: true,
+		});
+		await new Promise((resolve, reject) => {
+			let errorOutput = "";
+			child.stdout?.on("data", (chunk) => onLog(chunk.toString("utf8")));
+			child.stderr?.on("data", (chunk) => {
+				const message = chunk.toString("utf8");
+				errorOutput += message;
+				onError(message);
+			});
+			child.once("error", reject);
+			child.once("exit", (code, signal) => {
+				if (code === 0) {
+					resolve();
+					return;
+				}
+				reject(
+					new Error(
+						`pg_ctl ${command} 失败: code=${code ?? "null"}, signal=${signal ?? "null"}${errorOutput ? `, stderr=${errorOutput.trim()}` : ""}`,
+					),
+				);
+			});
+		});
+	}
+
+	async function start() {
+		if (platform !== "win32") {
+			return instance.start();
+		}
+		await mkdir(path.win32.dirname(postgresLogPath), { recursive: true });
+		await runPostgresControl("start", [
+			"-D",
+			databaseDir,
+			"-l",
+			postgresLogPath,
+			"-o",
+			`-p ${DATABASE_PORT} -h 127.0.0.1`,
+			"-w",
+			"-t",
+			"60",
+		]);
+	}
+
+	async function stop() {
+		if (platform !== "win32") {
+			return instance.stop();
+		}
+		await runPostgresControl("stop", [
+			"-D",
+			databaseDir,
+			"-m",
+			"fast",
+			"-w",
+			"-t",
+			"60",
+		]);
+	}
+
 	return {
 		instance,
 		async initialise() {
@@ -41,8 +112,8 @@ export function createEmbeddedDatabase({
 				await instance.initialise();
 			}
 		},
-		start: () => instance.start(),
-		stop: () => instance.stop(),
+		start,
+		stop,
 		async ensureDatabase() {
 			const client = instance.getPgClient("postgres", "127.0.0.1");
 			try {

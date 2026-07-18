@@ -42,6 +42,7 @@ export async function startDesktopApplication({
 		databaseDir: runtimePaths.postgresDataDir,
 		onError: (message) => logger.error(message),
 		onLog: (message) => logger.info(message),
+		postgresLogPath: path.win32.join(runtimePaths.logsDir, "postgres.log"),
 	});
 	const processes = createProcesses({
 		backendExecutable: runtimePaths.backendExecutable,

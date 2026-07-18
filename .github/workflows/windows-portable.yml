@@ -52,21 +52,15 @@ jobs:
         shell: pwsh
         run: |
           $smokeRoot = Join-Path $env:RUNNER_TEMP "onetree-smoke"
-          $smokeUserName = "OneTreeSmoke"
-          $smokePassword = ConvertTo-SecureString 'V7#pL2@xQ9!mR4$z' -AsPlainText -Force
-          $logSource = Join-Path $env:SystemDrive "Users\$smokeUserName\AppData\Roaming\OneTree\logs"
+          $logSource = Join-Path $env:APPDATA "OneTree\logs"
           $logDestination = Join-Path $env:RUNNER_TEMP "onetree-smoke-logs"
-          $process = $null
+          if (Test-Path $smokeRoot) {
+            Remove-Item -Path $smokeRoot -Recurse -Force
+          }
+          Expand-Archive -LiteralPath "desktop/dist/11017810作品.zip" -DestinationPath $smokeRoot
+          $executable = Join-Path $smokeRoot "OneTree.exe"
+          $process = Start-Process -FilePath $executable -PassThru
           try {
-            if (Test-Path $smokeRoot) {
-              Remove-Item -Path $smokeRoot -Recurse -Force
-            }
-            Expand-Archive -LiteralPath "desktop/dist/11017810作品.zip" -DestinationPath $smokeRoot
-            $executable = Join-Path $smokeRoot "OneTree.exe"
-            Remove-LocalUser -Name $smokeUserName -ErrorAction SilentlyContinue
-            New-LocalUser -Name $smokeUserName -Password $smokePassword -AccountNeverExpires -PasswordNeverExpires -UserMayNotChangePassword | Out-Null
-            $credential = [System.Management.Automation.PSCredential]::new(".\$smokeUserName", $smokePassword)
-            $process = Start-Process -FilePath $executable -Credential $credential -LoadUserProfile -PassThru
             $ready = $false
             for ($attempt = 0; $attempt -lt 90; $attempt++) {
               if ($process.HasExited) {
@@ -91,7 +85,7 @@ jobs:
             } | ConvertTo-Json
             Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/auth/login" -ContentType "application/json" -Body $loginBody | Out-Null
           } finally {
-            if ($null -ne $process -and -not $process.HasExited) {
+            if (-not $process.HasExited) {
               & taskkill.exe /pid $process.Id /t /f | Out-Null
             }
             Start-Sleep -Seconds 2
@@ -99,7 +93,6 @@ jobs:
               New-Item -ItemType Directory -Path $logDestination -Force | Out-Null
               Copy-Item -Path (Join-Path $logSource "*") -Destination $logDestination -Recurse -Force
             }
-            Remove-LocalUser -Name $smokeUserName -ErrorAction SilentlyContinue
           }
       - name: Upload Windows smoke logs
         if: always()

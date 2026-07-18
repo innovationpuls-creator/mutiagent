@@ -38,6 +38,18 @@ function successfulChild(pid = 42) {
 	return child;
 }
 
+function failedCommandChild() {
+	const child = new EventEmitter();
+	child.stdout = new EventEmitter();
+	child.stderr = new EventEmitter();
+	queueMicrotask(() => {
+		child.stdout.emit("data", Buffer.from("pg_ctl starting"));
+		child.stderr.emit("data", Buffer.from("pg_ctl failed"));
+		child.emit("exit", 1, null);
+	});
+	return child;
+}
+
 describe("createEmbeddedDatabase", () => {
 	it("initialises a new persistent local-only cluster", async () => {
 		const access = vi.fn().mockRejectedValueOnce(new Error("missing"));
@@ -172,6 +184,29 @@ describe("createEmbeddedDatabase", () => {
 		);
 		expect(database.instance.start).not.toHaveBeenCalled();
 		expect(database.instance.stop).not.toHaveBeenCalled();
+	});
+
+	it("reports pg_ctl output and non-zero exits", async () => {
+		const onError = vi.fn();
+		const onLog = vi.fn();
+		const database = createEmbeddedDatabase({
+			PostgresClass: FakePostgres,
+			access: vi.fn(),
+			databaseDir: "C:\\OneTreeData\\database",
+			loadPostgresControl: vi.fn(async () => "C:\\Postgres\\pg_ctl.exe"),
+			mkdir: vi.fn(),
+			onError,
+			onLog,
+			platform: "win32",
+			postgresLogPath: "C:\\OneTreeData\\logs\\postgres.log",
+			spawn: vi.fn(() => failedCommandChild()),
+		});
+
+		await expect(database.start()).rejects.toThrow(
+			"pg_ctl start 失败: code=1, signal=null, stderr=pg_ctl failed",
+		);
+		expect(onLog).toHaveBeenCalledWith("pg_ctl starting");
+		expect(onError).toHaveBeenCalledWith("pg_ctl failed");
 	});
 });
 
