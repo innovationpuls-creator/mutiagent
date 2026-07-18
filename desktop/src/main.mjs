@@ -6,6 +6,7 @@ import {
 	createProcessAdapter,
 	waitForBackendHealth,
 } from "./runtime-adapters.mjs";
+import { createRuntimeLogger } from "./runtime-logger.mjs";
 import { loadBuildConfiguration, loadOrCreateJwtSecret } from "./runtime-config.mjs";
 import { createRuntimeController } from "./runtime-controller.mjs";
 import { buildBackendEnvironment } from "./runtime-environment.mjs";
@@ -18,6 +19,7 @@ startDesktopApplication({
 	buildEnvironment: buildBackendEnvironment,
 	createController: createRuntimeController,
 	createDatabase: createEmbeddedDatabase,
+	createLogger: createRuntimeLogger,
 	createProcesses: createProcessAdapter,
 	dialog,
 	loadBuildConfiguration,

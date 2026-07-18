@@ -6,9 +6,10 @@ export async function startDesktopApplication({
 	BrowserWindow,
 	app,
 	buildEnvironment,
-	createController,
-	createDatabase,
-	createProcesses,
+		createController,
+		createDatabase,
+		createLogger,
+		createProcesses,
 	dialog,
 	loadBuildConfiguration,
 	loadJwtSecret,
@@ -23,6 +24,8 @@ export async function startDesktopApplication({
 	await app.whenReady();
 	const userDataPath = app.getPath("userData");
 	const runtimePaths = resolveRuntimePaths({ resourcesPath, userDataPath });
+	const logger = createLogger(runtimePaths.logsDir);
+	logger.info("OneTree desktop runtime starting");
 	const buildConfiguration = await loadBuildConfiguration(
 		path.win32.join(resourcesPath, "runtime-config.json"),
 	);
@@ -35,7 +38,11 @@ export async function startDesktopApplication({
 		jwtSecret,
 		uploadsDir: runtimePaths.uploadsDir,
 	});
-	const database = createDatabase({ databaseDir: runtimePaths.postgresDataDir });
+	const database = createDatabase({
+		databaseDir: runtimePaths.postgresDataDir,
+		onError: (message) => logger.error(message),
+		onLog: (message) => logger.info(message),
+	});
 	const processes = createProcesses({
 		backendExecutable: runtimePaths.backendExecutable,
 		environment,
@@ -86,6 +93,7 @@ export async function startDesktopApplication({
 		window.show();
 		return { controller, window };
 	} catch (error) {
+		logger.error(error);
 		await controller.stop();
 		const message = error instanceof Error ? error.message : String(error);
 		dialog.showErrorBox("OneTree 启动失败", message);

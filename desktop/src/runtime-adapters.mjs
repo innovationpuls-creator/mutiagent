@@ -14,6 +14,8 @@ export function createEmbeddedDatabase({
 	access = nodeAccess,
 	databaseDir,
 	mkdir = nodeMkdir,
+	onError = console.error,
+	onLog = console.log,
 }) {
 	const instance = new PostgresClass({
 		authMethod: "scram-sha-256",
@@ -23,6 +25,8 @@ export function createEmbeddedDatabase({
 		persistent: true,
 		port: DATABASE_PORT,
 		postgresFlags: ["-h", "127.0.0.1"],
+		onError,
+		onLog,
 		user: "onetree",
 	});
 
