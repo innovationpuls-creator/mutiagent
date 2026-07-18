@@ -1,11 +1,12 @@
 from pathlib import Path
 
+from sqlmodel import Session, select
+
 from app import desktop_runtime
 from app.core.security import verify_password
 from app.database import build_engine, ensure_demo_user
 from app.migration_state import migrate_to_head
 from app.models import User
-from sqlmodel import Session, select
 from tests.postgres import postgresql_test_url
 
 
