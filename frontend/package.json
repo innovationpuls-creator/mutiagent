@@ -12,6 +12,7 @@
 		"gen:api": "(cd ../backend && uv run python -m app.export_openapi) > openapi.json && npx openapi-typescript openapi.json --output src/types/api.ts && npx biome format --write src/types/api.ts"
 	},
 	"dependencies": {
+		"@fontsource/caveat": "^5.2.8",
 		"@fontsource/lxgw-wenkai": "^5.1.1",
 		"@tailwindcss/typography": "^0.5.19",
 		"@vitejs/plugin-react": "^5.0.0",

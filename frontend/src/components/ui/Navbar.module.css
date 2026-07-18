@@ -97,13 +97,14 @@
 }
 
 .logoBrand {
-	font-family: "Caveat", cursive;
+	font-family: var(--font-brand);
 	font-weight: 600;
 	font-size: 1.5rem;
 	color: var(--color-primary);
 	letter-spacing: 0.02em;
 	line-height: 1;
 	transform: translateY(1px);
+	white-space: nowrap;
 }
 
 /* ── Tab Bar (center navigation) ── */
@@ -531,7 +532,7 @@
 	}
 
 	.logoBrand {
-		display: none;
+		font-size: 1.25rem;
 	}
 
 	.tabBar {
@@ -569,6 +570,10 @@
 
 /* Very small screens: horizontal scroll for tabs */
 @media (max-width: 480px) {
+	.logoBrand {
+		font-size: 1rem;
+	}
+
 	.tabBar {
 		overflow-x: auto;
 		-webkit-overflow-scrolling: touch;

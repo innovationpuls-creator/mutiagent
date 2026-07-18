@@ -783,7 +783,7 @@
 }
 
 .hero-brand-text {
-	font-family: "Caveat", cursive !important;
+	font-family: var(--font-brand) !important;
 	font-weight: 600 !important;
 	font-size: 40px !important;
 	color: oklch(70% 0.12 45) !important;

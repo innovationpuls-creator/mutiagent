@@ -53,7 +53,7 @@
 }
 
 .hero-title-accent {
-	font-family: "Caveat", cursive;
+	font-family: var(--font-brand);
 	font-style: italic;
 	color: oklch(70% 0.13 50);
 	font-size: 1.15em;

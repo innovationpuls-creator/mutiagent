@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAiWidget } from "../../context/AiWidgetContext";
 import { DURATION_INSTANT, motionTokens } from "../../styles/motion-tokens";
 
@@ -60,7 +60,7 @@ export function SproutInitOverlay({ onComplete }: Props) {
 
 			sequence();
 		}
-	}, [phase, widgetState, onComplete, isFinishing, reduceMotion]);
+	}, [phase, widgetState, onComplete, isFinishing]);
 
 	return (
 		<motion.div
@@ -184,7 +184,7 @@ export function SproutInitOverlay({ onComplete }: Props) {
 							欢迎来到{" "}
 							<span
 								style={{
-									fontFamily: "Caveat, cursive",
+									fontFamily: "var(--font-brand)",
 									fontWeight: 500,
 									color: "oklch(70% 0.12 45)",
 									marginLeft: "8px",
