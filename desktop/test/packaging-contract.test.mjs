@@ -9,6 +9,15 @@ import {
 } from "../scripts/write-runtime-config.mjs";
 
 describe("Windows package contract", () => {
+	it("captures frozen backend output without opening a console window", async () => {
+		const backendSpec = await readFile(
+			new URL("../../backend/OneTreeRuntime.spec", import.meta.url),
+			"utf8",
+		);
+
+		expect(backendSpec).toContain("console=True");
+	});
+
 	it("archives only the source directories required for the submission", async () => {
 		const workflow = await readFile(
 			new URL("../../.github/workflows/windows-portable.yml", import.meta.url),
