@@ -1,8 +1,12 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { buildCompetitionConfiguration } from "../scripts/write-runtime-config.mjs";
+import {
+	buildCompetitionConfiguration,
+	writeRuntimeConfiguration,
+} from "../scripts/write-runtime-config.mjs";
 
 describe("Windows package contract", () => {
 	it("builds the exact competition artifact and executable names", async () => {
@@ -47,6 +51,25 @@ describe("buildCompetitionConfiguration", () => {
 	it("rejects missing competition secrets", () => {
 		expect(() => buildCompetitionConfiguration({})).toThrow(
 			"LLM_API_KEY and LLM_MODEL are required",
+		);
+	});
+
+	it("writes only the validated runtime configuration", async () => {
+		const mkdir = vi.fn();
+		const writeFile = vi.fn();
+
+		await writeRuntimeConfiguration(
+			{ LLM_API_KEY: " competition-key ", LLM_MODEL: " qwen-model " },
+			{ buildDirectory: "C:\\OneTree\\build", mkdir, writeFile },
+		);
+
+		expect(mkdir).toHaveBeenCalledWith("C:\\OneTree\\build", {
+			recursive: true,
+		});
+		expect(writeFile).toHaveBeenCalledWith(
+			path.join("C:\\OneTree\\build", "runtime-config.json"),
+			'{\n  "apiKey": "competition-key",\n  "model": "qwen-model"\n}\n',
+			{ encoding: "utf8", mode: 0o600 },
 		);
 	});
 });

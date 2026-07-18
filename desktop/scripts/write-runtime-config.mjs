@@ -11,15 +11,21 @@ export function buildCompetitionConfiguration(environment) {
 	return { apiKey, model };
 }
 
-export async function writeRuntimeConfiguration(environment = process.env) {
+export async function writeRuntimeConfiguration(
+	environment = process.env,
+	{
+		buildDirectory = path.resolve(
+			path.dirname(fileURLToPath(import.meta.url)),
+			"..",
+			"build",
+		),
+		mkdir: mkdirDirectory = mkdir,
+		writeFile: writeConfigurationFile = writeFile,
+	} = {},
+) {
 	const configuration = buildCompetitionConfiguration(environment);
-	const buildDirectory = path.resolve(
-		path.dirname(fileURLToPath(import.meta.url)),
-		"..",
-		"build",
-	);
-	await mkdir(buildDirectory, { recursive: true });
-	await writeFile(
+	await mkdirDirectory(buildDirectory, { recursive: true });
+	await writeConfigurationFile(
 		path.join(buildDirectory, "runtime-config.json"),
 		`${JSON.stringify(configuration, null, 2)}\n`,
 		{ encoding: "utf8", mode: 0o600 },

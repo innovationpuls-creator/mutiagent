@@ -12,6 +12,7 @@ class FakeWindow extends EventEmitter {
 		this.show = vi.fn();
 		this.focus = vi.fn();
 		this.isMinimized = vi.fn(() => false);
+		this.restore = vi.fn();
 		this.webContents = {
 			setWindowOpenHandler: vi.fn(),
 		};
@@ -26,7 +27,7 @@ function createHarness() {
 	app.whenReady = vi.fn();
 	const controller = {
 		start: vi.fn(async () => ({ url: "http://127.0.0.1:8000" })),
-		stop: vi.fn(),
+		stop: vi.fn(async () => undefined),
 	};
 	const BrowserWindow = vi.fn(function BrowserWindow(options) {
 		return new FakeWindow(options);
@@ -100,5 +101,47 @@ describe("startDesktopApplication", () => {
 			"OneTree 启动失败",
 			"startup failed",
 		);
+	});
+
+	it("focuses the existing window for a second launch", async () => {
+		const harness = createHarness();
+		const result = await startDesktopApplication(harness.dependencies);
+		result.window.isMinimized.mockReturnValueOnce(true);
+
+		harness.app.emit("second-instance");
+
+		expect(result.window.restore).toHaveBeenCalledOnce();
+		expect(result.window.focus).toHaveBeenCalledOnce();
+	});
+
+	it("focuses a visible existing window without restoring it", async () => {
+		const harness = createHarness();
+		const result = await startDesktopApplication(harness.dependencies);
+
+		harness.app.emit("second-instance");
+
+		expect(result.window.restore).not.toHaveBeenCalled();
+		expect(result.window.focus).toHaveBeenCalledOnce();
+	});
+
+	it("stops runtime services before quitting", async () => {
+		const harness = createHarness();
+		await startDesktopApplication(harness.dependencies);
+		const event = { preventDefault: vi.fn() };
+
+		harness.app.emit("before-quit", event);
+		await vi.waitFor(() => expect(harness.controller.stop).toHaveBeenCalledOnce());
+
+		expect(event.preventDefault).toHaveBeenCalledOnce();
+		expect(harness.app.quit).toHaveBeenCalledOnce();
+	});
+
+	it("quits when the desktop window is closed", async () => {
+		const harness = createHarness();
+		await startDesktopApplication(harness.dependencies);
+
+		harness.app.emit("window-all-closed");
+
+		expect(harness.app.quit).toHaveBeenCalledOnce();
 	});
 });

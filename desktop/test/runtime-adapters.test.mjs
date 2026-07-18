@@ -30,7 +30,11 @@ class FakePostgres {
 function successfulChild(pid = 42) {
 	const child = new EventEmitter();
 	child.pid = pid;
-	queueMicrotask(() => child.emit("exit", 0, null));
+	child.exitCode = null;
+	queueMicrotask(() => {
+		child.exitCode = 0;
+		child.emit("exit", 0, null);
+	});
 	return child;
 }
 
@@ -89,6 +93,24 @@ describe("createEmbeddedDatabase", () => {
 		expect(database.instance.createDatabase).toHaveBeenCalledWith("onetree");
 		expect(database.instance.client.end).toHaveBeenCalledOnce();
 	});
+
+	it("reuses an existing application database and delegates lifecycle", async () => {
+		const database = createEmbeddedDatabase({
+			PostgresClass: FakePostgres,
+			access: vi.fn(),
+			databaseDir: "C:\\OneTreeData\\database",
+			mkdir: vi.fn(),
+		});
+		database.instance.client.query.mockResolvedValueOnce({ rowCount: 1 });
+
+		await database.start();
+		await database.ensureDatabase();
+		await database.stop();
+
+		expect(database.instance.createDatabase).not.toHaveBeenCalled();
+		expect(database.instance.start).toHaveBeenCalledOnce();
+		expect(database.instance.stop).toHaveBeenCalledOnce();
+	});
 });
 
 describe("createProcessAdapter", () => {
@@ -113,6 +135,32 @@ describe("createProcessAdapter", () => {
 			env: expect.objectContaining({ APP_ENV: "production" }),
 			windowsHide: true,
 		});
+	});
+
+	it("starts and stops the worker process tree", async () => {
+		const workerChild = new EventEmitter();
+		workerChild.pid = 41;
+		workerChild.exitCode = null;
+		const spawn = vi
+			.fn()
+			.mockReturnValueOnce(workerChild)
+			.mockImplementationOnce(() => successfulChild(42));
+		const log = { end: vi.fn() };
+		const adapter = createProcessAdapter({
+			backendExecutable: "C:\\OneTree\\backend\\OneTreeRuntime.exe",
+			environment: {},
+			logsDir: "C:\\OneTreeData\\logs",
+			mkdir: vi.fn(),
+			openLog: vi.fn(() => log),
+			spawn,
+		});
+
+		const worker = await adapter.startWorker();
+		await worker.stop();
+
+		expect(spawn.mock.calls[0][1]).toEqual(["worker"]);
+		expect(spawn.mock.calls[1][0]).toBe("taskkill.exe");
+		expect(log.end).toHaveBeenCalledOnce();
 	});
 });
 
