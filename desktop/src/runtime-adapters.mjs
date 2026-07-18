@@ -142,9 +142,32 @@ export function createProcessAdapter({
 }) {
 	const workingDirectory = path.win32.dirname(backendExecutable);
 
+	async function waitForLogOpen(log) {
+		if (typeof log.fd === "number") {
+			return;
+		}
+		await new Promise((resolve, reject) => {
+			function cleanup() {
+				log.off("open", handleOpen);
+				log.off("error", handleError);
+			}
+			function handleOpen() {
+				cleanup();
+				resolve();
+			}
+			function handleError(error) {
+				cleanup();
+				reject(error);
+			}
+			log.once("open", handleOpen);
+			log.once("error", handleError);
+		});
+	}
+
 	async function spawnRuntime(mode, logName) {
 		await mkdir(logsDir, { recursive: true });
 		const log = openLog(path.win32.join(logsDir, logName), { flags: "a" });
+		await waitForLogOpen(log);
 		const child = spawn(backendExecutable, [mode], {
 			cwd: workingDirectory,
 			env: { ...process.env, ...environment },
