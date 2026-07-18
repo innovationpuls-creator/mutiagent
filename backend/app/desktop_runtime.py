@@ -12,6 +12,12 @@ from app.migration_cli import main as migrate_database
 from app.workers.knowledge_base_worker import run_worker as run_knowledge_worker
 
 
+def configure_frozen_runtime() -> None:
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    if bundle_root:
+        os.chdir(Path(bundle_root))
+
+
 def run_server() -> None:
     frontend_dist = os.environ.get("ONETREE_FRONTEND_DIST", "").strip()
     if not frontend_dist:
@@ -29,6 +35,7 @@ def run_migration() -> int:
 
 
 def main(arguments: Sequence[str] | None = None) -> int:
+    configure_frozen_runtime()
     resolved_arguments = list(sys.argv[1:] if arguments is None else arguments)
     mode = resolved_arguments[0] if resolved_arguments else ""
     if mode == "serve":
