@@ -9,6 +9,17 @@ import {
 } from "../scripts/write-runtime-config.mjs";
 
 describe("Windows package contract", () => {
+	it("archives only the source directories required for the submission", async () => {
+		const workflow = await readFile(
+			new URL("../../.github/workflows/windows-portable.yml", import.meta.url),
+			"utf8",
+		);
+
+		expect(workflow).toContain(
+			'git archive --format=zip --output="desktop/dist/11017810源码.zip" HEAD frontend backend desktop .github/workflows/windows-portable.yml',
+		);
+	});
+
 	it("builds the exact competition artifact and executable names", async () => {
 		const packageJson = JSON.parse(
 			await readFile(new URL("../package.json", import.meta.url), "utf8"),
