@@ -224,7 +224,7 @@ describe("createProcessAdapter", () => {
 			environment: { APP_ENV: "production" },
 			logsDir: "C:\\OneTreeData\\logs",
 			mkdir: vi.fn(),
-			openLog: vi.fn(() => ({ end: vi.fn() })),
+			openLog: vi.fn(() => ({ end: vi.fn(), fd: 1 })),
 			spawn,
 		});
 
@@ -240,6 +240,32 @@ describe("createProcessAdapter", () => {
 		});
 	});
 
+	it("waits for the runtime log file before spawning a process", async () => {
+		const log = new EventEmitter();
+		log.end = vi.fn();
+		log.fd = null;
+		const openLog = vi.fn(() => log);
+		const spawn = vi.fn(() => successfulChild());
+		const adapter = createProcessAdapter({
+			backendExecutable: "C:\\OneTree\\backend\\OneTreeRuntime.exe",
+			environment: {},
+			logsDir: "C:\\OneTreeData\\logs",
+			mkdir: vi.fn(),
+			openLog,
+			spawn,
+		});
+
+		const backendPromise = adapter.startBackend();
+		await vi.waitFor(() => expect(openLog).toHaveBeenCalledOnce());
+		expect(spawn).not.toHaveBeenCalled();
+
+		log.fd = 42;
+		log.emit("open", 42);
+		await backendPromise;
+
+		expect(spawn).toHaveBeenCalledOnce();
+	});
+
 	it("starts and stops the worker process tree", async () => {
 		const workerChild = new EventEmitter();
 		workerChild.pid = 41;
@@ -248,7 +274,7 @@ describe("createProcessAdapter", () => {
 			.fn()
 			.mockReturnValueOnce(workerChild)
 			.mockImplementationOnce(() => successfulChild(42));
-		const log = { end: vi.fn() };
+		const log = { end: vi.fn(), fd: 1 };
 		const adapter = createProcessAdapter({
 			backendExecutable: "C:\\OneTree\\backend\\OneTreeRuntime.exe",
 			environment: {},
