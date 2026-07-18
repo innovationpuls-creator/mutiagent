@@ -109,7 +109,11 @@ describe("createEmbeddedDatabase", () => {
 			"SELECT 1 FROM pg_database WHERE datname = $1",
 			["onetree"],
 		);
-		expect(database.instance.createDatabase).toHaveBeenCalledWith("onetree");
+		expect(database.instance.client.query).toHaveBeenNthCalledWith(
+			2,
+			'CREATE DATABASE "onetree"',
+		);
+		expect(database.instance.createDatabase).not.toHaveBeenCalled();
 		expect(database.instance.client.end).toHaveBeenCalledOnce();
 	});
 
