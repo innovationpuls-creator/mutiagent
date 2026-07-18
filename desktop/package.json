@@ -24,10 +24,7 @@
 	"build": {
 		"appId": "cn.onetree.desktop",
 		"artifactName": "11017810作品.${ext}",
-		"asar": true,
-		"asarUnpack": [
-			"node_modules/@embedded-postgres/**/*"
-		],
+		"asar": false,
 		"directories": {
 			"output": "dist"
 		},
