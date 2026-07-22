@@ -3,6 +3,9 @@
 FROM node:22-alpine AS build
 
 ARG NPM_REGISTRY=https://registry.npmjs.org
+ARG VITE_ICP_BEIAN_NUMBER
+
+ENV VITE_ICP_BEIAN_NUMBER="$VITE_ICP_BEIAN_NUMBER"
 
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./

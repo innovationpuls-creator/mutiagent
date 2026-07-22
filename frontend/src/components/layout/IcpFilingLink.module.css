@@ -1,0 +1,22 @@
+.footer {
+	display: flex;
+	justify-content: center;
+	padding: var(--space-8) var(--space-24) var(--space-16);
+	color: var(--color-text-whisper);
+	font-family: var(--font-body);
+	font-size: var(--text-caption);
+	font-weight: var(--font-weight-regular);
+	line-height: 1.6;
+	text-align: center;
+}
+
+.link {
+	color: inherit;
+	text-decoration-color: var(--color-link-underline);
+	text-underline-offset: var(--space-4);
+}
+
+.link:hover,
+.link:focus-visible {
+	color: var(--color-secondary);
+}

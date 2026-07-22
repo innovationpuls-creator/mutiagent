@@ -98,7 +98,7 @@ describe("App routing", () => {
 		const link = await screen.findByRole("link", {
 			name: "粤ICP备2026100568号-1",
 		});
-		expect(link).toHaveAttribute("href", "https://beian.miit.gov.cn/");
+		expect(link.getAttribute("href")).toBe("https://beian.miit.gov.cn/");
 	});
 
 	it("switches from login to sprout when the location changes", async () => {

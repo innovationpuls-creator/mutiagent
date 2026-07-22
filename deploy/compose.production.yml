@@ -92,6 +92,7 @@ services:
       target: dist
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        VITE_ICP_BEIAN_NUMBER: ${VITE_ICP_BEIAN_NUMBER:-粤ICP备2026100568号-1}
     image: onetree-nginx:production
     restart: unless-stopped
     environment:

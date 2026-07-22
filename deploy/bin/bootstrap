@@ -18,6 +18,7 @@ ONETREE_SYSTEMD_UNIT_DIR="${ONETREE_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 REPOSITORY_URL="https://github.com/innovationpuls-creator/mutiagent.git"
 REPOSITORY_BRANCH="main"
 LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+VITE_ICP_BEIAN_NUMBER="粤ICP备2026100568号-1"
 DOCKER_OFFICIAL_REPOSITORY="https://download.docker.com/linux/ubuntu"
 DOCKER_TENCENT_REPOSITORY="https://mirrors.cloud.tencent.com/docker-ce/linux/ubuntu"
 DOCKER_GPG_SHA256="1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570"
@@ -539,6 +540,7 @@ write_production_env() {
     printf 'PUBLIC_IPV4=%s\n' "$PUBLIC_IPV4"
     printf 'MAINTENANCE_BYPASS_TOKEN=%s\n' "$MAINTENANCE_BYPASS_TOKEN"
     printf 'NGINX_CONFIG_MODE=%s\n' "$NGINX_CONFIG_MODE"
+    printf 'VITE_ICP_BEIAN_NUMBER=%s\n' "$VITE_ICP_BEIAN_NUMBER"
     write_literal_env_entry LETSENCRYPT_EMAIL "$LETSENCRYPT_EMAIL"
     write_literal_env_entry SMOKE_ACCOUNT "$SMOKE_ACCOUNT"
     write_literal_env_entry SMOKE_PASSWORD "$SMOKE_PASSWORD"
@@ -572,7 +574,8 @@ export_production_environment() {
     PUBLIC_IPV4 \
     SMOKE_ACCOUNT \
     SMOKE_PASSWORD \
-    TARGET_DATABASE_URL
+    TARGET_DATABASE_URL \
+    VITE_ICP_BEIAN_NUMBER
 }
 
 load_persisted_image_fallback() {

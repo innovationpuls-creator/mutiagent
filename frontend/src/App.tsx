@@ -10,6 +10,7 @@ import {
 import { AuthPage } from "./components/auth/AuthPage";
 import { BlankPage } from "./components/home/BlankPage";
 import { AdminLayout } from "./components/layout/AdminLayout";
+import { IcpFilingLink } from "./components/layout/IcpFilingLink";
 import { MainLayout } from "./components/layout/MainLayout";
 import { IcebreakerFlow } from "./components/learning/IcebreakerFlow";
 import { useAuth } from "./contexts/AuthContext";
@@ -163,6 +164,7 @@ export function App() {
 			<AiWidgetProvider>
 				<AnimatedRoutes />
 				<AppGlobalAiWidget />
+				<IcpFilingLink />
 			</AiWidgetProvider>
 		</BrowserRouter>
 	);

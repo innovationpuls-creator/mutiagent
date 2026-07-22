@@ -8,7 +8,7 @@ describe("IcpFilingLink", () => {
 	it("does not render an empty filing link", () => {
 		const { container } = render(<IcpFilingLink filingNumber="" />);
 
-		expect(container).toBeEmptyDOMElement();
+		expect(container.childElementCount).toBe(0);
 	});
 
 	it("renders the exact filing number and Ministry of Industry link", () => {
@@ -17,8 +17,8 @@ describe("IcpFilingLink", () => {
 		const link = screen.getByRole("link", {
 			name: "粤ICP备2026100568号-1",
 		});
-		expect(link).toHaveAttribute("href", "https://beian.miit.gov.cn/");
-		expect(link).toHaveAttribute("target", "_blank");
-		expect(link).toHaveAttribute("rel", "noreferrer");
+		expect(link.getAttribute("href")).toBe("https://beian.miit.gov.cn/");
+		expect(link.getAttribute("target")).toBe("_blank");
+		expect(link.getAttribute("rel")).toBe("noreferrer");
 	});
 });
