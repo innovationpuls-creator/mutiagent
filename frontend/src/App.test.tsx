@@ -50,6 +50,7 @@ vi.mock("./components/layout/MainLayout", () => ({
 afterEach(() => {
 	cleanup();
 	vi.unstubAllGlobals();
+	vi.unstubAllEnvs();
 	window.history.replaceState({}, "", "/");
 });
 
@@ -87,6 +88,19 @@ function renderApp() {
 }
 
 describe("App routing", () => {
+	it("mounts the configured ICP filing link globally", async () => {
+		vi.stubEnv("VITE_ICP_BEIAN_NUMBER", "粤ICP备2026100568号-1");
+		stubStoredAuth(false);
+		window.history.replaceState({}, "", "/login");
+
+		renderApp();
+
+		const link = await screen.findByRole("link", {
+			name: "粤ICP备2026100568号-1",
+		});
+		expect(link).toHaveAttribute("href", "https://beian.miit.gov.cn/");
+	});
+
 	it("switches from login to sprout when the location changes", async () => {
 		stubStoredAuth(true);
 		window.history.replaceState({}, "", "/login");
