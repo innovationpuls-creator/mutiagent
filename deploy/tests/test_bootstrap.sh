@@ -589,6 +589,7 @@ expected_keys = {
     "PUBLIC_IPV4",
     "MAINTENANCE_BYPASS_TOKEN",
     "NGINX_CONFIG_MODE",
+    "VITE_ICP_BEIAN_NUMBER",
     "LETSENCRYPT_EMAIL",
     "SMOKE_ACCOUNT",
     "SMOKE_PASSWORD",
@@ -610,6 +611,7 @@ assert entries["ALLOWED_ORIGINS"] == (
     "https://onetree.chat,https://www.onetree.chat,https://203.0.113.10"
 )
 assert entries["NGINX_CONFIG_MODE"] == "production-ip"
+assert entries["VITE_ICP_BEIAN_NUMBER"] == "粤ICP备2026100568号-1"
 assert entries["LLM_API_KEY"] == sys.argv[3]
 assert entries["LLM_MODEL"] == "qwen3.5-plus"
 assert entries["LETSENCRYPT_EMAIL"] == "ops@example.com"
@@ -707,6 +709,9 @@ assert build_args["PYTHON_PACKAGE_INDEX"] == (
 )
 assert services["nginx"]["build"]["args"]["NPM_REGISTRY"] == (
     "https://mirrors.cloud.tencent.com/npm/"
+)
+assert services["nginx"]["build"]["args"]["VITE_ICP_BEIAN_NUMBER"] == (
+    "粤ICP备2026100568号-1"
 )
 PY
 

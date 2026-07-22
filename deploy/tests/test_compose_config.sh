@@ -19,6 +19,7 @@ export ALLOWED_ORIGINS=https://onetree.chat,https://www.onetree.chat
 export PUBLIC_IPV4=192.0.2.10
 export MAINTENANCE_BYPASS_TOKEN=compose-test-maintenance-bypass
 export NGINX_CONFIG_MODE=production-ip
+export VITE_ICP_BEIAN_NUMBER=粤ICP备2026100568号-1
 export LETSENCRYPT_EMAIL=compose-test@example.com
 export SMOKE_ACCOUNT=18771701100
 export SMOKE_PASSWORD=compose-test-password
@@ -128,6 +129,7 @@ assert "frontend" not in services
 nginx_build = services["nginx"]["build"]
 assert nginx_build["target"] == "dist"
 assert nginx_build["args"]["NPM_REGISTRY"] == "https://registry.npmjs.org"
+assert nginx_build["args"]["VITE_ICP_BEIAN_NUMBER"] == "粤ICP备2026100568号-1"
 assert "/opt/onetree/frontend-dist" in " ".join(services["nginx"]["command"])
 assert services["nginx"]["environment"]["MAINTENANCE_BYPASS_TOKEN"] == (
     "compose-test-maintenance-bypass"
