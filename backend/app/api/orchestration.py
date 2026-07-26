@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from collections.abc import AsyncGenerator, Callable, Generator
 
@@ -33,6 +34,7 @@ from app.schemas import (
 SessionDependency = Callable[[], Generator[Session, None, None]]
 _is_outline_review_query = _rule_is_outline_review_query
 _is_learning_path_review_query = _rule_is_learning_path_review_query
+logger = logging.getLogger("app.api.orchestration")
 
 
 def _completed_user_profile(session: Session, user_uid: str) -> dict | None:
@@ -67,11 +69,18 @@ def _stream_error_message(
 
     from app.services.conversation_session_service import load_session
 
-    conv_session = load_session(session, session_id)
+    try:
+        conv_session = load_session(session, session_id)
+    except Exception:
+        logger.exception(
+            "chat_stream_error_session_lookup_failed",
+            extra={"session_id": session_id, "user_uid": user_uid},
+        )
+        return "对话请求失败，请稍后重试。"
     if conv_session is None or conv_session.user_uid != user_uid:
         return "会话不存在"
 
-    return str(exc) or "对话请求失败，请稍后重试。"
+    return "对话请求失败，请稍后重试。"
 
 
 def _append_turn_with_user_fallback(
@@ -89,6 +98,10 @@ def _append_turn_with_user_fallback(
             messages_to_dict([current_user_message, AIMessage(content=completed_text)]),
         )
     except Exception:
+        logger.exception(
+            "conversation_turn_persistence_failed",
+            extra={"session_id": session_id},
+        )
         try:
             append_messages(
                 session,
@@ -96,7 +109,10 @@ def _append_turn_with_user_fallback(
                 messages_to_dict([current_user_message]),
             )
         except Exception:
-            pass
+            logger.exception(
+                "conversation_turn_user_fallback_persistence_failed",
+                extra={"session_id": session_id},
+            )
         raise
 
 
@@ -114,7 +130,10 @@ def _append_user_message_safely(
             messages_to_dict([current_user_message]),
         )
     except Exception:
-        pass
+        logger.exception(
+            "conversation_user_message_persistence_failed",
+            extra={"session_id": session_id},
+        )
 
 
 def _sse(event: str, payload: dict) -> str:
@@ -267,23 +286,25 @@ def _section_display_title(section: dict) -> str:
     return f"{_chapter_prefix(section_id)}：{title.strip()}"
 
 
-def _format_course_outline_text(course_knowledge: dict) -> str:
+def _format_course_outline_text(course_knowledge: dict) -> str:  # noqa: C901
     course_name = str(course_knowledge.get("course_name", "")).strip()
     grade_year = str(course_knowledge.get("grade_year", "")).strip()
     lines = [f"课程大纲 · {grade_year}".strip(), course_name]
-    summary = course_knowledge.get("personalization_summary")
-    if isinstance(summary, str) and summary.strip():
-        lines.extend(["", "个性化安排", summary.strip()])
 
-    learning_sequence = course_knowledge.get("learning_sequence")
-    if isinstance(learning_sequence, list) and learning_sequence:
-        lines.extend(["", "推荐学习步骤"])
-        lines.extend(
-            str(item).strip() for item in learning_sequence if str(item).strip()
-        )
+    def append_personalization(summary: object) -> None:
+        if isinstance(summary, str) and summary.strip():
+            lines.extend(["", "个性化安排", summary.strip()])
 
-    sections = course_knowledge.get("sections")
-    if isinstance(sections, list) and sections:
+    def append_learning_sequence(learning_sequence: object) -> None:
+        if isinstance(learning_sequence, list) and learning_sequence:
+            lines.extend(["", "推荐学习步骤"])
+            lines.extend(
+                str(item).strip() for item in learning_sequence if str(item).strip()
+            )
+
+    def append_sections(sections: object) -> None:
+        if not isinstance(sections, list) or not sections:
+            return
         lines.extend(["", "章节展开"])
         for section in sections:
             if not isinstance(section, dict):
@@ -304,24 +325,23 @@ def _format_course_outline_text(course_knowledge: dict) -> str:
                 if joined_points:
                     lines.append(f"核心知识点：{joined_points}")
 
-    section_markdowns = course_knowledge.get("section_markdowns")
-    if isinstance(section_markdowns, dict) and section_markdowns:
-        lines.extend(["", "已生成教学文档"])
-        lines.extend(sorted(str(section_id) for section_id in section_markdowns.keys()))
+    def append_generated_resource(label: str, resources: object) -> None:
+        if isinstance(resources, dict) and resources:
+            lines.extend(["", label])
+            lines.extend(sorted(str(section_id) for section_id in resources.keys()))
 
-    section_video_links = course_knowledge.get("section_video_links")
-    if isinstance(section_video_links, dict) and section_video_links:
-        lines.extend(["", "已生成视频资源"])
-        lines.extend(
-            sorted(str(section_id) for section_id in section_video_links.keys())
-        )
-
-    section_html_animations = course_knowledge.get("section_html_animations")
-    if isinstance(section_html_animations, dict) and section_html_animations:
-        lines.extend(["", "已生成动画资源"])
-        lines.extend(
-            sorted(str(section_id) for section_id in section_html_animations.keys())
-        )
+    append_personalization(course_knowledge.get("personalization_summary"))
+    append_learning_sequence(course_knowledge.get("learning_sequence"))
+    append_sections(course_knowledge.get("sections"))
+    append_generated_resource(
+        "已生成教学文档", course_knowledge.get("section_markdowns")
+    )
+    append_generated_resource(
+        "已生成视频资源", course_knowledge.get("section_video_links")
+    )
+    append_generated_resource(
+        "已生成动画资源", course_knowledge.get("section_html_animations")
+    )
     return "\n".join(line for line in lines if line is not None)
 
 
@@ -401,6 +421,10 @@ async def _stream_chat_events(
                 break
 
     except Exception as exc:
+        logger.exception(
+            "chat_stream_failed",
+            extra={"session_id": session_id, "user_uid": user_uid},
+        )
         yield _sse(
             "error",
             {

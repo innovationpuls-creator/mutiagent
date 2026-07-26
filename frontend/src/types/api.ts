@@ -123,6 +123,23 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	"/api/health/deep": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Deep Readiness */
+		get: operations["deep_readiness_api_health_deep_get"];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	"/api/admin/accounts": {
 		parameters: {
 			query?: never;
@@ -2034,12 +2051,6 @@ export interface components {
 			password: string;
 			/** Confirm Password */
 			confirm_password: string;
-			/**
-			 * Role
-			 * @default student
-			 * @enum {string}
-			 */
-			role: "student" | "admin";
 			/** School */
 			school: string;
 			/** Major */
@@ -2684,6 +2695,26 @@ export interface operations {
 				};
 				content: {
 					"application/json": components["schemas"]["HealthResponse"];
+				};
+			};
+		};
+	};
+	deep_readiness_api_health_deep_get: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": unknown;
 				};
 			};
 		};

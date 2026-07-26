@@ -18,6 +18,7 @@ from app.models import (
     TextbookExtensionResource,
     TextbookSectionContent,
     UserYearLearningPath,
+    WorkerHeartbeat,
 )
 
 _KNOWLEDGE_BASE_TABLE_MODELS = (
@@ -29,6 +30,7 @@ _KNOWLEDGE_BASE_TABLE_MODELS = (
     KnowledgeGapFollow,
     KnowledgeGapNotice,
     KnowledgeBaseIngestionJob,
+    WorkerHeartbeat,
 )
 
 

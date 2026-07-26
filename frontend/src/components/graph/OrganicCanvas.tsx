@@ -1,6 +1,6 @@
 import dagre from "dagre";
 import { motion } from "framer-motion";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import BezierEdge from "./BezierEdge";
 import { NodeCard, type NodeStatus } from "./NodeCard";
 import "../../styles/organic-canvas.css";
@@ -77,7 +77,7 @@ export function OrganicCanvas({ nodes, edges }: OrganicCanvasProps) {
 		});
 
 		return () => observer.disconnect();
-	}, [nodes]); // Re-bind observer if node list changes
+	}, [nodeSizes]); // Re-bind observer if node list changes
 
 	// 2. Second Pass: Run Dagre Layout when we have sizes for all nodes
 	const layout = useMemo(() => {
@@ -111,7 +111,7 @@ export function OrganicCanvas({ nodes, edges }: OrganicCanvasProps) {
 	return (
 		<div className="organic-canvas-root">
 			{/* Underlying SVG Layer for Edges - pointer-events: none is in CSS */}
-			<svg className="organic-svg-layer">
+			<svg className="organic-svg-layer" aria-hidden="true">
 				<defs>
 					{/* Subtle Glow Filter for Active Paths */}
 					<filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
@@ -120,34 +120,33 @@ export function OrganicCanvas({ nodes, edges }: OrganicCanvasProps) {
 					</filter>
 				</defs>
 
-				{layout &&
-					layout.layoutEdges.map((edge) => {
-						const sourceNode = layout.layoutNodes.find(
-							(n) => n.id === edge.source,
-						);
-						const targetNode = layout.layoutNodes.find(
-							(n) => n.id === edge.target,
-						);
-						if (!sourceNode || !targetNode) return null;
+				{layout?.layoutEdges.map((edge) => {
+					const sourceNode = layout.layoutNodes.find(
+						(n) => n.id === edge.source,
+					);
+					const targetNode = layout.layoutNodes.find(
+						(n) => n.id === edge.target,
+					);
+					if (!sourceNode || !targetNode) return null;
 
-						// Anchor Offset Check: Strictly calculate right edge and left edge
-						const startX = sourceNode.x + sourceNode.width / 2;
-						const startY = sourceNode.y;
-						const endX = targetNode.x - targetNode.width / 2;
-						const endY = targetNode.y;
+					// Anchor Offset Check: Strictly calculate right edge and left edge
+					const startX = sourceNode.x + sourceNode.width / 2;
+					const startY = sourceNode.y;
+					const endX = targetNode.x - targetNode.width / 2;
+					const endY = targetNode.y;
 
-						return (
-							<BezierEdge
-								key={edge.id}
-								id={edge.id}
-								startX={startX}
-								startY={startY}
-								endX={endX}
-								endY={endY}
-								status={edge.status}
-							/>
-						);
-					})}
+					return (
+						<BezierEdge
+							key={edge.id}
+							id={edge.id}
+							startX={startX}
+							startY={startY}
+							endX={endX}
+							endY={endY}
+							status={edge.status}
+						/>
+					);
+				})}
 			</svg>
 
 			{/* Foreground Layer for Nodes */}

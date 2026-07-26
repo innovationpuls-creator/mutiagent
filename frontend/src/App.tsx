@@ -1,4 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { lazy, Suspense } from "react";
 import {
 	BrowserRouter,
 	Navigate,
@@ -7,24 +8,105 @@ import {
 	Routes,
 	useLocation,
 } from "react-router-dom";
-import { AuthPage } from "./components/auth/AuthPage";
-import { BlankPage } from "./components/home/BlankPage";
-import { AdminLayout } from "./components/layout/AdminLayout";
 import { IcpFilingLink } from "./components/layout/IcpFilingLink";
-import { MainLayout } from "./components/layout/MainLayout";
-import { IcebreakerFlow } from "./components/learning/IcebreakerFlow";
+import { AiWidgetProvider } from "./context/AiWidgetContext";
 import { useAuth } from "./contexts/AuthContext";
-import { AdminAccountsPage } from "./pages/admin/AdminAccountsPage";
-import { AdminDataPage } from "./pages/admin/AdminDataPage";
-import { AdminKnowledgeBasePage } from "./pages/admin/AdminKnowledgeBasePage";
-import { AdminProgramsPage } from "./pages/admin/AdminProgramsPage";
-import { BranchPage } from "./pages/branch/BranchPage";
-import { CanopyPage } from "./pages/canopy/CanopyPage";
-import { ScratchpadCanvas } from "./pages/canvas/ScratchpadCanvas";
-import { ForestQuizPage } from "./pages/forest/ForestQuizPage";
-import { LeafPage } from "./pages/leaf/LeafPage";
-import { SproutPage } from "./pages/SproutPage";
 import type { AuthRole } from "./types/auth";
+
+const AuthPage = lazy(() =>
+	import("./components/auth/AuthPage").then(({ AuthPage: Component }) => ({
+		default: Component,
+	})),
+);
+const BlankPage = lazy(() =>
+	import("./components/home/BlankPage").then(({ BlankPage: Component }) => ({
+		default: Component,
+	})),
+);
+const AdminLayout = lazy(() =>
+	import("./components/layout/AdminLayout").then(
+		({ AdminLayout: Component }) => ({
+			default: Component,
+		}),
+	),
+);
+const MainLayout = lazy(() =>
+	import("./components/layout/MainLayout").then(
+		({ MainLayout: Component }) => ({
+			default: Component,
+		}),
+	),
+);
+const IcebreakerFlow = lazy(() =>
+	import("./components/learning/IcebreakerFlow").then(
+		({ IcebreakerFlow: Component }) => ({ default: Component }),
+	),
+);
+const AdminAccountsPage = lazy(() =>
+	import("./pages/admin/AdminAccountsPage").then(
+		({ AdminAccountsPage: Component }) => ({ default: Component }),
+	),
+);
+const AdminDataPage = lazy(() =>
+	import("./pages/admin/AdminDataPage").then(
+		({ AdminDataPage: Component }) => ({
+			default: Component,
+		}),
+	),
+);
+const AdminKnowledgeBasePage = lazy(() =>
+	import("./pages/admin/AdminKnowledgeBasePage").then(
+		({ AdminKnowledgeBasePage: Component }) => ({ default: Component }),
+	),
+);
+const AdminProgramsPage = lazy(() =>
+	import("./pages/admin/AdminProgramsPage").then(
+		({ AdminProgramsPage: Component }) => ({ default: Component }),
+	),
+);
+const BranchPage = lazy(() =>
+	import("./pages/branch/BranchPage").then(({ BranchPage: Component }) => ({
+		default: Component,
+	})),
+);
+const CanopyPage = lazy(() =>
+	import("./pages/canopy/CanopyPage").then(({ CanopyPage: Component }) => ({
+		default: Component,
+	})),
+);
+const ScratchpadCanvas = lazy(() =>
+	import("./pages/canvas/ScratchpadCanvas").then(
+		({ ScratchpadCanvas: Component }) => ({ default: Component }),
+	),
+);
+const ForestQuizPage = lazy(() =>
+	import("./pages/forest/ForestQuizPage").then(
+		({ ForestQuizPage: Component }) => ({ default: Component }),
+	),
+);
+const LeafPage = lazy(() =>
+	import("./pages/leaf/LeafPage").then(({ LeafPage: Component }) => ({
+		default: Component,
+	})),
+);
+const SproutPage = lazy(() =>
+	import("./pages/SproutPage").then(({ SproutPage: Component }) => ({
+		default: Component,
+	})),
+);
+const GlobalAiWidget = lazy(() =>
+	import("./components/onboarding/GlobalAiWidget").then(
+		({ GlobalAiWidget: Component }) => ({ default: Component }),
+	),
+);
+
+function RouteLoadingFallback() {
+	return (
+		<div aria-live="polite" className="app-route-loading" role="status">
+			正在加载学习空间…
+		</div>
+	);
+}
 
 function homeForRole(role: AuthRole): string {
 	if (role === "admin") return "/admin/programs";
@@ -95,53 +177,58 @@ function AnimatedRoutes() {
 				}
 				style={{ minHeight: "100%" }}
 			>
-				<Routes location={location}>
-					<Route path="/login" element={<AuthPage />} />
-					<Route path="/onboarding" element={<IcebreakerFlow />} />
+				<Suspense fallback={<RouteLoadingFallback />}>
+					<Routes location={location}>
+						<Route path="/login" element={<AuthPage />} />
+						<Route path="/onboarding" element={<IcebreakerFlow />} />
 
-					<Route element={<ProtectedRoute />}>
-						<Route element={<RoleRoute allowedRoles={["admin"]} />}>
-							<Route element={<AdminLayout />}>
-								<Route path="/admin/programs" element={<AdminProgramsPage />} />
-								<Route path="/admin/accounts" element={<AdminAccountsPage />} />
-								<Route path="/admin/data" element={<AdminDataPage />} />
+						<Route element={<ProtectedRoute />}>
+							<Route element={<RoleRoute allowedRoles={["admin"]} />}>
+								<Route element={<AdminLayout />}>
+									<Route
+										path="/admin/programs"
+										element={<AdminProgramsPage />}
+									/>
+									<Route
+										path="/admin/accounts"
+										element={<AdminAccountsPage />}
+									/>
+									<Route path="/admin/data" element={<AdminDataPage />} />
+									<Route
+										path="/admin/knowledge-base"
+										element={<AdminKnowledgeBasePage />}
+									/>
+								</Route>
 								<Route
-									path="/admin/knowledge-base"
-									element={<AdminKnowledgeBasePage />}
+									path="/teacher"
+									element={<Navigate replace to="/admin/programs" />}
 								/>
 							</Route>
-							<Route
-								path="/teacher"
-								element={<Navigate replace to="/admin/programs" />}
-							/>
-						</Route>
 
-						<Route element={<RoleRoute allowedRoles={["student"]} />}>
-							<Route element={<MainLayout />}>
-								<Route path="/sprout" element={<SproutPage />} />
-								<Route path="/branch" element={<BranchPage />} />
-								<Route path="/leaf" element={<BranchPage />} />
-								<Route path="/leaf/:courseNodeId" element={<LeafPage />} />
-								<Route path="/forest" element={<BlankPage title="成林" />} />
-								<Route
-									path="/forest/:courseNodeId"
-									element={<ForestQuizPage />}
-								/>
-								<Route path="/canopy" element={<CanopyPage />} />
-								<Route path="/canvas" element={<ScratchpadCanvas />} />
+							<Route element={<RoleRoute allowedRoles={["student"]} />}>
+								<Route element={<MainLayout />}>
+									<Route path="/sprout" element={<SproutPage />} />
+									<Route path="/branch" element={<BranchPage />} />
+									<Route path="/leaf" element={<BranchPage />} />
+									<Route path="/leaf/:courseNodeId" element={<LeafPage />} />
+									<Route path="/forest" element={<BlankPage title="成林" />} />
+									<Route
+										path="/forest/:courseNodeId"
+										element={<ForestQuizPage />}
+									/>
+									<Route path="/canopy" element={<CanopyPage />} />
+									<Route path="/canvas" element={<ScratchpadCanvas />} />
+								</Route>
 							</Route>
 						</Route>
-					</Route>
 
-					<Route path="*" element={<Navigate replace to="/login" />} />
-				</Routes>
+						<Route path="*" element={<Navigate replace to="/login" />} />
+					</Routes>
+				</Suspense>
 			</motion.div>
 		</AnimatePresence>
 	);
 }
-
-import { GlobalAiWidget } from "./components/onboarding/GlobalAiWidget";
-import { AiWidgetProvider } from "./context/AiWidgetContext";
 
 function AppGlobalAiWidget() {
 	const location = useLocation();
@@ -153,7 +240,11 @@ function AppGlobalAiWidget() {
 	if (isHiddenPath) {
 		return null;
 	}
-	return <GlobalAiWidget />;
+	return (
+		<Suspense fallback={null}>
+			<GlobalAiWidget />
+		</Suspense>
+	);
 }
 
 export function App() {

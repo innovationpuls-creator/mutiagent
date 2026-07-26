@@ -17,6 +17,11 @@ function TermLine({
 	text: string;
 }) {
 	const full = prefix + text;
+	const characters = Array.from(full, (character, position) => ({
+		id: `${id}-${position}`,
+		character,
+		isPrefix: position < prefix.length,
+	}));
 	return (
 		<div
 			id={id}
@@ -29,23 +34,22 @@ function TermLine({
 				alignItems: "center",
 			}}
 		>
-			{full.split("").map((c, i) => (
+			{characters.map(({ character, id: characterId, isPrefix }) => (
 				<span
-					key={i}
+					key={characterId}
 					className={`term-char term-char-${id}`}
 					style={{
 						opacity: 0,
 						display: "inline-block",
 						fontFamily: "var(--font-mono, monospace)",
 						fontSize: "10px",
-						color:
-							i < prefix.length
-								? "oklch(70% 0.06 45)"
-								: "var(--color-text-secondary)",
+						color: isPrefix
+							? "oklch(70% 0.06 45)"
+							: "var(--color-text-secondary)",
 						letterSpacing: "0.01em",
 					}}
 				>
-					{c === " " ? "\u00A0" : c}
+					{character === " " ? "\u00A0" : character}
 				</span>
 			))}
 		</div>
@@ -399,7 +403,9 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 		return () => {
 			alive = false;
 		};
-	}, [animate, setStageIndex, reduceMotion]);
+		// scope is a stable ref from useAnimate; only its mutable current is read.
+		// biome-ignore lint/correctness/useExhaustiveDependencies: adding scope.current would not subscribe the effect to ref mutations.
+	}, [animate, setStageIndex, reduceMotion, scope.current]);
 
 	/* ── SVG 路径计算 ── */
 	const { user: u, planner: p, research: r, path: pe } = NODES;
@@ -552,7 +558,7 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 						{/* 任务拆解清单 */}
 						{TASKS.map((t, i) => (
 							<motion.div
-								key={i}
+								key={t}
 								className="task-item hide-on-reset"
 								style={{
 									opacity: 0,
@@ -672,9 +678,9 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 						pointerEvents: "none",
 					}}
 				>
-					{SUBS.map((s, i) => (
+					{SUBS.map((s) => (
 						<line
-							key={`sl-${i}`}
+							key={`sl-${s.id}`}
 							className="sub-line-path hide-on-reset"
 							x1={0}
 							y1={0}
@@ -790,9 +796,9 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 						stroke="var(--color-intent-warning)"
 						strokeWidth={2}
 					/>
-					{BRANCHES.map((b, i) => (
+					{BRANCHES.map((b) => (
 						<motion.path
-							key={`tb-${i}`}
+							key={`tb-${b.id}`}
 							className="tree-line tree-branch hide-on-reset"
 							d={`M ${TRUNK_DX} 0 L ${b.dx} ${b.dy}`}
 							fill="none"

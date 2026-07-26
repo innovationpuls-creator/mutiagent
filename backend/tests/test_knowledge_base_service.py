@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.error import HTTPError
+from urllib.request import Request
 
 import pytest
 from pydantic import ValidationError
@@ -77,6 +79,43 @@ def _knowledge_engine(tmp_path: Path):
     )
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/textbook.pdf",
+        "http://[::1]/textbook.pdf",
+        "http://10.0.0.1/textbook.pdf",
+        "http://169.254.169.254/latest/meta-data",
+        "http://192.0.2.1/textbook.pdf",
+    ],
+)
+def test_validated_textbook_url_rejects_non_public_networks(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "_is_reachable_textbook_url",
+        lambda value: True,
+    )
+
+    assert knowledge_base_service._validated_textbook_url(url) == ""
+
+
+def test_safe_textbook_redirect_handler_rejects_non_public_target() -> None:
+    handler = knowledge_base_service._SafeTextbookRedirectHandler()
+    request = Request("https://public.example/textbook.pdf")
+
+    with pytest.raises(HTTPError):
+        handler.redirect_request(
+            request,
+            None,
+            302,
+            "Found",
+            {},
+            "http://127.0.0.1/internal.pdf",
+        )
+
+
 def test_search_real_textbook_sources_rejects_non_textbook_urls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -116,6 +155,9 @@ def test_search_real_textbook_sources_rejects_non_textbook_urls(
         knowledge_base_service,
         "_search_real_textbook_sources_with_llm",
         lambda topic, limit: raw_results,
+    )
+    monkeypatch.setattr(
+        knowledge_base_service, "_is_safe_textbook_url", lambda url: True
     )
     monkeypatch.setattr(
         knowledge_base_service,
@@ -172,6 +214,9 @@ def test_search_real_textbook_sources_rejects_unparseable_reachable_url(
         lambda topic, limit: raw_results,
     )
     monkeypatch.setattr(
+        knowledge_base_service, "_is_safe_textbook_url", lambda url: True
+    )
+    monkeypatch.setattr(
         knowledge_base_service,
         "_is_reachable_textbook_url",
         lambda url: True,
@@ -207,6 +252,9 @@ def test_search_real_textbook_sources_uses_known_open_textbook_when_llm_is_empty
         knowledge_base_service,
         "_search_real_textbook_sources_with_llm",
         lambda topic, limit: [],
+    )
+    monkeypatch.setattr(
+        knowledge_base_service, "_is_safe_textbook_url", lambda url: True
     )
     monkeypatch.setattr(
         knowledge_base_service,
@@ -343,6 +391,9 @@ def test_search_real_textbook_sources_rejects_agent_development_docs(
         lambda topic, limit: raw_results,
     )
     monkeypatch.setattr(
+        knowledge_base_service, "_is_safe_textbook_url", lambda url: True
+    )
+    monkeypatch.setattr(
         knowledge_base_service,
         "_is_reachable_textbook_url",
         lambda url: url in reachable_urls,
@@ -403,6 +454,9 @@ def test_search_real_textbook_sources_returns_five_known_open_textbooks(
         knowledge_base_service,
         "_search_real_textbook_sources_with_llm",
         lambda topic, limit: [],
+    )
+    monkeypatch.setattr(
+        knowledge_base_service, "_is_safe_textbook_url", lambda url: True
     )
     monkeypatch.setattr(
         knowledge_base_service,
@@ -472,6 +526,9 @@ def test_search_real_textbook_sources_skips_parse_errors(
         knowledge_base_service,
         "_search_real_textbook_sources_with_llm",
         lambda topic, limit: raw_results,
+    )
+    monkeypatch.setattr(
+        knowledge_base_service, "_is_safe_textbook_url", lambda url: True
     )
     monkeypatch.setattr(
         knowledge_base_service,

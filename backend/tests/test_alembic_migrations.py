@@ -41,7 +41,7 @@ def test_empty_schema_upgrades_to_alembic_head(tmp_path: Path) -> None:
     assert table_names == set(SQLModel.metadata.tables) | {"alembic_version"}
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0003_repair_ingestion_job_leases"
+        assert revision.scalar_one() == "0004_worker_heartbeats"
 
 
 def test_alembic_prefers_database_url_environment(
@@ -63,7 +63,7 @@ def test_alembic_prefers_database_url_environment(
     engine = create_engine(database_url)
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0003_repair_ingestion_job_leases"
+        assert revision.scalar_one() == "0004_worker_heartbeats"
 
 
 def test_programmatic_alembic_config_precedes_database_url_environment(
@@ -85,7 +85,7 @@ def test_programmatic_alembic_config_precedes_database_url_environment(
     engine = create_engine(database_url)
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0003_repair_ingestion_job_leases"
+        assert revision.scalar_one() == "0004_worker_heartbeats"
 
 
 def test_ingestion_job_lease_migration_preserves_existing_job(
@@ -176,6 +176,28 @@ def test_head_upgrade_repairs_missing_ingestion_job_lease_columns(
         for column in inspect(engine).get_columns("knowledgebaseingestionjob")
     }
     assert lease_columns <= actual_columns
+
+
+def test_worker_heartbeat_migration_upgrades_previous_head(tmp_path: Path) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    database_url = postgresql_test_url(tmp_path, "alembic-worker-heartbeat")
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+    command.upgrade(config, "0003_repair_ingestion_job_leases")
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE workerheartbeat"))
+    assert "workerheartbeat" not in inspect(engine).get_table_names()
+
+    command.upgrade(config, "head")
+
+    columns = {
+        column["name"] for column in inspect(engine).get_columns("workerheartbeat")
+    }
+    assert columns == {"worker_name", "worker_id", "last_heartbeat_at"}
 
 
 def test_baseline_unversioned_schema_upgrades_through_ingestion_migration(

@@ -324,9 +324,7 @@ def test_unpublish_textbook_route_sets_unpublished_state_and_timestamp(
 def test_course_outline_generation_blocks_unpublished_source_textbook(
     tmp_path: Path,
 ) -> None:
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "course-outline-unpublished")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "course-outline-unpublished"))
     set_engine(engine)
     init_db(engine)
 

@@ -59,7 +59,7 @@ def register_user(session: Session, payload: RegisterRequest) -> AuthResponse:
         uid=str(uuid4()),
         username=payload.username,
         identifier=payload.identifier,
-        role=payload.role,
+        role="student",
         school=payload.school,
         major=payload.major,
         class_name=payload.class_name,

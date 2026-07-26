@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HandwritingCanvas } from "./HandwritingCanvas";
 
@@ -38,6 +44,31 @@ describe("HandwritingCanvas", () => {
 		const closeBtn = screen.getByRole("button", { name: /关闭/i });
 		fireEvent.click(closeBtn);
 		expect(onClose).toHaveBeenCalled();
+	});
+
+	it("keeps the dialog accessible, adapts the canvas width, and closes with Escape", async () => {
+		const onClose = vi.fn();
+		const { container } = render(
+			<HandwritingCanvas onSave={vi.fn()} onClose={onClose} />,
+		);
+
+		expect(
+			screen
+				.getByRole("dialog", { name: "手写笔记/草图" })
+				.getAttribute("aria-modal"),
+		).toBe("true");
+		const canvas = container.querySelector("canvas");
+		expect(canvas).not.toBeNull();
+		expect(canvas?.getAttribute("style")).not.toContain("width: 480px");
+
+		await waitFor(() => {
+			expect(document.activeElement).toBe(
+				screen.getByRole("button", { name: "关闭" }),
+			);
+		});
+
+		fireEvent.keyDown(document, { key: "Escape" });
+		expect(onClose).toHaveBeenCalledTimes(1);
 	});
 
 	it("should trigger onSave with canvas data when export button is clicked", () => {

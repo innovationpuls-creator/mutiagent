@@ -173,7 +173,14 @@ export function useChatSession(
 		return () => {
 			cancelled = true;
 		};
-	}, [storeSessionId, token, userUid, onSessionRecovered, clearSessionFromUrl]);
+	}, [
+		storeSessionId,
+		token,
+		userUid,
+		onSessionRecovered,
+		clearSessionFromUrl,
+		recoveryMetaRef,
+	]);
 
 	useEffect(() => {
 		if (!storeSessionId) return;

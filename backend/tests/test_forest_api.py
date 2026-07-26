@@ -394,7 +394,7 @@ def test_stream_forest_ai_api_returns_sse_chunks(tmp_path: Path) -> None:
 
 def test_read_forest_quiz_session_with_string_options(tmp_path: Path) -> None:
     database_url = postgresql_test_url(tmp_path, "forest-read-options")
-    client = TestClient(create_app(database_url=database_url))
+    _ = TestClient(create_app(database_url=database_url))
     user_uid = _seed_forest_data(database_url)
     engine = create_engine(database_url)
 

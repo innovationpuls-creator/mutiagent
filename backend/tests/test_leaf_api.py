@@ -251,13 +251,27 @@ def test_leaf_course_returns_matched_published_program_course(
             "identifier": "leaf-program-admin@example.com",
             "password": "test-password-123",
             "confirm_password": "test-password-123",
-            "role": "admin",
             "school": "测试大学",
             "major": "软件工程",
             "class_name": "三班",
         },
     )
     assert admin_response.status_code == 201, admin_response.text
+    with Session(create_engine(database_url)) as session:
+        admin = session.exec(
+            select(User).where(User.identifier == "leaf-program-admin@example.com")
+        ).one()
+        admin.role = "admin"
+        session.add(admin)
+        session.commit()
+    admin_response = client.post(
+        "/api/auth/login",
+        json={
+            "account": "leaf-program-admin@example.com",
+            "password": "test-password-123",
+        },
+    )
+    assert admin_response.status_code == 200, admin_response.text
     student_token, _ = _register(client, "leaf-program-student@example.com")
 
     publish_response = client.post(

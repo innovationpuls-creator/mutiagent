@@ -293,7 +293,7 @@ export function ChatCard({
 		if (isSubmitDisabled) return;
 
 		const lines = ["画像表单提交："];
-		message.question_form!.questions.forEach((q) => {
+		message.question_form?.questions.forEach((q) => {
 			const val = formValues[q.field_name];
 			if (q.input_type === "multi_choice") {
 				const arr = Array.isArray(val) ? [...val] : [];
@@ -328,7 +328,7 @@ export function ChatCard({
 
 	const renderQuestionForm = () => {
 		const form = message.question_form;
-		if (!form || !form.questions || form.questions.length === 0) return null;
+		if (!form?.questions || form.questions.length === 0) return null;
 
 		return (
 			<div className="question-form">
@@ -351,10 +351,10 @@ export function ChatCard({
 
 						return (
 							<div key={q.field_name} className="form-question-group">
-								<label className="form-question-label">
+								<p className="form-question-label">
 									{q.label}
 									{q.required && <span className="required-star">*</span>}
-								</label>
+								</p>
 								{q.description && (
 									<span className="form-field-desc">{q.description}</span>
 								)}
@@ -440,6 +440,7 @@ export function ChatCard({
 							<div className="sprout-avatar-container">
 								<div className="sprout-orb">
 									<svg
+										aria-hidden="true"
 										width="40"
 										height="40"
 										viewBox="0 0 24 24"
@@ -478,13 +479,13 @@ export function ChatCard({
 							variant="compact"
 							enableMath={true}
 						/>
-						<div
+						<section
 							className="profile-meter"
 							aria-label={`已确认 ${confirmed.length} 项画像信息`}
 						>
 							<span>已确认 {confirmed.length} 项</span>
 							<span>可继续补充或追问</span>
-						</div>
+						</section>
 					</div>
 
 					<div className="profile-grid">
@@ -568,8 +569,7 @@ export function ChatCard({
 						</p>
 					)}
 
-					{message.question_form &&
-					message.question_form.questions &&
+					{message.question_form?.questions &&
 					message.question_form.questions.length > 0 ? (
 						renderQuestionForm()
 					) : (
@@ -577,9 +577,9 @@ export function ChatCard({
 							<section className="question-panel">
 								<h3>接下来</h3>
 								<div className="question-list">
-									{questions.map((question, i) => (
+									{questions.map((question) => (
 										<MarkdownRenderer
-											key={i}
+											key={question}
 											content={question}
 											variant="compact"
 											enableMath={true}

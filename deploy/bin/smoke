@@ -159,6 +159,28 @@ if (
     fail "readiness response"
 fi
 
+deep_response="$(
+    curl "${curl_common[@]}" \
+        --header "@${maintenance_header_file}" \
+        --connect-to "$https_connect" \
+        "${https_url}/api/health/deep"
+)" || fail "deep readiness request"
+if ! printf '%s' "$deep_response" | python -c '
+import json
+import sys
+
+payload = json.load(sys.stdin)
+if (
+    not isinstance(payload, dict)
+    or payload.get("status") != "ok"
+    or payload.get("database") != "connected"
+    or payload.get("knowledge_base_worker") != "connected"
+):
+    raise SystemExit(1)
+' 2>/dev/null; then
+    fail "deep readiness response"
+fi
+
 if ! curl "${curl_common[@]}" \
     --output /dev/null \
     --header "@${maintenance_header_file}" \

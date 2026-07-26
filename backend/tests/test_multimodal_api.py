@@ -1,21 +1,52 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi.testclient import TestClient
 from langchain_core.messages import HumanMessage
+from pydantic import ValidationError
 
-from app.schemas import ChatMessageRequest
+from app.main import create_app
+from app.orchestration.agents.quiz import stream_forest_ai_response
+from app.schemas import ChatMessageRequest, ForestAiStreamRequest
 from tests.postgres import postgresql_test_url
+from tests.test_forest_api import _auth_headers, _seed_forest_data
 from tests.test_orchestration_api import _auth_header, _register_user, chat_app
+
+VALID_IMAGE_DATA_URL = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
 
 
 def test_multimodal_request_schema():
     req = ChatMessageRequest(
         session_id="test-session",
         message="explain this drawing",
-        image_attachment="data:image/png;base64,iVBORw0KGgoAAAANS",
+        image_attachment=VALID_IMAGE_DATA_URL,
     )
     assert req.image_attachment is not None
     assert "base64" in req.image_attachment
+
+
+def test_multimodal_request_rejects_unsupported_or_oversized_images():
+    with pytest.raises(ValidationError):
+        ChatMessageRequest(
+            session_id="test-session",
+            message="explain this drawing",
+            image_attachment="data:text/html;base64,SGVsbG8=",
+        )
+
+    with pytest.raises(ValidationError):
+        ForestAiStreamRequest(
+            course_node_id="course",
+            chapter_id="chapter",
+            message="explain this drawing",
+            active_question_context={
+                "course_node_id": "course",
+                "chapter_id": "chapter",
+            },
+            image_attachment="data:image/png;base64," + ("A" * (12 * 1024 * 1024)),
+        )
 
 
 @patch("app.api.orchestration.stream_orchestration_events")
@@ -39,7 +70,7 @@ def test_send_message_multimodal_stream(mock_stream, tmp_path):
         )
         session_id = start_resp.json()["session_id"]
 
-        image_data = "data:image/png;base64,iVBORw0KGgoAAAANS"
+        image_data = VALID_IMAGE_DATA_URL
         response = client.post(
             "/api/chat/message",
             json={
@@ -66,15 +97,6 @@ def test_send_message_multimodal_stream(mock_stream, tmp_path):
         }
 
 
-from unittest.mock import MagicMock
-
-from fastapi.testclient import TestClient
-
-from app.main import create_app
-from app.orchestration.agents.quiz import stream_forest_ai_response
-from tests.test_forest_api import _auth_headers, _seed_forest_data
-
-
 @pytest.mark.anyio
 async def test_stream_forest_ai_response_multimodal():
     mock_llm = MagicMock()
@@ -95,7 +117,7 @@ async def test_stream_forest_ai_response_multimodal():
         mock_llm,
         message="what is this?",
         context={"question": "some-question"},
-        image_attachment="data:image/png;base64,xyz",
+        image_attachment=VALID_IMAGE_DATA_URL,
     ):
         chunks.append(chunk)
 
@@ -109,7 +131,7 @@ async def test_stream_forest_ai_response_multimodal():
     assert "what is this?" in prompt[0]["text"]
     assert prompt[1] == {
         "type": "image_url",
-        "image_url": {"url": "data:image/png;base64,xyz"},
+        "image_url": {"url": VALID_IMAGE_DATA_URL},
     }
 
     # 2. Test without image_attachment (fallback/existing text prompt logic)
@@ -160,11 +182,11 @@ def test_stream_forest_ai_api_multimodal(tmp_path):
                     "answer": None,
                     "grading_result": None,
                 },
-                "image_attachment": "data:image/png;base64,xyz",
+                "image_attachment": VALID_IMAGE_DATA_URL,
             },
             headers=_auth_headers(user_uid),
         )
 
     assert response.status_code == 200
     assert "Forest AI response chunk" in response.text
-    assert captured_kwargs.get("image_attachment") == "data:image/png;base64,xyz"
+    assert captured_kwargs.get("image_attachment") == VALID_IMAGE_DATA_URL

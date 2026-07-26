@@ -16,6 +16,9 @@ from app.services.knowledge_base_service import (
     IngestionJobOwnershipLost,
     run_claimed_textbook_source_ingestion,
 )
+from app.services.worker_health_service import (
+    record_worker_heartbeat,
+)
 
 LEASE_DURATION = timedelta(minutes=10)
 logger = logging.getLogger("app.worker.knowledge_base")
@@ -75,6 +78,7 @@ def run_worker(poll_seconds: float) -> None:
     worker_id = f"worker-{uuid.uuid4().hex}"
     while True:
         with Session(get_engine()) as session:
+            _record_worker_heartbeat_safely(session, worker_id)
             job = claim_next_ingestion_job(
                 session, worker_id, datetime.now(timezone.utc)
             )
@@ -178,6 +182,7 @@ class _LeaseHeartbeat:
                         datetime.now(timezone.utc),
                         self._lease_duration,
                     )
+                    _record_worker_heartbeat_safely(session, self._worker_id)
                 if not renewed:
                     return
             except Exception:
@@ -186,6 +191,16 @@ class _LeaseHeartbeat:
                     extra={"job_id": self._job_id},
                 )
                 return
+
+
+def _record_worker_heartbeat_safely(session: Session, worker_id: str) -> None:
+    try:
+        record_worker_heartbeat(session, worker_id, datetime.now(timezone.utc))
+    except Exception:
+        logger.exception(
+            "knowledge_base_worker_heartbeat_write_failed",
+            extra={"worker_id": worker_id},
+        )
 
 
 def _mark_exhausted_job_failed(

@@ -1,4 +1,6 @@
 import { motion } from "framer-motion";
+import { useRef } from "react";
+import { useDialogAccessibility } from "../../../components/ui/useDialogAccessibility";
 import type { AuthUser } from "../../../types/auth";
 
 export type DeleteTarget =
@@ -18,6 +20,13 @@ export function DeleteConfirmModal({
 	onConfirm,
 	busy,
 }: DeleteConfirmModalProps) {
+	const titleRef = useRef<HTMLHeadingElement>(null);
+	useDialogAccessibility({
+		isOpen: Boolean(deleteTarget),
+		onClose,
+		initialFocusRef: titleRef,
+	});
+
 	if (!deleteTarget) return null;
 
 	const count =
@@ -31,8 +40,15 @@ export function DeleteConfirmModal({
 			exit={{ opacity: 0 }}
 			transition={{ duration: 0.18 }}
 		>
-			<section className="admin-modal" aria-label="确认删除账号">
-				<h2>确认删除 {count} 个账号？</h2>
+			<section
+				aria-labelledby="delete-confirm-title"
+				aria-modal="true"
+				className="admin-modal"
+				role="dialog"
+			>
+				<h2 id="delete-confirm-title" ref={titleRef} tabIndex={-1}>
+					确认删除 {count} 个账号？
+				</h2>
 				<p>删除会移除账号及该账号关联的学习数据，此操作不可撤销。</p>
 				<footer>
 					<button

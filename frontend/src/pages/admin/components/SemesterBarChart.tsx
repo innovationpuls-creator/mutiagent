@@ -18,7 +18,11 @@ export function SemesterBarChart({ data, type }: SemesterBarChartProps) {
 	);
 
 	return (
-		<svg viewBox="0 0 400 150" className="chart-svg-container">
+		<svg
+			viewBox="0 0 400 150"
+			className="chart-svg-container"
+			aria-hidden="true"
+		>
 			{/* 坐标轴 */}
 			<line x1="30" y1="120" x2="380" y2="120" className="chart-axis-line" />
 

@@ -138,6 +138,7 @@ assert services["smoke"]["environment"]["MAINTENANCE_BYPASS_TOKEN"] == (
     "compose-test-maintenance-bypass"
 )
 assert services["smoke"]["environment"]["NGINX_CONFIG_MODE"] == "production-ip"
+assert services["smoke"]["depends_on"]["worker"]["condition"] == "service_started"
 
 upload_dir = services["backend"]["environment"]["KNOWLEDGE_BASE_UPLOAD_DIR"]
 upload_volume_target = str(Path(upload_dir).parent)

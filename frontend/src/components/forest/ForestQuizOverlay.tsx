@@ -407,7 +407,7 @@ export function ForestQuizOverlay({
 						{/* Weaknesses Adaptive Section */}
 						{weaknesses.length > 0 && (
 							<div className="forest-weaknesses-card">
-								<h3>// 薄弱方向收录</h3>
+								<h3>薄弱方向收录</h3>
 								<p>
 									AI
 									已根据你本次错题定位以下知识点，并将在后续教学资源中自动侧重：

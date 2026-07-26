@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { useMermaid } from "./hooks/useMermaid";
 import { usePrism } from "./hooks/usePrism";
+import { sanitizeRenderedHtml } from "./sanitize";
 import { copyToClipboard } from "./utils/clipboard";
 import { extractLanguage } from "./utils/highlight";
 import "katex/dist/katex.min.css";
@@ -34,11 +35,7 @@ function getTextContent(children: React.ReactNode): string {
 	React.Children.forEach(children, (child) => {
 		if (typeof child === "string" || typeof child === "number") {
 			text += child;
-		} else if (
-			React.isValidElement(child) &&
-			child.props &&
-			child.props.children
-		) {
+		} else if (React.isValidElement(child) && child.props?.children) {
 			text += getTextContent(child.props.children);
 		}
 	});
@@ -52,7 +49,7 @@ function cleanAlertPrefix(children: React.ReactNode): React.ReactNode {
 				.replace(/\[!(NOTE|IMPORTANT|WARNING|TIP|CAUTION)\]/g, "")
 				.trim();
 		}
-		if (React.isValidElement(child) && child.props && child.props.children) {
+		if (React.isValidElement(child) && child.props?.children) {
 			return React.cloneElement(
 				child as React.ReactElement<{ children?: React.ReactNode }>,
 				{
@@ -85,6 +82,7 @@ function renderCodeBlockFrame(
 			<div className="code-block-header">
 				<span className="code-block-lang">{language || "code"}</span>
 				<button
+					type="button"
 					className="code-block-copy"
 					aria-label={copyAriaLabel}
 					onClick={(e) => copyToClipboard(codeText, e.currentTarget)}
@@ -199,7 +197,7 @@ const markdownComponents: Components = {
 		);
 	},
 	hr: ({ node, ...props }) => <hr {...props} />,
-	img: ({ node, ...props }) => <img {...props} />,
+	img: ({ node, alt, ...props }) => <img alt={alt ?? ""} {...props} />,
 	dl: ({ node, ...props }) => <dl {...props} />,
 	dt: ({ node, ...props }) => <dt {...props} />,
 	dd: ({ node, ...props }) => <dd {...props} />,
@@ -245,7 +243,8 @@ function MermaidDiagram({
 	return (
 		<div
 			className="mermaid-container"
-			dangerouslySetInnerHTML={{ __html: svg }}
+			// biome-ignore lint/security/noDangerouslySetInnerHtml: Mermaid output is sanitized by DOMPurify immediately before insertion.
+			dangerouslySetInnerHTML={{ __html: sanitizeRenderedHtml(svg) }}
 		/>
 	);
 }
@@ -260,7 +259,7 @@ function HighlightedCodeBlock({
 	highlight: (code: string, language: string) => Promise<string>;
 }) {
 	const [highlightedCode, setHighlightedCode] = useState<string>(code);
-	const [loading, setLoading] = useState(true);
+	const [_loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
@@ -291,7 +290,12 @@ function HighlightedCodeBlock({
 		language,
 		code,
 		<pre>
-			<code dangerouslySetInnerHTML={{ __html: highlightedCode }} />
+			<code
+				// biome-ignore lint/security/noDangerouslySetInnerHtml: Prism output is sanitized by DOMPurify immediately before insertion.
+				dangerouslySetInnerHTML={{
+					__html: sanitizeRenderedHtml(highlightedCode),
+				}}
+			/>
 		</pre>,
 	);
 }

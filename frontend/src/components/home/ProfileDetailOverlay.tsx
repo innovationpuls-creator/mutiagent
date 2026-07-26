@@ -80,6 +80,7 @@ export function ProfileDetailOverlay({
 				<div className="overlay-header">
 					<h2 className="overlay-title">我的完整画像</h2>
 					<button
+						type="button"
 						className="overlay-close-btn"
 						onClick={onClose}
 						aria-label="关闭"
@@ -93,6 +94,7 @@ export function ProfileDetailOverlay({
 							strokeWidth="2"
 							strokeLinecap="round"
 							strokeLinejoin="round"
+							aria-hidden="true"
 						>
 							<line x1="18" y1="6" x2="6" y2="18"></line>
 							<line x1="6" y1="6" x2="18" y2="18"></line>

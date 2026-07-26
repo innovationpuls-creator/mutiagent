@@ -415,7 +415,7 @@ def test_branch_overview_falls_back_to_builtin_grade_name_when_grade_plan_name_i
     assert body["years"]["year_2"]["grade_name"] == "大二"
 
 
-def test_branch_overview_marks_complete_outline_payload_without_sections_as_outline_content(
+def test_branch_overview_marks_complete_outline_payload_without_sections_as_outline_content(  # noqa: E501
     tmp_path: Path,
 ) -> None:
     database_url = postgresql_test_url(tmp_path, "branch-empty-sections-outline")
@@ -511,7 +511,7 @@ def test_branch_overview_ignores_legacy_sections_only_outline_payload(
     ]
 
 
-def test_branch_overview_marks_last_course_as_completed_when_current_progress_is_completed(
+def test_branch_overview_marks_last_course_as_completed_when_current_progress_is_completed(  # noqa: E501
     tmp_path: Path,
 ) -> None:
     database_url = postgresql_test_url(tmp_path, "branch-completed-last")

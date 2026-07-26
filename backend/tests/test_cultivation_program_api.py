@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, create_engine, select
 
 from app.main import create_app
-from app.models import UserYearLearningPath
+from app.models import User, UserYearLearningPath
 from tests.postgres import postgresql_test_url
 
 
@@ -12,14 +12,16 @@ def make_client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setenv("ADMIN_USERNAME", "admin")
     monkeypatch.setenv("ADMIN_IDENTIFIER", "13297540721")
     monkeypatch.setenv("ADMIN_PASSWORD", "123456")
-    return TestClient(
-        create_app(database_url=postgresql_test_url(tmp_path, "program-test"))
-    )
+    database_url = postgresql_test_url(tmp_path, "program-test")
+    app = create_app(database_url=database_url)
+    app.state.test_database_url = database_url
+    return TestClient(app)
 
 
 def register(
     client: TestClient, identifier: str, role: str, class_name: str = "一班"
 ) -> dict:
+    assert role in {"student", "admin"}
     response = client.post(
         "/api/auth/register",
         json={
@@ -27,14 +29,28 @@ def register(
             "identifier": identifier,
             "password": "program-password-123",
             "confirm_password": "program-password-123",
-            "role": role,
             "school": "南山大学",
             "major": "软件工程",
             "class_name": class_name,
         },
     )
     assert response.status_code == 201, response.text
-    return response.json()
+    if role == "student":
+        return response.json()
+
+    engine = create_engine(client.app.state.test_database_url)
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.identifier == identifier)).one()
+        user.role = "admin"
+        session.add(user)
+        session.commit()
+
+    login_response = client.post(
+        "/api/auth/login",
+        json={"account": identifier, "password": "program-password-123"},
+    )
+    assert login_response.status_code == 200, login_response.text
+    return login_response.json()
 
 
 def auth_header(auth_response: dict) -> dict:

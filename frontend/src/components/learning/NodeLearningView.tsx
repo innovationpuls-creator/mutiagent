@@ -61,7 +61,7 @@ export function NodeLearningView({
 			exit={{ borderRadius: 32 }}
 			transition={{ duration: 0.6, ease: [0.25, 1, 0.5, 1] }}
 		>
-			<button className="learning-close-btn" onClick={onClose}>
+			<button type="button" className="learning-close-btn" onClick={onClose}>
 				<X size={20} />
 			</button>
 

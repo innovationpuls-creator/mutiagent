@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from "framer-motion";
-import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import { fetchCanopyOverview } from "../../api/branch";
@@ -218,17 +218,6 @@ export function CanopyPage() {
 		navigate(`/leaf/${course.id}`);
 	}
 
-	function handleCourseKeyDown(
-		event: KeyboardEvent<SVGGElement>,
-		course: PositionedCourse,
-	) {
-		if (event.key !== "Enter" && event.key !== " ") {
-			return;
-		}
-		event.preventDefault();
-		handleCourseClick(course);
-	}
-
 	return (
 		<PageWrapper aria-label="成森知识雨林页面">
 			<div className="forest-ambient-sun" aria-hidden="true" />
@@ -243,7 +232,7 @@ export function CanopyPage() {
 			>
 				<section className="graph-section" aria-label="知识雨林图谱">
 					<header className="section-header">
-						<span>// knowledge canopy</span>
+						<span>{"// knowledge canopy"}</span>
 						<h2>知识雨林图谱</h2>
 						<p>
 							当前阶段：{stageLabel} · 雨林点亮率 {activeRate}%
@@ -268,6 +257,7 @@ export function CanopyPage() {
 									className="network-svg"
 									aria-hidden={positionedCourses.length === 0}
 								>
+									<title>课程知识关系图</title>
 									<defs>
 										<radialGradient
 											id="completed-glow"
@@ -329,65 +319,67 @@ export function CanopyPage() {
 											return (
 												<g
 													key={course.id}
-													className={`course-node course-node-${course.status} ${isHovered ? "is-hovered" : ""}`}
 													transform={`translate(${course.x}, ${course.y})`}
-													role="link"
-													tabIndex={0}
-													aria-label={`${course.title}，${statusLabel(course.status)}`}
-													onClick={() => handleCourseClick(course)}
-													onKeyDown={(event) =>
-														handleCourseKeyDown(event, course)
-													}
-													onMouseEnter={() => setHoveredNode(course.id)}
-													onMouseLeave={() => setHoveredNode(null)}
-													onFocus={() => setHoveredNode(course.id)}
-													onBlur={() => setHoveredNode(null)}
 												>
-													<title>{`${course.gradeLabel} · ${course.title}`}</title>
-													<circle className="node-glow" r="42" />
-													<circle className="node-shell" r="15" />
-													<circle className="node-core" r="7" />
-													<text
-														y="-30"
-														textAnchor="middle"
-														className="node-text"
+													<a
+														className={`course-node course-node-${course.status} ${isHovered ? "is-hovered" : ""}`}
+														href={`/leaf/${course.id}`}
+														aria-label={`${course.title}，${statusLabel(course.status)}`}
+														onClick={(event) => {
+															event.preventDefault();
+															handleCourseClick(course);
+														}}
+														onMouseEnter={() => setHoveredNode(course.id)}
+														onMouseLeave={() => setHoveredNode(null)}
+														onFocus={() => setHoveredNode(course.id)}
+														onBlur={() => setHoveredNode(null)}
 													>
-														{truncateLabel(course.title)}
-													</text>
-													<text
-														y="40"
-														textAnchor="middle"
-														className="node-meta"
-													>
-														{course.gradeLabel}
-													</text>
-													{qualityScores[course.id] && (
-														<g transform="translate(18, -18)">
-															<circle
-																r="8"
-																fill={
-																	qualityScores[course.id].overall >= 80
-																		? "oklch(75% 0.12 145)"
+														<title>{`${course.gradeLabel} · ${course.title}`}</title>
+														<circle className="node-glow" r="42" />
+														<circle className="node-shell" r="15" />
+														<circle className="node-core" r="7" />
+														<text
+															y="-30"
+															textAnchor="middle"
+															className="node-text"
+														>
+															{truncateLabel(course.title)}
+														</text>
+														<text
+															y="40"
+															textAnchor="middle"
+															className="node-meta"
+														>
+															{course.gradeLabel}
+														</text>
+														{qualityScores[course.id] && (
+															<g transform="translate(18, -18)">
+																<circle
+																	r="8"
+																	fill={
+																		qualityScores[course.id].overall >= 80
+																			? "oklch(75% 0.12 145)"
+																			: qualityScores[course.id].overall >= 60
+																				? "oklch(78% 0.12 85)"
+																				: "oklch(65% 0.15 25)"
+																	}
+																/>
+																<text
+																	textAnchor="middle"
+																	dominantBaseline="central"
+																	fill="oklch(99% 0 0)"
+																	fontSize="8"
+																	fontWeight="600"
+																>
+																	{qualityScores[course.id].overall >= 80
+																		? "✓"
 																		: qualityScores[course.id].overall >= 60
-																			? "oklch(78% 0.12 85)"
-																			: "oklch(65% 0.15 25)"
-																}
-															/>
-															<text
-																textAnchor="middle"
-																dominantBaseline="central"
-																fill="oklch(99% 0 0)"
-																fontSize="8"
-																fontWeight="600"
-															>
-																{qualityScores[course.id].overall >= 80
-																	? "✓"
-																	: qualityScores[course.id].overall >= 60
-																		? "~"
-																		: "!"}
-															</text>
-														</g>
-													)}
+																			? "~"
+																			: "!"}
+																</text>
+															</g>
+														)}
+													</a>
 												</g>
 											);
 										})}
@@ -470,9 +462,11 @@ export function CanopyPage() {
 													paddingLeft: "var(--space-16)",
 												}}
 											>
-												{qualityScores[hoveredNode].suggestions.map((s, i) => (
-													<li key={i}>{s}</li>
-												))}
+												{qualityScores[hoveredNode].suggestions.map(
+													(suggestion) => (
+														<li key={suggestion}>{suggestion}</li>
+													),
+												)}
 											</ul>
 										)}
 									</div>
@@ -494,7 +488,7 @@ export function CanopyPage() {
 				<section className="stats-section" aria-label="成森统计指标">
 					<article className="stats-card tree-card">
 						<header className="card-header">
-							<span>// growth tree</span>
+							<span>{"// growth tree"}</span>
 							<h3>成长树</h3>
 						</header>
 						<div className="growth-tree-panel">
@@ -524,7 +518,7 @@ export function CanopyPage() {
 
 				<article className="stats-card timeline-card">
 					<header className="card-header">
-						<span>// milestones</span>
+						<span>{"// milestones"}</span>
 						<h3>成长里程</h3>
 					</header>
 					<div className="milestones-list">

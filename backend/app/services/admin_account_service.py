@@ -194,7 +194,10 @@ def import_accounts(
             failures=[
                 AdminAccountImportFailure(
                     row=1,
-                    reason="CSV 表头必须为 username,identifier,password,role,is_active,school,major,class_name",
+                    reason=(
+                        "CSV 表头必须为 "
+                        "username,identifier,password,role,is_active,school,major,class_name"
+                    ),
                 )
             ],
         )

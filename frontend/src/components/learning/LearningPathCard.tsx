@@ -20,8 +20,8 @@ function ListBlock({ items }: ListBlockProps) {
 
 	return (
 		<List>
-			{items.map((item, index) => (
-				<li key={`${item}-${index}`}>{item}</li>
+			{items.map((item) => (
+				<li key={item}>{item}</li>
 			))}
 		</List>
 	);

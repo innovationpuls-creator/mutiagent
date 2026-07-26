@@ -147,7 +147,8 @@ function LeafMarkmapNode({
 		<div className="leaf-markmap-journey-node" data-depth={depth}>
 			<div className="leaf-markmap-journey-row">
 				<span className="leaf-markmap-journey-connector" aria-hidden="true" />
-				<div
+				<button
+					type="button"
 					className={`leaf-markmap-card ${status === "running" ? "running" : ""}`}
 					data-status={status}
 					onClick={() => onSelectSection(section.section_id)}
@@ -182,36 +183,35 @@ function LeafMarkmapNode({
 
 						{badges.length > 0 && (
 							<div className="leaf-markmap-badges">
-								{badges.map((badge, i) => (
-									<span key={i} className="leaf-markmap-badge">
+								{badges.map((badge) => (
+									<span key={badge} className="leaf-markmap-badge">
 										{badge}
 									</span>
 								))}
 							</div>
 						)}
 					</div>
+				</button>
 
-					{hasChildren && (
-						<button
-							type="button"
-							className="leaf-markmap-child-toggle"
-							onClick={(e) => {
-								e.stopPropagation();
-								toggleCollapsedSection(
-									section.section_id,
-									collapsedSectionIds,
-									onCollapsedSectionIdsChange,
-								);
-							}}
-						>
-							{isCollapsed ? (
-								<ChevronRight className="leaf-markmap-child-toggle-icon" />
-							) : (
-								<ChevronDown className="leaf-markmap-child-toggle-icon" />
-							)}
-						</button>
-					)}
-				</div>
+				{hasChildren && (
+					<button
+						type="button"
+						className="leaf-markmap-child-toggle"
+						onClick={() => {
+							toggleCollapsedSection(
+								section.section_id,
+								collapsedSectionIds,
+								onCollapsedSectionIdsChange,
+							);
+						}}
+					>
+						{isCollapsed ? (
+							<ChevronRight className="leaf-markmap-child-toggle-icon" />
+						) : (
+							<ChevronDown className="leaf-markmap-child-toggle-icon" />
+						)}
+					</button>
+				)}
 			</div>
 
 			{hasChildren && !isCollapsed && (

@@ -217,6 +217,25 @@
         }
       }
     },
+    "/api/health/deep": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Deep Readiness",
+        "operationId": "deep_readiness_api_health_deep_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/accounts": {
       "get": {
         "tags": [
@@ -5224,15 +5243,6 @@
             "minLength": 6,
             "title": "Confirm Password"
           },
-          "role": {
-            "type": "string",
-            "enum": [
-              "student",
-              "admin"
-            ],
-            "title": "Role",
-            "default": "student"
-          },
           "school": {
             "type": "string",
             "maxLength": 128,
@@ -5252,6 +5262,7 @@
             "title": "Class Name"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "username",

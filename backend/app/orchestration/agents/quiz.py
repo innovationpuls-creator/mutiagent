@@ -52,7 +52,7 @@ def build_fallback_quiz_questions(
     ]
 
 
-def _normalize_options(options_raw: object) -> list[dict[str, str]]:
+def _normalize_options(options_raw: object) -> list[dict[str, str]]:  # noqa: C901
     if not isinstance(options_raw, list):
         return []
     normalized_opts = []
@@ -196,20 +196,31 @@ async def generate_quiz_questions(
         kp_instruction = (
             f"\n【知识点标注要求】\n"
             f"本章节包含以下知识点 ID：{kp_list}\n"
-            f"每道题必须包含 `knowledge_point_ids` 字段，从上述列表中选取与该题考查内容最相关的知识点 ID（可多选）。\n"
+            "每道题必须包含 `knowledge_point_ids` 字段，从上述列表中选取与"
+            "该题考查内容最相关的知识点 ID（可多选）。\n"
         )
 
     prompt = (
         "请为当前章节生成 3 道测验题，必须覆盖 single_choice、code、image_upload。\n"
         "【重要设计要求】\n"
         "生成的测验题必须紧密结合本章节中的「练习任务」与「检查标准」内容来设计：\n"
-        "1. 单选题 (single_choice)：考查「练习任务」或「检查标准」中的核心概念、要求或关键知识点。\n"
-        "2. 代码题 (code)：要求用户编写一段代码或伪代码，来完成/辅助完成「练习任务」，或者编写测试/验证代码以验证「检查标准」中的某项指标是否通过。必须包含 starter_code 作为起点。\n"
-        "3. 图片上传题 (image_upload)：要求用户上传完成「练习任务」后的运行效果截图、架构/思路图或结果图，并在 prompt 中说明具体的截图/图片要求。\n\n"
-        "只输出 JSON 数组，每题包含 question_id、type、prompt、options、correct_option_id（如果是单选题，请填写正确选项 ID，如 A、B 等）、starter_code、image_prompt、points、knowledge_point_ids。\n"
-        '【特别注意】：如果是单选题 (single_choice)，其 options 字段必须为包含选项字典的数组，每个选项字典格式为：{"option_id": "选项ID，如A/B/C/D", "text": "选项内容"}。如果是代码题或图片上传题，options 字段为空数组 []。\n'
+        "1. 单选题 (single_choice)：考查「练习任务」或「检查标准」中的"
+        "核心概念、要求或关键知识点。\n"
+        "2. 代码题 (code)：要求用户编写一段代码或伪代码，来完成/辅助完成"
+        "「练习任务」，或者编写测试/验证代码以验证「检查标准」中的某项指标"
+        "是否通过。必须包含 starter_code 作为起点。\n"
+        "3. 图片上传题 (image_upload)：要求用户上传完成「练习任务」后的运行"
+        "效果截图、架构/思路图或结果图，并在 prompt 中说明具体的截图/图片要求。\n\n"
+        "只输出 JSON 数组，每题包含 question_id、type、prompt、options、"
+        "correct_option_id（如果是单选题，请填写正确选项 ID，如 A、B 等）、"
+        "starter_code、image_prompt、points、knowledge_point_ids。\n"
+        "【特别注意】：如果是单选题 (single_choice)，其 options 字段必须为包含"
+        '选项字典的数组，每个选项字典格式为：{"option_id": "选项ID，如A/B/C/D", '
+        '"text": "选项内容"}。如果是代码题或图片上传题，options 字段为空数组 []。\n'
         f"{kp_instruction}"
-        f"chapter_id: {chapter_id}\nchapter_title: {chapter_title}\nchapter_context:\n{chapter_context}"
+        f"chapter_id: {chapter_id}\n"
+        f"chapter_title: {chapter_title}\n"
+        f"chapter_context:\n{chapter_context}"
     )
     if not hasattr(llm, "ainvoke"):
         return build_fallback_quiz_questions(chapter_id, chapter_title)

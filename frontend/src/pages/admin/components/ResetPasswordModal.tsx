@@ -1,5 +1,7 @@
 import { motion } from "framer-motion";
 import { Upload } from "lucide-react";
+import { useRef } from "react";
+import { useDialogAccessibility } from "../../../components/ui/useDialogAccessibility";
 import type { AuthUser } from "../../../types/auth";
 
 interface ResetPasswordModalProps {
@@ -19,6 +21,13 @@ export function ResetPasswordModal({
 	onConfirm,
 	busy,
 }: ResetPasswordModalProps) {
+	const passwordInputRef = useRef<HTMLInputElement>(null);
+	useDialogAccessibility({
+		isOpen: Boolean(resetTarget),
+		onClose,
+		initialFocusRef: passwordInputRef,
+	});
+
 	if (!resetTarget) return null;
 
 	return (
@@ -29,12 +38,18 @@ export function ResetPasswordModal({
 			exit={{ opacity: 0 }}
 			transition={{ duration: 0.18 }}
 		>
-			<section className="admin-modal" aria-label="重置密码">
-				<h2>重置密码</h2>
+			<section
+				aria-labelledby="reset-password-title"
+				aria-modal="true"
+				className="admin-modal"
+				role="dialog"
+			>
+				<h2 id="reset-password-title">重置密码</h2>
 				<p>{resetTarget.username} 的新密码会立即生效。</p>
 				<label className="admin-modal-field">
 					<span>新密码</span>
 					<input
+						ref={passwordInputRef}
 						value={resetPassword}
 						onChange={(event) => setResetPassword(event.target.value)}
 						type="password"

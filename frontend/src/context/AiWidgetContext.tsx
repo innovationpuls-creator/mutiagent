@@ -1,4 +1,4 @@
-import React, {
+import {
 	createContext,
 	type ReactNode,
 	useCallback,
@@ -80,21 +80,31 @@ export function AiWidgetProvider({ children }: { children: ReactNode }) {
 		setWidgetStateValue(state);
 	}, []);
 
-	const openWithMessage = useCallback((text: string) => {
-		pendingMessageIdRef.current += 1;
-		setPendingMessage({
-			id: pendingMessageIdRef.current,
-			text,
-			mode: "auto_send",
-		});
-		setWidgetState("EXPANDED");
-	}, []);
+	const openWithMessage = useCallback(
+		(text: string) => {
+			pendingMessageIdRef.current += 1;
+			setPendingMessage({
+				id: pendingMessageIdRef.current,
+				text,
+				mode: "auto_send",
+			});
+			setWidgetState("EXPANDED");
+		},
+		[setWidgetState],
+	);
 
-	const openWithDraft = useCallback((text: string) => {
-		pendingMessageIdRef.current += 1;
-		setPendingMessage({ id: pendingMessageIdRef.current, text, mode: "draft" });
-		setWidgetState("EXPANDED");
-	}, []);
+	const openWithDraft = useCallback(
+		(text: string) => {
+			pendingMessageIdRef.current += 1;
+			setPendingMessage({
+				id: pendingMessageIdRef.current,
+				text,
+				mode: "draft",
+			});
+			setWidgetState("EXPANDED");
+		},
+		[setWidgetState],
+	);
 
 	const clearPendingMessage = useCallback(() => {
 		setPendingMessage(null);

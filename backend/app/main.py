@@ -60,7 +60,12 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.include_router(create_auth_router(create_session_dependency(engine)))
+    app.include_router(
+        create_auth_router(
+            create_session_dependency(engine),
+            allow_mock_oauth=not resolved_settings.is_production,
+        )
+    )
     app.include_router(
         create_health_router(
             engine, check_schema_revision=resolved_settings.is_production

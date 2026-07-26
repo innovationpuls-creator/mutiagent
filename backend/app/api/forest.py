@@ -77,7 +77,7 @@ async def _stream_forest_ai_events(
         yield _sse("forest_error", {"message": str(exc) or "Forest AI 暂时不可用"})
 
 
-def create_forest_router(session_dependency: SessionDependency) -> APIRouter:
+def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  # noqa: C901
     router = APIRouter(prefix="/api/forest", tags=["forest"])
     get_current_user = create_get_current_user(session_dependency)
 

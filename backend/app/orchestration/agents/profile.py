@@ -164,7 +164,8 @@ EXPLICIT_PROFILE_FIELD_PREFIXES: dict[str, tuple[str, ...]] = {
     "constraints": ("当前限制改成", "当前限制调整为"),
 }
 SYSTEM_GENERATED_KNOWLEDGE_FOUNDATION_PATTERN = re.compile(
-    r"^已具备(?P<major>.+?)基础，(?P<suffix>(?:.+方向可从入门到基础逐步补全|AI 基础由系统补全为入门到基础))$"
+    r"^已具备(?P<major>.+?)基础，"
+    r"(?P<suffix>(?:.+方向可从入门到基础逐步补全|AI 基础由系统补全为入门到基础))$"
 )
 ASCII_TOKEN_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 NUMERIC_SEGMENT_PATTERN = re.compile(r"^\d+(?:[-~—]\d+)?$")
@@ -773,7 +774,9 @@ def _build_stage_question_form(
         "goal_constraint": "完善目标与约束",
     }
     descriptions = {
-        "learning_preference": "请填写以下学习偏好信息，帮助我们更好地定制您的学习路径。",
+        "learning_preference": (
+            "请填写以下学习偏好信息，帮助我们更好地定制您的学习路径。"
+        ),
         "ability_basis": "请填写以下能力基础信息，以便评估您的起点。",
         "goal_constraint": "请填写您的长期目标和约束，以合理规划学习进度。",
     }
@@ -1113,7 +1116,7 @@ def _topic_from_segment(segment: str) -> str:
     return ""
 
 
-def _extract_topic(texts: list[str], segments: list[str]) -> str:
+def _extract_topic(texts: list[str], segments: list[str]) -> str:  # noqa: C901
     for text in reversed(texts):
         for match in TOPIC_TEXT_PATTERN.finditer(text):
             if not _is_topic_text_match(match, text):
@@ -1345,7 +1348,9 @@ def _field_fill_from_options(field_name: str, text: str) -> dict[str, object]:
     return {}
 
 
-def _contextual_profile_updates(state: OrchestrationState) -> dict[str, object]:
+def _contextual_profile_updates(  # noqa: C901
+    state: OrchestrationState,
+) -> dict[str, object]:
     current_field = _current_collecting_field(state)
     query = str(state.get("query", "")).strip()
     if not current_field or not query:
@@ -1399,7 +1404,7 @@ def _clean_explicit_field_value(value: str) -> str:
     return value.strip("：:，,。！？!?；; ")
 
 
-def _extract_explicit_profile_updates(texts: list[str]) -> dict[str, object]:
+def _extract_explicit_profile_updates(texts: list[str]) -> dict[str, object]:  # noqa: C901
     updates: dict[str, object] = {}
     for text in reversed(texts):
         normalized = text.strip()
@@ -1481,7 +1486,7 @@ def _looks_like_brief_profile_query(query: str) -> bool:
     )
 
 
-def _extract_profile_updates(
+def _extract_profile_updates(  # noqa: C901
     state: OrchestrationState, *, include_defaults: bool = True
 ) -> dict[str, object]:
     texts = _recent_human_texts(state)
@@ -2082,7 +2087,8 @@ def _local_profile_summary(confirmed: dict[str, object], topic: str) -> str:
         summary_parts.append(f"想学习{topic}")
     if confirmed["learning_method_preference"]:
         summary_parts.append(f"偏好{confirmed['learning_method_preference']}")
-    return f"【基础学习画像总结】{'，'.join(str(part) for part in summary_parts if str(part).strip())}。"
+    summary = "，".join(str(part) for part in summary_parts if str(part).strip())
+    return f"【基础学习画像总结】{summary}。"
 
 
 def _build_local_confirmed_info(
@@ -2342,7 +2348,7 @@ async def _invoke_profile_output_with_retries(
 
 
 async def run_profile_agent(state: OrchestrationState, llm: BaseChatModel) -> dict:
-    """One-shot profile generation: receives conversation summary, outputs structured profile."""
+    """Generate a structured profile from the conversation summary in one pass."""
     tool_args = extract_last_tool_call_args(state)
     conversation_summary = tool_args.get("conversation_summary", state["query"])
     query = str(state.get("query", "")).strip()

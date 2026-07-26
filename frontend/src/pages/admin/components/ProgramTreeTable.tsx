@@ -12,7 +12,8 @@ export function CourseRow({ course, isActive, onClick }: CourseRowProps) {
 	const durationText = course.time_arrangement?.duration ?? "";
 
 	return (
-		<div
+		<button
+			type="button"
 			className={`course-row ${isActive ? "row-active" : ""}`}
 			onClick={onClick}
 		>
@@ -24,7 +25,7 @@ export function CourseRow({ course, isActive, onClick }: CourseRowProps) {
 				<span className="course-duration">{durationText}</span>
 				<span className="course-edit-badge">编辑</span>
 			</div>
-		</div>
+		</button>
 	);
 }
 

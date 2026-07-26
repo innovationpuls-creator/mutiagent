@@ -5757,9 +5757,7 @@ def test_video_search_passes_when_majority_sections_have_videos(
             "generated_at": "2026-06-06T00:00:00Z",
         }
 
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "video-threshold-pass")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "video-threshold-pass"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:
@@ -5798,9 +5796,18 @@ def test_video_search_passes_when_majority_sections_have_videos(
 
     assert "error" not in result
     assert result["course_resource_plan"]["video_unavailable_section_ids"] == ["1.3"]
-    assert result["course_knowledge"]["section_video_links"]["1.1"]["status"] == "available"
-    assert result["course_knowledge"]["section_video_links"]["1.2"]["status"] == "available"
-    assert result["course_knowledge"]["section_video_links"]["1.3"]["status"] == "unavailable"
+    assert (
+        result["course_knowledge"]["section_video_links"]["1.1"]["status"]
+        == "available"
+    )
+    assert (
+        result["course_knowledge"]["section_video_links"]["1.2"]["status"]
+        == "available"
+    )
+    assert (
+        result["course_knowledge"]["section_video_links"]["1.3"]["status"]
+        == "unavailable"
+    )
 
 
 def test_video_search_fails_when_below_majority_threshold(
@@ -5843,9 +5850,7 @@ def test_video_search_fails_when_below_majority_threshold(
             "generated_at": "2026-06-06T00:00:00Z",
         }
 
-    engine = build_engine(
-        postgresql_test_url(tmp_path, "video-threshold-fail")
-    )
+    engine = build_engine(postgresql_test_url(tmp_path, "video-threshold-fail"))
     set_engine(engine)
     init_db(engine)
     with Session(engine) as session:

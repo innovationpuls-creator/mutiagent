@@ -2,10 +2,36 @@ import { motion, useReducedMotion } from "framer-motion";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { motionTokens } from "../../styles/motion-tokens";
+import { useDialogAccessibility } from "./useDialogAccessibility";
+
+const CANVAS_DISPLAY_WIDTH = 480;
+const CANVAS_DISPLAY_HEIGHT = 320;
 
 interface HandwritingCanvasProps {
 	onSave: (base64Data: string) => void;
 	onClose: () => void;
+}
+
+function getCanvasPoint(
+	event:
+		| React.MouseEvent<HTMLCanvasElement>
+		| React.TouchEvent<HTMLCanvasElement>,
+	canvas: HTMLCanvasElement,
+) {
+	const pointer =
+		"touches" in event
+			? event.touches.length > 0
+				? event.touches[0]
+				: null
+			: event;
+	if (!pointer) return null;
+
+	const rect = canvas.getBoundingClientRect();
+	if (rect.width === 0 || rect.height === 0) return null;
+	return {
+		x: (pointer.clientX - rect.left) * (CANVAS_DISPLAY_WIDTH / rect.width),
+		y: (pointer.clientY - rect.top) * (CANVAS_DISPLAY_HEIGHT / rect.height),
+	};
 }
 
 export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
@@ -13,6 +39,12 @@ export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
 	const [isDrawing, setIsDrawing] = useState(false);
 	const [lineWidth, setLineWidth] = useState(3);
 	const shouldReduceMotion = useReducedMotion();
+	const closeButtonRef = useRef<HTMLButtonElement>(null);
+	useDialogAccessibility({
+		isOpen: true,
+		onClose,
+		initialFocusRef: closeButtonRef,
+	});
 
 	useEffect(() => {
 		const canvas = canvasRef.current;
@@ -22,11 +54,8 @@ export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
 
 		// Handle high-DPI displays (retina screens)
 		const dpr = window.devicePixelRatio || 1;
-		const displayWidth = 480;
-		const displayHeight = 320;
-
-		canvas.width = displayWidth * dpr;
-		canvas.height = displayHeight * dpr;
+		canvas.width = CANVAS_DISPLAY_WIDTH * dpr;
+		canvas.height = CANVAS_DISPLAY_HEIGHT * dpr;
 
 		ctx.scale(dpr, dpr);
 		ctx.lineCap = "round";
@@ -48,19 +77,10 @@ export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
 		const ctx = canvas.getContext("2d");
 		if (!ctx) return;
 
-		let clientX, clientY;
-		if ("touches" in e) {
-			if (e.touches.length === 0) return;
-			clientX = e.touches[0].clientX;
-			clientY = e.touches[0].clientY;
-		} else {
-			clientX = e.clientX;
-			clientY = e.clientY;
-		}
-
-		const rect = canvas.getBoundingClientRect();
+		const point = getCanvasPoint(e, canvas);
+		if (!point) return;
 		ctx.beginPath();
-		ctx.moveTo(clientX - rect.left, clientY - rect.top);
+		ctx.moveTo(point.x, point.y);
 		ctx.lineWidth = lineWidth;
 		ctx.lineCap = "round";
 		ctx.lineJoin = "round";
@@ -83,18 +103,9 @@ export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
 		const ctx = canvas.getContext("2d");
 		if (!ctx) return;
 
-		let clientX, clientY;
-		if ("touches" in e) {
-			if (e.touches.length === 0) return;
-			clientX = e.touches[0].clientX;
-			clientY = e.touches[0].clientY;
-		} else {
-			clientX = e.clientX;
-			clientY = e.clientY;
-		}
-
-		const rect = canvas.getBoundingClientRect();
-		ctx.lineTo(clientX - rect.left, clientY - rect.top);
+		const point = getCanvasPoint(e, canvas);
+		if (!point) return;
+		ctx.lineTo(point.x, point.y);
 		ctx.stroke();
 	};
 
@@ -128,6 +139,7 @@ export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
 		<motion.div
 			className="fixed inset-0 bg-[var(--color-overlay)] flex items-center justify-center z-[999999]"
 			role="dialog"
+			aria-labelledby="handwriting-canvas-title"
 			aria-modal="true"
 			initial={{ opacity: 0 }}
 			animate={{ opacity: 1 }}
@@ -150,11 +162,16 @@ export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
 				transition={modalTransition}
 			>
 				<div className="flex justify-between items-center">
-					<h3 className="font-medium text-base text-[var(--color-text-primary)]">
+					<h3
+						className="font-medium text-base text-[var(--color-text-primary)]"
+						id="handwriting-canvas-title"
+					>
 						手写笔记/草图
 					</h3>
 					<button
+						type="button"
 						onClick={onClose}
+						ref={closeButtonRef}
 						className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors duration-[var(--duration-instant)] text-lg leading-none"
 						aria-label="关闭"
 					>
@@ -164,7 +181,11 @@ export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
 
 				<canvas
 					ref={canvasRef}
-					style={{ width: "480px", height: "320px" }}
+					style={{
+						width: `min(100%, ${CANVAS_DISPLAY_WIDTH}px)`,
+						height: "auto",
+						aspectRatio: `${CANVAS_DISPLAY_WIDTH} / ${CANVAS_DISPLAY_HEIGHT}`,
+					}}
 					onMouseDown={startDrawing}
 					onMouseMove={draw}
 					onMouseUp={stopDrawing}
@@ -181,6 +202,7 @@ export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
 							笔粗:
 						</span>
 						<input
+							aria-label="笔粗"
 							type="range"
 							min="1"
 							max="10"

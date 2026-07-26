@@ -13,9 +13,13 @@ from app.orchestration.rule_engine import (
     AGENT_LEARNING_PATH,
     AGENT_LEARNING_PATH_INTAKE,
     AGENT_PROFILE,
+    AGENT_SECTION_HTML_ANIMATION,
+    AGENT_SECTION_MARKDOWN,
+    AGENT_SECTION_VIDEO_SEARCH,
     evaluate,
     has_pending_profile_update_followup,
     is_course_outline_regeneration_query,
+    is_course_resource_generation_query,
     is_course_start_query,
     is_default_profile_query,
     is_learning_path_refresh_query,
@@ -960,14 +964,6 @@ class TestHardRules:
             AGENT_COURSE_KNOWLEDGE,
         }
         assert result.allowed_agents == set()
-
-
-from app.orchestration.rule_engine import (
-    AGENT_SECTION_HTML_ANIMATION,
-    AGENT_SECTION_MARKDOWN,
-    AGENT_SECTION_VIDEO_SEARCH,
-    is_course_resource_generation_query,
-)
 
 
 def test_course_resource_generation_query_keywords() -> None:

@@ -1,4 +1,6 @@
 import { motion, useReducedMotion } from "framer-motion";
+import { useRef } from "react";
+import { useDialogAccessibility } from "../../../components/ui/useDialogAccessibility";
 import type { BranchCourseNode } from "../../../types/branch";
 
 interface FieldProps {
@@ -185,13 +187,22 @@ export function ProgramDetailDrawer({
 	onUpdateCourse,
 }: ProgramDetailDrawerProps) {
 	const reduceMotion = useReducedMotion();
+	const titleRef = useRef<HTMLHeadingElement>(null);
+	useDialogAccessibility({
+		isOpen: Boolean(course),
+		onClose,
+		initialFocusRef: titleRef,
+	});
+
 	if (!course) return null;
 
 	return (
-		<div className="drawer-overlay" onClick={onClose}>
+		<div className="drawer-overlay">
 			<motion.div
+				aria-labelledby="program-detail-drawer-title"
+				aria-modal="true"
 				className="detail-drawer"
-				onClick={(e) => e.stopPropagation()}
+				role="dialog"
 				initial={reduceMotion ? { opacity: 0 } : { x: "100%" }}
 				animate={reduceMotion ? { opacity: 1 } : { x: 0 }}
 				exit={reduceMotion ? { opacity: 0 } : { x: "100%" }}
@@ -202,8 +213,20 @@ export function ProgramDetailDrawer({
 				}
 			>
 				<div className="drawer-header">
-					<h2 className="drawer-title">编辑课程大纲</h2>
-					<button type="button" className="drawer-close-btn" onClick={onClose}>
+					<h2
+						className="drawer-title"
+						id="program-detail-drawer-title"
+						ref={titleRef}
+						tabIndex={-1}
+					>
+						编辑课程大纲
+					</h2>
+					<button
+						type="button"
+						className="drawer-close-btn"
+						onClick={onClose}
+						aria-label="关闭课程大纲抽屉"
+					>
 						✕
 					</button>
 				</div>

@@ -1,8 +1,4 @@
-import {
-	Check,
-	Loader2,
-	Save,
-} from "lucide-react";
+import { Check, Loader2, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Textbook, TextbookSectionContent } from "../../api/knowledgeBase";
 import { MarkdownRenderer } from "../../components/markdown";
@@ -32,9 +28,15 @@ interface OutlineEditorProps {
 	onSave: (updatedOutline: OutlineData) => Promise<void>;
 }
 
-export function OutlineEditor({ textbook, sections, onSave }: OutlineEditorProps) {
+export function OutlineEditor({
+	textbook,
+	sections,
+	onSave,
+}: OutlineEditorProps) {
 	const [outline, setOutline] = useState<OutlineData>({ chapters: [] });
-	const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+	const [selectedSectionId, setSelectedSectionId] = useState<string | null>(
+		null,
+	);
 	const [isSaving, setIsSaving] = useState(false);
 	const [saveSuccess, setSaveSuccess] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -100,7 +102,9 @@ export function OutlineEditor({ textbook, sections, onSave }: OutlineEditorProps
 				setSelectedSectionId(firstChapter.sections[0].section_id);
 				return;
 			}
-			setSelectedSectionId(firstChapter.chapter_id || String(firstChapter.chapter_number));
+			setSelectedSectionId(
+				firstChapter.chapter_id || String(firstChapter.chapter_number),
+			);
 			return;
 		}
 		setSelectedSectionId(null);
@@ -184,13 +188,23 @@ export function OutlineEditor({ textbook, sections, onSave }: OutlineEditorProps
 							>
 								<div
 									className={`outline-chapter-header clickable ${selectedSectionId === (chapter.chapter_id || String(chapter.chapter_number)) ? "is-active" : ""}`}
-									onClick={() => setSelectedSectionId(chapter.chapter_id || String(chapter.chapter_number))}
-									style={{ cursor: "pointer", borderRadius: "var(--radius-sm)", padding: "var(--space-4) var(--space-8)" }}
+									style={{
+										borderRadius: "var(--radius-sm)",
+										padding: "var(--space-4) var(--space-8)",
+									}}
 								>
 									<div className="chapter-info">
-										<span className="chapter-tag">
+										<button
+											type="button"
+											className="chapter-tag"
+											onClick={() =>
+												setSelectedSectionId(
+													chapter.chapter_id || String(chapter.chapter_number),
+												)
+											}
+										>
 											Chapter {chapter.chapter_number}
-										</span>
+										</button>
 										<input
 											type="text"
 											className="chapter-title-input"
@@ -210,12 +224,16 @@ export function OutlineEditor({ textbook, sections, onSave }: OutlineEditorProps
 											<div
 												key={section.section_id}
 												className={`outline-section-row clickable ${isSelected ? "is-active" : ""}`}
-												onClick={() => setSelectedSectionId(section.section_id)}
-												style={{ cursor: "pointer" }}
 											>
-												<span className="section-id-tag">
+												<button
+													type="button"
+													className="section-id-tag"
+													onClick={() =>
+														setSelectedSectionId(section.section_id)
+													}
+												>
 													{section.section_id}
-												</span>
+												</button>
 												<input
 													type="text"
 													className="section-title-input"
@@ -228,7 +246,6 @@ export function OutlineEditor({ textbook, sections, onSave }: OutlineEditorProps
 															e.target.value,
 														)
 													}
-													onClick={(e) => e.stopPropagation()}
 												/>
 											</div>
 										);
@@ -279,14 +296,21 @@ export function OutlineEditor({ textbook, sections, onSave }: OutlineEditorProps
 							);
 							const activeSectionOutline = outline.chapters
 								.flatMap((ch) => [
-									{ section_id: ch.chapter_id || String(ch.chapter_number), title: ch.title },
+									{
+										section_id: ch.chapter_id || String(ch.chapter_number),
+										title: ch.title,
+									},
 									...ch.sections,
 								])
 								.find((sec) => sec.section_id === selectedSectionId);
 
 							const titleText = activeSectionOutline?.title || "未命名小节";
 							const contentText = activeSectionContent
-								? (activeSectionContent.content_zh || activeSectionContent.content_original || "").trim()
+								? (
+										activeSectionContent.content_zh ||
+										activeSectionContent.content_original ||
+										""
+									).trim()
 								: "";
 
 							return (

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { SproutHero } from "../components/home/SproutHero";
 import { SproutInitOverlay } from "../components/onboarding/SproutInitOverlay";
@@ -19,12 +19,12 @@ export function SproutPage() {
 		return window.sessionStorage.getItem(SPROUT_INIT_OVERLAY_KEY) === "1";
 	});
 
-	const handleOverlayComplete = () => {
+	const handleOverlayComplete = useCallback(() => {
 		if (typeof window !== "undefined") {
 			window.sessionStorage.removeItem(SPROUT_INIT_OVERLAY_KEY);
 		}
 		setShowOverlay(false);
-	};
+	}, []);
 
 	useEffect(() => {
 		if (!showOverlay) {
@@ -37,7 +37,7 @@ export function SproutPage() {
 		if (widgetState === "EXPANDED" && pendingMessage !== null) {
 			handleOverlayComplete();
 		}
-	}, [pendingMessage, showOverlay, widgetState]);
+	}, [pendingMessage, showOverlay, widgetState, handleOverlayComplete]);
 
 	return (
 		<>

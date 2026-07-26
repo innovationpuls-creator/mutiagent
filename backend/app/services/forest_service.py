@@ -100,7 +100,7 @@ def _progress_to_read(progress: ChapterProgress) -> ForestChapterProgressRead:
     )
 
 
-def _normalize_options(options_raw: object) -> list[dict[str, str]]:
+def _normalize_options(options_raw: object) -> list[dict[str, str]]:  # noqa: C901
     if not isinstance(options_raw, list):
         return []
     normalized_opts = []
@@ -431,7 +431,7 @@ def _next_chapter_id(chapter_ids: list[str], chapter_id: str) -> str | None:
     return chapter_ids[index + 1]
 
 
-def _resolve_knowledge_point_name(
+def _resolve_knowledge_point_name(  # noqa: C901
     session: Session,
     user_uid: str,
     course_node_id: str,
@@ -503,7 +503,7 @@ def _resolve_knowledge_point_name(
     return kp_id
 
 
-def _analyze_weakness(
+def _analyze_weakness(  # noqa: C901
     session: Session,
     *,
     user_uid: str,

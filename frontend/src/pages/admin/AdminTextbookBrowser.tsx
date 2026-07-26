@@ -1,9 +1,6 @@
 import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
-import type {
-	Textbook,
-	TextbookSectionContent,
-} from "../../api/knowledgeBase";
+import type { Textbook, TextbookSectionContent } from "../../api/knowledgeBase";
 import { AdminTextbookInspector } from "./AdminTextbookInspector";
 
 interface AdminTextbookBrowserProps {
@@ -55,12 +52,12 @@ function formatOutlineSummary(outline: unknown) {
 
 function getColorForTextbook(title: string) {
 	const hues = [
-		"var(--color-accent-sage)",      // 鼠尾草绿
-		"var(--color-accent-peach)",     // 柔桃色
-		"var(--color-accent-lavender)",  // 雾紫
-		"var(--color-accent-salmon)",    // 鲑鱼粉
-		"var(--color-primary-soft)",     // 稀释暖珊瑚
-		"var(--color-secondary-soft)",   // 雾蓝
+		"var(--color-accent-sage)", // 鼠尾草绿
+		"var(--color-accent-peach)", // 柔桃色
+		"var(--color-accent-lavender)", // 雾紫
+		"var(--color-accent-salmon)", // 鲑鱼粉
+		"var(--color-primary-soft)", // 稀释暖珊瑚
+		"var(--color-secondary-soft)", // 雾蓝
 	];
 	let hash = 0;
 	for (let i = 0; i < title.length; i++) {
@@ -152,7 +149,8 @@ export function AdminTextbookBrowser({
 						{filteredTextbooks.length > 0 ? (
 							<div className="admin-kb-book-grid">
 								{filteredTextbooks.map((textbook) => {
-									const isSelected = textbook.textbook_id === selectedTextbookId;
+									const isSelected =
+										textbook.textbook_id === selectedTextbookId;
 									const coverColor = getColorForTextbook(textbook.title);
 									const outlineText = formatOutlineSummary(textbook.outline);
 
@@ -199,7 +197,8 @@ export function AdminTextbookBrowser({
 													<span>
 														解析：
 														{textbook.ingestion_status === "completed" ||
-														textbook.ingestion_status === "ready_for_outline_review"
+														textbook.ingestion_status ===
+															"ready_for_outline_review"
 															? "已就绪"
 															: textbook.ingestion_status === "failed"
 																? "失败"

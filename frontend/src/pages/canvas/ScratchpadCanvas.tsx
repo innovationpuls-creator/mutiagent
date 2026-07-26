@@ -1,15 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
-import {
-	Check,
-	Code,
-	FileText,
-	HelpCircle,
-	Move,
-	PenTool,
-	Trash,
-} from "lucide-react";
+import { Code, FileText, HelpCircle, Move, PenTool, Trash } from "lucide-react";
 import type React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import styled from "styled-components";
 import { streamForestAi } from "../../api/forest";
 import { useAuth } from "../../contexts/AuthContext";
@@ -260,7 +252,7 @@ export function ScratchpadCanvas() {
 					item.y + 20,
 				);
 				ctx.fillText(
-					item.content.slice(0, 20) + "...",
+					`${item.content.slice(0, 20)}...`,
 					item.x + 8,
 					item.y + 40,
 				);
@@ -375,9 +367,10 @@ export function ScratchpadCanvas() {
 			>
 				{/* Draw strokes */}
 				<svg className="drawing-overlay" style={{ pointerEvents: "none" }}>
-					{strokes.map((stroke, index) => (
+					<title>草稿绘图内容</title>
+					{strokes.map((stroke) => (
 						<path
-							key={index}
+							key={stroke.map((point) => `${point.x},${point.y}`).join(";")}
 							d={`M ${stroke.map((p) => `${p.x} ${p.y}`).join(" L ")}`}
 							fill="none"
 							stroke="oklch(26% 0.04 235)"
@@ -419,16 +412,23 @@ export function ScratchpadCanvas() {
 							top: `${item.y}px`,
 							backgroundColor: item.color,
 						}}
-						onMouseDown={(e) => handleItemDragStart(e, item)}
 					>
 						<div className="item-drag-handle">
-							<Move className="w-3.5 h-3.5 text-gray-400" />
 							<button
+								type="button"
+								className="item-drag-control"
+								onMouseDown={(event) => handleItemDragStart(event, item)}
+								aria-label={`拖拽${item.title ?? item.content.slice(0, 20)}`}
+							>
+								<Move className="w-3.5 h-3.5 text-gray-400" />
+							</button>
+							<button
+								type="button"
 								className="item-delete-btn"
-								onMouseDown={(e) => e.stopPropagation()}
 								onClick={() =>
 									setItems((prev) => prev.filter((it) => it.id !== item.id))
 								}
+								aria-label={`删除${item.title ?? item.content.slice(0, 20)}`}
 							>
 								<Trash className="w-3.5 h-3.5" />
 							</button>
@@ -474,6 +474,7 @@ export function ScratchpadCanvas() {
 			{/* Floating Toolbar */}
 			<div className="canvas-toolbar">
 				<button
+					type="button"
 					className={activeTool === "brush" ? "is-active" : ""}
 					onClick={() => setActiveTool("brush")}
 					title="画笔"
@@ -481,6 +482,7 @@ export function ScratchpadCanvas() {
 					<PenTool className="w-5 h-5" />
 				</button>
 				<button
+					type="button"
 					className={activeTool === "lasso" ? "is-active" : ""}
 					onClick={() => setActiveTool("lasso")}
 					title="套索工具 (框选追问)"
@@ -488,6 +490,7 @@ export function ScratchpadCanvas() {
 					<HelpCircle className="w-5 h-5" />
 				</button>
 				<button
+					type="button"
 					className={activeTool === "pan" ? "is-active" : ""}
 					onClick={() => setActiveTool("pan")}
 					title="移动画布"
@@ -495,10 +498,10 @@ export function ScratchpadCanvas() {
 					<Move className="w-5 h-5" />
 				</button>
 				<div className="divider" />
-				<button onClick={addStickyNote} title="新建便签">
+				<button type="button" onClick={addStickyNote} title="新建便签">
 					<FileText className="w-5 h-5" />
 				</button>
-				<button onClick={addCodeBox} title="代码容器">
+				<button type="button" onClick={addCodeBox} title="代码容器">
 					<Code className="w-5 h-5" />
 				</button>
 			</div>
@@ -515,7 +518,9 @@ export function ScratchpadCanvas() {
 					>
 						<div className="modal-header">
 							<h3>对框选区域发起追问</h3>
-							<button onClick={() => setSelectedRegion(null)}>✕</button>
+							<button type="button" onClick={() => setSelectedRegion(null)}>
+								✕
+							</button>
 						</div>
 						<div className="modal-body">
 							<div className="crop-preview-box">
@@ -625,14 +630,24 @@ const CanvasWrapper = styled.section`
     width: 280px;
   }
 
-  .item-drag-handle {
+	.item-drag-handle {
     display: flex;
     justify-content: space-between;
     align-items: center;
     cursor: move;
     border-bottom: 1px solid var(--color-border);
-    padding-bottom: var(--space-4);
-  }
+		padding-bottom: var(--space-4);
+	}
+
+	.item-drag-control {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		background: transparent;
+		color: inherit;
+		cursor: move;
+	}
 
   .canvas-item-wrapper.code .item-drag-handle {
     border-bottom: 1px solid oklch(90% 0.02 240 / 0.12);

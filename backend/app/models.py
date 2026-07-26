@@ -469,3 +469,11 @@ class KnowledgeBaseIngestionJob(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: datetime | None = Field(default=None)
     finished_at: datetime | None = Field(default=None)
+
+
+class WorkerHeartbeat(SQLModel, table=True):
+    """Last observed liveness signal for a durable background worker."""
+
+    worker_name: str = Field(primary_key=True, max_length=64)
+    worker_id: str = Field(max_length=64)
+    last_heartbeat_at: datetime = Field(index=True)

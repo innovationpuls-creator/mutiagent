@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 from datetime import datetime
 from typing import Literal
@@ -14,6 +16,13 @@ AdminBatchAction = Literal["activate", "deactivate", "delete", "set_role"]
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 _PHONE_RE = re.compile(r"^1[3-9]\d[\s]?\d{4}[\s]?\d{4}$")
 _IDENTIFIER_EXPLAIN = "请输入有效的邮箱或手机号（11 位中国大陆手机号）"
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_IMAGE_DATA_URL_LENGTH = 12 * 1024 * 1024
+_IMAGE_SIGNATURES = {
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/webp": (b"RIFF", b"WEBP"),
+}
 
 
 def _validate_identifier(value: str) -> str:
@@ -35,6 +44,38 @@ def _validate_class_name_is_not_identifier(identifier: str, class_name: str) -> 
         raise ValueError("班级不能填写登录标识")
 
 
+def _validate_image_attachment(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if len(value) > MAX_IMAGE_DATA_URL_LENGTH:
+        raise ValueError("图片不能超过 8 MB。")
+    if not value.startswith("data:") or ";base64," not in value:
+        raise ValueError("图片必须使用 PNG、JPEG 或 WebP 的 Base64 数据。")
+
+    header, encoded = value[5:].split(";base64,", 1)
+    if header not in _IMAGE_SIGNATURES:
+        raise ValueError("只支持 PNG、JPEG 或 WebP 图片。")
+    try:
+        image_bytes = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("图片 Base64 数据无效。") from exc
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        raise ValueError("图片不能超过 8 MB。")
+
+    signatures = _IMAGE_SIGNATURES[header]
+    if header == "image/webp":
+        valid_signature = (
+            len(image_bytes) >= 12
+            and image_bytes.startswith(signatures[0])
+            and image_bytes[8:12] == signatures[1]
+        )
+    else:
+        valid_signature = image_bytes.startswith(signatures[0])
+    if not valid_signature:
+        raise ValueError("图片文件内容与声明的格式不匹配。")
+    return value
+
+
 # ── Auth ──
 
 
@@ -49,11 +90,12 @@ class LoginRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     username: str = Field(min_length=1, max_length=64)
     identifier: str = Field(min_length=3, max_length=128)
     password: str = Field(min_length=6, max_length=128)
     confirm_password: str = Field(min_length=6, max_length=128)
-    role: UserRole = "student"
     school: str = Field(min_length=1, max_length=128)
     major: str = Field(min_length=1, max_length=128)
     class_name: str = Field(min_length=1, max_length=128)
@@ -552,6 +594,11 @@ class ChatMessageRequest(BaseModel):
         default=None, description="Base64 encoded image attachment"
     )
 
+    @field_validator("image_attachment")
+    @classmethod
+    def validate_image_attachment(cls, value: str | None) -> str | None:
+        return _validate_image_attachment(value)
+
 
 class ChatResponse(BaseModel):
     session_id: str
@@ -759,3 +806,8 @@ class ForestAiStreamRequest(BaseModel):
     image_attachment: str | None = Field(
         default=None, description="Base64 encoded image attachment"
     )
+
+    @field_validator("image_attachment")
+    @classmethod
+    def validate_image_attachment(cls, value: str | None) -> str | None:
+        return _validate_image_attachment(value)

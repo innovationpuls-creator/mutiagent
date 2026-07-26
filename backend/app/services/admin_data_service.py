@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy import and_, case, func
+from sqlalchemy.orm import aliased
 from sqlmodel import Session, select
 
 from app.models import (
@@ -28,84 +29,118 @@ from app.services.cultivation_program_service import (
 
 
 def get_data_overview(session: Session) -> DataOverviewResponse:
-    users = session.exec(select(User)).all()
     accounts = {"student": 0, "admin": 0}
-    cohorts = set()
-    for user in users:
-        role = "admin" if user.role in {"admin", "teacher"} else "student"
-        accounts[role] = accounts.get(role, 0) + 1
-        if user.school.strip() and user.major.strip() and user.class_name.strip():
-            cohorts.add((user.school, user.major, user.class_name))
+    for role, count in session.exec(
+        select(User.role, func.count(User.uid)).group_by(User.role)
+    ).all():
+        category = "admin" if role in {"admin", "teacher"} else "student"
+        accounts[category] += int(count)
+
+    cohort_scopes = (
+        select(User.school, User.major, User.class_name)
+        .where(
+            func.trim(User.school) != "",
+            func.trim(User.major) != "",
+            func.trim(User.class_name) != "",
+        )
+        .distinct()
+        .subquery()
+    )
 
     return DataOverviewResponse(
         accounts=accounts,
-        cohorts=len(cohorts),
-        programs=len(session.exec(select(CultivationProgram)).all()),
+        cohorts=_count_statement(
+            session, select(func.count()).select_from(cohort_scopes)
+        ),
+        programs=_count_model_rows(session, CultivationProgram),
         learning_data={
-            "profiles": len(session.exec(select(UserProfile)).all()),
-            "year_learning_paths": len(
-                session.exec(select(UserYearLearningPath)).all()
-            ),
-            "course_outlines": len(
-                session.exec(select(UserCourseKnowledgeOutline)).all()
-            ),
-            "chapter_quizzes": len(session.exec(select(ChapterQuiz)).all()),
-            "chapter_progress": len(session.exec(select(ChapterProgress)).all()),
-            "resource_quality": len(session.exec(select(CourseResourceQuality)).all()),
-            "conversation_sessions": len(
-                session.exec(select(ConversationSession)).all()
-            ),
+            "profiles": _count_model_rows(session, UserProfile),
+            "year_learning_paths": _count_model_rows(session, UserYearLearningPath),
+            "course_outlines": _count_model_rows(session, UserCourseKnowledgeOutline),
+            "chapter_quizzes": _count_model_rows(session, ChapterQuiz),
+            "chapter_progress": _count_model_rows(session, ChapterProgress),
+            "resource_quality": _count_model_rows(session, CourseResourceQuality),
+            "conversation_sessions": _count_model_rows(session, ConversationSession),
         },
     )
 
 
 def list_data_cohorts(session: Session) -> list[DataCohortRead]:
-    users = session.exec(select(User)).all()
-    grouped: dict[tuple[str, str, str], dict[str, int]] = defaultdict(
-        lambda: {"student": 0, "admin": 0}
-    )
-    for user in users:
-        if (
-            not user.school.strip()
-            or not user.major.strip()
-            or not user.class_name.strip()
-        ):
-            continue
-        role = "admin" if user.role in {"admin", "teacher"} else "student"
-        grouped[(user.school, user.major, user.class_name)][role] += 1
-
-    programs = session.exec(select(CultivationProgram)).all()
-    program_map = {
-        (program.school, program.major, program.class_name): program
-        for program in programs
-    }
+    teacher = aliased(User)
+    is_program_manager = User.role.in_(("admin", "teacher"))
+    student_count = func.coalesce(func.sum(case((is_program_manager, 0), else_=1)), 0)
+    admin_count = func.coalesce(func.sum(case((is_program_manager, 1), else_=0)), 0)
+    cohort_rows = session.exec(
+        select(
+            User.school,
+            User.major,
+            User.class_name,
+            student_count,
+            admin_count,
+            CultivationProgram.program_id,
+            CultivationProgram.updated_at,
+            teacher.username,
+        )
+        .select_from(User)
+        .outerjoin(
+            CultivationProgram,
+            and_(
+                CultivationProgram.school == User.school,
+                CultivationProgram.major == User.major,
+                CultivationProgram.class_name == User.class_name,
+            ),
+        )
+        .outerjoin(teacher, teacher.uid == CultivationProgram.teacher_uid)
+        .where(
+            func.trim(User.school) != "",
+            func.trim(User.major) != "",
+            func.trim(User.class_name) != "",
+        )
+        .group_by(
+            User.school,
+            User.major,
+            User.class_name,
+            CultivationProgram.program_id,
+            CultivationProgram.updated_at,
+            teacher.username,
+        )
+        .order_by(User.school, User.major, User.class_name)
+    ).all()
     rows: list[DataCohortRead] = []
-    for (school, major, class_name), counts in sorted(grouped.items()):
-        program = program_map.get((school, major, class_name))
-        teacher = session.get(User, program.teacher_uid) if program else None
+    for (
+        school,
+        major,
+        class_name,
+        student_count_value,
+        admin_count_value,
+        program_id,
+        program_updated_at,
+        teacher_name,
+    ) in cohort_rows:
         rows.append(
             DataCohortRead(
                 school=school,
                 major=major,
                 class_name=class_name,
-                student_count=counts["student"],
-                admin_count=counts["admin"],
-                has_program=program is not None,
-                program_teacher_name=teacher.username if teacher else None,
-                program_updated_at=program.updated_at if program else None,
+                student_count=int(student_count_value),
+                admin_count=int(admin_count_value),
+                has_program=program_id is not None,
+                program_teacher_name=teacher_name if program_id is not None else None,
+                program_updated_at=(
+                    program_updated_at if program_id is not None else None
+                ),
             )
         )
     return rows
 
 
 def list_data_programs(session: Session):
-    programs = session.exec(
-        select(CultivationProgram).order_by(CultivationProgram.updated_at.desc())
+    program_rows = session.exec(
+        select(CultivationProgram, User)
+        .outerjoin(User, User.uid == CultivationProgram.teacher_uid)
+        .order_by(CultivationProgram.updated_at.desc())
     ).all()
-    rows = []
-    for program in programs:
-        rows.append(to_program_read(program, session.get(User, program.teacher_uid)))
-    return rows
+    return [to_program_read(program, teacher) for program, teacher in program_rows]
 
 
 def read_user_learning_data(session: Session, uid: str) -> UserLearningDataRead:
@@ -181,3 +216,11 @@ def delete_program_for_data_cohort(
 
 def _model_dict(row: Any) -> dict:
     return row.model_dump(mode="json")
+
+
+def _count_model_rows(session: Session, model: type[Any]) -> int:
+    return _count_statement(session, select(func.count()).select_from(model))
+
+
+def _count_statement(session: Session, statement: Any) -> int:
+    return int(session.exec(statement).one())

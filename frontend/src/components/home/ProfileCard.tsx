@@ -51,6 +51,7 @@ export function ProfileCard({
 							strokeWidth="2"
 							strokeLinecap="round"
 							strokeLinejoin="round"
+							aria-hidden="true"
 							style={{ marginLeft: 4 }}
 						>
 							<polyline points="9 18 15 12 9 6"></polyline>

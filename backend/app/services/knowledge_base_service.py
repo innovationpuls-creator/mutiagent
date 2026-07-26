@@ -3,15 +3,17 @@ from __future__ import annotations
 import logging
 import os
 import re
+import socket
 from collections.abc import Generator
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from hashlib import sha1
+from ipaddress import ip_address
 from json import loads
 from time import monotonic
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import urljoin, urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import uuid4
 
 from langchain_openai import OpenAIEmbeddings
@@ -1875,22 +1877,71 @@ def _validated_textbook_url(value: object) -> str:
     url = _clean_text(value)
     if not url:
         return ""
-    parsed = urlparse(url)
-    hostname = parsed.hostname.lower() if parsed.hostname else ""
-    if parsed.scheme not in {"http", "https"} or not hostname:
-        return ""
-    if hostname in _PLACEHOLDER_HOSTS:
+    if not _is_safe_textbook_url(url):
         return ""
     if not _is_reachable_textbook_url(url):
         return ""
     return url
 
 
+def _is_safe_textbook_url(url: str) -> bool:
+    parsed = urlparse(url)
+    hostname = parsed.hostname.lower() if parsed.hostname else ""
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or hostname in _PLACEHOLDER_HOSTS
+    ):
+        return False
+    return _is_public_textbook_hostname(hostname)
+
+
+def _is_public_textbook_hostname(hostname: str) -> bool:
+    try:
+        return ip_address(hostname).is_global
+    except ValueError:
+        pass
+
+    try:
+        address_info = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+    except OSError:
+        return False
+
+    addresses = {item[4][0].split("%", 1)[0] for item in address_info}
+    if not addresses:
+        return False
+    try:
+        return all(ip_address(address).is_global for address in addresses)
+    except ValueError:
+        return False
+
+
+class _SafeTextbookRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        req: Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> Request | None:
+        target_url = urljoin(req.full_url, newurl)
+        if not _is_safe_textbook_url(target_url):
+            raise HTTPError(target_url, 403, "Unsafe redirect target", None, None)
+        return super().redirect_request(req, fp, code, msg, headers, target_url)
+
+
 def _is_reachable_textbook_url(url: str) -> bool:
+    opener = build_opener(_SafeTextbookRedirectHandler())
     for method in ("HEAD", "GET"):
         try:
             request = Request(url, method=method, headers={"User-Agent": "mutiagent"})
-            with urlopen(request, timeout=8) as response:
+            with opener.open(request, timeout=8) as response:
+                if not _is_safe_textbook_url(response.geturl()):
+                    return False
                 status = getattr(response, "status", 200)
                 content_type = response.headers.get("content-type", "").lower()
                 return 200 <= status < 400 and any(

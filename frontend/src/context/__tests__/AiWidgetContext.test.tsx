@@ -1,5 +1,4 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import React from "react";
 import { expect, test } from "vitest";
 import { AiWidgetProvider, useAiWidget } from "../AiWidgetContext";
 
@@ -15,11 +14,15 @@ function TestComponent() {
 		<div>
 			<span data-testid="state">{widgetState}</span>
 			<span data-testid="pending">{pendingMessage?.text ?? ""}</span>
-			<button onClick={() => setWidgetState("EXPANDED")}>Expand</button>
-			<button onClick={() => openWithMessage("开始第一门课")}>
+			<button type="button" onClick={() => setWidgetState("EXPANDED")}>
+				Expand
+			</button>
+			<button type="button" onClick={() => openWithMessage("开始第一门课")}>
 				Open With Message
 			</button>
-			<button onClick={clearPendingMessage}>Clear Pending</button>
+			<button type="button" onClick={clearPendingMessage}>
+				Clear Pending
+			</button>
 		</div>
 	);
 }
@@ -46,10 +49,10 @@ function PendingMessageIdProbe() {
 		<div>
 			<span data-testid="pending-id">{pendingMessage?.id ?? ""}</span>
 			<span data-testid="pending-text">{pendingMessage?.text ?? ""}</span>
-			<button onClick={() => openWithMessage("第一条消息")}>
+			<button type="button" onClick={() => openWithMessage("第一条消息")}>
 				First Pending
 			</button>
-			<button onClick={() => openWithMessage("第二条消息")}>
+			<button type="button" onClick={() => openWithMessage("第二条消息")}>
 				Second Pending
 			</button>
 		</div>

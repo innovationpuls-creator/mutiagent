@@ -151,7 +151,8 @@ def create_tools_for_llm() -> list:
         当你已经收集到足够的用户信息（年级、专业、偏好、目标等）时调用。
 
         Args:
-            conversation_summary: 对用户已提供信息的总结，包含年级、专业、学习偏好、目标等
+            conversation_summary: 对用户已提供信息的总结，包含年级、专业、
+                学习偏好、目标等
         """
         return ""
 
@@ -185,7 +186,8 @@ def create_tools_for_llm() -> list:
         注意：仅在为特定课程生成大纲结构时使用。如果是通用的问答或概念解释，绝对禁止调用此工具。
 
         Args:
-            course_id: 课程 ID（可选，留空则生成当前课程；"__all_current_grade__" 表示当前年级全部课程）
+            course_id: 课程 ID（可选，留空则生成当前课程；
+                "__all_current_grade__" 表示当前年级全部课程）
         """
         return ""
 
@@ -196,7 +198,9 @@ def create_tools_for_llm() -> list:
         scope: str = "default_first_chapter",
     ) -> str:
         """为当前大纲中已存在的具体章节小节生成结构化的 Markdown 教学文档。
-        注意：仅在生成课程小节内容时调用。如果用户是询问通用概念（如“什么是 FastAPI”、“如何学习后端”），绝对禁止调用此工具，应直接以文本形式回复用户。
+        注意：仅在生成课程小节内容时调用。如果用户是询问通用概念
+        （如“什么是 FastAPI”、“如何学习后端”），绝对禁止调用此工具，
+        应直接以文本形式回复用户。
 
         Args:
             course_id: 课程 ID，留空时使用当前课程
@@ -237,7 +241,7 @@ def create_tools_for_llm() -> list:
 # ── Force call helper ────────────────────────────────────────────────────
 
 
-def _next_course_id_for_course_change(state: OrchestrationState) -> str:
+def _next_course_id_for_course_change(state: OrchestrationState) -> str:  # noqa: C901
     query = str(state.get("query", "")).strip()
     if not is_course_change_query(query):
         return ""
@@ -293,7 +297,7 @@ def _normalized_course_match_text(value: object) -> str:
     )
 
 
-def _course_id_from_query_course_name(state: OrchestrationState) -> str:
+def _course_id_from_query_course_name(state: OrchestrationState) -> str:  # noqa: C901
     query_key = _normalized_course_match_text(state.get("query", ""))
     if not query_key:
         return ""
@@ -528,7 +532,7 @@ def _section_markdown_force_args(state: OrchestrationState) -> dict[str, str]:
     return {"course_id": course_id, "section_id": "", "scope": "default_first_chapter"}
 
 
-def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
+def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:  # noqa: C901
     """When the rule engine mandates a forced agent call."""
     if agent_key == AGENT_PROFILE:
         query = state.get("query", "")
@@ -670,7 +674,7 @@ def _force_call_response(agent_key: str, state: OrchestrationState) -> dict:
 # ── Supervisor node factory ──────────────────────────────────────────────
 
 
-def create_supervisor_node(llm: BaseChatModel):
+def create_supervisor_node(llm: BaseChatModel):  # noqa: C901
     """Create the Supervisor LangGraph node.
 
     Uses rule_engine.evaluate() for hard agent gating,
@@ -680,7 +684,7 @@ def create_supervisor_node(llm: BaseChatModel):
     tools = create_tools_for_llm()
     llm_with_tools = llm.bind_tools(tools)
 
-    async def supervisor_node(state: OrchestrationState) -> dict:
+    async def supervisor_node(state: OrchestrationState) -> dict:  # noqa: C901
         rule_result = evaluate_rules(state)
 
         # Force call: bypass LLM entirely

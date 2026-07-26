@@ -149,6 +149,15 @@ case "$url" in
             printf '{"status":"ok","database":"connected"}\n'
         fi
         ;;
+    "https://${PUBLIC_IPV4}/api/health/deep")
+        [[ "$connect_to" == "$expected_https_connect" ]] || exit 110
+        printf 'deep\n' >> "$CURL_LOG"
+        if [[ "$FAIL_STEP" == "deep" ]]; then
+            printf '{"status":"error","database":"connected","knowledge_base_worker":"unavailable"}\n'
+        else
+            printf '{"status":"ok","database":"connected","knowledge_base_worker":"connected"}\n'
+        fi
+        ;;
     "https://${PUBLIC_IPV4}/api/auth/login")
         [[ "$connect_to" == "$expected_https_connect" ]] || exit 98
         [[ -f "$data_file" ]] || exit 99
@@ -271,7 +280,7 @@ from pathlib import Path
 
 calls = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
 assert Counter(calls) == Counter(
-    ["tls", "redirect", "live", "ready", "home", "login", "me"]
+    ["tls", "redirect", "live", "ready", "deep", "home", "login", "me"]
 )
 PY
 
@@ -285,11 +294,11 @@ from pathlib import Path
 
 calls = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
 assert Counter(calls) == Counter(
-    ["public-domain", "tls", "redirect", "live", "ready", "home", "login", "me"]
+    ["public-domain", "tls", "redirect", "live", "ready", "deep", "home", "login", "me"]
 )
 PY
 
-for fail_step in tls redirect live ready home login me; do
+for fail_step in tls redirect live ready deep home login me; do
     run_smoke production-ip "$fail_step" nonzero
 done
 run_smoke production public-domain nonzero

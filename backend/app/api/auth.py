@@ -24,7 +24,9 @@ from app.services.auth_service import (
 SessionDependency = Callable[[], Generator[Session, None, None]]
 
 
-def create_auth_router(session_dependency: SessionDependency) -> APIRouter:
+def create_auth_router(
+    session_dependency: SessionDependency, *, allow_mock_oauth: bool
+) -> APIRouter:
     router = APIRouter(prefix="/api/auth", tags=["auth"])
     get_current_user = create_get_current_user(session_dependency)
 
@@ -44,11 +46,13 @@ def create_auth_router(session_dependency: SessionDependency) -> APIRouter:
     ) -> AuthResponse:
         return login_user(session, payload)
 
-    @router.post("/oauth/mock", response_model=AuthResponse)
-    def oauth(
-        payload: OAuthRequest, session: Session = Depends(session_dependency)
-    ) -> AuthResponse:
-        return login_with_oauth(session, payload)
+    if allow_mock_oauth:
+
+        @router.post("/oauth/mock", response_model=AuthResponse)
+        def oauth(
+            payload: OAuthRequest, session: Session = Depends(session_dependency)
+        ) -> AuthResponse:
+            return login_with_oauth(session, payload)
 
     @router.get("/me", response_model=UserRead)
     def me(current_user: User = Depends(get_current_user)) -> UserRead:

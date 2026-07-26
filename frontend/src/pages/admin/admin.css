@@ -983,6 +983,11 @@
 	border: none !important;
 }
 
+.admin-kb-composer textarea:focus-visible {
+	outline: calc(var(--space-4) / 2) solid var(--color-focus-ring) !important;
+	outline-offset: var(--space-4);
+}
+
 .admin-kb-hit-strip,
 .admin-kb-gap-block {
 	display: grid;
@@ -1264,7 +1269,8 @@
 .admin-user-chip:focus-visible,
 .admin-page button:focus-visible,
 .admin-page input:focus-visible,
-.admin-page select:focus-visible {
+.admin-page select:focus-visible,
+.admin-page textarea:focus-visible {
 	outline: 2px solid var(--color-focus-ring);
 	outline-offset: var(--space-4);
 }
@@ -2091,7 +2097,8 @@
 	position: relative;
 	inline-size: 48px;
 	block-size: 64px;
-	border-radius: var(--radius-sm) var(--radius-md) var(--radius-md) var(--radius-sm);
+	border-radius: var(--radius-sm) var(--radius-md) var(--radius-md)
+		var(--radius-sm);
 	display: flex;
 	align-items: center;
 	justify-content: center;

@@ -163,9 +163,15 @@ def test_profile_dashboard_marks_unsupported_postgraduate_grade_as_needing_revis
                         "weekly_available_time": "每周 8 小时",
                         "constraints": "时间有限",
                     },
-                    "text": "当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。",
+                    "text": (
+                        "当前学习路径只支持大一到大四。你当前提供的年级是「研一」，"
+                        "请先确认对应的本科年级。"
+                    ),
                 },
-                profile_text="当前学习路径只支持大一到大四。你当前提供的年级是「研一」，请先确认对应的本科年级。",
+                profile_text=(
+                    "当前学习路径只支持大一到大四。你当前提供的年级是「研一」，"
+                    "请先确认对应的本科年级。"
+                ),
             )
         )
         session.commit()
@@ -286,7 +292,9 @@ def test_profile_dashboard_prefers_current_learning_course_from_path(
                                         "duration": "6 周",
                                         "pace_reason": "围绕平时学习节奏安排",
                                     },
-                                    "course_goal": "完成一个 AI 功能模块并接入 Web 应用",
+                                    "course_goal": (
+                                        "完成一个 AI 功能模块并接入 Web 应用"
+                                    ),
                                     "prerequisite_node_ids": [],
                                     "chapter_nodes": [],
                                     "core_knowledge_points": [],
@@ -460,7 +468,9 @@ def test_profile_dashboard_keeps_learning_path_visible_when_profile_is_collectin
                                         "duration": "6 周",
                                         "pace_reason": "围绕平时学习节奏安排",
                                     },
-                                    "course_goal": "完成一个 AI 功能模块并接入 Web 应用",
+                                    "course_goal": (
+                                        "完成一个 AI 功能模块并接入 Web 应用"
+                                    ),
                                     "prerequisite_node_ids": [],
                                     "chapter_nodes": [],
                                     "core_knowledge_points": [],
@@ -508,7 +518,7 @@ def test_profile_dashboard_keeps_learning_path_visible_when_profile_is_collectin
     assert body["recommendations"] == []
 
 
-def test_profile_dashboard_prefers_latest_updated_learning_path_when_multiple_years_exist(
+def test_profile_dashboard_prefers_latest_updated_learning_path_when_multiple_years_exist(  # noqa: E501
     tmp_path: Path,
 ) -> None:
     database_url = postgresql_test_url(tmp_path, "profile-latest-path")

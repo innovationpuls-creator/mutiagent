@@ -1168,7 +1168,8 @@ class TestChatEndpoints:
 
             assert response.status_code == 200
             assert "event: error" in response.text
-            assert "编排流异常中断" in response.text
+            assert "对话请求失败，请稍后重试。" in response.text
+            assert "编排流异常中断" not in response.text
             assert "message_completed" not in response.text
 
             engine = build_engine(postgresql_test_url(tmp_path, "chat-test"))
@@ -1225,7 +1226,8 @@ class TestChatEndpoints:
 
             assert response.status_code == 200
             assert "event: error" in response.text
-            assert "会话持久化失败" in response.text
+            assert "对话请求失败，请稍后重试。" in response.text
+            assert "会话持久化失败" not in response.text
             assert "message_completed" not in response.text
             assert "session_completed" not in response.text
             assert len(appended_batches) == 2
@@ -2149,7 +2151,8 @@ class TestChatEndpoints:
 
             assert response.status_code == 200
             assert "event: error" in response.text
-            assert "课程大纲会话持久化失败" in response.text
+            assert "对话请求失败，请稍后重试。" in response.text
+            assert "课程大纲会话持久化失败" not in response.text
             assert "message_completed" not in response.text
             assert "session_completed" not in response.text
             assert len(appended_batches) == 2

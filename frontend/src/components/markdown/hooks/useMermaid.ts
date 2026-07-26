@@ -10,7 +10,12 @@ export function useMermaid(enabled = true) {
 
 		import("mermaid").then((module) => {
 			const m = (module.default || module) as any;
-			m.initialize({ startOnLoad: false, theme: "default" });
+			m.initialize({
+				startOnLoad: false,
+				theme: "default",
+				securityLevel: "strict",
+				htmlLabels: false,
+			});
 			if (active) {
 				mermaidRef.current = m;
 				setIsLoaded(true);

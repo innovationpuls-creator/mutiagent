@@ -1,7 +1,8 @@
 import QRCode from "qrcode";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { providerLabels } from "../../constants/auth";
 import type { OAuthProvider } from "../../types/auth";
+import { useDialogAccessibility } from "../ui/useDialogAccessibility";
 
 interface OAuthStatusDialogProps {
 	onClose(): void;
@@ -15,6 +16,12 @@ export function OAuthStatusDialog({
 	open,
 }: OAuthStatusDialogProps) {
 	const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+	const closeButtonRef = useRef<HTMLButtonElement>(null);
+	useDialogAccessibility({
+		isOpen: open && Boolean(provider),
+		onClose,
+		initialFocusRef: closeButtonRef,
+	});
 
 	useEffect(() => {
 		if (!open || !provider) {
@@ -46,15 +53,16 @@ export function OAuthStatusDialog({
 	const label = providerLabels[provider];
 
 	return (
-		<div className="oauth-dialog-backdrop" role="presentation">
+		<div className="oauth-dialog-backdrop">
 			<div
+				aria-labelledby="oauth-status-title"
 				className="oauth-dialog"
 				role="dialog"
 				aria-label="扫码登录"
 				aria-modal="true"
 			>
 				<span className="section-kicker">扫码登录</span>
-				<h2>使用{label}扫码登录</h2>
+				<h2 id="oauth-status-title">使用{label}扫码登录</h2>
 				<figure className="oauth-qr-shell" aria-label={`${label} 登录二维码`}>
 					{qrCodeUrl ? (
 						<img
@@ -67,7 +75,12 @@ export function OAuthStatusDialog({
 					)}
 				</figure>
 				<p>请使用{label} App 扫描二维码，在手机上确认后继续。</p>
-				<button className="oauth-dialog-close" type="button" onClick={onClose}>
+				<button
+					className="oauth-dialog-close"
+					type="button"
+					onClick={onClose}
+					ref={closeButtonRef}
+				>
 					返回登录
 				</button>
 			</div>

@@ -75,17 +75,18 @@ curl -fL --retry 5 --connect-timeout 10 https://raw.githubusercontent.com/innova
 
 ## 5. 部署后检查
 
-自动检查只覆盖服务、数据库、首页、HTTPS 和真实登录。完整学习流程继续人工测试。
+自动检查覆盖服务、数据库、Worker 心跳、首页、HTTPS 和真实登录。完整学习流程继续人工测试。
 
 ```bash
 docker compose --env-file /opt/onetree/.env.production -f /opt/onetree/deploy/compose.production.yml ps
 curl -fsS https://1.12.69.26/api/health/live
 curl -fsS https://1.12.69.26/api/health/ready
+curl -fsS https://1.12.69.26/api/health/deep
 curl -I http://1.12.69.26
 curl -I https://1.12.69.26
 ```
 
-`http://1.12.69.26` 应返回 HTTPS 跳转，live 和 ready 均应成功。
+`http://1.12.69.26` 应返回 HTTPS 跳转；live 和 ready 均应成功。deep 成功时返回 `status: ok`、`database: connected` 和 `knowledge_base_worker: connected`。live 只检查应用进程，ready 只检查数据库；Worker 心跳由 deep 单独检查。
 
 ## 6. 后续一条命令更新
 
@@ -222,7 +223,10 @@ cd /opt/onetree
 docker compose --env-file /opt/onetree/.env.production -f /opt/onetree/deploy/compose.production.yml ps
 docker compose --env-file /opt/onetree/.env.production -f /opt/onetree/deploy/compose.production.yml logs --tail 300 nginx backend worker postgres
 curl -i https://1.12.69.26/api/health/ready
+curl -i https://1.12.69.26/api/health/deep
 ```
+
+如果 deep 返回 `503` 且 `knowledge_base_worker` 为 `unavailable`，检查 worker 日志；这表示没有可用的 Worker 心跳，不会改变 live 或 ready 的轻量检查语义。
 
 确认生产配置权限，不要输出文件内容：
 

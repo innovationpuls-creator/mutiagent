@@ -125,12 +125,12 @@ describe("ForestQuizOverlay", () => {
 		renderOverlay({ weaknesses });
 		expect(screen.getByText("递归")).toBeTruthy();
 		expect(screen.getByText("动态规划")).toBeTruthy();
-		expect(screen.getByText("// 薄弱方向收录")).toBeTruthy();
+		expect(screen.getByText("薄弱方向收录")).toBeTruthy();
 	});
 
 	it("does not show weakness section when empty", () => {
 		renderOverlay({ weaknesses: [] });
-		expect(screen.queryByText("// 薄弱方向收录")).toBeNull();
+		expect(screen.queryByText("薄弱方向收录")).toBeNull();
 	});
 
 	it('shows "解锁下一章" button when passed and next chapter exists', () => {

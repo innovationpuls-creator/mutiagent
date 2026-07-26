@@ -121,7 +121,7 @@ def test_force_call_response_maps_named_outline_regeneration_to_course_id() -> N
                             "course_nodes": [
                                 {
                                     "course_node_id": "year_3_course_1",
-                                    "course_or_chapter_theme": "AI Agent 开发基础能力搭建",
+                                    "course_or_chapter_theme": "AI Agent 开发基础能力搭建",  # noqa: E501
                                 },
                             ],
                         },
@@ -154,11 +154,15 @@ def test_force_call_response_maps_chinese_course_name_to_course_id_for_outline()
                             "course_nodes": [
                                 {
                                     "course_node_id": "year_3_course_1",
-                                    "course_or_chapter_theme": "AI Agent 开发基础能力搭建",
+                                    "course_or_chapter_theme": (
+                                        "AI Agent 开发基础能力搭建"
+                                    ),
                                 },
                                 {
                                     "course_node_id": "year_3_course_2",
-                                    "course_or_chapter_theme": "AI应用核心架构与RAG实战",
+                                    "course_or_chapter_theme": (
+                                        "AI应用核心架构与RAG实战"
+                                    ),
                                 },
                             ],
                         },
@@ -189,11 +193,15 @@ def test_force_call_response_uses_current_course_for_generic_start_query() -> No
                             "course_nodes": [
                                 {
                                     "course_node_id": "year_3_course_1",
-                                    "course_or_chapter_theme": "LangGraph 核心架构与单智能体状态机构建",
+                                    "course_or_chapter_theme": (
+                                        "LangGraph 核心架构与单智能体状态机构建"
+                                    ),
                                 },
                                 {
                                     "course_node_id": "year_3_course_2",
-                                    "course_or_chapter_theme": "多轮对话记忆管理与 RAG 增强",
+                                    "course_or_chapter_theme": (
+                                        "多轮对话记忆管理与 RAG 增强"
+                                    ),
                                 },
                             ],
                         },
@@ -208,7 +216,7 @@ def test_force_call_response_uses_current_course_for_generic_start_query() -> No
     assert tool_call["args"] == {"course_id": "year_3_course_1"}
 
 
-def test_force_call_response_uses_sentinel_for_explicit_all_course_outline_request() -> (
+def test_force_call_response_uses_sentinel_for_explicit_all_course_outline_request() -> (  # noqa: E501
     None
 ):
     response = _force_call_response(
@@ -243,7 +251,7 @@ def test_learning_path_force_args_uses_profile_topic_for_generic_refresh_query()
     }
 
 
-def test_learning_path_force_args_treats_punctuated_generic_refresh_query_as_generic() -> (
+def test_learning_path_force_args_treats_punctuated_generic_refresh_query_as_generic() -> (  # noqa: E501
     None
 ):
     args = _learning_path_force_args({"query": "继续生成学习路径。"})
@@ -255,7 +263,7 @@ def test_learning_path_force_args_treats_punctuated_generic_refresh_query_as_gen
     }
 
 
-def test_force_call_response_uses_specific_requirements_for_detailed_path_refresh_query() -> (
+def test_force_call_response_uses_specific_requirements_for_detailed_path_refresh_query() -> (  # noqa: E501
     None
 ):
     response = _force_call_response(
@@ -328,7 +336,7 @@ def test_force_call_response_maps_current_course_resource_query_to_one_chapter()
     }
 
 
-def test_force_call_response_maps_english_second_chapter_query_to_real_root_section() -> (
+def test_force_call_response_maps_english_second_chapter_query_to_real_root_section() -> (  # noqa: E501
     None
 ):
     response = _force_call_response(
@@ -367,7 +375,7 @@ def test_force_call_response_maps_english_second_chapter_query_to_real_root_sect
     }
 
 
-def test_force_call_response_prompts_for_profile_details_on_generic_profile_update_query() -> (
+def test_force_call_response_prompts_for_profile_details_on_generic_profile_update_query() -> (  # noqa: E501
     None
 ):
     response = _force_call_response(
@@ -388,7 +396,7 @@ def test_force_call_response_prompts_for_profile_details_on_generic_profile_upda
     assert not message.tool_calls
 
 
-def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_profile_update_query() -> (
+def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_profile_update_query() -> (  # noqa: E501
     None
 ):
     response = _force_call_response(
@@ -409,7 +417,7 @@ def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_p
     assert not message.tool_calls
 
 
-def test_force_call_response_prompts_for_profile_details_on_profile_completion_query() -> (
+def test_force_call_response_prompts_for_profile_details_on_profile_completion_query() -> (  # noqa: E501
     None
 ):
     response = _force_call_response(
@@ -430,7 +438,7 @@ def test_force_call_response_prompts_for_profile_details_on_profile_completion_q
     assert not message.tool_calls
 
 
-def test_force_call_response_prompts_for_profile_details_on_question_alignment_query() -> (
+def test_force_call_response_prompts_for_profile_details_on_question_alignment_query() -> (  # noqa: E501
     None
 ):
     response = _force_call_response(
@@ -451,7 +459,7 @@ def test_force_call_response_prompts_for_profile_details_on_question_alignment_q
     assert not message.tool_calls
 
 
-def test_force_call_response_prompts_for_profile_details_on_generic_path_refresh_after_completion() -> (
+def test_force_call_response_prompts_for_profile_details_on_generic_path_refresh_after_completion() -> (  # noqa: E501
     None
 ):
     response = _force_call_response(
@@ -476,7 +484,7 @@ def test_force_call_response_prompts_for_profile_details_on_generic_path_refresh
     assert not message.tool_calls
 
 
-def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_path_refresh_after_completion() -> (
+def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_path_refresh_after_completion() -> (  # noqa: E501
     None
 ):
     response = _force_call_response(
@@ -501,7 +509,7 @@ def test_force_call_response_prompts_for_profile_details_on_punctuated_generic_p
     assert not message.tool_calls
 
 
-def test_force_call_response_pauses_followup_when_user_says_no_need_after_completion() -> (
+def test_force_call_response_pauses_followup_when_user_says_no_need_after_completion() -> (  # noqa: E501
     None
 ):
     response = _force_call_response(
@@ -543,7 +551,7 @@ def test_force_call_response_pauses_profile_update_when_followup_has_no_change()
     assert not message.tool_calls
 
 
-def test_supervisor_node_returns_completion_reply_when_course_change_has_no_next_course() -> (
+def test_supervisor_node_returns_completion_reply_when_course_change_has_no_next_course() -> (  # noqa: E501
     None
 ):
     class GuardLlm:

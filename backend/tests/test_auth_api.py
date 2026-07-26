@@ -55,7 +55,7 @@ def test_register_persists_user_and_returns_jwt(tmp_path: Path) -> None:
     assert login_response.json()["user"]["role"] == "student"
 
 
-def test_register_can_create_admin_role(tmp_path: Path) -> None:
+def test_register_rejects_admin_role_input(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
     response = client.post(
@@ -72,8 +72,7 @@ def test_register_can_create_admin_role(tmp_path: Path) -> None:
         },
     )
 
-    assert response.status_code == 201
-    assert response.json()["user"]["role"] == "admin"
+    assert response.status_code == 422
 
 
 def test_register_rejects_class_name_equal_to_identifier(tmp_path: Path) -> None:
@@ -134,6 +133,29 @@ def test_production_startup_does_not_create_demo_user(tmp_path: Path) -> None:
             select(User).where(User.identifier == "demo@mutiagent.local")
         ).first()
     assert demo_user is None
+
+
+def test_production_does_not_expose_mock_oauth(tmp_path: Path) -> None:
+    database_url = postgresql_test_url(tmp_path, "production-no-mock-oauth")
+    migrate_to_head(build_engine(database_url))
+    settings = load_settings(
+        {
+            "APP_ENV": "production",
+            "DATABASE_URL": database_url,
+            "JWT_SECRET": "production-no-mock-oauth-jwt-secret",
+            "LLM_API_KEY": "production-no-mock-oauth-llm-api-key",
+            "LLM_MODEL": "production-no-mock-oauth-llm-model",
+            "ALLOWED_ORIGINS": "https://onetree.chat",
+        }
+    )
+
+    with TestClient(create_app(database_url=database_url, settings=settings)) as client:
+        response = client.post(
+            "/api/auth/oauth/mock",
+            json={"provider": "xuexitong", "authorization_code": "mock-code"},
+        )
+
+    assert response.status_code == 404
 
 
 def test_login_rejects_wrong_password(tmp_path: Path) -> None:

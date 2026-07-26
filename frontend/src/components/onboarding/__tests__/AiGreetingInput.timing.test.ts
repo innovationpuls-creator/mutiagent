@@ -71,9 +71,9 @@ test("keeps parallel section resource timings from falling back to previous resu
 		success: true,
 	}));
 
-	progressEvents.forEach((event) =>
-		rememberSessionEventStartTime(starts, event, 2000),
-	);
+	progressEvents.forEach((event) => {
+		rememberSessionEventStartTime(starts, event, 2000);
+	});
 
 	expect(getSessionEventStartTime(starts, resultEvents[0], 318000)).toBe(2000);
 	expect(getSessionEventStartTime(starts, resultEvents[1], 318010)).toBe(2000);

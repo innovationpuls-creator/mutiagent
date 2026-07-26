@@ -192,7 +192,9 @@ describe("AuthPage", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: /学习通登录/ }));
 
-		expect(screen.getByRole("dialog", { name: "扫码登录" })).toBeTruthy();
+		expect(
+			screen.getByRole("dialog", { name: "使用学习通扫码登录" }),
+		).toBeTruthy();
 		expect(screen.getByText("使用学习通扫码登录")).toBeTruthy();
 		expect(screen.getByLabelText("学习通 登录二维码")).toBeTruthy();
 		expect(await screen.findByAltText("学习通 登录二维码")).toBeTruthy();

@@ -2,7 +2,10 @@ from app.orchestration.agents.course_resources import _extract_recommendation_re
 
 
 def test_extracts_reason_from_markdown():
-    md = "# Hello\n\nContent here.\n\n<!-- recommendation_reason: 因为你偏好项目驱动学习 -->"
+    md = (
+        "# Hello\n\nContent here.\n\n"
+        "<!-- recommendation_reason: 因为你偏好项目驱动学习 -->"
+    )
     cleaned, reason = _extract_recommendation_reason(md)
     assert "recommendation_reason" not in cleaned
     assert reason == "因为你偏好项目驱动学习"

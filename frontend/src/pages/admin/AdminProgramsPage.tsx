@@ -182,14 +182,14 @@ export function UploadZone({ onSuccess, onError }: UploadZoneProps) {
 		e.preventDefault();
 		e.stopPropagation();
 		setIsDragActive(false);
-		if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+		if (e.dataTransfer.files?.[0]) {
 			processFile(e.dataTransfer.files[0]);
 		}
 	};
 
 	const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		e.preventDefault();
-		if (e.target.files && e.target.files[0]) {
+		if (e.target.files?.[0]) {
 			processFile(e.target.files[0]);
 		}
 	};
@@ -199,15 +199,7 @@ export function UploadZone({ onSuccess, onError }: UploadZoneProps) {
 	};
 
 	return (
-		<div
-			className={`upload-zone ${isDragActive ? "drag-active" : ""}`}
-			onDragEnter={handleDrag}
-			onDragOver={handleDrag}
-			onDragLeave={handleDrag}
-			onDrop={handleDrop}
-			onClick={handleClick}
-			data-testid="dropzone"
-		>
+		<>
 			<input
 				ref={fileInputRef}
 				type="file"
@@ -215,32 +207,43 @@ export function UploadZone({ onSuccess, onError }: UploadZoneProps) {
 				onChange={handleChange}
 				accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg"
 			/>
-			<div className="upload-icon">
-				<svg
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					strokeWidth="1.5"
-					aria-hidden="true"
-				>
-					<path
-						d="M12 16V8M12 8L9 11M12 8L15 11M20 16.5C20 18.98 17.98 21 15.5 21H8.5C6.02 21 4 18.98 4 16.5C4 14.37 5.48 12.59 7.47 12.11C8.01 7.55 11.89 4 16.5 4C18.43 4 20.14 4.62 21.5 5.67C23.16 6.94 24 9.17 24 11.5C24 13.9 22.38 15.96 20 16.5Z"
-						strokeLinecap="round"
-						strokeLinejoin="round"
-					/>
-				</svg>
-			</div>
-			<p className="upload-title">拖拽或点击上传培养方案文档</p>
-			<p className="upload-hint">
-				支持 PDF, DOCX, DOC, TXT, PNG, JPG, JPEG 格式，文件大小不超过 20MB
-			</p>
-		</div>
+			<button
+				type="button"
+				className={`upload-zone ${isDragActive ? "drag-active" : ""}`}
+				onDragEnter={handleDrag}
+				onDragOver={handleDrag}
+				onDragLeave={handleDrag}
+				onDrop={handleDrop}
+				onClick={handleClick}
+				data-testid="dropzone"
+			>
+				<div className="upload-icon">
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="1.5"
+						aria-hidden="true"
+					>
+						<path
+							d="M12 16V8M12 8L9 11M12 8L15 11M20 16.5C20 18.98 17.98 21 15.5 21H8.5C6.02 21 4 18.98 4 16.5C4 14.37 5.48 12.59 7.47 12.11C8.01 7.55 11.89 4 16.5 4C18.43 4 20.14 4.62 21.5 5.67C23.16 6.94 24 9.17 24 11.5C24 13.9 22.38 15.96 20 16.5Z"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						/>
+					</svg>
+				</div>
+				<p className="upload-title">拖拽或点击上传培养方案文档</p>
+				<p className="upload-hint">
+					支持 PDF, DOCX, DOC, TXT, PNG, JPG, JPEG 格式，文件大小不超过 20MB
+				</p>
+			</button>
+		</>
 	);
 }
 
 export function AdminProgramsPage() {
 	const { user, token } = useAuth();
-	const navigate = useNavigate();
+	const _navigate = useNavigate();
 	const reduceMotion = useReducedMotion();
 	const [pageState, setPageState] = useState<TeacherPageState>("empty");
 	const [courses, setCourses] = useState<BranchCourseNode[]>([]);
@@ -313,7 +316,7 @@ export function AdminProgramsPage() {
 		return { nodes, edges };
 	}, [courses, activeCourseId]);
 
-	const handleCanvasClick = (event: React.MouseEvent<HTMLDivElement>) => {
+	const handleCanvasClick = (event: React.MouseEvent<HTMLElement>) => {
 		const target = event.target as HTMLElement;
 		const nodeWrapper = target.closest(".node-wrapper");
 		if (nodeWrapper) {
@@ -497,12 +500,16 @@ export function AdminProgramsPage() {
 									<h3>方案依赖图谱</h3>
 									<p>培养方案中课程前置依赖与关系拓扑图</p>
 								</div>
-								<div className="canvas-wrapper" onClick={handleCanvasClick}>
+								<button
+									type="button"
+									className="canvas-wrapper"
+									onClick={handleCanvasClick}
+								>
 									<OrganicCanvas
 										nodes={graphData.nodes}
 										edges={graphData.edges}
 									/>
-								</div>
+								</button>
 							</div>
 							<div className="stats-distribution-panel">
 								<div className="distribution-card">
@@ -528,7 +535,6 @@ export function AdminProgramsPage() {
 						</div>
 					</div>
 				);
-			case "empty":
 			default:
 				return (
 					<UploadZone
@@ -577,6 +583,7 @@ export function AdminProgramsPage() {
 			{courses.length > 0 && pageState === "editor" ? (
 				<div
 					className="teacher-nav-tabs"
+					role="tablist"
 					aria-label="人培方案视图"
 					style={{ alignSelf: "start" }}
 				>

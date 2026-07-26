@@ -85,7 +85,7 @@ export function ProgramScopePanel({
 			aria-labelledby="program-scope-title"
 		>
 			<div className="program-scope-copy">
-				<p className="program-scope-kicker">// publish scope</p>
+				<p className="program-scope-kicker">{"// publish scope"}</p>
 				<h2 id="program-scope-title">发布范围</h2>
 				<p>
 					填写时可直接选已有组织班级；发布后，学生端会用账号里的学校、专业、班级精确匹配这份人培方案。

@@ -55,8 +55,8 @@ export function PebbleSlider({ options, value, onChange }: PebbleSliderProps) {
 	return (
 		<div className="pebble-slider-track" ref={trackRef}>
 			<div className="pebble-slider-bg-labels">
-				{options.map((opt, i) => (
-					<span key={i} className="pebble-bg-label">
+				{options.map((opt) => (
+					<span key={opt} className="pebble-bg-label">
 						{opt}
 					</span>
 				))}

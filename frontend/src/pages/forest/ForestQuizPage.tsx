@@ -241,9 +241,13 @@ function ForestQuestionCard({
 						</label>
 					))}
 				</div>
-			) : question.type === "image_upload" ? (
-				<label className="forest-upload-box">
-					<input type="file" accept="image/*" onChange={handleImageChange} />
+				) : question.type === "image_upload" ? (
+					<label className="forest-upload-box">
+						<input
+							type="file"
+							accept="image/png,image/jpeg,image/webp"
+							onChange={handleImageChange}
+						/>
 					<span>
 						{uploadedFileName || question.image_prompt || "上传图片答案"}
 					</span>
@@ -290,14 +294,14 @@ function ForestQuestionPanel({
 			transition={motionTokens.editorial}
 		>
 			<header className="forest-panel-header">
-				<span>// quiz</span>
+				<span>{"// quiz"}</span>
 				<h1>{session.chapter.title}</h1>
 				<p>{session.course.course_or_chapter_theme}</p>
 			</header>
 
 			{quiz ? (
 				<>
-					<div className="forest-question-tabs" aria-label="题目列表">
+					<nav className="forest-question-tabs" aria-label="题目列表">
 						{quiz.questions.map((question, index) => (
 							<button
 								key={question.question_id}
@@ -312,7 +316,7 @@ function ForestQuestionPanel({
 								{index + 1}
 							</button>
 						))}
-					</div>
+					</nav>
 
 					<AnimatePresence mode="wait">
 						{selectedQuestion && (
@@ -377,7 +381,7 @@ function ForestAiPanel({
 			aria-label="Forest AI 对话解析"
 		>
 			<header className="forest-ai-header">
-				<span>// Forest AI</span>
+				<span>{"// Forest AI"}</span>
 			</header>
 			{messages.length > 0 && (
 				<div className="forest-ai-messages-scroll">
@@ -543,9 +547,10 @@ export function ForestQuizPage() {
 	const [aiText, setAiText] = useState("");
 	const [messages, setMessages] = useState<ForestMessage[]>([]);
 
-	useEffect(() => {
+	const selectQuestion = useCallback((questionId: string | null) => {
+		setSelectedQuestionId(questionId);
 		setMessages([]);
-	}, [selectedQuestionId]);
+	}, []);
 
 	const selectedQuestion = useMemo(() => {
 		if (!quiz) return null;
@@ -580,9 +585,7 @@ export function ForestQuizPage() {
 			setSession(nextSession);
 			setQuiz(nextSession.quiz);
 			setAttempt(nextSession.latest_attempt);
-			setSelectedQuestionId(
-				nextSession.quiz?.questions[0]?.question_id ?? null,
-			);
+			selectQuestion(nextSession.quiz?.questions[0]?.question_id ?? null);
 			if (nextSession.latest_attempt) {
 				const attemptAnswers = Object.entries(
 					nextSession.latest_attempt.answers,
@@ -603,7 +606,7 @@ export function ForestQuizPage() {
 			);
 			setStatus("error");
 		}
-	}, [chapterId, courseNodeId, token]);
+	}, [chapterId, courseNodeId, selectQuestion, token]);
 
 	useEffect(() => {
 		void loadSession();
@@ -637,7 +640,7 @@ export function ForestQuizPage() {
 				false,
 			);
 			setQuiz(nextQuiz);
-			setSelectedQuestionId(nextQuiz.questions[0]?.question_id ?? null);
+			selectQuestion(nextQuiz.questions[0]?.question_id ?? null);
 			setAnswers(initAnswers(nextQuiz.questions));
 			setAttempt(null);
 		} catch (error) {
@@ -647,7 +650,7 @@ export function ForestQuizPage() {
 		} finally {
 			setIsGenerating(false);
 		}
-	}, [chapterId, courseNodeId, token]);
+	}, [chapterId, courseNodeId, selectQuestion, token]);
 
 	const askForestAi = useCallback(
 		async (
@@ -852,7 +855,7 @@ export function ForestQuizPage() {
 					isGenerating={isGenerating}
 					errorMessage={errorMessage}
 					reduceMotion={reduceMotion}
-					onSelectQuestion={setSelectedQuestionId}
+					onSelectQuestion={selectQuestion}
 					onUpdateAnswer={updateAnswer}
 					onGenerateQuiz={handleGenerateQuiz}
 					onSubmit={handleSubmit}

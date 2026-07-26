@@ -105,7 +105,10 @@ def _summary_from_profile(profile_data: dict, profile: dict) -> str:
 
     major = profile.get("major", "你的专业方向")
     stage = profile.get("learningStage", "当前阶段")
-    return f"你正在围绕{major}建立基础画像，当前阶段是{stage}。继续完成画像后，会生成更具体的学习建议。"
+    return (
+        f"你正在围绕{major}建立基础画像，当前阶段是{stage}。"
+        "继续完成画像后，会生成更具体的学习建议。"
+    )
 
 
 def _compact(value: object, fallback: str, limit: int = 48) -> str:
@@ -187,11 +190,16 @@ def _dashboard_from_profile(
         return {
             "profile": DEFAULT_PROFILE,
             "profileCompleteness": 0,
-            "profileSummaryText": "还没有生成基础画像。完成 AI 对话后，这里会展示你的真实画像摘要。",
+            "profileSummaryText": (
+                "还没有生成基础画像。完成 AI 对话后，这里会展示你的真实画像摘要。"
+            ),
             "todayLearning": today_from_path
             or {
                 "title": "先完成基础画像",
-                "description": "回答关于年级、专业、学习偏好和目标的几个问题后，我会把结果保存到你的画像里。",
+                "description": (
+                    "回答关于年级、专业、学习偏好和目标的几个问题后，"
+                    "我会把结果保存到你的画像里。"
+                ),
                 "source": "等待画像生成",
                 "currentLearningCourse": None,
                 "currentCourseDetail": None,
@@ -218,7 +226,10 @@ def _dashboard_from_profile(
             "todayLearning": today_from_path
             or {
                 "title": "先完成基础画像",
-                "description": "你还有几项关键信息待确认。继续完成画像后，我会把今日学习建议和推荐内容补全到这里。",
+                "description": (
+                    "你还有几项关键信息待确认。继续完成画像后，"
+                    "我会把今日学习建议和推荐内容补全到这里。"
+                ),
                 "source": "等待画像生成",
                 "currentLearningCourse": None,
                 "currentCourseDetail": None,
@@ -236,7 +247,10 @@ def _dashboard_from_profile(
             "todayLearning": today_from_path
             or {
                 "title": "先确认本科年级",
-                "description": "当前学习路径只支持大一到大四。确认本科年级后，我会继续生成对应阶段的学习建议。",
+                "description": (
+                    "当前学习路径只支持大一到大四。确认本科年级后，"
+                    "我会继续生成对应阶段的学习建议。"
+                ),
                 "source": "等待画像修正",
                 "currentLearningCourse": None,
                 "currentCourseDetail": None,
@@ -259,7 +273,9 @@ def _dashboard_from_profile(
         "todayLearning": today_from_path
         or {
             "title": "基于画像规划下一步",
-            "description": f"优先处理「{short_goal}」，同时把「{weakness}」作为本阶段强化重点。",
+            "description": (
+                f"优先处理「{short_goal}」，同时把「{weakness}」作为本阶段强化重点。"
+            ),
             "source": "基础画像 Agent",
             "currentLearningCourse": None,
             "currentCourseDetail": None,
