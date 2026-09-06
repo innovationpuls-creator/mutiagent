@@ -690,13 +690,10 @@ from pathlib import Path
 import sys
 
 services = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["services"]
-compose_environment = {}
-for line in Path(sys.argv[2]).read_text(encoding="utf-8").splitlines():
-    key, separator, value = line.partition("=")
-    if separator:
-        compose_environment[key] = value
-assert compose_environment["LLM_API_KEY"] == sys.argv[3]
-assert compose_environment["SMOKE_PASSWORD"] == sys.argv[4]
+backend_environment = services["backend"]["environment"]
+smoke_environment = services["smoke"]["environment"]
+assert backend_environment["LLM_API_KEY"] == sys.argv[3].replace("$", "$$")
+assert smoke_environment["SMOKE_PASSWORD"] == sys.argv[4].replace("$", "$$")
 build_args = services["backend"]["build"]["args"]
 assert build_args["DEBIAN_MIRROR"] == "https://mirrors.cloud.tencent.com/debian"
 assert build_args["DEBIAN_SECURITY_MIRROR"] == (
