@@ -69,3 +69,6 @@ node_modules/
 # Local agent configuration and macOS metadata
 .agents/
 .DS_Store
+
+# Local planning artifacts
+/plan.md
