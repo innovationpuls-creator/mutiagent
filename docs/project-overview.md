@@ -44,6 +44,8 @@ flowchart LR
 
 ## 页面与接口入口
 
+成森页支持手动生成累计 AI 成长报告：后端汇总真实学习记录，模型按需读取只读证据并生成结构化总结，页面支持来源展开、课程跳转和重新生成。该流程复用 Worker 模型，不新增 LangGraph Worker 或报告数据表。接口与统计口径见 [成长报告接口](api-specs/API-成长报告.md)。
+
 学生端页面路由定义在 `frontend/src/App.tsx`：`/onboarding`、`/sprout`、`/branch`、`/leaf/:courseNodeId`、`/forest/:courseNodeId`、`/canopy`、`/canvas`。管理端路由包括 `/admin/programs`、`/admin/accounts`、`/admin/data` 和 `/admin/knowledge-base`。
 
 后端路由由 `backend/app/main.py` 装配，按 `auth`、`orchestration`、`profile`、`learning_path`、`branch`、`leaf`、`forest`、`student`、`teacher`、`admin`、`admin_data`、`knowledge_base` 和 `health` 分组。字段示例以 `docs/api-specs/` 与 `frontend/openapi.json` 为准。

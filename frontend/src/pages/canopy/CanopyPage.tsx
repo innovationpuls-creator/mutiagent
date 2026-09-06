@@ -3,7 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import { fetchCanopyOverview } from "../../api/branch";
+import { GrowthReportPanel } from "../../components/canopy/GrowthReportPanel";
 import { GrowthTreeSVG } from "../../components/canopy/GrowthTreeSVG";
+import { useGrowthReport } from "../../components/canopy/useGrowthReport";
 import { useAuth } from "../../contexts/AuthContext";
 import { motionTokens } from "../../styles/motion-tokens";
 import type {
@@ -133,6 +135,7 @@ export function CanopyPage() {
 	const reduceMotion = useReducedMotion();
 	const navigate = useNavigate();
 	const { token, isAuthReady } = useAuth();
+	const growthReport = useGrowthReport(token);
 	const [courses, setCourses] = useState<CanopyCourseNode[]>([]);
 	const [milestones, setMilestones] = useState<CanopyMilestone[]>([]);
 	const [growthStage, setGrowthStage] = useState(1);
@@ -225,6 +228,9 @@ export function CanopyPage() {
 
 			<motion.main
 				className="canopy-layout"
+				data-report-visible={
+					!!(growthReport.report || growthReport.stage || growthReport.error)
+				}
 				initial={reduceMotion ? false : { opacity: 0, y: 16 }}
 				animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
 				exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -16 }}
@@ -237,6 +243,20 @@ export function CanopyPage() {
 						<p>
 							当前阶段：{stageLabel} · 雨林点亮率 {activeRate}%
 						</p>
+						<button
+							type="button"
+							className="canopy-report-trigger"
+							disabled={!isAuthReady || !token || !!growthReport.stage}
+							onClick={() => {
+								void growthReport.generate();
+							}}
+						>
+							{growthReport.stage
+								? "正在生成成长报告…"
+								: growthReport.report
+									? "更新成长报告"
+									: "生成成长报告"}
+						</button>
 					</header>
 
 					<div className="network-container">
@@ -516,6 +536,14 @@ export function CanopyPage() {
 					</div>
 				</section>
 
+				<GrowthReportPanel
+					report={growthReport.report}
+					stage={growthReport.stage}
+					error={growthReport.error}
+					onGenerate={() => {
+						void growthReport.generate();
+					}}
+				/>
 				<article className="stats-card timeline-card">
 					<header className="card-header">
 						<span>{"// milestones"}</span>
@@ -1031,6 +1059,10 @@ const PageWrapper = styled.section`
     }
   }
 
+  .canopy-layout[data-report-visible="true"] {
+    grid-template-areas: "graph stats" "report report" "timeline timeline";
+  }
+
   @media (max-width: 960px) {
     .canopy-layout {
       grid-template-columns: 1fr;
@@ -1038,6 +1070,10 @@ const PageWrapper = styled.section`
         "graph"
         "stats"
         "timeline";
+    }
+
+    .canopy-layout[data-report-visible="true"] {
+      grid-template-areas: "graph" "stats" "report" "timeline";
     }
 
     .graph-section {

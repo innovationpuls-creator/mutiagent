@@ -3,16 +3,20 @@ from __future__ import annotations
 from collections.abc import Callable, Generator
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
 from app.core.security import create_get_current_user
 from app.models import User, UserCourseKnowledgeOutline
+from app.orchestration.llm import get_worker_llm
+from app.report_schemas import GrowthReport
 from app.schemas import (
     BranchCourseNodeRead,
     BranchOverviewReadResponse,
     BranchYearRead,
     CanopyOverviewResponse,
 )
+from app.services.growth_report_service import stream_growth_report
 from app.services.learning_path_service import (
     compare_grade_years,
     get_all_year_learning_paths,
@@ -128,6 +132,29 @@ def _has_outline_payload(outline_data: object, course_id: str, grade_id: str) ->
 def create_branch_router(session_dependency: SessionDependency) -> APIRouter:
     router = APIRouter(prefix="/api/branch", tags=["branch"])
     get_current_user = create_get_current_user(session_dependency)
+
+    @router.post(
+        "/canopy/report/stream",
+        response_model=GrowthReport,
+        response_class=StreamingResponse,
+        responses={
+            200: {
+                "description": (
+                    "SSE: report_stage, report_completed (GrowthReport), report_error"
+                ),
+                "content": {"text/event-stream": {}},
+            }
+        },
+    )
+    def generate_growth_report(
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(session_dependency),
+    ) -> StreamingResponse:
+        return StreamingResponse(
+            stream_growth_report(session, current_user.uid, get_worker_llm()),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @router.get("/canopy", response_model=CanopyOverviewResponse)
     def read_canopy_overview(
