@@ -355,7 +355,7 @@ for validation_signal in INT TERM; do
       validation_exited=1
       break
     fi
-    import_state="$(ps -o stat= -p "$validation_import_pid" | tr -d ' ')"
+    import_state="$(ps -o stat= -p "$validation_import_pid" 2>/dev/null | tr -d ' ' || true)"
     if [[ "$import_state" == Z* ]]; then
       validation_exited=1
       break
@@ -386,15 +386,16 @@ for validation_signal in INT TERM; do
   for process_id in "$wrapper_pid" "$descendant_pid"; do
     for _ in {1..100}; do
       if ! kill -0 "$process_id" 2>/dev/null; then break; fi
-      process_state="$(ps -o stat= -p "$process_id" | tr -d ' ')"
+      process_state="$(ps -o stat= -p "$process_id" 2>/dev/null | tr -d ' ' || true)"
       if [[ "$process_state" == Z* ]]; then break; fi
       sleep 0.05
     done
     if kill -0 "$process_id" 2>/dev/null; then
-      process_state="$(ps -o stat= -p "$process_id" | tr -d ' ')"
-      if [[ "$process_state" != Z* ]]; then
-        printf '%s\n' "validation left process after $validation_signal" >&2
-        exit 1
+      if process_state="$(ps -o stat= -p "$process_id" 2>/dev/null | tr -d ' ')"; then
+        if [[ "$process_state" != Z* ]]; then
+          printf '%s\n' "validation left process after $validation_signal" >&2
+          exit 1
+        fi
       fi
     fi
   done
@@ -480,15 +481,16 @@ for restore_signal in INT TERM; do
   kill -s "$restore_signal" "$import_pid"
   for _ in {1..100}; do
     if ! kill -0 "$import_pid" 2>/dev/null; then break; fi
-    import_state="$(ps -o stat= -p "$import_pid" | tr -d ' ')"
+    import_state="$(ps -o stat= -p "$import_pid" 2>/dev/null | tr -d ' ' || true)"
     if [[ "$import_state" == Z* ]]; then break; fi
     sleep 0.05
   done
   if kill -0 "$import_pid" 2>/dev/null; then
-    import_state="$(ps -o stat= -p "$import_pid" | tr -d ' ')"
-    if [[ "$import_state" != Z* ]]; then
-      printf '%s\n' "restore import ignored $restore_signal" >&2
-      exit 1
+    if import_state="$(ps -o stat= -p "$import_pid" 2>/dev/null | tr -d ' ')"; then
+      if [[ "$import_state" != Z* ]]; then
+        printf '%s\n' "restore import ignored $restore_signal" >&2
+        exit 1
+      fi
     fi
   fi
   if wait "$restore_pid"; then
