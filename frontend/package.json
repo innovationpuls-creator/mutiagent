@@ -9,7 +9,7 @@
 		"test": "vitest run --config vitest.config.ts",
 		"test:watch": "vitest --config vitest.config.ts",
 		"e2e": "playwright test",
-		"gen:api": "(cd ../backend && uv run python -m app.export_openapi) > openapi.json && npx openapi-typescript openapi.json --output src/types/api.ts && npx biome format --write src/types/api.ts"
+		"gen:api": "(cd ../backend && uv run python -m app.export_openapi) > openapi.json && npx openapi-typescript openapi.json --output src/types/api.ts && npx biome format --write openapi.json src/types/api.ts"
 	},
 	"dependencies": {
 		"@fontsource/caveat": "^5.2.8",

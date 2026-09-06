@@ -146,7 +146,8 @@ resolved_bundle="$({
 declare -F create_baseline_backup >/dev/null || \
   fail "baseline backup function is missing"
 if (
-  # shellcheck disable=SC2329
+  # Called indirectly by create_baseline_backup from the sourced bootstrap script.
+  # shellcheck disable=SC2317,SC2329
   compose() { return 73; }
   export ONETREE_BACKUP_ROOT="$TEMP_DIR/failed-baseline-backup"
   export DATABASE_URL=postgresql://source
@@ -158,7 +159,8 @@ fi
 declare -F prepare_partial_retry >/dev/null || \
   fail "partial retry service stop is missing"
 if (
-  # shellcheck disable=SC2329
+  # Called indirectly by prepare_partial_retry from the sourced bootstrap script.
+  # shellcheck disable=SC2317,SC2329
   compose() {
     if [[ " $* " == *" ps "* ]]; then
       printf 'backend\n'

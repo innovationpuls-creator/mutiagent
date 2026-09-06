@@ -241,13 +241,13 @@ function ForestQuestionCard({
 						</label>
 					))}
 				</div>
-				) : question.type === "image_upload" ? (
-					<label className="forest-upload-box">
-						<input
-							type="file"
-							accept="image/png,image/jpeg,image/webp"
-							onChange={handleImageChange}
-						/>
+			) : question.type === "image_upload" ? (
+				<label className="forest-upload-box">
+					<input
+						type="file"
+						accept="image/png,image/jpeg,image/webp"
+						onChange={handleImageChange}
+					/>
 					<span>
 						{uploadedFileName || question.image_prompt || "上传图片答案"}
 					</span>
