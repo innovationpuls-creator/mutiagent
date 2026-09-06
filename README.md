@@ -1,79 +1,81 @@
-<div align="center">
-
-<img src="./frontend/public/logo.png" alt="OneTree 一棵树标志" width="88" />
-
-# OneTree · 一棵树
-
-### 让学习像树一样，自然生长。
-
-从学习画像到个性化路径，从课程资源到自测反馈与成长回顾。<br />
-一个由多智能体协作驱动的 AI 个性化学习系统。
-
-<p>
-  <a href="https://onetree.chat"><strong>在线体验 ↗</strong></a> ·
-  <a href="#产品预览">产品预览</a> ·
-  <a href="#快速开始">快速开始</a> ·
-  <a href="./docs/deployment/docker-production.md">部署指南</a> ·
-  <a href="#文档导航">项目文档</a>
+<p align="center">
+  <img src="./docs/readme/cover.svg" width="1200" alt="OneTree 一棵树 · AI 个性化学习系统，让学习像树一样自然生长" />
 </p>
 
-<p>
-  <img src="https://img.shields.io/badge/React-18-3178C6?style=flat-square&amp;logo=react&amp;logoColor=white" alt="React 18" />
-  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&amp;logo=typescript&amp;logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&amp;logo=fastapi&amp;logoColor=white" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/LangGraph-315B49?style=flat-square" alt="LangGraph" />
-  <img src="https://img.shields.io/badge/PostgreSQL-18-4169E1?style=flat-square&amp;logo=postgresql&amp;logoColor=white" alt="PostgreSQL 18" />
+<p align="center">
+  <a href="https://onetree.chat"><strong>在线体验 ↗</strong></a> &nbsp; / &nbsp;
+  <a href="#产品预览">产品预览</a> &nbsp; / &nbsp;
+  <a href="#系统架构">系统架构</a> &nbsp; / &nbsp;
+  <a href="#快速开始">快速开始</a> &nbsp; / &nbsp;
+  <a href="#文档导航">文档导航</a>
 </p>
 
-</div>
+<br />
 
----
+OneTree 面向学生，将 **「学什么、怎么学、学得怎样」** 连接成一条持续推进的学习流程。通过对话建立画像，以个性化路径组织课程，在图文、视频与交互动画中理解知识，再用测验反馈和成长报告回顾学习情况。
+
+管理端提供培养方案、账号、学习数据与教材知识库管理，让学习体验与教学内容的组织衔接起来。
+
+<br />
 
 ## 产品预览
 
-**学生端 · 从认识自己开始**
+### 从认识自己，到走出自己的学习路径
 
 结合学习目标、基础与偏好建立画像，连接后续课程和学习路径。
 
 [![学生端：学习画像、目标与课程推荐](./docs/screenshots/student.png)](./docs/screenshots/student.png)
 
+<p align="center"><sub>学生端 · 学习画像与课程推荐　/　点击图片查看原图</sub></p>
+
 <details>
-<summary><strong>查看管理端与登录界面</strong></summary>
+<summary>展开查看管理端与登录界面</summary>
 
-**管理端 · 组织教学内容与学习数据**
+### 让教学内容有序生长
 
-提供培养方案、账号、数据与知识库管理。下图展示教材浏览、解析详情与发布入口。
+培养方案、账号、数据与知识库集中管理。教材浏览界面提供解析详情、大纲与发布入口。
 
 [![管理端：教材知识库与解析详情](./docs/screenshots/admin.png)](./docs/screenshots/admin.png)
 
-**登录 · 进入学习空间**
+<p align="center"><sub>管理端 · 教材知识库</sub></p>
 
 [![OneTree 登录界面](./docs/screenshots/login.png)](./docs/screenshots/login.png)
 
+<p align="center"><sub>登录 · 进入学习空间</sub></p>
+
 </details>
 
-## 从目标到成长
+<br />
 
-OneTree 面向学生，把「学什么、怎么学、学得怎样」连接成一条持续推进的学习流程。学生通过对话明确目标，在课程中阅读图文、观看视频、操作交互动画，再通过测验和成长报告回顾学习情况；管理端提供培养方案与教材知识库，支撑教学内容的组织与维护。
+## 一条完整的学习旅程
 
-| 学习阶段 | 可以做什么 |
-| :--- | :--- |
-| **01 · 建立画像** | 通过破冰对话收集学习目标、基础与偏好，形成个人学习画像。 |
-| **02 · 规划路径** | 从课程草案出发，生成按年组织的学习路径，查看课程与前置关系。 |
-| **03 · 深入课程** | 进入课程大纲，按小节获取图文讲解、教学视频与 HTML 交互动画。 |
-| **04 · 自测巩固** | 完成章节测验，查看批改与薄弱点，并继续接受 AI 辅导。 |
-| **05 · 回顾成长** | 查看学习进度，按需生成 AI 成长报告，展开来源并跳转相关课程。 |
+> **萌芽 → 繁枝 → 叶茂 → 成林 → 成森**
+>
+> 认识自己，规划方向；逐节学习，自测巩固，回顾成长。
 
-### 核心能力
+1. **建立画像** — 通过破冰对话收集学习目标、基础与偏好，形成个人学习画像。
+2. **规划路径** — 从课程草案出发，生成按年组织的学习路径，查看课程与前置关系。
+3. **深入课程** — 进入课程大纲，按小节获取图文讲解、教学视频与 HTML 交互动画。
+4. **自测巩固** — 完成章节测验，查看批改与薄弱点，并继续接受 AI 辅导。
+5. **回顾成长** — 查看学习进度，按需生成 AI 成长报告，展开来源并跳转相关课程。
 
-| 能力 | 实现与体验 |
-| :--- | :--- |
-| **多智能体协作** | LangGraph Supervisor 协调 7 个 Worker，分别处理画像、路径、课程大纲与小节资源。 |
-| **流式交互** | 通过 SSE 展示任务进展和生成内容，让较长的规划与资源生成过程保持可见。 |
-| **多形式课程资源** | 图文、视频与交互动画按阶段生成，经资源校验后组合为小节学习内容。 |
-| **教材知识库** | 管理教材导入、整理、大纲与发布；独立后台任务处理长时间的知识库整理工作。 |
-| **AI 成长报告** | 结合真实学习记录生成学习回顾、待巩固内容与下一步建议，支持查看引用来源。 |
-| **教学管理** | 导入与发布培养方案，维护账号、组织班级和学习数据。 |
+<br />
+
+## 支撑学习的核心能力
+
+### 协作式规划，过程实时可见
+
+LangGraph Supervisor 协调 **7 个专职 Worker**，分别处理画像、路径、课程大纲与小节资源。通过 SSE 展示任务进展和生成内容，让较长的规划与资源生成过程保持可见。
+
+### 多形式课程，连接教材知识
+
+**图文、视频与交互动画** 按阶段生成，经资源校验后组合为小节学习内容。教材知识库管理导入、整理、大纲与发布，独立后台 Worker 处理长时间的整理任务。
+
+### 基于学习记录的反馈与回顾
+
+章节测验提供批改、薄弱点与 AI 辅导。**成长报告** 结合真实学习记录生成回顾、待巩固内容与下一步建议，支持展开引用来源、跳转相关课程并重新生成。
+
+<br />
 
 ## 系统架构
 
@@ -112,6 +114,8 @@ flowchart TB
 
 </details>
 
+<br />
+
 ### 技术栈与工程实现
 
 | 层级 | 技术与用途 |
@@ -124,6 +128,8 @@ flowchart TB
 | **桌面端** | Electron 与内置 PostgreSQL，提供 Windows 便携版打包流程。 |
 | **验证** | pytest、Vitest、Playwright；Ruff、Biome 与 GitHub Actions。 |
 
+<br />
+
 ## 快速开始
 
 | 使用方式 | 入口 |
@@ -132,6 +138,9 @@ flowchart TB
 | **本地开发** | 按以下步骤启动数据库、后端与前端。 |
 | **服务器部署** | [Docker 生产部署指南](./docs/deployment/docker-production.md)，覆盖初始化、迁移、更新、证书与回滚。 |
 | **Windows 桌面端** | [使用说明](./desktop/resources/使用说明.md) · [便携版构建工作流](./.github/workflows/windows-portable.yml) |
+
+<details>
+<summary><strong>本地开发 · 环境准备与启动步骤</strong></summary>
 
 ### 1. 准备环境
 
@@ -221,6 +230,10 @@ npm run dev
 
 </details>
 
+</details>
+
+<br />
+
 ## 文档导航
 
 | 想了解什么 | 从这里开始 |
@@ -249,9 +262,14 @@ mutiagent/
 
 </details>
 
+<br />
+
 ## 开发与贡献
 
 欢迎通过 [Issue](https://github.com/innovationpuls-creator/mutiagent/issues) 反馈问题或提出建议，通过 [Pull Request](https://github.com/innovationpuls-creator/mutiagent/pulls) 参与改进。提交问题时，请附上复现步骤、运行环境与相关日志，并移除密钥和个人信息。
+
+<details>
+<summary><strong>开发验证与接口同步</strong></summary>
 
 后端验证（在 `backend/` 执行）：
 
@@ -271,6 +289,10 @@ npx biome check --write
 ```
 
 修改后端请求或响应模型后，在 `frontend/` 运行 `npm run gen:api` 同步接口类型。提交格式为 `<type>: <描述>`，例如 `docs: 完善项目介绍`。
+
+</details>
+
+<br />
 
 ---
 
