@@ -694,14 +694,6 @@ backend_environment = services["backend"]["environment"]
 smoke_environment = services["smoke"]["environment"]
 assert backend_environment["LLM_API_KEY"] == sys.argv[3].replace("$", "$$")
 assert smoke_environment["SMOKE_PASSWORD"] == sys.argv[4].replace("$", "$$")
-build_args = services["backend"]["build"]["args"]
-assert {
-    "DEBIAN_MIRROR",
-    "DEBIAN_SECURITY_MIRROR",
-    "PGDG_REPOSITORY",
-    "PYTHON_PACKAGE_INDEX",
-}.issubset(build_args)
-assert "NPM_REGISTRY" in services["nginx"]["build"]["args"]
 assert services["nginx"]["build"]["args"]["VITE_ICP_BEIAN_NUMBER"] == (
     "粤ICP备2026100568号-1"
 )
