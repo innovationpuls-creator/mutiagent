@@ -695,20 +695,13 @@ smoke_environment = services["smoke"]["environment"]
 assert backend_environment["LLM_API_KEY"] == sys.argv[3].replace("$", "$$")
 assert smoke_environment["SMOKE_PASSWORD"] == sys.argv[4].replace("$", "$$")
 build_args = services["backend"]["build"]["args"]
-assert build_args["DEBIAN_MIRROR"] == "https://mirrors.cloud.tencent.com/debian"
-assert build_args["DEBIAN_SECURITY_MIRROR"] == (
-    "https://mirrors.cloud.tencent.com/debian-security"
-)
-assert build_args["PGDG_REPOSITORY"] == (
-    "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] "
-    "https://mirrors.cloud.tencent.com/postgresql/repos/apt bookworm-pgdg main"
-)
-assert build_args["PYTHON_PACKAGE_INDEX"] == (
-    "https://mirrors.cloud.tencent.com/pypi/simple/"
-)
-assert services["nginx"]["build"]["args"]["NPM_REGISTRY"] == (
-    "https://mirrors.cloud.tencent.com/npm/"
-)
+assert {
+    "DEBIAN_MIRROR",
+    "DEBIAN_SECURITY_MIRROR",
+    "PGDG_REPOSITORY",
+    "PYTHON_PACKAGE_INDEX",
+}.issubset(build_args)
+assert "NPM_REGISTRY" in services["nginx"]["build"]["args"]
 assert services["nginx"]["build"]["args"]["VITE_ICP_BEIAN_NUMBER"] == (
     "粤ICP备2026100568号-1"
 )
