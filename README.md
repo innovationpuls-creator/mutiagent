@@ -32,6 +32,7 @@
 ## 产品预览
 
 **学生端 · 从认识自己开始**
+
 结合学习目标、基础与偏好建立画像，连接后续课程和学习路径。
 
 [![学生端：学习画像、目标与课程推荐](./docs/screenshots/student.png)](./docs/screenshots/student.png)
@@ -40,6 +41,7 @@
 <summary><strong>查看管理端与登录界面</strong></summary>
 
 **管理端 · 组织教学内容与学习数据**
+
 提供培养方案、账号、数据与知识库管理。下图展示教材浏览、解析详情与发布入口。
 
 [![管理端：教材知识库与解析详情](./docs/screenshots/admin.png)](./docs/screenshots/admin.png)
