@@ -692,8 +692,14 @@ import sys
 services = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["services"]
 backend_environment = services["backend"]["environment"]
 smoke_environment = services["smoke"]["environment"]
-assert backend_environment["LLM_API_KEY"].replace("$$", "$") == sys.argv[3]
-assert smoke_environment["SMOKE_PASSWORD"].replace("$$", "$") == sys.argv[4]
+assert backend_environment["LLM_API_KEY"].replace("$$", "$") == sys.argv[3], (
+    backend_environment,
+    sys.argv[3],
+)
+assert smoke_environment["SMOKE_PASSWORD"].replace("$$", "$") == sys.argv[4], (
+    smoke_environment,
+    sys.argv[4],
+)
 PY
 
 python3 - \
