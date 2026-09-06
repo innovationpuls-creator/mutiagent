@@ -671,12 +671,54 @@ PY
 
 COMPOSE_CONFIG="$TEMP_DIR/compose-config.json"
 COMPOSE_ENVIRONMENT="$TEMP_DIR/compose-environment.txt"
-docker compose \
+env \
+  -u ALLOWED_ORIGINS \
+  -u DEBIAN_MIRROR \
+  -u DEBIAN_SECURITY_MIRROR \
+  -u JWT_SECRET \
+  -u LLM_API_KEY \
+  -u LLM_BASE_URL \
+  -u LLM_MODEL \
+  -u MAINTENANCE_BYPASS_TOKEN \
+  -u NGINX_CONFIG_MODE \
+  -u NPM_REGISTRY \
+  -u PGDG_KEY_URL \
+  -u PGDG_REPOSITORY \
+  -u POSTGRES_APP_PASSWORD \
+  -u POSTGRES_MAINTENANCE_PASSWORD \
+  -u PUBLIC_IPV4 \
+  -u PYTHON_PACKAGE_INDEX \
+  -u SMOKE_ACCOUNT \
+  -u SMOKE_PASSWORD \
+  -u UV_HTTP_TIMEOUT \
+  -u VITE_ICP_BEIAN_NUMBER \
+  docker compose \
   --profile operations \
   --env-file "$ENV_FILE" \
   -f "$REPO_ROOT/deploy/compose.production.yml" \
   config --format json > "$COMPOSE_CONFIG"
-docker compose \
+env \
+  -u ALLOWED_ORIGINS \
+  -u DEBIAN_MIRROR \
+  -u DEBIAN_SECURITY_MIRROR \
+  -u JWT_SECRET \
+  -u LLM_API_KEY \
+  -u LLM_BASE_URL \
+  -u LLM_MODEL \
+  -u MAINTENANCE_BYPASS_TOKEN \
+  -u NGINX_CONFIG_MODE \
+  -u NPM_REGISTRY \
+  -u PGDG_KEY_URL \
+  -u PGDG_REPOSITORY \
+  -u POSTGRES_APP_PASSWORD \
+  -u POSTGRES_MAINTENANCE_PASSWORD \
+  -u PUBLIC_IPV4 \
+  -u PYTHON_PACKAGE_INDEX \
+  -u SMOKE_ACCOUNT \
+  -u SMOKE_PASSWORD \
+  -u UV_HTTP_TIMEOUT \
+  -u VITE_ICP_BEIAN_NUMBER \
+  docker compose \
   --env-file "$ENV_FILE" \
   -f "$REPO_ROOT/deploy/compose.production.yml" \
   config --environment > "$COMPOSE_ENVIRONMENT"
@@ -692,14 +734,8 @@ import sys
 services = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["services"]
 backend_environment = services["backend"]["environment"]
 smoke_environment = services["smoke"]["environment"]
-assert backend_environment["LLM_API_KEY"].replace("$$", "$") == sys.argv[3], (
-    backend_environment,
-    sys.argv[3],
-)
-assert smoke_environment["SMOKE_PASSWORD"].replace("$$", "$") == sys.argv[4], (
-    smoke_environment,
-    sys.argv[4],
-)
+assert backend_environment["LLM_API_KEY"].replace("$$", "$") == sys.argv[3]
+assert smoke_environment["SMOKE_PASSWORD"].replace("$$", "$") == sys.argv[4]
 PY
 
 python3 - \
