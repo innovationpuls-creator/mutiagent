@@ -442,6 +442,23 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	"/api/branch/canopy/report/stream": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Generate Growth Report */
+		post: operations["generate_growth_report_api_branch_canopy_report_stream_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	"/api/branch/canopy": {
 		parameters: {
 			query?: never;
@@ -1489,6 +1506,27 @@ export interface components {
 			/** Next Course Id */
 			next_course_id?: string | null;
 		};
+		/** GrowthReport */
+		GrowthReport: {
+			/** Overview */
+			overview: string;
+			/** Strengths */
+			strengths: components["schemas"]["ReportInsight"][];
+			/** Improvements */
+			improvements: components["schemas"]["ReportInsight"][];
+			/** Actions */
+			actions: components["schemas"]["ReportAction"][];
+			/**
+			 * Generated At
+			 * Format: date-time
+			 */
+			generated_at: string;
+			stats: components["schemas"]["ReportStats"];
+			/** Evidence */
+			evidence: components["schemas"]["ReportEvidence"][];
+			/** Coverage */
+			coverage: string;
+		};
 		/** HTTPValidationError */
 		HTTPValidationError: {
 			/** Detail */
@@ -2046,6 +2084,62 @@ export interface components {
 			major: string;
 			/** Class Name */
 			class_name: string;
+		};
+		/** ReportAction */
+		ReportAction: {
+			/** Title */
+			title: string;
+			/** Body */
+			body: string;
+			/**
+			 * Evidence Ids
+			 * @description 逐字复制本次 evidence 目录中 id 字段的值，不加前缀，不改写。
+			 */
+			evidence_ids: string[];
+			/** Check */
+			check: string;
+			/**
+			 * Course Id
+			 * @description 逐字复制 course_ids 中的值，或 null。
+			 */
+			course_id?: string | null;
+		};
+		/** ReportEvidence */
+		ReportEvidence: {
+			/** Id */
+			id: string;
+			/**
+			 * Kind
+			 * @enum {string}
+			 */
+			kind: "path" | "quiz" | "chapter" | "weakness" | "textbook";
+			/** Title */
+			title: string;
+			/** Detail */
+			detail: string;
+			/** Course Id */
+			course_id?: string | null;
+		};
+		/** ReportInsight */
+		ReportInsight: {
+			/** Title */
+			title: string;
+			/** Body */
+			body: string;
+			/**
+			 * Evidence Ids
+			 * @description 逐字复制本次 evidence 目录中 id 字段的值，不加前缀，不改写。
+			 */
+			evidence_ids: string[];
+		};
+		/** ReportStats */
+		ReportStats: {
+			/** Passed Chapters */
+			passed_chapters: number;
+			/** Tested Chapters */
+			tested_chapters: number;
+			/** Attempts */
+			attempts: number;
 		};
 		/** SessionStateResponse */
 		SessionStateResponse: {
@@ -3287,6 +3381,26 @@ export interface operations {
 				};
 				content: {
 					"application/json": components["schemas"]["YearLearningPathsReadResponse"];
+				};
+			};
+		};
+	};
+	generate_growth_report_api_branch_canopy_report_stream_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description SSE: report_stage, report_completed (GrowthReport), report_error */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"text/event-stream": unknown;
 				};
 			};
 		};

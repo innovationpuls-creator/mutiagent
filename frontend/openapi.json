@@ -1087,6 +1087,28 @@
         ]
       }
     },
+    "/api/branch/canopy/report/stream": {
+      "post": {
+        "tags": [
+          "branch"
+        ],
+        "summary": "Generate Growth Report",
+        "operationId": "generate_growth_report_api_branch_canopy_report_stream_post",
+        "responses": {
+          "200": {
+            "description": "SSE: report_stage, report_completed (GrowthReport), report_error",
+            "content": {
+              "text/event-stream": {}
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/branch/canopy": {
       "get": {
         "tags": [
@@ -3991,6 +4013,71 @@
         ],
         "title": "ForestQuizSessionReadResponse"
       },
+      "GrowthReport": {
+        "properties": {
+          "overview": {
+            "type": "string",
+            "maxLength": 1600,
+            "minLength": 1,
+            "title": "Overview"
+          },
+          "strengths": {
+            "items": {
+              "$ref": "#/components/schemas/ReportInsight"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Strengths"
+          },
+          "improvements": {
+            "items": {
+              "$ref": "#/components/schemas/ReportInsight"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Improvements"
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/ReportAction"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Actions"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/ReportStats"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ReportEvidence"
+            },
+            "type": "array",
+            "title": "Evidence"
+          },
+          "coverage": {
+            "type": "string",
+            "title": "Coverage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "overview",
+          "strengths",
+          "improvements",
+          "actions",
+          "generated_at",
+          "stats",
+          "evidence",
+          "coverage"
+        ],
+        "title": "GrowthReport"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -5263,6 +5350,160 @@
           "class_name"
         ],
         "title": "RegisterRequest"
+      },
+      "ReportAction": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 900,
+            "minLength": 1,
+            "title": "Body"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Evidence Ids",
+            "description": "\u9010\u5b57\u590d\u5236\u672c\u6b21 evidence \u76ee\u5f55\u4e2d id \u5b57\u6bb5\u7684\u503c\uff0c\u4e0d\u52a0\u524d\u7f00\uff0c\u4e0d\u6539\u5199\u3002"
+          },
+          "check": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Check"
+          },
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id",
+            "description": "\u9010\u5b57\u590d\u5236 course_ids \u4e2d\u7684\u503c\uff0c\u6216 null\u3002"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "body",
+          "evidence_ids",
+          "check"
+        ],
+        "title": "ReportAction"
+      },
+      "ReportEvidence": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "path",
+              "quiz",
+              "chapter",
+              "weakness",
+              "textbook"
+            ],
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "detail"
+        ],
+        "title": "ReportEvidence"
+      },
+      "ReportInsight": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 900,
+            "minLength": 1,
+            "title": "Body"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Evidence Ids",
+            "description": "\u9010\u5b57\u590d\u5236\u672c\u6b21 evidence \u76ee\u5f55\u4e2d id \u5b57\u6bb5\u7684\u503c\uff0c\u4e0d\u52a0\u524d\u7f00\uff0c\u4e0d\u6539\u5199\u3002"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "body",
+          "evidence_ids"
+        ],
+        "title": "ReportInsight"
+      },
+      "ReportStats": {
+        "properties": {
+          "passed_chapters": {
+            "type": "integer",
+            "title": "Passed Chapters"
+          },
+          "tested_chapters": {
+            "type": "integer",
+            "title": "Tested Chapters"
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "passed_chapters",
+          "tested_chapters",
+          "attempts"
+        ],
+        "title": "ReportStats"
       },
       "SessionStateResponse": {
         "properties": {
