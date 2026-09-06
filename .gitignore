@@ -4,7 +4,6 @@
 /backups/
 /bin/
 CLAUDE.md
-task-1-report.md
 .superpowers
 docs/superpowers
 opencode.json
@@ -69,3 +68,9 @@ node_modules/
 # Local agent configuration and macOS metadata
 .agents/
 .DS_Store
+
+# Local planning, task reports, and generated output
+/plan.md
+docs/report-data-inventory.md
+task-1-report.md
+output/

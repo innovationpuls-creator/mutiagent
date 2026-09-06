@@ -6,7 +6,7 @@ from urllib.request import Request
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import inspect, text
+from sqlalchemy import event, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -616,6 +616,133 @@ def test_run_knowledge_base_agent_source_search_does_not_create_textbook(
     assert response.selected_source_result_id == "source-result-ods-python"
     assert len(response.source_results) == 1
     assert textbooks == []
+
+
+def test_knowledge_base_agent_context_uses_aggregate_counts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _knowledge_engine(tmp_path)
+    run_schema_upgrades(engine)
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "search_real_textbook_sources",
+        lambda topic, limit=5: [],
+    )
+    statements: list[str] = []
+
+    def record_statement(
+        conn, cursor, statement, parameters, context, executemany
+    ) -> None:
+        statements.append(statement)
+
+    with Session(engine) as session:
+        session.add_all(
+            [
+                _admitted_source(),
+                _textbook(textbook_id="textbook-context-count", title="计数教材"),
+            ]
+        )
+        session.commit()
+        event.listen(engine, "before_cursor_execute", record_statement)
+        try:
+            events = list(
+                knowledge_base_service.stream_knowledge_base_agent_events(
+                    session, "数据结构"
+                )
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", record_statement)
+
+    context_event = next(
+        event for event in events if event["event"] == "context_loaded"
+    )
+    assert context_event["payload"] == {
+        "message": "已读取知识库现状。",
+        "source_count": 1,
+        "textbook_count": 1,
+        "gap_count": 0,
+    }
+    assert sum("count(" in statement.lower() for statement in statements) == 3
+
+
+def test_run_knowledge_base_agent_checks_source_duplicates_in_one_query(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _knowledge_engine(tmp_path)
+    run_schema_upgrades(engine)
+    SQLModel.metadata.create_all(engine)
+
+    imported_by_url = _textbook(
+        textbook_id="textbook-imported-by-url",
+        title="已入库 URL 教材",
+    )
+    imported_by_url.download_url = "https://example.test/imported-by-url.pdf"
+    imported_by_title = _textbook(
+        textbook_id="textbook-imported-by-title",
+        title="已入库标题教材",
+    )
+    imported_by_title.download_url = "https://example.test/imported-by-title.pdf"
+    source_results = [
+        app_schemas.KnowledgeBaseSourceResult(
+            source_result_id="source-result-url",
+            title="新标题",
+            source_url=imported_by_url.download_url,
+            source_type="pdf",
+            parseability_score=95,
+        ),
+        app_schemas.KnowledgeBaseSourceResult(
+            source_result_id="source-result-title",
+            title="已入库标题教材",
+            source_url="https://example.test/new-url.pdf",
+            source_type="pdf",
+            parseability_score=95,
+        ),
+        app_schemas.KnowledgeBaseSourceResult(
+            source_result_id="source-result-new",
+            title="全新教材",
+            source_url="https://example.test/new-textbook.pdf",
+            source_type="pdf",
+            parseability_score=95,
+        ),
+    ]
+    monkeypatch.setattr(
+        knowledge_base_service,
+        "search_real_textbook_sources",
+        lambda topic, limit=5: source_results,
+    )
+    duplicate_check_statements: list[str] = []
+
+    def record_duplicate_check(
+        conn, cursor, statement, parameters, context, executemany
+    ) -> None:
+        if "download_url" in statement and "IN" in statement:
+            duplicate_check_statements.append(statement)
+
+    with Session(engine) as session:
+        session.add_all([_admitted_source(), imported_by_url, imported_by_title])
+        session.commit()
+        event.listen(engine, "before_cursor_execute", record_duplicate_check)
+        try:
+            response = knowledge_base_service.run_knowledge_base_agent(
+                session, "数据结构"
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", record_duplicate_check)
+
+    assert len(duplicate_check_statements) == 1
+    assert [result.already_imported for result in response.source_results] == [
+        True,
+        True,
+        False,
+    ]
+    assert [result.textbook_id for result in response.source_results] == [
+        "textbook-imported-by-url",
+        "textbook-imported-by-title",
+        None,
+    ]
 
 
 def test_hybrid_search_textbooks_falls_back_cleanly(

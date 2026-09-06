@@ -2022,6 +2022,37 @@ def run_knowledge_base_agent(
     return final_response
 
 
+def _mark_imported_source_results(
+    session: Session, source_results: list[KnowledgeBaseSourceResult]
+) -> None:
+    if not source_results:
+        return
+
+    source_urls = {result.source_url for result in source_results}
+    normalized_titles = {result.title.lower() for result in source_results}
+    existing_textbooks = session.exec(
+        select(Textbook).where(
+            or_(
+                Textbook.download_url.in_(source_urls),
+                func.lower(Textbook.title).in_(normalized_titles),
+            )
+        )
+    ).all()
+    textbooks_by_url: dict[str, Textbook] = {}
+    textbooks_by_normalized_title: dict[str, Textbook] = {}
+    for textbook in existing_textbooks:
+        textbooks_by_url.setdefault(textbook.download_url, textbook)
+        textbooks_by_normalized_title.setdefault(textbook.title.lower(), textbook)
+
+    for result in source_results:
+        existing = textbooks_by_url.get(result.source_url)
+        if existing is None:
+            existing = textbooks_by_normalized_title.get(result.title.lower())
+        if existing:
+            result.already_imported = True
+            result.textbook_id = existing.textbook_id
+
+
 def stream_knowledge_base_agent_events(
     session: Session, message: str
 ) -> Generator[dict[str, object], None, None]:
@@ -2039,15 +2070,15 @@ def stream_knowledge_base_agent_events(
         yield _agent_stream_event("completed", "本轮已结束。", response=response)
         return
 
-    source_count = session.exec(select(KnowledgeSource)).all()
-    textbook_count = session.exec(select(Textbook)).all()
-    gap_count = session.exec(select(KnowledgeGap)).all()
+    source_count = session.exec(select(func.count()).select_from(KnowledgeSource)).one()
+    textbook_count = session.exec(select(func.count()).select_from(Textbook)).one()
+    gap_count = session.exec(select(func.count()).select_from(KnowledgeGap)).one()
     yield _agent_stream_event(
         "context_loaded",
         "已读取知识库现状。",
-        source_count=len(source_count),
-        textbook_count=len(textbook_count),
-        gap_count=len(gap_count),
+        source_count=source_count,
+        textbook_count=textbook_count,
+        gap_count=gap_count,
     )
     yield _agent_stream_event(
         "source_search_started",
@@ -2064,18 +2095,7 @@ def stream_knowledge_base_agent_events(
         "duplicate_check_started",
         "正在进行本地知识库查重。",
     )
-    for result in source_results:
-        existing = session.exec(
-            select(Textbook).where(
-                or_(
-                    Textbook.download_url == result.source_url,
-                    func.lower(Textbook.title) == func.lower(result.title),
-                )
-            )
-        ).first()
-        if existing:
-            result.already_imported = True
-            result.textbook_id = existing.textbook_id
+    _mark_imported_source_results(session, source_results)
 
     imported_count = sum(1 for r in source_results if r.already_imported)
     yield _agent_stream_event(
