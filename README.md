@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://onetree.chat"><strong>在线体验 ↗</strong></a> &nbsp; / &nbsp;
   <a href="#产品预览">产品预览</a> &nbsp; / &nbsp;
-  <a href="#系统架构">系统架构</a> &nbsp; / &nbsp;
+  <a href="#工程设计">工程设计</a> &nbsp; / &nbsp;
   <a href="#快速开始">快速开始</a> &nbsp; / &nbsp;
   <a href="#文档导航">文档导航</a>
 </p>
@@ -20,60 +20,100 @@ OneTree 面向学生，将 **「学什么、怎么学、学得怎样」** 连接
 
 ## 产品预览
 
-### 从认识自己，到走出自己的学习路径
+**萌芽 → 繁枝 → 叶茂 → 成林 → 成森**
 
-结合学习目标、基础与偏好建立画像，连接后续课程和学习路径。
+从明确学习目标，到走进课程，再到检验理解、回顾成长。
 
-[![学生端：学习画像、目标与课程推荐](./docs/screenshots/student.png)](./docs/screenshots/student.png)
+### 01 · 萌芽｜先认识学习者
 
-<p align="center"><sub>学生端 · 学习画像与课程推荐　/　点击图片查看原图</sub></p>
+学生通过破冰对话说明目标、基础和学习偏好，系统逐步建立画像，为课程草案与路径规划提供上下文。
 
 <details>
-<summary>展开查看管理端与登录界面</summary>
+<summary>查看学习画像界面</summary>
 
-### 让教学内容有序生长
+[![萌芽：学习画像、目标与课程推荐](./docs/screenshots/student.png)](./docs/screenshots/student.png)
 
-培养方案、账号、数据与知识库集中管理。教材浏览界面提供解析详情、大纲与发布入口。
+</details>
+
+### 02 · 繁枝｜把目标铺成可推进的路径
+
+从课程草案出发，按年组织学习内容。学生可以切换年级，查看当前课程和相邻节点，从路径进入具体课程。
+
+[![繁枝：按年组织的学习路径与当前课程节点](./docs/readme/learning-path.png)](./docs/readme/learning-path.png)
+
+<p align="center"><sub>繁枝 · 年级切换、当前课程与后续节点　/　演示录屏画面</sub></p>
+
+### 03 · 叶茂｜沿着章节，逐步理解知识
+
+进入课程后，通过章节导航阅读小节内容。学习目标、概念讲解、代码示例与来源组织在同一页面，教学视频与 HTML 交互动画补充不同形式的解释。
+
+[![叶茂：课程章节导航、学习目标与图文讲解](./docs/readme/course-reading.png)](./docs/readme/course-reading.png)
+
+<p align="center"><sub>叶茂 · 从课程大纲进入小节讲解　/　演示录屏画面</sub></p>
+
+<details>
+<summary>查看课程内的交互动画</summary>
+
+[![课程交互动画：数据结构接口与设计规范](./docs/readme/course-animation.png)](./docs/readme/course-animation.png)
+
+<p align="center"><sub>课程内嵌 HTML 交互动画 · 通过节点查看概念与依据　/　演示录屏画面</sub></p>
+
+</details>
+
+### 04 · 成林｜用测验检验理解
+
+完成章节测验后，查看批改结果与薄弱点，并继续接受 AI 辅导。测验与作答记录也为后续的学习回顾提供依据。
+
+### 05 · 成森｜让成长回顾有据可查
+
+按需生成累计 AI 成长报告，查看已经表现出的优势、值得巩固的内容和下一步建议。展开依据可以追溯相关学习记录，建议支持跳转已有课程。
+
+[![成森：AI 成长报告、学习统计与展开的测验依据](./docs/readme/growth-report.png)](./docs/readme/growth-report.png)
+
+<p align="center"><sub>成森 · 学习回顾与引用依据　/　真实界面，使用合成测试数据演示</sub></p>
+
+<details>
+<summary>查看管理端与登录界面</summary>
+
+**管理端 · 组织教学内容**
+
+导入与发布培养方案，维护账号、组织班级和学习数据；教材知识库提供教材浏览、解析详情、大纲确认与发布入口。
 
 [![管理端：教材知识库与解析详情](./docs/screenshots/admin.png)](./docs/screenshots/admin.png)
 
-<p align="center"><sub>管理端 · 教材知识库</sub></p>
+**登录 · 进入学习空间**
 
 [![OneTree 登录界面](./docs/screenshots/login.png)](./docs/screenshots/login.png)
-
-<p align="center"><sub>登录 · 进入学习空间</sub></p>
 
 </details>
 
 <br />
 
-## 一条完整的学习旅程
+## 工程设计
 
-> **萌芽 → 繁枝 → 叶茂 → 成林 → 成森**
->
-> 认识自己，规划方向；逐节学习，自测巩固，回顾成长。
+### 明确分工，并用状态约束任务衔接
 
-1. **建立画像** — 通过破冰对话收集学习目标、基础与偏好，形成个人学习画像。
-2. **规划路径** — 从课程草案出发，生成按年组织的学习路径，查看课程与前置关系。
-3. **深入课程** — 进入课程大纲，按小节获取图文讲解、教学视频与 HTML 交互动画。
-4. **自测巩固** — 完成章节测验，查看批改与薄弱点，并继续接受 AI 辅导。
-5. **回顾成长** — 查看学习进度，按需生成 AI 成长报告，展开来源并跳转相关课程。
+画像采集、路径规划与小节资源具有不同的输入和输出。系统由 Supervisor 协调 **7 个专职 Worker**，结合规则引擎和当前状态选择执行节点；课程资源链路还会检查已完成阶段，再推进后续任务。前端通过 SSE 接收过程事件和生成内容。
 
-<br />
+[查看编排图与路由](./backend/app/orchestration/graph.py) · [查看 Supervisor](./backend/app/orchestration/agents/supervisor.py)
 
-## 支撑学习的核心能力
+### 把资源生成拆成可检查的阶段
 
-### 协作式规划，过程实时可见
+小节资源按 **图文 → 视频 → 动画 → 组合** 推进。视频阶段校验链接与来源，动画阶段检查 HTML 结构和内容要求，组合阶段汇集资源结果。分阶段处理使失败可以定位到具体资源环节。
 
-LangGraph Supervisor 协调 **7 个专职 Worker**，分别处理画像、路径、课程大纲与小节资源。通过 SSE 展示任务进展和生成内容，让较长的规划与资源生成过程保持可见。
+[查看资源生成流程](./backend/app/orchestration/agents/course_resources/main.py) · [查看动画校验](./backend/app/orchestration/agents/course_resources/animation.py)
 
-### 多形式课程，连接教材知识
+### 将长任务交给独立后台 Worker
 
-**图文、视频与交互动画** 按阶段生成，经资源校验后组合为小节学习内容。教材知识库管理导入、整理、大纲与发布，独立后台 Worker 处理长时间的整理任务。
+教材整理需要持续运行，因此由独立 Worker 消费持久化任务。任务使用数据库锁领取，通过 **租约与心跳** 记录处理状态，并对过期租约和重试次数作出处理，让任务恢复不依赖原来的页面连接。
 
-### 基于学习记录的反馈与回顾
+[查看知识库 Worker](./backend/app/workers/knowledge_base_worker.py)
 
-章节测验提供批改、薄弱点与 AI 辅导。**成长报告** 结合真实学习记录生成回顾、待巩固内容与下一步建议，支持展开引用来源、跳转相关课程并重新生成。
+### 先计算事实，再生成成长回顾
+
+成长报告先汇总学习记录，再让模型选择并读取相关证据，生成结构化正文。后端校验 **引用是否存在、建议是否指向已有课程、事实分析中的数值是否有来源**；没有测验记录时，不生成已表现出的优势评价。前端提供依据展开和课程跳转。
+
+[查看报告生成与校验](./backend/app/services/growth_report_service.py) · [查看统计口径](./docs/api-specs/API-成长报告.md)
 
 <br />
 
@@ -139,15 +179,14 @@ flowchart TB
 | **服务器部署** | [Docker 生产部署指南](./docs/deployment/docker-production.md)，覆盖初始化、迁移、更新、证书与回滚。 |
 | **Windows 桌面端** | [使用说明](./desktop/resources/使用说明.md) · [便携版构建工作流](./.github/workflows/windows-portable.yml) |
 
+本地开发需要 **Node.js 22、Python 3.11+、uv、PostgreSQL 18**，以及 OpenAI-compatible 模型服务的 API 地址、密钥与模型名称。
+
+配置完成后，后端在 `backend/` 运行 `uv run uvicorn app.main:app --reload --port 8000`，前端在 `frontend/` 运行 `npm ci` 和 `npm run dev`。知识库整理另需在 `backend/` 启动 `uv run python -m app.workers`。
+
 <details>
-<summary><strong>本地开发 · 环境准备与启动步骤</strong></summary>
+<summary><strong>首次运行 · 安装、数据库与配置步骤</strong></summary>
 
-### 1. 准备环境
-
-- **Node.js 22**：与仓库 CI 使用的版本一致。
-- **Python 3.11+ 与 uv**：后端依赖由 uv 管理。
-- **PostgreSQL 18**：本地数据库。
-- **模型服务**：准备 OpenAI-compatible API 地址、API Key 与模型名称。
+### 1. 安装工具
 
 macOS 可通过 Homebrew 安装 uv 和 PostgreSQL：
 
@@ -236,16 +275,17 @@ npm run dev
 
 ## 文档导航
 
-| 想了解什么 | 从这里开始 |
-| :--- | :--- |
-| 项目全貌、页面与模块关系 | [项目概览](./docs/project-overview.md) |
-| 后端架构与 API 分组 | [后端技术栈](./docs/backend/backend-tech-stack.md) |
-| 多智能体如何协作 | [Agent 执行逻辑](./docs/backend/agent逻辑.md) |
-| 接口字段与数据结构 | [API 文档](./docs/api-specs/) · [OpenAPI](./frontend/openapi.json) |
-| 成长报告的数据与统计口径 | [AI 成长报告](./docs/api-specs/API-成长报告.md) |
-| 数据库设计 | [数据库表结构](./docs/database/数据库表结构.md) |
-| 视觉规范与交互设计 | [UI 设计文档](./docs/ui-design/) |
-| 服务器安装、运维与回滚 | [生产部署指南](./docs/deployment/docker-production.md) |
+**了解架构**
+
+[项目概览](./docs/project-overview.md) · [后端技术栈](./docs/backend/backend-tech-stack.md) · [Agent 执行逻辑](./docs/backend/agent逻辑.md) · [数据库设计](./docs/database/数据库表结构.md)
+
+**部署运行**
+
+[生产部署指南](./docs/deployment/docker-production.md) · [Windows 使用说明](./desktop/resources/使用说明.md)
+
+**参与开发**
+
+[API 文档](./docs/api-specs/) · [OpenAPI](./frontend/openapi.json) · [成长报告接口与口径](./docs/api-specs/API-成长报告.md) · [UI 设计规范](./docs/ui-design/)
 
 <details>
 <summary><strong>仓库目录</strong></summary>
