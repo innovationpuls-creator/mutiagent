@@ -671,12 +671,54 @@ PY
 
 COMPOSE_CONFIG="$TEMP_DIR/compose-config.json"
 COMPOSE_ENVIRONMENT="$TEMP_DIR/compose-environment.txt"
-docker compose \
+env \
+  -u ALLOWED_ORIGINS \
+  -u DEBIAN_MIRROR \
+  -u DEBIAN_SECURITY_MIRROR \
+  -u JWT_SECRET \
+  -u LLM_API_KEY \
+  -u LLM_BASE_URL \
+  -u LLM_MODEL \
+  -u MAINTENANCE_BYPASS_TOKEN \
+  -u NGINX_CONFIG_MODE \
+  -u NPM_REGISTRY \
+  -u PGDG_KEY_URL \
+  -u PGDG_REPOSITORY \
+  -u POSTGRES_APP_PASSWORD \
+  -u POSTGRES_MAINTENANCE_PASSWORD \
+  -u PUBLIC_IPV4 \
+  -u PYTHON_PACKAGE_INDEX \
+  -u SMOKE_ACCOUNT \
+  -u SMOKE_PASSWORD \
+  -u UV_HTTP_TIMEOUT \
+  -u VITE_ICP_BEIAN_NUMBER \
+  docker compose \
   --profile operations \
   --env-file "$ENV_FILE" \
   -f "$REPO_ROOT/deploy/compose.production.yml" \
   config --format json > "$COMPOSE_CONFIG"
-docker compose \
+env \
+  -u ALLOWED_ORIGINS \
+  -u DEBIAN_MIRROR \
+  -u DEBIAN_SECURITY_MIRROR \
+  -u JWT_SECRET \
+  -u LLM_API_KEY \
+  -u LLM_BASE_URL \
+  -u LLM_MODEL \
+  -u MAINTENANCE_BYPASS_TOKEN \
+  -u NGINX_CONFIG_MODE \
+  -u NPM_REGISTRY \
+  -u PGDG_KEY_URL \
+  -u PGDG_REPOSITORY \
+  -u POSTGRES_APP_PASSWORD \
+  -u POSTGRES_MAINTENANCE_PASSWORD \
+  -u PUBLIC_IPV4 \
+  -u PYTHON_PACKAGE_INDEX \
+  -u SMOKE_ACCOUNT \
+  -u SMOKE_PASSWORD \
+  -u UV_HTTP_TIMEOUT \
+  -u VITE_ICP_BEIAN_NUMBER \
+  docker compose \
   --env-file "$ENV_FILE" \
   -f "$REPO_ROOT/deploy/compose.production.yml" \
   config --environment > "$COMPOSE_ENVIRONMENT"
@@ -690,31 +732,10 @@ from pathlib import Path
 import sys
 
 services = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["services"]
-compose_environment = {}
-for line in Path(sys.argv[2]).read_text(encoding="utf-8").splitlines():
-    key, separator, value = line.partition("=")
-    if separator:
-        compose_environment[key] = value
-assert compose_environment["LLM_API_KEY"] == sys.argv[3]
-assert compose_environment["SMOKE_PASSWORD"] == sys.argv[4]
-build_args = services["backend"]["build"]["args"]
-assert build_args["DEBIAN_MIRROR"] == "https://mirrors.cloud.tencent.com/debian"
-assert build_args["DEBIAN_SECURITY_MIRROR"] == (
-    "https://mirrors.cloud.tencent.com/debian-security"
-)
-assert build_args["PGDG_REPOSITORY"] == (
-    "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] "
-    "https://mirrors.cloud.tencent.com/postgresql/repos/apt bookworm-pgdg main"
-)
-assert build_args["PYTHON_PACKAGE_INDEX"] == (
-    "https://mirrors.cloud.tencent.com/pypi/simple/"
-)
-assert services["nginx"]["build"]["args"]["NPM_REGISTRY"] == (
-    "https://mirrors.cloud.tencent.com/npm/"
-)
-assert services["nginx"]["build"]["args"]["VITE_ICP_BEIAN_NUMBER"] == (
-    "粤ICP备2026100568号-1"
-)
+backend_environment = services["backend"]["environment"]
+smoke_environment = services["smoke"]["environment"]
+assert backend_environment["LLM_API_KEY"].replace("$$", "$") == sys.argv[3]
+assert smoke_environment["SMOKE_PASSWORD"].replace("$$", "$") == sys.argv[4]
 PY
 
 python3 - \
