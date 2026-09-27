@@ -1,6 +1,6 @@
 # OneTree Docker 生产部署
 
-本文档用于当前生产环境：Ubuntu Server 24.04 LTS x86_64、root、服务器公网 IP `1.12.69.26`。ICP备案通过前，唯一生产入口是 `https://1.12.69.26`。
+本文档用于当前生产环境：Ubuntu Server 24.04 LTS x86_64、root、服务器公网 IP `1.12.69.26`。独立部署时 OneTree 可通过 IP HTTPS 访问；与 DOM 同机部署时，公网 IP HTTPS 入口转发给 DOM，OneTree 继续通过 `https://onetree.chat` 访问。两者共用现有 Nginx 和 IP 证书续期流程。
 
 首次部署只有一个服务器命令。脚本会安装 Docker、配置国内回退源、导入现有数据库和教材、生成数据库/JWT 密钥、申请 HTTPS 证书，并检查服务、数据库和真实登录。
 

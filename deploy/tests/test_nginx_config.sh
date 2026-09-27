@@ -135,6 +135,14 @@ assert re.search(
     nginx_conf,
     flags=re.DOTALL,
 )
+assert re.search(
+    r"map\s+\$http_upgrade\s+\$connection_upgrade\s*\{"
+    r".*?default\s+upgrade;"
+    r".*?''\s+close;"
+    r".*?\}",
+    nginx_conf,
+    flags=re.DOTALL,
+)
 
 bootstrap_servers = server_blocks(bootstrap)
 assert len(bootstrap_servers) == 3, len(bootstrap_servers)
@@ -257,7 +265,7 @@ assert (
     in production_ip_https
 )
 
-for https_server in (*https_servers, production_ip_https):
+for https_server in (domain_server,):
     assert_security_headers(https_server, "response_request_id")
     assert "proxy_hide_header X-Request-ID;" in https_server
     assert "proxy_intercept_errors on;" in https_server
@@ -293,6 +301,30 @@ for https_server in (*https_servers, production_ip_https):
     assert "client_max_body_size 101m;" in upload
     assert "proxy_pass http://backend:8000;" in upload
     assert "proxy_set_header X-Request-ID $request_id_header;" in upload
+
+assert_security_headers(ip_server, "response_request_id")
+assert "proxy_hide_header X-Request-ID;" in ip_server
+assert (
+    'add_header Strict-Transport-Security '
+    '"max-age=31536000; includeSubDomains" always;'
+    in ip_server
+)
+assert "resolver 127.0.0.11 ipv6=off valid=10s;" in ip_server
+ip_proxy = directive_block(ip_server, r"location\s+/\s*")
+for directive in (
+    "set $dom_upstream dom-web:8080;",
+    "proxy_http_version 1.1;",
+    "proxy_set_header Host $host;",
+    "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
+    "proxy_set_header X-Forwarded-Proto $scheme;",
+    "proxy_set_header X-Request-ID $request_id_header;",
+    "proxy_set_header Upgrade $http_upgrade;",
+    "proxy_set_header Connection $connection_upgrade;",
+    "proxy_pass http://$dom_upstream;",
+):
+    assert directive in ip_proxy, directive
+assert "proxy_pass http://backend:8000;" not in ip_server
+assert "try_files $uri $uri/ /index.html;" not in ip_server
 
 assert "FROM nginx:1.28-alpine AS dist" in dockerfile
 for source in (
