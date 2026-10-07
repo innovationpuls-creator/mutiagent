@@ -1616,40 +1616,9 @@ async def run_course_knowledge_agent(
         return {"error": "请先生成学习路径。"}
 
     try:
-        with Session(get_engine()) as db_session:
-            selected_course = None
-            if course_id != ALL_CURRENT_GRADE_COURSES_ID:
-                selected_course = _select_course_for_outline(
-                    state.get("year_learning_paths"),
-                    course_id,
-                    latest_grade_year,
-                )
-                _fill_course_source_binding_from_textbook(db_session, selected_course)
-
-                if (
-                    selected_course.get("source_textbook_id")
-                    and selected_course.get("source_textbook_id") != "None"
-                ):
-                    require_student_visible_textbooks(
-                        db_session, selected_course.get("source_textbook_id", "")
-                    )
-            else:
-                grade_year, grade_courses, current_course_id = (
-                    _select_grade_courses_for_outlines(
-                        year_learning_paths,
-                        latest_grade_year,
-                    )
-                )
-                for course in grade_courses:
-                    _fill_course_source_binding_from_textbook(db_session, course)
-
-                    if (
-                        course.get("source_textbook_id")
-                        and course.get("source_textbook_id") != "None"
-                    ):
-                        require_student_visible_textbooks(
-                            db_session, course.get("source_textbook_id", "")
-                        )
+        selected_course = await asyncio.to_thread(
+            _prepare_courses_for_outline, state, course_id, latest_grade_year
+        )
     except ValueError as exc:
         return {"error": str(exc), "hard_error": True}
 
@@ -1661,8 +1630,8 @@ async def run_course_knowledge_agent(
             return {"error": str(exc), "hard_error": True}
 
         try:
-            source_section_contexts = _source_section_contexts_for_courses(
-                [selected_course]
+            source_section_contexts = await asyncio.to_thread(
+                _source_section_contexts_for_courses, [selected_course]
             )
         except ValueError as exc:
             return {"error": str(exc), "hard_error": True}
@@ -1708,8 +1677,8 @@ async def run_course_knowledge_agent(
         )
 
         try:
-            source_section_contexts = _source_section_contexts_for_courses(
-                grade_courses
+            source_section_contexts = await asyncio.to_thread(
+                _source_section_contexts_for_courses, grade_courses
             )
         except ValueError as exc:
             return {"error": str(exc), "hard_error": True}
@@ -1752,16 +1721,10 @@ async def run_course_knowledge_agent(
             generated_outlines, current_course_id
         )
 
-    from app.services.course_knowledge_service import (
-        upsert_user_course_knowledge_outline,
-    )
-
     try:
-        with Session(get_engine()) as db_session:
-            for outline_dict in generated_outlines:
-                upsert_user_course_knowledge_outline(
-                    db_session, state["user_id"], outline_dict
-                )
+        await asyncio.to_thread(
+            _persist_generated_outlines, state["user_id"], generated_outlines
+        )
         logger.info(
             "CourseKnowledgeOutline persisted for user %s, %d course(s)",
             state["user_id"],
@@ -1799,3 +1762,54 @@ def create_course_knowledge_agent_node(llm: BaseChatModel):
         return result
 
     return course_knowledge_node
+
+
+def _prepare_courses_for_outline(
+    state: OrchestrationState, course_id: str, latest_grade_year: str
+) -> dict | None:
+    year_learning_paths = state.get("year_learning_paths", {})
+    with Session(get_engine()) as db_session:
+        selected_course = None
+        if course_id != ALL_CURRENT_GRADE_COURSES_ID:
+            selected_course = _select_course_for_outline(
+                state.get("year_learning_paths"),
+                course_id,
+                latest_grade_year,
+            )
+            _fill_course_source_binding_from_textbook(db_session, selected_course)
+
+            if (
+                selected_course.get("source_textbook_id")
+                and selected_course.get("source_textbook_id") != "None"
+            ):
+                require_student_visible_textbooks(
+                    db_session, selected_course.get("source_textbook_id", "")
+                )
+        else:
+            grade_year, grade_courses, current_course_id = (
+                _select_grade_courses_for_outlines(
+                    year_learning_paths,
+                    latest_grade_year,
+                )
+            )
+            for course in grade_courses:
+                _fill_course_source_binding_from_textbook(db_session, course)
+
+                if (
+                    course.get("source_textbook_id")
+                    and course.get("source_textbook_id") != "None"
+                ):
+                    require_student_visible_textbooks(
+                        db_session, course.get("source_textbook_id", "")
+                    )
+    return selected_course
+
+
+def _persist_generated_outlines(user_id: str, outlines: list[dict]) -> None:
+    from app.services.course_knowledge_service import (
+        upsert_user_course_knowledge_outline,
+    )
+
+    with Session(get_engine()) as db_session:
+        for outline in outlines:
+            upsert_user_course_knowledge_outline(db_session, user_id, outline)

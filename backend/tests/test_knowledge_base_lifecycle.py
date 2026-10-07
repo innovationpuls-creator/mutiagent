@@ -326,7 +326,7 @@ def test_course_outline_generation_blocks_unpublished_source_textbook(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "course-outline-unpublished"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     with Session(engine) as session:
         textbook = _publish_textbook(session)
@@ -468,7 +468,7 @@ def test_markdown_regeneration_blocks_unpublished_source_textbook(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "markdown-unpublished"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     with Session(engine) as session:
         textbook = _publish_textbook(session)

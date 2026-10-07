@@ -210,7 +210,7 @@ def test_intake_generation_input_declares_downstream_order_and_resource_boundary
 def test_run_intake_agent_creates_data_structure_draft(tmp_path: Path) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "intake-draft"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     fake_llm = _FakeIntakeLLM(_llm_intake_result())
 
     with Session(engine) as session:
@@ -433,7 +433,7 @@ def test_run_intake_agent_injects_published_textbook_context_without_body(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "intake-kb-context"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     fake_llm = _FakeIntakeLLM(_llm_intake_result())
 
     with Session(engine) as session:
@@ -539,7 +539,7 @@ def test_run_intake_agent_returns_gap_without_draft_when_no_published_textbook(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "intake-kb-gap"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     fake_llm = _FakeIntakeLLM(_llm_intake_result())
 
     result = asyncio.run(
@@ -573,7 +573,7 @@ def test_run_intake_agent_uses_llm_courses_for_natural_modification(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "intake-llm-modification"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         _seed_published_textbook_context(session, topic="前端开发")
 
@@ -614,7 +614,7 @@ def test_run_intake_agent_normalizes_chinese_grade_year_from_llm(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "intake-chinese-grade-year"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         _seed_published_textbook_context(session)
 
@@ -646,7 +646,7 @@ def test_run_intake_agent_normalizes_numeric_grade_year_from_structured_llm(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "intake-numeric-grade-year"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         _seed_published_textbook_context(session)
 
@@ -680,7 +680,7 @@ def test_run_intake_agent_normalizes_numeric_grade_year_from_structured_llm(
 def test_run_intake_agent_marks_existing_draft_confirmed(tmp_path: Path) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "intake-confirm"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     draft = {
         "type": "learning_path_intake",
@@ -720,7 +720,7 @@ def test_run_intake_agent_confirms_risk_pending_and_clears_risk_fields(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "intake-risk-confirm"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     risk_pending = {
         "type": "learning_path_intake",
@@ -765,7 +765,7 @@ def test_run_intake_agent_cancel_risk_pending_keeps_existing_path(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "intake-risk-cancel"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     risk_pending = {
         "type": "learning_path_intake",
@@ -814,7 +814,7 @@ def test_run_intake_agent_detects_deletion_of_started_course_and_outlines(
 
     engine = build_engine(postgresql_test_url(tmp_path, "intake-risk"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     with Session(engine) as session:
         session.add(

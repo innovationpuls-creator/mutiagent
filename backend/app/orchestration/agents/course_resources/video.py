@@ -1473,7 +1473,7 @@ async def run_section_video_search_agent(
 
     try:
         for section in target_sections:
-            _resource_context(state, outline, section)
+            await asyncio.to_thread(_resource_context, state, outline, section)
     except ValueError as exc:
         return {"error": str(exc), "hard_error": True}
 
@@ -1573,7 +1573,9 @@ async def run_section_video_search_agent(
         outline, "section_video_links", section_video_links
     )
     try:
-        _persist_outline(str(state.get("user_id", "")), updated_outline)
+        await asyncio.to_thread(
+            _persist_outline, str(state.get("user_id", "")), updated_outline
+        )
     except Exception as exc:
         logger.error(
             "Failed to persist course resources for user %s: %s",

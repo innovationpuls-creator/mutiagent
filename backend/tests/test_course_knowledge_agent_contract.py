@@ -331,7 +331,7 @@ def _seed_published_textbook_sections(
 ):
     engine = build_engine(postgresql_test_url(tmp_path, "course-source-sections"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(enabled_source())
         row = published_textbook(
@@ -370,7 +370,7 @@ def _seed_published_textbook_sections_with_parents(
 ):
     engine = build_engine(postgresql_test_url(tmp_path, schema_suffix))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(enabled_source())
         row = published_textbook(
@@ -994,7 +994,7 @@ def test_build_analysis_input_uses_english_original_source_content_lengths(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "course-source-english"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(enabled_source())
         row = published_textbook(
@@ -1122,7 +1122,7 @@ def test_upsert_outline_clears_section_generated_assets_when_outline_changes(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-upsert"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     original_outline = _with_section_sources(
         {
             "course_id": "year_3_course_1",
@@ -1197,7 +1197,7 @@ def test_upsert_outline_clears_section_generated_assets_when_content_plan_change
         postgresql_test_url(tmp_path, "course-knowledge-upsert-content")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     original_outline = _with_section_sources(
         {
             "course_id": "year_3_course_1",
@@ -1372,7 +1372,7 @@ def test_run_course_knowledge_agent_uses_structured_outline_and_persists(
         postgresql_test_url(tmp_path, "course-knowledge-local-outline")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -1684,7 +1684,7 @@ def test_run_course_knowledge_agent_infers_published_source_for_unbound_complexi
 
     engine = build_engine(postgresql_test_url(tmp_path, "course-source-inference"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -1901,7 +1901,7 @@ def test_course_source_binding_reselects_when_existing_section_exceeds_limit(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "course-source-reselect"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(enabled_source())
         ods_book = published_textbook(
@@ -2216,7 +2216,7 @@ def test_run_course_knowledge_agent_generates_all_grade_course_outlines_in_one_c
 
     engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-year-batch"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -2341,7 +2341,7 @@ def test_run_course_knowledge_agent_empty_course_id_generates_current_course_onl
         postgresql_test_url(tmp_path, "course-knowledge-empty-course-id")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -2426,7 +2426,7 @@ def test_run_course_knowledge_agent_rejects_incomplete_basic_profile(
         postgresql_test_url(tmp_path, "course-knowledge-incomplete-profile")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     with Session(engine) as session:
         session.add(
@@ -2505,7 +2505,7 @@ def test_run_course_knowledge_agent_returns_hard_error_after_json_output_failure
 
     engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-fallback"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -2774,7 +2774,7 @@ def test_run_course_knowledge_agent_returns_hard_error_after_timeout(
 
     engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-timeout"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -2919,7 +2919,7 @@ def test_run_course_knowledge_agent_normalizes_partial_json_outline(
     captured: dict[str, object] = {}
     engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-normalize"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -3081,7 +3081,7 @@ def test_run_course_knowledge_agent_uses_llm_even_when_textbook_mapped(
 
     engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-mapped-llm"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     with Session(engine) as session:
         session.add(
@@ -3256,7 +3256,7 @@ def test_run_course_knowledge_agent_fallback_title_mapping(
 
     engine = build_engine(postgresql_test_url(tmp_path, "course-knowledge-fallback"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     with Session(engine) as session:
         session.add(

@@ -394,6 +394,10 @@ def get_all_year_learning_paths(session: Session, user_uid: str) -> dict[str, di
         )
     )
     rows = session.exec(stmt).all()
+    return _year_learning_paths_from_rows(rows)
+
+
+def _year_learning_paths_from_rows(rows: list[UserYearLearningPath]) -> dict[str, dict]:
     paths_by_year: dict[str, dict] = {}
     for row in rows:
         normalized = _normalize_current_learning_courses(row.path_data)
@@ -536,42 +540,44 @@ def _canopy_active_rate(growth_stage: int) -> int:
 
 
 def get_canopy_overview(session: Session, user_uid: str) -> dict[str, object]:
-    profile = session.get(UserProfile, user_uid)
+    profile_created_at = session.exec(
+        select(UserProfile.created_at).where(UserProfile.user_uid == user_uid)
+    ).first()
     path_rows = list(
         session.exec(
-            select(UserYearLearningPath).where(
-                UserYearLearningPath.user_uid == user_uid
+            select(UserYearLearningPath)
+            .where(UserYearLearningPath.user_uid == user_uid)
+            .order_by(
+                UserYearLearningPath.updated_at.desc(),
+                UserYearLearningPath.grade_year.asc(),
             )
         ).all()
     )
-    outline_rows = list(
-        session.exec(
-            select(UserCourseKnowledgeOutline).where(
-                UserCourseKnowledgeOutline.user_uid == user_uid
-            )
-        ).all()
-    )
-    quiz_rows = list(
-        session.exec(select(ChapterQuiz).where(ChapterQuiz.user_uid == user_uid)).all()
-    )
-    passed_chapters = list(
-        session.exec(
-            select(ChapterProgress).where(
-                ChapterProgress.user_uid == user_uid,
-                ChapterProgress.state == "passed",
-            )
-        ).all()
-    )
+    outline_created_at = session.exec(
+        select(func.min(UserCourseKnowledgeOutline.created_at)).where(
+            UserCourseKnowledgeOutline.user_uid == user_uid
+        )
+    ).one()
+    quiz_created_at = session.exec(
+        select(func.min(ChapterQuiz.created_at)).where(ChapterQuiz.user_uid == user_uid)
+    ).one()
+    completed_count, first_passed_at, score_sum, score_count = session.exec(
+        select(
+            func.count(),
+            func.min(ChapterProgress.passed_at),
+            func.sum(ChapterProgress.best_score).filter(ChapterProgress.best_score > 0),
+            func.count().filter(ChapterProgress.best_score > 0),
+        ).where(ChapterProgress.user_uid == user_uid, ChapterProgress.state == "passed")
+    ).one()
 
-    completed_count = len(passed_chapters)
     growth_stage = _canopy_growth_stage(completed_count)
 
     dates = [
-        profile.created_at if profile is not None else None,
+        profile_created_at,
         min((row.created_at for row in path_rows), default=None),
-        min((row.created_at for row in outline_rows), default=None),
-        min((row.created_at for row in quiz_rows), default=None),
-        min((row.passed_at for row in passed_chapters if row.passed_at), default=None),
+        outline_created_at,
+        quiz_created_at,
+        first_passed_at,
     ]
     milestones = []
     for stage_num in range(1, 6):
@@ -587,16 +593,15 @@ def get_canopy_overview(session: Session, user_uid: str) -> dict[str, object]:
             }
         )
 
-    scores = [row.best_score for row in passed_chapters if row.best_score > 0]
-    avg_score = round(sum(scores) / len(scores)) if scores else 0
+    avg_score = round(score_sum / score_count) if score_count else 0
     attempts_count = session.exec(
         select(func.count(ChapterQuizAttempt.attempt_id)).where(
             ChapterQuizAttempt.user_uid == user_uid
         )
     ).one()
-    focused_hours = len(passed_chapters) * 3.5 + int(attempts_count or 0) * 0.5
+    focused_hours = completed_count * 3.5 + int(attempts_count or 0) * 0.5
 
-    courses = _canopy_courses_from_paths(get_all_year_learning_paths(session, user_uid))
+    courses = _canopy_courses_from_paths(_year_learning_paths_from_rows(path_rows))
     active_rate = _canopy_active_rate(growth_stage)
     quality_scores = get_quality_scores_for_user(session, user_uid)
 

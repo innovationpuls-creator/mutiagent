@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Generator
+from contextvars import ContextVar
+from typing import Any, TypeVar
 
 from dotenv import load_dotenv
+from sqlalchemy import inspect
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine, select
+from starlette.concurrency import run_in_threadpool
 
 from app.core.security import hash_password
 from app.models import User
@@ -23,6 +27,39 @@ DEMO_USER_PASSWORD = "demo123456"
 
 
 _engine: Engine | None = None
+request_engine_context: ContextVar[Engine | None] = ContextVar(
+    "request_engine", default=None
+)
+SessionFactory = Callable[[], Session]
+_Result = TypeVar("_Result")
+
+
+def session_factory_from_session(session: Session) -> SessionFactory:
+    """Capture the injected application's bind without sharing its Session."""
+    bind = session.get_bind()
+    return lambda: Session(bind)
+
+
+def run_db_sync(
+    factory: SessionFactory,
+    operation: Callable[..., _Result],
+    *args: Any,
+    **kwargs: Any,
+) -> _Result:
+    with factory() as session:
+        result = operation(session, *args, **kwargs)
+        session.expunge_all()
+        return result
+
+
+async def run_db(
+    factory: SessionFactory,
+    operation: Callable[..., _Result],
+    *args: Any,
+    **kwargs: Any,
+) -> _Result:
+    """Run one complete database operation in a thread-owned short Session."""
+    return await run_in_threadpool(run_db_sync, factory, operation, *args, **kwargs)
 
 
 def build_engine(database_url: str = DATABASE_URL) -> Engine:
@@ -38,6 +75,9 @@ def build_engine(database_url: str = DATABASE_URL) -> Engine:
 def get_engine(database_url: str = DATABASE_URL) -> Engine:
     """Return a module-level cached engine singleton."""
     global _engine
+    request_engine = request_engine_context.get()
+    if request_engine is not None:
+        return request_engine
     if _engine is None:
         _engine = build_engine(database_url)
     return _engine
@@ -60,9 +100,14 @@ def create_session_dependency(
 
 
 def init_db(engine: Engine, *, seed_users: bool = True) -> None:
-    run_schema_upgrades(engine)
-    SQLModel.metadata.create_all(engine)
-    migrate_removed_learning_path_table(engine)
+    with engine.begin() as connection:
+        empty = not inspect(connection).get_table_names()
+        if empty:
+            SQLModel.metadata.create_all(connection, checkfirst=False)
+    if not empty:
+        run_schema_upgrades(engine)
+        SQLModel.metadata.create_all(engine)
+        migrate_removed_learning_path_table(engine)
 
     if not seed_users:
         return

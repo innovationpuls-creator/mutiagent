@@ -314,7 +314,7 @@ def create_profile_router(session_dependency: SessionDependency) -> APIRouter:
     get_current_user = create_get_current_user(session_dependency)
 
     @router.get("/dashboard")
-    async def get_dashboard(
+    def get_dashboard(
         current_user: User = Depends(get_current_user),
         session: Session = Depends(session_dependency),
     ) -> dict:

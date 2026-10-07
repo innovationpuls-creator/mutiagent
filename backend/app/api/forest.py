@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
 from app.core.security import create_get_current_user
+from app.database import run_db, session_factory_from_session
 from app.models import ChapterQuiz, User
 from app.orchestration.agents.quiz import (
     generate_quiz_questions,
@@ -77,6 +78,34 @@ async def _stream_forest_ai_events(
         yield _sse("forest_error", {"message": str(exc) or "Forest AI 暂时不可用"})
 
 
+def _owned_quiz(session: Session, quiz_id: str, uid: str) -> ChapterQuiz:
+    quiz = session.get(ChapterQuiz, quiz_id)
+    if quiz is None or quiz.user_uid != uid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="测验不存在")
+    return quiz
+
+
+def _submit_attempt_snapshot(
+    session: Session,
+    uid: str,
+    quiz_id: str,
+    answers: dict,
+    grading_result: dict,
+    questions: list[dict],
+) -> tuple[ForestAttemptRead, list[dict]]:
+    attempt, weaknesses = submit_quiz_attempt(
+        session, uid, quiz_id, answers, grading_result, questions_snapshot=questions
+    )
+    return attempt, [
+        {
+            "knowledge_point_id": w.knowledge_point_id,
+            "knowledge_point_name": w.knowledge_point_name,
+            "severity": w.severity,
+        }
+        for w in weaknesses
+    ]
+
+
 def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  # noqa: C901
     router = APIRouter(prefix="/api/forest", tags=["forest"])
     get_current_user = create_get_current_user(session_dependency)
@@ -106,8 +135,13 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  #
         current_user: User = Depends(get_current_user),
         session: Session = Depends(session_dependency),
     ) -> ForestQuizRead:
-        quiz_session = read_forest_quiz_session(
-            session, current_user.uid, course_node_id, chapter_id
+        factory = session_factory_from_session(session)
+        quiz_session = await run_db(
+            factory,
+            read_forest_quiz_session,
+            current_user.uid,
+            course_node_id,
+            chapter_id,
         )
         if quiz_session.progress.state == "locked":
             raise HTTPException(
@@ -127,8 +161,9 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  #
             chapter_context=json.dumps(quiz_session.chapter, ensure_ascii=False),
             knowledge_point_ids=_extract_knowledge_point_ids(quiz_session.chapter),
         )
-        return generate_or_read_quiz(
-            session,
+        return await run_db(
+            factory,
+            generate_or_read_quiz,
             current_user.uid,
             course_node_id,
             chapter_id,
@@ -143,19 +178,22 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  #
         current_user: User = Depends(get_current_user),
         session: Session = Depends(session_dependency),
     ) -> ForestAttemptRead:
-        quiz = session.get(ChapterQuiz, quiz_id)
-        if quiz is None or quiz.user_uid != current_user.uid:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="测验不存在"
-            )
+        factory = session_factory_from_session(session)
+        quiz = await run_db(factory, _owned_quiz, quiz_id, current_user.uid)
 
         grading_result = await grade_quiz_answers(
             get_worker_llm(),
             questions=quiz.questions,
             answers=payload.answers,
         )
-        attempt, _weaknesses = submit_quiz_attempt(
-            session, current_user.uid, quiz.quiz_id, payload.answers, grading_result
+        attempt, _weaknesses = await run_db(
+            factory,
+            _submit_attempt_snapshot,
+            current_user.uid,
+            quiz.quiz_id,
+            payload.answers,
+            grading_result,
+            quiz.questions,
         )
         return attempt
 
@@ -166,11 +204,8 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  #
         current_user: User = Depends(get_current_user),
         session: Session = Depends(session_dependency),
     ) -> StreamingResponse:
-        quiz = session.get(ChapterQuiz, quiz_id)
-        if quiz is None or quiz.user_uid != current_user.uid:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="测验不存在"
-            )
+        factory = session_factory_from_session(session)
+        quiz = await run_db(factory, _owned_quiz, quiz_id, current_user.uid)
 
         async def event_generator() -> AsyncGenerator[str, None]:
             try:
@@ -188,22 +223,15 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  #
                     "status", {"phase": "analyzing", "message": "正在分析薄弱知识点..."}
                 )
 
-                attempt, weaknesses = submit_quiz_attempt(
-                    session,
+                attempt, weakness_data = await run_db(
+                    factory,
+                    _submit_attempt_snapshot,
                     current_user.uid,
                     quiz.quiz_id,
                     payload.answers,
                     grading_result,
+                    quiz.questions,
                 )
-
-                weakness_data = [
-                    {
-                        "knowledge_point_id": w.knowledge_point_id,
-                        "knowledge_point_name": w.knowledge_point_name,
-                        "severity": w.severity,
-                    }
-                    for w in weaknesses
-                ]
 
                 if weakness_data:
                     yield _sse(
@@ -219,17 +247,20 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  #
                     "status", {"phase": "unlocking", "message": "正在解锁下一章节..."}
                 )
 
-                canopy = get_canopy_overview(session, current_user.uid)
-                grade_year, chapter_ids = _chapter_ids_for_course(
-                    session, current_user.uid, quiz.course_node_id
+                canopy = await run_db(factory, get_canopy_overview, current_user.uid)
+                grade_year, chapter_ids = await run_db(
+                    factory,
+                    _chapter_ids_for_course,
+                    current_user.uid,
+                    quiz.course_node_id,
                 )
                 next_chapter_id = _next_chapter_id(chapter_ids, quiz.chapter_id)
 
                 next_unlocked_chapter_id = next_chapter_id if attempt.passed else None
                 next_course_id = None
                 if attempt.passed and not next_chapter_id:
-                    updated_path = get_year_learning_path(
-                        session, current_user.uid, grade_year
+                    updated_path = await run_db(
+                        factory, get_year_learning_path, current_user.uid, grade_year
                     )
                     if updated_path:
                         current_course = updated_path.get("current_learning_course", {})

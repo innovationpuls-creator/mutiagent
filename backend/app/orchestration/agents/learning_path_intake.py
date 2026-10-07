@@ -138,7 +138,7 @@ async def run_learning_path_intake_agent(
         rolled_back["status"] = "draft"
         rolled_back["requires_second_confirmation"] = False
         rolled_back["risk_warnings"] = []
-        _persist_learning_path_intake(state, rolled_back)
+        await asyncio.to_thread(_persist_learning_path_intake, state, rolled_back)
         return {
             "learning_path_intake": rolled_back,
             "response": _risk_cancelled_response_text(rolled_back),
@@ -149,7 +149,7 @@ async def run_learning_path_intake_agent(
         confirmed["status"] = "confirmed"
         confirmed["requires_second_confirmation"] = False
         confirmed["risk_warnings"] = []
-        _persist_learning_path_intake(state, confirmed)
+        await asyncio.to_thread(_persist_learning_path_intake, state, confirmed)
         return {
             "learning_path_intake": confirmed,
             "response": _confirmed_response_text(confirmed),
@@ -161,10 +161,8 @@ async def run_learning_path_intake_agent(
 
     confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
     learning_topic = _learning_topic_from_texts(query, profile, confirmed)
-    knowledge_context = _published_textbook_context_for_intake(
-        learning_topic,
-        query,
-        profile,
+    knowledge_context = await asyncio.to_thread(
+        _published_textbook_context_for_intake, learning_topic, query, profile
     )
     if not knowledge_context["textbooks"]:
         gap_id = knowledge_context.get("gap_id")
@@ -195,8 +193,8 @@ async def run_learning_path_intake_agent(
             "hard_error": True,
         }
 
-    _check_risk_pending(state, intake)
-    _persist_learning_path_intake(state, intake)
+    await asyncio.to_thread(_check_risk_pending, state, intake)
+    await asyncio.to_thread(_persist_learning_path_intake, state, intake)
     return {
         "learning_path_intake": intake,
         "response": _draft_response_text(intake),

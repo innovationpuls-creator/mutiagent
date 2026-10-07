@@ -810,7 +810,7 @@ def test_markdown_input_includes_textbook_evidence_pack(tmp_path) -> None:
 
     engine = build_engine(postgresql_test_url(tmp_path, "markdown-input-evidence"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -2285,7 +2285,7 @@ def test_markdown_input_requires_full_resource_brief_contract(tmp_path) -> None:
 
     engine = build_engine(postgresql_test_url(tmp_path, "markdown-input-brief-spec"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -2774,7 +2774,7 @@ def test_data_structure_course_outline_and_markdown_use_bound_textbook_evidence(
         postgresql_test_url(tmp_path, "data-structure-outline-markdown")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     with Session(engine) as session:
         session.add(
@@ -3224,7 +3224,7 @@ def test_run_section_markdown_agent_writes_each_first_chapter_child_section(
     captured = {"schema": None, "queries": [], "sections": []}
     engine = build_engine(postgresql_test_url(tmp_path, "section-markdown"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -3323,7 +3323,7 @@ def test_run_section_markdown_agent_returns_error_when_llm_unavailable(
 
     engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-fallback"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -3392,7 +3392,7 @@ def test_run_section_markdown_agent_returns_error_when_model_returns_error(
         postgresql_test_url(tmp_path, "section-markdown-model-error-fallback")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -3480,7 +3480,7 @@ def test_run_section_markdown_agent_persists_markdown_failure_without_clearing_o
         postgresql_test_url(tmp_path, "section-markdown-section-error")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -3558,7 +3558,7 @@ def test_run_section_markdown_agent_accepts_plain_markdown_model_output(
         postgresql_test_url(tmp_path, "section-markdown-plain-output")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -3639,7 +3639,7 @@ def test_run_section_markdown_agent_accepts_loose_json_without_brief_metadata(
 
     engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-loose-json"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -3746,7 +3746,7 @@ def test_run_section_markdown_agent_generates_markdown_from_five_section_bodies_
         postgresql_test_url(tmp_path, "section-markdown-quality-retry")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -3940,7 +3940,7 @@ def test_run_section_markdown_agent_expands_short_markdown_with_llm_content(
     }
     engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-expansion"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -4072,7 +4072,7 @@ def test_run_section_markdown_agent_scaffolds_structural_markdown_gaps(
     captured = {"expansion_calls": 0}
     engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-scaffold"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -4188,7 +4188,7 @@ def test_run_section_markdown_agent_returns_error_when_quality_repeatedly_fails(
         postgresql_test_url(tmp_path, "section-markdown-deterministic-rewrite")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -4288,7 +4288,7 @@ def test_run_section_markdown_agent_uses_backend_generated_resource_briefs(
         postgresql_test_url(tmp_path, "section-markdown-second-repair")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -4397,7 +4397,7 @@ def test_run_section_markdown_agent_generates_child_sections_concurrently(
     captured = {"schema": None, "active": 0, "max_active": 0}
     engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-concurrent"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -4488,7 +4488,7 @@ def test_run_section_markdown_agent_returns_error_when_failed_section_cannot_be_
     captured = {"schema": None, "attempts": {}}
     engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-batch-retry"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -4544,7 +4544,7 @@ def test_stream_chapter_resource_generation_reports_error_when_resource_llm_fail
 
     engine = build_engine(postgresql_test_url(tmp_path, "section-stream-fallback"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -4726,7 +4726,7 @@ def test_run_section_video_search_agent_writes_url_and_fallback_cover(
     captured = {"schema": None, "queries": [], "verified_search": 0}
     engine = build_engine(postgresql_test_url(tmp_path, "section-video"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -4846,7 +4846,7 @@ def test_run_section_video_search_agent_retries_transient_search_failure(
     captured = {"schema": None, "queries": [], "attempts": 0, "search_attempts": 0}
     engine = build_engine(postgresql_test_url(tmp_path, "section-video-retry"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -4981,7 +4981,7 @@ def test_run_section_video_search_agent_retries_when_first_search_result_fails_q
     captured = {"schema": None, "queries": [], "attempts": 0, "search_attempts": 0}
     engine = build_engine(postgresql_test_url(tmp_path, "section-video-quality-repair"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -5095,7 +5095,7 @@ def test_run_section_video_search_agent_uses_verified_search_when_llm_videos_sta
         postgresql_test_url(tmp_path, "section-video-verified-search")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -5237,7 +5237,7 @@ def test_run_section_video_search_agent_uses_verified_search_when_llm_returns_em
         postgresql_test_url(tmp_path, "section-video-empty-direct-search")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -5354,7 +5354,7 @@ def test_run_section_video_search_agent_retries_verified_search_when_first_scan_
         postgresql_test_url(tmp_path, "section-video-verified-search-retry")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -5485,7 +5485,7 @@ def test_run_section_video_search_agent_accepts_course_specific_video_metadata(
     captured = {"schema": None, "queries": [], "verified_search": 0}
     engine = build_engine(postgresql_test_url(tmp_path, "section-video-course-topic"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -5597,7 +5597,7 @@ def test_run_section_video_search_agent_accepts_section_topic_match_without_cour
         postgresql_test_url(tmp_path, "section-video-langgraph-topic")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -5668,7 +5668,7 @@ def test_run_section_video_search_agent_returns_hard_error_when_verified_search_
         postgresql_test_url(tmp_path, "section-video-search-fallback")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -5759,7 +5759,7 @@ def test_video_search_passes_when_majority_sections_have_videos(
 
     engine = build_engine(postgresql_test_url(tmp_path, "video-threshold-pass"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -5852,7 +5852,7 @@ def test_video_search_fails_when_below_majority_threshold(
 
     engine = build_engine(postgresql_test_url(tmp_path, "video-threshold-fail"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -5932,7 +5932,7 @@ def test_run_section_video_search_agent_does_not_apply_section_deadline(
     }
     engine = build_engine(postgresql_test_url(tmp_path, "section-video-search-timeout"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -6029,7 +6029,7 @@ def test_run_section_video_search_agent_starts_all_target_sections_concurrently(
         postgresql_test_url(tmp_path, "section-video-dynamic-concurrency")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -6111,7 +6111,7 @@ def test_run_section_video_search_agent_rejects_missing_textbook_evidence(
         postgresql_test_url(tmp_path, "section-video-missing-evidence")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -6225,7 +6225,7 @@ def test_run_section_html_animation_agent_uses_animation_briefs(tmp_path) -> Non
     captured = {"schema": None, "queries": []}
     engine = build_engine(postgresql_test_url(tmp_path, "section-animation"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -6348,7 +6348,7 @@ def test_run_section_html_animation_agent_rejects_missing_textbook_evidence(
         postgresql_test_url(tmp_path, "section-animation-missing-evidence")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -6449,7 +6449,7 @@ def test_run_section_html_animation_agent_accepts_plain_html_model_output(
     captured = {"queries": []}
     engine = build_engine(postgresql_test_url(tmp_path, "section-animation-plain-html"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -6570,7 +6570,7 @@ def test_run_section_html_animation_agent_generates_chapter_sections_concurrentl
     captured = {"queries": [], "inflight": 0, "max_inflight": 0}
     engine = build_engine(postgresql_test_url(tmp_path, "section-animation-concurrent"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -6667,7 +6667,7 @@ def test_run_section_html_animation_agent_rebuilds_when_llm_unavailable(
         postgresql_test_url(tmp_path, "section-animation-local-fallback")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -6776,7 +6776,7 @@ def test_resource_agents_reuse_existing_resources_and_rebuild_missing_animation(
 
     engine = build_engine(postgresql_test_url(tmp_path, "section-resource-reuse"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -8181,7 +8181,7 @@ def test_stream_chapter_resource_generation_generates_bound_resources_for_each_c
     outline = _outline()
     engine = build_engine(postgresql_test_url(tmp_path, "section-stream-complete"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -8349,7 +8349,7 @@ def test_stream_chapter_resource_generation_accepts_plain_markdown_and_html_outp
     outline = _outline()
     engine = build_engine(postgresql_test_url(tmp_path, "section-stream-plain-output"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(uid="user-1", username="课程用户", identifier="course@example.com")
@@ -8815,7 +8815,7 @@ def test_run_section_markdown_agent_injects_textbook_evidence_cag(tmp_path) -> N
 
     engine = build_engine(postgresql_test_url(tmp_path, "section-markdown-cag"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     # Seed User, Outline, Textbook, Source, and TextbookSectionContent
     with Session(engine) as session:
@@ -8931,7 +8931,7 @@ def test_run_section_markdown_agent_rejects_missing_textbook_evidence(
         postgresql_test_url(tmp_path, "section-markdown-missing-evidence")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     with Session(engine) as session:
         session.add(

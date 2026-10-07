@@ -1,6 +1,6 @@
 # Backend 技术文档
 
-> 本文是当前源码快照。最后核对：2026-07-15。代码、测试和配置变更后应同步更新本文。
+> 本文是当前源码快照。最后全面核对：2026-07-15；数据库生命周期与性能路径核对：2026-10-04。代码、测试和配置变更后应同步更新本文。
 
 当前后端使用 FastAPI + LangGraph + LangChain，采用无 checkpoint 的单轮 StateGraph 编排。每轮请求从数据库加载画像、按年学习路径、课程大纲、资源状态和会话消息。知识库教材整理是独立的数据库任务 worker。
 
@@ -42,8 +42,21 @@ uv run uvicorn app.main:app --reload --port 8000
          -> section_html_animation_agent
        资源阶段按 plan 顺序衔接，最终由确定性 compose 完成
   -> SSE 输出过程事件
-  -> message_completed 后追加本轮消息到 ConversationSession
+  -> 追加本轮消息到 ConversationSession
+  -> 持久化完成后输出 message_completed / session_completed
 ```
+
+### 数据库操作与模型等待
+
+同步数据库路由使用 `def`。聊天、测验、资源生成和成长报告按“短事务读取上下文 → 等待模型 → 短事务写入结果”执行；认证查询也在独立短 Session 中完成。`database.run_db` 在线程池内创建、使用并关闭绑定当前应用 engine 的 Session，返回已加载的数据或完整 DTO，不在线程之间共享 Session。
+
+Agent 的同步数据库 helper 整段在线程中执行。聊天只在推进 SSE 生成器期间绑定请求 engine，输出事件前恢复上下文，提前关闭亦可安全清理。发生事务失败时，用户消息回退使用新 Session。生产启动只检查 Alembic head，不执行开发模式的 `init_db`；开发空 schema 直接创建当前模型，非空 schema 仍走历史兼容升级。
+
+知识库管理员 Agent 的普通与 SSE HTTP 入口传入绑定应用 engine 的 Session factory；计数、查重和缺口查询分别在短 Session 内完成，关闭后才联网搜索或输出事件。直接传入 Session 的内部服务调用仍由调用者管理事务，保留未提交数据的可见性。SSE 保持同步生成器，并在退出时关闭内层生成器。
+
+教材上传继续异步分块读取并执行 100 MiB 限额检查；字节拼接在线程池完成，文件落盘、教材与整理任务持久化及响应 DTO 构造在工作线程自己的 Session 中完成。请求 Session 和 UploadFile 不跨线程，教材与任务仍按现有顺序分次提交。
+
+当前教材 embedding 列为 FLOAT[]。检索先检测向量类型、运算符、全文配置和已发布向量；不满足条件时跳过 embedding API，按原字符串评分规则匹配。混合 SQL 使用 savepoint 隔离失败。教材切片使用标题偏移索引，MarkItDown 在转换时导入。统计与证据加载的测量边界见 [性能报告](backend-performance-profile.md)。
 
 ## Agent 系统
 
@@ -73,7 +86,7 @@ uv run uvicorn app.main:app --reload --port 8000
 
 ### 知识库后台 Worker
 
-`python -m app.workers` 启动 `knowledge_base_worker`，从 `KnowledgeBaseIngestionJob` 领取教材整理任务。任务使用数据库锁、租约、心跳、重试次数和失败状态，生产 Compose 中由 `worker` 服务运行。上传文件由 `KNOWLEDGE_BASE_UPLOAD_DIR` 指向的持久卷保存。
+`python -m app.workers` 启动 `knowledge_base_worker`，从 `KnowledgeBaseIngestionJob` 领取教材整理任务。领取按原排队顺序执行 `LIMIT 1 FOR UPDATE SKIP LOCKED`，任务使用数据库锁、租约、心跳、重试次数和失败状态，生产 Compose 中由 `worker` 服务运行。上传文件由 `KNOWLEDGE_BASE_UPLOAD_DIR` 指向的持久卷保存。
 
 ## 数据库模型
 

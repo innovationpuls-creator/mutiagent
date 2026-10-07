@@ -1,11 +1,11 @@
 import logging
 import os
 import re
+from bisect import bisect_left
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urljoin, urlparse
 
 import requests
-from markitdown import MarkItDown
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -73,15 +73,18 @@ def locate_and_slice_sections(
 
     found_positions = []
     line_start_idx = 0
-    line_positions: list[tuple[str, int]] = []
+    heading_positions: dict[str, list[int]] = {}
     for line in markdown_text.splitlines(keepends=True):
-        line_positions.append((line.strip(), line_start_idx))
+        stripped = line.strip()
+        if not _looks_like_toc_entry(stripped):
+            normalized = _normalize_heading_text(stripped)
+            heading_positions.setdefault(normalized, []).append(line_start_idx)
         line_start_idx += len(line)
 
     search_start_idx = 0
     for sec_id, title in all_titles:
         found_start_idx = _next_section_heading_position(
-            line_positions,
+            heading_positions,
             title,
             search_start_idx,
         )
@@ -195,18 +198,15 @@ def _outline_line_context(
 
 
 def _next_section_heading_position(
-    line_positions: list[tuple[str, int]],
+    heading_positions: dict[str, list[int]],
     title: str,
     search_start_idx: int,
 ) -> int | None:
     normalized_title = _normalize_heading_text(title)
-    for line, start_idx in line_positions:
-        if start_idx < search_start_idx:
-            continue
-        if _looks_like_toc_entry(line):
-            continue
-        if _normalize_heading_text(line) == normalized_title:
-            return start_idx
+    offsets = heading_positions.get(normalized_title, [])
+    index = bisect_left(offsets, search_start_idx)
+    if index < len(offsets):
+        return offsets[index]
     return None
 
 
@@ -305,14 +305,17 @@ def _outline_title_from_line(
 
 def convert_textbook_source_to_markdown(source_url_or_path: str) -> str:
     try:
+        from markitdown import MarkItDown
+
         logger.info(
             "Converting textbook source with MarkItDown: %s",
             source_url_or_path,
         )
-        result = MarkItDown(
-            enable_plugins=False,
-            requests_session=_TimeoutRequestsSession(),
-        ).convert(source_url_or_path)
+        with _TimeoutRequestsSession() as requests_session:
+            result = MarkItDown(
+                enable_plugins=False,
+                requests_session=requests_session,
+            ).convert(source_url_or_path)
     except Exception as exc:
         raise DocumentParseError(f"MarkItDown 转换失败：{exc}") from exc
     markdown = getattr(result, "text_content", "")

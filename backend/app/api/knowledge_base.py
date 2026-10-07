@@ -18,9 +18,11 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
+from starlette.concurrency import run_in_threadpool
 
 from app.api.admin import require_admin_user
 from app.core.security import create_get_current_user
+from app.database import run_db, session_factory_from_session
 from app.models import (
     KnowledgeBaseIngestionJob,
     KnowledgeGap,
@@ -89,7 +91,7 @@ async def _read_textbook_upload(file: UploadFile) -> bytes:
             min(TEXTBOOK_UPLOAD_READ_CHUNK_BYTES, remaining_bytes + 1)
         )
         if not chunk:
-            return b"".join(chunks)
+            return await run_in_threadpool(b"".join, chunks)
         remaining_bytes -= len(chunk)
         if remaining_bytes < 0:
             raise HTTPException(
@@ -105,6 +107,31 @@ def _validate_textbook_upload_size(file: UploadFile) -> None:
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="教材文件不能超过 100 MB。",
         )
+
+
+def _create_uploaded_textbook_response(
+    session: Session,
+    *,
+    title: str,
+    language: str,
+    description: str,
+    tags: list[str],
+    file_name: str,
+    file_bytes: bytes,
+) -> KnowledgeBaseSourceConfirmResponse:
+    textbook, job = create_uploaded_textbook(
+        session,
+        title=title,
+        language=language,
+        description=description,
+        tags=tags,
+        file_name=file_name,
+        file_bytes=file_bytes,
+    )
+    return KnowledgeBaseSourceConfirmResponse(
+        textbook=TextbookRead.model_validate(textbook),
+        job=KnowledgeBaseIngestionJobRead.model_validate(job),
+    )
 
 
 def create_knowledge_base_router(session_dependency: SessionDependency) -> APIRouter:
@@ -399,7 +426,9 @@ def _register_agent_routes(
         _: User = Depends(require_admin),
         session: Session = Depends(session_dependency),
     ) -> KnowledgeBaseAgentResponse:
-        return run_knowledge_base_agent(session, payload.message)
+        return run_knowledge_base_agent(
+            session_factory_from_session(session), payload.message
+        )
 
     @router.post("/api/admin/knowledge-base/agent/stream")
     def stream_admin_knowledge_base_agent(
@@ -407,12 +436,12 @@ def _register_agent_routes(
         _: User = Depends(require_admin),
         session: Session = Depends(session_dependency),
     ) -> StreamingResponse:
+        factory = session_factory_from_session(session)
+
         def event_stream() -> Generator[str, None, None]:
+            events = stream_knowledge_base_agent_events(factory, payload.message)
             try:
-                for event in stream_knowledge_base_agent_events(
-                    session,
-                    payload.message,
-                ):
+                for event in events:
                     yield _sse(event["event"], event["payload"])
             except Exception as exc:
                 yield _sse(
@@ -422,6 +451,8 @@ def _register_agent_routes(
                         "recoverable": True,
                     },
                 )
+            finally:
+                events.close()
 
         return StreamingResponse(
             event_stream(),
@@ -470,8 +501,9 @@ def _register_agent_routes(
     ) -> KnowledgeBaseSourceConfirmResponse:
         _validate_textbook_upload_size(file)
         try:
-            textbook, job = create_uploaded_textbook(
-                session,
+            return await run_db(
+                session_factory_from_session(session),
+                _create_uploaded_textbook_response,
                 title=title,
                 language=language,
                 description=description,
@@ -484,10 +516,6 @@ def _register_agent_routes(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(exc),
             ) from exc
-        return KnowledgeBaseSourceConfirmResponse(
-            textbook=TextbookRead.model_validate(textbook),
-            job=KnowledgeBaseIngestionJobRead.model_validate(job),
-        )
 
 
 def _register_gap_routes(

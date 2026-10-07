@@ -1409,7 +1409,9 @@ async def run_learning_path_agent(
             "hard_error": True,
         }
 
-    existing_year_learning_paths = _load_existing_year_learning_paths(state)
+    existing_year_learning_paths = await asyncio.to_thread(
+        _load_existing_year_learning_paths, state
+    )
     from app.services.learning_path_service import get_learning_path_progress_snapshots
 
     progress_snapshots = get_learning_path_progress_snapshots(
@@ -1480,7 +1482,9 @@ async def run_learning_path_agent(
             "error": f"{LEARNING_PATH_RETRY_ERROR} (contract: {contract_error})",
             "hard_error": True,
         }
-    _persist_learning_path(state["user_id"], grade_year, resolved_topic, path_dict)
+    await asyncio.to_thread(
+        _persist_learning_path, state["user_id"], grade_year, resolved_topic, path_dict
+    )
 
     return {"year_learning_path": path_dict, "grade_year": grade_year}
 

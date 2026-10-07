@@ -122,7 +122,7 @@ def test_append_messages_raises_for_missing_session(tmp_path: Path) -> None:
 def test_replace_latest_learning_path_intake_message(tmp_path: Path) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "session-intake"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     with Session(engine) as session:
         session.add(

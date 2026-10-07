@@ -46,6 +46,7 @@ def claim_next_ingestion_job(
                 KnowledgeBaseIngestionJob.available_at,
                 KnowledgeBaseIngestionJob.created_at,
             )
+            .limit(1)
             .with_for_update(skip_locked=True)
         ).first()
         if job is None:

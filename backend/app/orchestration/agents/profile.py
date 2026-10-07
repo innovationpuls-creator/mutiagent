@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -2368,7 +2369,7 @@ async def run_profile_agent(state: OrchestrationState, llm: BaseChatModel) -> di
         profile_dict = await _invoke_profile_output_with_retries(
             state, llm, conversation_summary
         )
-    _persist_profile(state["user_id"], profile_dict)
+    await asyncio.to_thread(_persist_profile, state["user_id"], profile_dict)
 
     return {"profile": profile_dict, "response": profile_dict.get("text", "")}
 

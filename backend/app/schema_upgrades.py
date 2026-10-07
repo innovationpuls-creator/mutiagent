@@ -4,8 +4,10 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import CheckConstraint, UniqueConstraint, inspect, text
+from sqlalchemy import CheckConstraint, UniqueConstraint, event, inspect, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine
+from sqlalchemy.engine.reflection import Inspector
 from sqlmodel import Session, select
 
 from app.models import (
@@ -41,19 +43,37 @@ def run_schema_upgrades(engine: Engine) -> None:
     primary keys, or drop tables that were removed from the model.
     """
     with engine.begin() as connection:
-        _create_knowledge_base_tables(connection)
-        _normalize_knowledge_gap_notice_action_payloads(connection)
-        _ensure_knowledge_base_check_constraints(connection)
-        _ensure_knowledge_base_unique_constraints(connection)
-        _upgrade_textbook_section_content_original_column(connection)
-        _recalculate_knowledge_gap_follow_counts(connection)
-        _upgrade_user_role_column(connection)
-        _migrate_teachers_to_admins(connection)
-        _upgrade_user_cohort_columns(connection)
-        _upgrade_course_knowledge_outline_table(connection)
-        _upgrade_profile_json_storage(connection)
-        _drop_removed_agent_conversation_table(connection)
-        _upgrade_textbook_embedding_column(connection)
+        inspector = inspect(connection)
+        table_names = set(inspector.get_table_names())
+        _create_knowledge_base_tables(connection, table_names)
+        if not table_names:
+            return
+        inspector.clear_cache()
+
+        def invalidate_after_ddl(_conn, _cursor, statement, _params, _context, _many):
+            if statement.lstrip().split(None, 1)[0].upper() in {
+                "ALTER",
+                "CREATE",
+                "DROP",
+            }:
+                inspector.clear_cache()
+
+        event.listen(connection, "after_cursor_execute", invalidate_after_ddl)
+        try:
+            _normalize_knowledge_gap_notice_action_payloads(connection, inspector)
+            _ensure_knowledge_base_check_constraints(connection, inspector)
+            _ensure_knowledge_base_unique_constraints(connection, inspector)
+            _upgrade_textbook_section_content_original_column(connection, inspector)
+            _recalculate_knowledge_gap_follow_counts(connection, inspector)
+            _upgrade_user_role_column(connection, inspector)
+            _migrate_teachers_to_admins(connection, inspector)
+            _upgrade_user_cohort_columns(connection, inspector)
+            _upgrade_course_knowledge_outline_table(connection, inspector)
+            _upgrade_profile_json_storage(connection, inspector)
+            _drop_removed_agent_conversation_table(connection, inspector)
+            _upgrade_textbook_embedding_column(connection, inspector)
+        finally:
+            event.remove(connection, "after_cursor_execute", invalidate_after_ddl)
 
 
 def migrate_removed_learning_path_table(engine: Engine) -> None:
@@ -77,13 +97,16 @@ def migrate_removed_learning_path_table(engine: Engine) -> None:
         connection.execute(text("DROP TABLE IF EXISTS userlearningpath"))
 
 
-def _create_knowledge_base_tables(connection: Any) -> None:
+def _create_knowledge_base_tables(connection: Any, table_names: set[str]) -> None:
     for model in _KNOWLEDGE_BASE_TABLE_MODELS:
-        model.__table__.create(bind=connection, checkfirst=True)
+        if model.__table__.name not in table_names:
+            model.__table__.create(bind=connection, checkfirst=False)
 
 
-def _ensure_knowledge_base_check_constraints(connection: Any) -> None:
-    inspector = inspect(connection)
+def _ensure_knowledge_base_check_constraints(
+    connection: Any, inspector: Inspector | None = None
+) -> None:
+    inspector = inspector or inspect(connection)
     for model in _KNOWLEDGE_BASE_TABLE_MODELS:
         table = model.__table__
         if not inspector.has_table(table.name):
@@ -111,8 +134,10 @@ def _ensure_knowledge_base_check_constraints(connection: Any) -> None:
             )
 
 
-def _normalize_knowledge_gap_notice_action_payloads(connection: Any) -> None:
-    inspector = inspect(connection)
+def _normalize_knowledge_gap_notice_action_payloads(
+    connection: Any, inspector: Inspector | None = None
+) -> None:
+    inspector = inspector or inspect(connection)
     if not inspector.has_table(KnowledgeGapNotice.__tablename__):
         return
 
@@ -152,8 +177,10 @@ def _normalize_knowledge_gap_notice_action_payloads(connection: Any) -> None:
     )
 
 
-def _ensure_knowledge_base_unique_constraints(connection: Any) -> None:
-    inspector = inspect(connection)
+def _ensure_knowledge_base_unique_constraints(
+    connection: Any, inspector: Inspector | None = None
+) -> None:
+    inspector = inspector or inspect(connection)
     for model in _KNOWLEDGE_BASE_TABLE_MODELS:
         table = model.__table__
         if not inspector.has_table(table.name):
@@ -170,7 +197,7 @@ def _ensure_knowledge_base_unique_constraints(connection: Any) -> None:
                 continue
             columns = ", ".join(column.name for column in constraint.columns)
             if constraint.name == "uq_knowledgegap_normalized_topic":
-                _merge_duplicate_knowledge_gaps(connection)
+                _merge_duplicate_knowledge_gaps(connection, inspector)
             _remove_duplicate_rows_for_unique_constraint(
                 connection, table.name, constraint
             )
@@ -183,8 +210,10 @@ def _ensure_knowledge_base_unique_constraints(connection: Any) -> None:
             )
 
 
-def _upgrade_textbook_section_content_original_column(connection: Any) -> None:
-    inspector = inspect(connection)
+def _upgrade_textbook_section_content_original_column(
+    connection: Any, inspector: Inspector | None = None
+) -> None:
+    inspector = inspector or inspect(connection)
     table_name = TextbookSectionContent.__tablename__
     if not inspector.has_table(table_name):
         return
@@ -206,8 +235,10 @@ def _upgrade_textbook_section_content_original_column(connection: Any) -> None:
     )
 
 
-def _merge_duplicate_knowledge_gaps(connection: Any) -> None:
-    inspector = inspect(connection)
+def _merge_duplicate_knowledge_gaps(
+    connection: Any, inspector: Inspector | None = None
+) -> None:
+    inspector = inspector or inspect(connection)
     if not inspector.has_table(KnowledgeGap.__tablename__):
         return
 
@@ -510,8 +541,10 @@ def _remove_duplicate_rows_for_unique_constraint(
     )
 
 
-def _recalculate_knowledge_gap_follow_counts(connection: Any) -> None:
-    inspector = inspect(connection)
+def _recalculate_knowledge_gap_follow_counts(
+    connection: Any, inspector: Inspector | None = None
+) -> None:
+    inspector = inspector or inspect(connection)
     if not inspector.has_table(KnowledgeGap.__tablename__) or not inspector.has_table(
         KnowledgeGapFollow.__tablename__
     ):
@@ -530,23 +563,32 @@ def _recalculate_knowledge_gap_follow_counts(connection: Any) -> None:
     connection.execute(
         text(
             """
-            UPDATE knowledgegap
-            SET follow_count = (
-                SELECT count(*)
-                FROM knowledgegapfollow
-                WHERE knowledgegapfollow.gap_id = knowledgegap.gap_id
+            WITH counts AS (
+                SELECT gaps.gap_id, count(follows.follow_id) AS follow_count
+                FROM knowledgegap AS gaps
+                LEFT JOIN knowledgegapfollow AS follows ON follows.gap_id = gaps.gap_id
+                GROUP BY gaps.gap_id
             )
+            UPDATE knowledgegap AS gaps SET follow_count = counts.follow_count
+            FROM counts
+            WHERE gaps.gap_id = counts.gap_id
+              AND gaps.follow_count IS DISTINCT FROM counts.follow_count
             """
         )
     )
 
 
-def _drop_removed_agent_conversation_table(connection: Any) -> None:
-    connection.execute(text("DROP TABLE IF EXISTS useragentconversation"))
+def _drop_removed_agent_conversation_table(
+    connection: Any, inspector: Inspector
+) -> None:
+    if inspector.has_table("useragentconversation"):
+        connection.execute(text("DROP TABLE useragentconversation"))
 
 
-def _upgrade_user_role_column(connection: Any) -> None:
-    inspector = inspect(connection)
+def _upgrade_user_role_column(
+    connection: Any, inspector: Inspector | None = None
+) -> None:
+    inspector = inspector or inspect(connection)
     if not inspector.has_table("user"):
         return
 
@@ -563,8 +605,10 @@ def _upgrade_user_role_column(connection: Any) -> None:
     connection.execute(text('CREATE INDEX IF NOT EXISTS ix_user_role ON "user" (role)'))
 
 
-def _migrate_teachers_to_admins(connection: Any) -> None:
-    inspector = inspect(connection)
+def _migrate_teachers_to_admins(
+    connection: Any, inspector: Inspector | None = None
+) -> None:
+    inspector = inspector or inspect(connection)
     if not inspector.has_table("user"):
         return
     connection.execute(
@@ -572,8 +616,10 @@ def _migrate_teachers_to_admins(connection: Any) -> None:
     )
 
 
-def _upgrade_user_cohort_columns(connection: Any) -> None:
-    inspector = inspect(connection)
+def _upgrade_user_cohort_columns(
+    connection: Any, inspector: Inspector | None = None
+) -> None:
+    inspector = inspector or inspect(connection)
     if not inspector.has_table("user"):
         return
 
@@ -594,9 +640,17 @@ def _upgrade_user_cohort_columns(connection: Any) -> None:
             )
 
 
-def _upgrade_profile_json_storage(connection: Any) -> None:
-    inspector = inspect(connection)
+def _upgrade_profile_json_storage(
+    connection: Any, inspector: Inspector | None = None
+) -> None:
+    inspector = inspector or inspect(connection)
     if not inspector.has_table("userprofile"):
+        return
+    columns = inspector.get_columns("userprofile")
+    if any(
+        column["name"] == "profile_data" and isinstance(column["type"], JSONB)
+        for column in columns
+    ):
         return
     connection.execute(
         text(
@@ -606,8 +660,10 @@ def _upgrade_profile_json_storage(connection: Any) -> None:
     )
 
 
-def _upgrade_course_knowledge_outline_table(connection: Any) -> None:
-    inspector = inspect(connection)
+def _upgrade_course_knowledge_outline_table(
+    connection: Any, inspector: Inspector | None = None
+) -> None:
+    inspector = inspector or inspect(connection)
     if not inspector.has_table("usercourseknowledgeoutline"):
         return
 
@@ -803,8 +859,10 @@ def _legacy_key_topics(course_node: dict[str, Any]) -> list[str]:
     return topics
 
 
-def _upgrade_textbook_embedding_column(connection: Any) -> None:
-    inspector = inspect(connection)
+def _upgrade_textbook_embedding_column(
+    connection: Any, inspector: Inspector | None = None
+) -> None:
+    inspector = inspector or inspect(connection)
     if not inspector.has_table("textbook"):
         return
 

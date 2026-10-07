@@ -1,0 +1,1455 @@
+{
+  "baseline_revision": "55b67705fecd21489b2d7bde518760ad19b8175c",
+  "method": "isolated PostgreSQL 18.4; cProfile + tracemalloc unless uninstrumented is named; five runs except SSE one run and startup three runs; preparation excluded",
+  "validation": {
+    "backend_tests": 901,
+    "performance_regressions": 9,
+    "bcrypt_cost": 12,
+    "cancellation_focused_tests": 79
+  },
+  "results": {
+    "before-final": {
+      "environment": {
+        "python": "3.12.14 (main, Sep  1 2026, 14:09:38) [Clang 22.1.3 ]",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "size": 1000,
+        "offline_models": true
+      },
+      "cases": {
+        "empty_init": {
+          "runs": 5,
+          "median_ms": 91.468,
+          "samples_ms": [
+            147.269,
+            90.475,
+            92.952,
+            91.468,
+            90.036
+          ],
+          "peak_python_bytes": 1265882,
+          "sql_count_per_run": [
+            190,
+            190,
+            190,
+            190,
+            190
+          ],
+          "sql_types": {
+            "SELECT": 490,
+            "CREATE": 430,
+            "UPDATE": 15,
+            "ALTER": 10,
+            "DROP": 5
+          },
+          "sql_total_ms": 250.26,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "current_init": {
+          "runs": 5,
+          "median_ms": 51.241,
+          "samples_ms": [
+            52.229,
+            51.36,
+            51.241,
+            50.879,
+            49.786
+          ],
+          "peak_python_bytes": 143190,
+          "sql_count_per_run": [
+            115,
+            115,
+            115,
+            115,
+            115
+          ],
+          "sql_types": {
+            "SELECT": 535,
+            "UPDATE": 20,
+            "ALTER": 15,
+            "DROP": 5
+          },
+          "sql_total_ms": 109.0,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "legacy_json_init": {
+          "runs": 5,
+          "median_ms": 49.808,
+          "samples_ms": [
+            50.308,
+            49.866,
+            49.808,
+            48.616,
+            49.412
+          ],
+          "peak_python_bytes": 132685,
+          "sql_count_per_run": [
+            115,
+            115,
+            115,
+            115,
+            115
+          ],
+          "sql_types": {
+            "SELECT": 535,
+            "UPDATE": 20,
+            "ALTER": 15,
+            "DROP": 5
+          },
+          "sql_total_ms": 103.651,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "search": {
+          "runs": 5,
+          "median_ms": 1.551,
+          "samples_ms": [
+            6.258,
+            1.636,
+            1.551,
+            1.409,
+            1.464
+          ],
+          "peak_python_bytes": 289422,
+          "sql_count_per_run": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "sql_types": {
+            "WITH": 5,
+            "SELECT": 5
+          },
+          "sql_total_ms": 0,
+          "max_checked_out": 1,
+          "model_wait_connections": [],
+          "result": {
+            "error": "InternalError"
+          }
+        },
+        "convert_400": {
+          "runs": 5,
+          "median_ms": 24.283,
+          "samples_ms": [
+            57.165,
+            25.029,
+            24.006,
+            24.214,
+            24.283
+          ],
+          "peak_python_bytes": 1006547,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": []
+        },
+        "outline_400": {
+          "runs": 5,
+          "median_ms": 24.622,
+          "samples_ms": [
+            31.893,
+            25.252,
+            24.559,
+            24.179,
+            24.622
+          ],
+          "peak_python_bytes": 309625,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": []
+        },
+        "slice_400": {
+          "runs": 5,
+          "median_ms": 38.229,
+          "samples_ms": [
+            38.229,
+            38.418,
+            38.048,
+            38.252,
+            37.955
+          ],
+          "peak_python_bytes": 544690,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": [],
+          "output_sha256": "bd09e3b1e0eab791ebbb4e51025c5864c7f8deb783bb6f0547c5cce904adff4c",
+          "uninstrumented_median_ms": 7.571
+        },
+        "convert_1600": {
+          "runs": 5,
+          "median_ms": 49.701,
+          "samples_ms": [
+            56.517,
+            49.463,
+            49.557,
+            49.701,
+            50.451
+          ],
+          "peak_python_bytes": 1539298,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": []
+        },
+        "outline_1600": {
+          "runs": 5,
+          "median_ms": 98.184,
+          "samples_ms": [
+            101.518,
+            98.184,
+            97.661,
+            110.089,
+            97.991
+          ],
+          "peak_python_bytes": 1161241,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": []
+        },
+        "slice_1600": {
+          "runs": 5,
+          "median_ms": 196.709,
+          "samples_ms": [
+            193.48,
+            198.855,
+            196.709,
+            188.801,
+            200.631
+          ],
+          "peak_python_bytes": 2075637,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": [],
+          "output_sha256": "64904da7a1f8fc7ca434c52c1eb60b61d3097407328378ca9c3affa602a8df1b",
+          "uninstrumented_median_ms": 66.81
+        },
+        "convert_6400": {
+          "runs": 5,
+          "median_ms": 147.125,
+          "samples_ms": [
+            151.405,
+            147.125,
+            143.319,
+            144.832,
+            153.136
+          ],
+          "peak_python_bytes": 5357221,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": []
+        },
+        "outline_6400": {
+          "runs": 5,
+          "median_ms": 379.988,
+          "samples_ms": [
+            384.303,
+            379.988,
+            380.275,
+            377.786,
+            379.178
+          ],
+          "peak_python_bytes": 4681569,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": []
+        },
+        "slice_6400": {
+          "runs": 5,
+          "median_ms": 1371.722,
+          "samples_ms": [
+            1349.032,
+            1357.396,
+            1381.317,
+            1371.722,
+            1379.361
+          ],
+          "peak_python_bytes": 8625889,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": [],
+          "output_sha256": "b678f7de3df4c8eb5106ff51b557f944481a0e29661e3b51bf263958b235cdee",
+          "uninstrumented_median_ms": 874.0
+        },
+        "canopy": {
+          "runs": 5,
+          "median_ms": 50.025,
+          "samples_ms": [
+            91.825,
+            48.024,
+            47.313,
+            50.025,
+            73.603
+          ],
+          "peak_python_bytes": 6217198,
+          "sql_count_per_run": [
+            8,
+            8,
+            8,
+            8,
+            8
+          ],
+          "sql_types": {
+            "SELECT": 40
+          },
+          "sql_total_ms": 21.916,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "report_context": {
+          "runs": 5,
+          "median_ms": 86.793,
+          "samples_ms": [
+            86.793,
+            77.403,
+            112.65,
+            77.904,
+            103.194
+          ],
+          "peak_python_bytes": 10046404,
+          "sql_count_per_run": [
+            7,
+            7,
+            7,
+            7,
+            7
+          ],
+          "sql_types": {
+            "SELECT": 35
+          },
+          "sql_total_ms": 25.728,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "chapter_progress": {
+          "runs": 5,
+          "median_ms": 783.451,
+          "samples_ms": [
+            799.687,
+            783.451,
+            793.181,
+            767.893,
+            772.008
+          ],
+          "peak_python_bytes": 250170,
+          "sql_count_per_run": [
+            1000,
+            1000,
+            1000,
+            1000,
+            1000
+          ],
+          "sql_types": {
+            "SELECT": 5000
+          },
+          "sql_total_ms": 575.499,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "register": {
+          "runs": 5,
+          "median_ms": 176.648,
+          "samples_ms": [
+            185.82,
+            175.869,
+            176.648,
+            176.912,
+            176.099
+          ],
+          "peak_python_bytes": 520530,
+          "sql_count_per_run": [
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "sql_types": {
+            "SELECT": 10,
+            "INSERT": 5
+          },
+          "sql_total_ms": 3.122,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "login": {
+          "runs": 5,
+          "median_ms": 176.156,
+          "samples_ms": [
+            178.815,
+            174.91,
+            176.156,
+            177.38,
+            175.409
+          ],
+          "peak_python_bytes": 187033,
+          "sql_count_per_run": [
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "sql_types": {
+            "SELECT": 10,
+            "UPDATE": 5
+          },
+          "sql_total_ms": 3.084,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "worker_claim": {
+          "runs": 5,
+          "median_ms": 4.485,
+          "samples_ms": [
+            13.195,
+            4.692,
+            4.485,
+            4.428,
+            4.348
+          ],
+          "peak_python_bytes": 374756,
+          "sql_count_per_run": [
+            5,
+            5,
+            5,
+            5,
+            5
+          ],
+          "sql_types": {
+            "SELECT": 15,
+            "UPDATE": 10
+          },
+          "sql_total_ms": 4.454,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "report_concurrency_10": {
+          "runs": 1,
+          "median_ms": 1092.154,
+          "samples_ms": [
+            1092.154
+          ],
+          "peak_python_bytes": 13429637,
+          "sql_count_per_run": [
+            70
+          ],
+          "sql_types": {
+            "SELECT": 70
+          },
+          "sql_total_ms": 61.117,
+          "max_checked_out": 10,
+          "model_wait_connections": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10
+          ]
+        }
+      }
+    },
+    "after": {
+      "environment": {
+        "python": "3.12.14 (main, Sep  1 2026, 14:09:38) [Clang 22.1.3 ]",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "size": 1000,
+        "offline_models": true
+      },
+      "cases": {
+        "empty_init": {
+          "runs": 5,
+          "median_ms": 47.246,
+          "samples_ms": [
+            61.969,
+            44.074,
+            47.246,
+            43.618,
+            58.821
+          ],
+          "peak_python_bytes": 617579,
+          "sql_count_per_run": [
+            87,
+            87,
+            87,
+            87,
+            87
+          ],
+          "sql_types": {
+            "SELECT": 5,
+            "CREATE": 430
+          },
+          "sql_total_ms": 151.217,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "current_init": {
+          "runs": 5,
+          "median_ms": 45.834,
+          "samples_ms": [
+            82.26,
+            44.848,
+            45.834,
+            45.842,
+            45.301
+          ],
+          "peak_python_bytes": 828763,
+          "sql_count_per_run": [
+            93,
+            93,
+            93,
+            93,
+            93
+          ],
+          "sql_types": {
+            "SELECT": 435,
+            "UPDATE": 15,
+            "ALTER": 10,
+            "WITH": 5
+          },
+          "sql_total_ms": 98.925,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "legacy_json_init": {
+          "runs": 5,
+          "median_ms": 45.698,
+          "samples_ms": [
+            48.84,
+            45.698,
+            46.356,
+            45.544,
+            44.014
+          ],
+          "peak_python_bytes": 192271,
+          "sql_count_per_run": [
+            96,
+            96,
+            96,
+            96,
+            96
+          ],
+          "sql_types": {
+            "SELECT": 445,
+            "UPDATE": 15,
+            "ALTER": 15,
+            "WITH": 5
+          },
+          "sql_total_ms": 98.201,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "search": {
+          "runs": 5,
+          "median_ms": 15.939,
+          "samples_ms": [
+            23.548,
+            16.076,
+            15.893,
+            15.939,
+            15.887
+          ],
+          "peak_python_bytes": 926770,
+          "sql_count_per_run": [
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "sql_types": {
+            "SELECT": 15
+          },
+          "sql_total_ms": 4.484,
+          "max_checked_out": 1,
+          "model_wait_connections": [],
+          "result": 15
+        },
+        "convert_400": {
+          "runs": 5,
+          "median_ms": 23.422,
+          "samples_ms": [
+            807.208,
+            23.57,
+            23.422,
+            23.231,
+            22.991
+          ],
+          "peak_python_bytes": 17200588,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": []
+        },
+        "outline_400": {
+          "runs": 5,
+          "median_ms": 24.914,
+          "samples_ms": [
+            30.606,
+            24.914,
+            24.89,
+            23.974,
+            25.117
+          ],
+          "peak_python_bytes": 309755,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": []
+        },
+        "slice_400": {
+          "runs": 5,
+          "median_ms": 39.989,
+          "samples_ms": [
+            64.642,
+            39.989,
+            41.184,
+            39.836,
+            39.552
+          ],
+          "peak_python_bytes": 349944,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": [],
+          "output_sha256": "bd09e3b1e0eab791ebbb4e51025c5864c7f8deb783bb6f0547c5cce904adff4c",
+          "uninstrumented_median_ms": 4.448
+        },
+        "convert_1600": {
+          "runs": 5,
+          "median_ms": 49.621,
+          "samples_ms": [
+            54.038,
+            49.273,
+            49.621,
+            50.458,
+            49.61
+          ],
+          "peak_python_bytes": 1539501,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": []
+        },
+        "outline_1600": {
+          "runs": 5,
+          "median_ms": 96.67,
+          "samples_ms": [
+            97.575,
+            95.223,
+            94.395,
+            97.201,
+            96.67
+          ],
+          "peak_python_bytes": 1169710,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": []
+        },
+        "slice_1600": {
+          "runs": 5,
+          "median_ms": 160.417,
+          "samples_ms": [
+            160.675,
+            160.417,
+            160.988,
+            157.54,
+            159.364
+          ],
+          "peak_python_bytes": 1378683,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": [],
+          "output_sha256": "64904da7a1f8fc7ca434c52c1eb60b61d3097407328378ca9c3affa602a8df1b",
+          "uninstrumented_median_ms": 17.449
+        },
+        "convert_6400": {
+          "runs": 5,
+          "median_ms": 148.321,
+          "samples_ms": [
+            151.396,
+            154.271,
+            148.321,
+            146.416,
+            143.956
+          ],
+          "peak_python_bytes": 5357961,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": []
+        },
+        "outline_6400": {
+          "runs": 5,
+          "median_ms": 380.767,
+          "samples_ms": [
+            380.002,
+            380.767,
+            383.058,
+            379.449,
+            396.389
+          ],
+          "peak_python_bytes": 4681569,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": []
+        },
+        "slice_6400": {
+          "runs": 5,
+          "median_ms": 641.459,
+          "samples_ms": [
+            646.884,
+            649.2,
+            637.406,
+            641.087,
+            641.459
+          ],
+          "peak_python_bytes": 5500684,
+          "sql_count_per_run": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "sql_types": {},
+          "sql_total_ms": 0,
+          "max_checked_out": 0,
+          "model_wait_connections": [],
+          "output_sha256": "b678f7de3df4c8eb5106ff51b557f944481a0e29661e3b51bf263958b235cdee",
+          "uninstrumented_median_ms": 74.766
+        },
+        "canopy": {
+          "runs": 5,
+          "median_ms": 4.881,
+          "samples_ms": [
+            16.469,
+            5.037,
+            4.881,
+            4.748,
+            4.7
+          ],
+          "peak_python_bytes": 375238,
+          "sql_count_per_run": [
+            7,
+            7,
+            7,
+            7,
+            7
+          ],
+          "sql_types": {
+            "SELECT": 35
+          },
+          "sql_total_ms": 5.11,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "report_context": {
+          "runs": 5,
+          "median_ms": 12.559,
+          "samples_ms": [
+            28.592,
+            12.968,
+            12.414,
+            12.432,
+            12.559
+          ],
+          "peak_python_bytes": 709002,
+          "sql_count_per_run": [
+            8,
+            8,
+            8,
+            8,
+            8
+          ],
+          "sql_types": {
+            "SELECT": 40
+          },
+          "sql_total_ms": 21.188,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "chapter_progress": {
+          "runs": 5,
+          "median_ms": 10.331,
+          "samples_ms": [
+            11.902,
+            10.241,
+            10.331,
+            10.257,
+            10.341
+          ],
+          "peak_python_bytes": 372709,
+          "sql_count_per_run": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "sql_types": {
+            "SELECT": 5
+          },
+          "sql_total_ms": 1.458,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "register": {
+          "runs": 5,
+          "median_ms": 176.366,
+          "samples_ms": [
+            187.667,
+            175.927,
+            176.366,
+            177.954,
+            175.818
+          ],
+          "peak_python_bytes": 519392,
+          "sql_count_per_run": [
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "sql_types": {
+            "SELECT": 10,
+            "INSERT": 5
+          },
+          "sql_total_ms": 3.23,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "login": {
+          "runs": 5,
+          "median_ms": 176.355,
+          "samples_ms": [
+            178.436,
+            176.355,
+            175.777,
+            175.912,
+            177.989
+          ],
+          "peak_python_bytes": 187254,
+          "sql_count_per_run": [
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "sql_types": {
+            "SELECT": 10,
+            "UPDATE": 5
+          },
+          "sql_total_ms": 3.165,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "worker_claim": {
+          "runs": 5,
+          "median_ms": 4.648,
+          "samples_ms": [
+            13.213,
+            4.73,
+            4.559,
+            4.631,
+            4.648
+          ],
+          "peak_python_bytes": 374822,
+          "sql_count_per_run": [
+            5,
+            5,
+            5,
+            5,
+            5
+          ],
+          "sql_types": {
+            "SELECT": 15,
+            "UPDATE": 10
+          },
+          "sql_total_ms": 4.42,
+          "max_checked_out": 1,
+          "model_wait_connections": []
+        },
+        "report_concurrency_10": {
+          "runs": 1,
+          "median_ms": 231.383,
+          "samples_ms": [
+            231.383
+          ],
+          "peak_python_bytes": 7017869,
+          "sql_count_per_run": [
+            80
+          ],
+          "sql_types": {
+            "SELECT": 80
+          },
+          "sql_total_ms": 475.506,
+          "max_checked_out": 10,
+          "model_wait_connections": [
+            9,
+            8,
+            7,
+            4,
+            4,
+            4,
+            2,
+            2,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    "before-search": {
+      "environment": {
+        "python": "3.12.14 (main, Sep  1 2026, 14:09:38) [Clang 22.1.3 ]",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "size": 1000,
+        "offline_models": true
+      },
+      "cases": {
+        "search": {
+          "runs": 5,
+          "median_ms": 1.556,
+          "samples_ms": [
+            5.867,
+            1.585,
+            1.486,
+            1.556,
+            1.528
+          ],
+          "peak_python_bytes": 304204,
+          "sql_count_per_run": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "sql_types": {
+            "WITH": 5,
+            "SELECT": 5
+          },
+          "sql_total_ms": 0,
+          "max_checked_out": 1,
+          "model_wait_connections": [],
+          "result": {
+            "error": "InternalError"
+          }
+        },
+        "search_matching": {
+          "runs": 5,
+          "median_ms": 53.31,
+          "samples_ms": [
+            52.593,
+            52.605,
+            53.31,
+            88.718,
+            55.764
+          ],
+          "peak_python_bytes": 5096732,
+          "sql_count_per_run": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "sql_types": {
+            "SELECT": 5
+          },
+          "sql_total_ms": 10.519,
+          "max_checked_out": 1,
+          "model_wait_connections": [],
+          "result": [
+            "book-00000",
+            "book-00001",
+            "book-00002",
+            "book-00003",
+            "book-00004",
+            "book-00005",
+            "book-00006",
+            "book-00007",
+            "book-00008",
+            "book-00009",
+            "book-00010",
+            "book-00011",
+            "book-00012",
+            "book-00013",
+            "book-00014"
+          ]
+        }
+      }
+    },
+    "after-search": {
+      "environment": {
+        "python": "3.12.14 (main, Sep  1 2026, 14:09:38) [Clang 22.1.3 ]",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "size": 1000,
+        "offline_models": true
+      },
+      "cases": {
+        "search": {
+          "runs": 5,
+          "median_ms": 15.649,
+          "samples_ms": [
+            22.659,
+            15.649,
+            15.38,
+            34.268,
+            15.59
+          ],
+          "peak_python_bytes": 939981,
+          "sql_count_per_run": [
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "sql_types": {
+            "SELECT": 15
+          },
+          "sql_total_ms": 4.837,
+          "max_checked_out": 1,
+          "model_wait_connections": [],
+          "result": 15
+        },
+        "search_matching": {
+          "runs": 5,
+          "median_ms": 15.894,
+          "samples_ms": [
+            15.894,
+            15.686,
+            16.184,
+            15.965,
+            15.603
+          ],
+          "peak_python_bytes": 550740,
+          "sql_count_per_run": [
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "sql_types": {
+            "SELECT": 15
+          },
+          "sql_total_ms": 4.305,
+          "max_checked_out": 1,
+          "model_wait_connections": [],
+          "result": [
+            "book-00000",
+            "book-00001",
+            "book-00002",
+            "book-00003",
+            "book-00004",
+            "book-00005",
+            "book-00006",
+            "book-00007",
+            "book-00008",
+            "book-00009",
+            "book-00010",
+            "book-00011",
+            "book-00012",
+            "book-00013",
+            "book-00014"
+          ]
+        }
+      }
+    },
+    "before-startup": [
+      {
+        "cold_import_ms": 7411.061833030544,
+        "production_factory_ms": 505.0939999637194,
+        "peak_python_bytes": 153810171
+      },
+      {
+        "cold_import_ms": 7019.422500045039,
+        "production_factory_ms": 509.3955000047572,
+        "peak_python_bytes": 153409052
+      },
+      {
+        "cold_import_ms": 7020.832166017499,
+        "production_factory_ms": 507.4161249794997,
+        "peak_python_bytes": 153409694
+      }
+    ],
+    "after-startup": [
+      {
+        "cold_import_ms": 6293.833459028974,
+        "production_factory_ms": 506.89099996816367,
+        "peak_python_bytes": 135716552
+      },
+      {
+        "cold_import_ms": 6355.10833299486,
+        "production_factory_ms": 510.5530419969,
+        "peak_python_bytes": 135711907
+      },
+      {
+        "cold_import_ms": 6268.672792008147,
+        "production_factory_ms": 508.19516699993983,
+        "peak_python_bytes": 135711263
+      }
+    ],
+    "before-startup-plain": [
+      {
+        "cold_import_ms": 922.84875002224,
+        "production_factory_ms": 55.0858749775216,
+        "peak_python_bytes": null
+      },
+      {
+        "cold_import_ms": 699.5699169929139,
+        "production_factory_ms": 57.34383297385648,
+        "peak_python_bytes": null
+      },
+      {
+        "cold_import_ms": 689.1105420072563,
+        "production_factory_ms": 55.30683300457895,
+        "peak_python_bytes": null
+      }
+    ],
+    "after-startup-plain": [
+      {
+        "cold_import_ms": 606.623416999355,
+        "production_factory_ms": 81.83508302317932,
+        "peak_python_bytes": null
+      },
+      {
+        "cold_import_ms": 599.3433750118129,
+        "production_factory_ms": 78.51529202889651,
+        "peak_python_bytes": null
+      },
+      {
+        "cold_import_ms": 596.4398339856416,
+        "production_factory_ms": 79.040749988053,
+        "peak_python_bytes": null
+      }
+    ],
+    "before-sse-final": {
+      "environment": {
+        "python": "3.12.14 (main, Sep  1 2026, 14:09:38) [Clang 22.1.3 ]",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "size": 1000,
+        "offline_models": true
+      },
+      "cases": {
+        "report_concurrency_10": {
+          "runs": 1,
+          "median_ms": 2417.072,
+          "samples_ms": [
+            2417.072
+          ],
+          "peak_python_bytes": 38965150,
+          "sql_count_per_run": [
+            70
+          ],
+          "sql_types": {
+            "SELECT": 70
+          },
+          "sql_total_ms": 62.384,
+          "max_checked_out": 10,
+          "model_wait_connections": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10,
+            10
+          ],
+          "connection_hold_total_ms": 6026.49,
+          "request_latency_ms": [
+            1033.58,
+            933.219,
+            829.989,
+            743.38,
+            657.14,
+            553.709,
+            463.782,
+            356.826,
+            263.496,
+            218.173
+          ],
+          "request_p95_ms": 1033.58
+        }
+      }
+    },
+    "after-sse-final": {
+      "environment": {
+        "python": "3.12.14 (main, Sep  1 2026, 14:09:38) [Clang 22.1.3 ]",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "size": 1000,
+        "offline_models": true
+      },
+      "cases": {
+        "report_concurrency_10": {
+          "runs": 1,
+          "median_ms": 1530.626,
+          "samples_ms": [
+            1530.626
+          ],
+          "peak_python_bytes": 28790999,
+          "sql_count_per_run": [
+            80
+          ],
+          "sql_types": {
+            "SELECT": 80
+          },
+          "sql_total_ms": 602.66,
+          "max_checked_out": 10,
+          "model_wait_connections": [
+            8,
+            8,
+            7,
+            5,
+            5,
+            3,
+            3,
+            1,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "connection_hold_total_ms": 875.587,
+          "request_latency_ms": [
+            203.196,
+            203.751,
+            221.581,
+            220.969,
+            221.316,
+            224.161,
+            224.498,
+            225.089,
+            225.829,
+            226.156
+          ],
+          "request_p95_ms": 226.156
+        }
+      }
+    }
+  },
+  "reflection_api_calls": {
+    "before-final": {
+      "empty_init": {
+        "get_columns": 25,
+        "get_table_names": 0,
+        "get_check_constraints": 45,
+        "get_unique_constraints": 45
+      },
+      "current_init": {
+        "get_columns": 45,
+        "get_table_names": 0,
+        "get_check_constraints": 45,
+        "get_unique_constraints": 45
+      },
+      "legacy_json_init": {
+        "get_columns": 45,
+        "get_table_names": 0,
+        "get_check_constraints": 45,
+        "get_unique_constraints": 45
+      }
+    },
+    "after": {
+      "empty_init": {
+        "get_columns": 0,
+        "get_table_names": 5,
+        "get_check_constraints": 0,
+        "get_unique_constraints": 0
+      },
+      "current_init": {
+        "get_columns": 50,
+        "get_table_names": 10,
+        "get_check_constraints": 45,
+        "get_unique_constraints": 45
+      },
+      "legacy_json_init": {
+        "get_columns": 50,
+        "get_table_names": 10,
+        "get_check_constraints": 45,
+        "get_unique_constraints": 45
+      }
+    }
+  }
+}

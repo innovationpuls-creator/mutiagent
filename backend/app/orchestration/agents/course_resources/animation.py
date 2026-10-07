@@ -769,7 +769,7 @@ async def run_section_html_animation_agent(
 
     try:
         for section in target_sections:
-            _resource_context(state, outline, section)
+            await asyncio.to_thread(_resource_context, state, outline, section)
     except ValueError as exc:
         return {"error": str(exc), "hard_error": True}
 
@@ -808,7 +808,7 @@ async def run_section_html_animation_agent(
         animation_data = {"animations": []}
         animations: list[dict] = []
         if isinstance(animation_briefs, list) and animation_briefs:
-            query = _animation_input(state, outline, section)
+            query = await asyncio.to_thread(_animation_input, state, outline, section)
             for attempt in range(2):
                 animation_data = await _run_with_retries(
                     lambda: _invoke_resource_chain(
@@ -837,8 +837,13 @@ async def run_section_html_animation_agent(
                     previous_html = ""
                     if animations:
                         previous_html = _clean_text(animations[0].get("html"))
-                    query = _animation_repair_input(
-                        state, outline, section, quality_issue, previous_html
+                    query = await asyncio.to_thread(
+                        _animation_repair_input,
+                        state,
+                        outline,
+                        section,
+                        quality_issue,
+                        previous_html,
                     )
                     continue
                 break
@@ -968,7 +973,9 @@ async def run_section_html_animation_agent(
             section_composed_markdowns,
         )
     try:
-        _persist_outline(str(state.get("user_id", "")), updated_outline)
+        await asyncio.to_thread(
+            _persist_outline, str(state.get("user_id", "")), updated_outline
+        )
     except Exception as exc:
         logger.error(
             "Failed to persist course resources for user %s: %s",

@@ -251,24 +251,27 @@ def first_generatable_chapter_id(
     chapters = _top_level_sections(outline)
     if not chapters:
         return "1"
+    progress_by_chapter = {
+        row.chapter_id: row.state
+        for row in session.exec(
+            select(ChapterProgress.chapter_id, ChapterProgress.state).where(
+                ChapterProgress.user_uid == user_uid,
+                ChapterProgress.course_node_id == course_node_id,
+            )
+        ).all()
+    }
     for index, chapter in enumerate(chapters):
         chapter_id = chapter.get("section_id")
         if not isinstance(chapter_id, str):
             continue
-        current_progress = session.get(
-            ChapterProgress, (user_uid, course_node_id, chapter_id)
-        )
-        if current_progress is not None and current_progress.state == "passed":
+        if progress_by_chapter.get(chapter_id) == "passed":
             continue
         if index == 0:
             return chapter_id
         previous_id = chapters[index - 1].get("section_id")
         if not isinstance(previous_id, str):
             return None
-        previous_progress = session.get(
-            ChapterProgress, (user_uid, course_node_id, previous_id)
-        )
-        if previous_progress is not None and previous_progress.state == "passed":
+        if progress_by_chapter.get(previous_id) == "passed":
             return chapter_id
         return None
     return None
@@ -575,6 +578,8 @@ def submit_quiz_attempt(
     quiz_id: str,
     answers: dict,
     grading_result: dict,
+    *,
+    questions_snapshot: list[dict] | None = None,
 ) -> tuple[ForestAttemptRead, list[ChapterWeakness]]:
     quiz = session.get(ChapterQuiz, quiz_id)
     if quiz is None or quiz.user_uid != user_uid:
@@ -598,7 +603,9 @@ def submit_quiz_attempt(
         user_uid=user_uid,
         course_node_id=quiz.course_node_id,
         chapter_id=quiz.chapter_id,
-        questions=quiz.questions if isinstance(quiz.questions, list) else [],
+        questions=questions_snapshot
+        if questions_snapshot is not None
+        else (quiz.questions if isinstance(quiz.questions, list) else []),
         grading_result=grading_result,
     )
 

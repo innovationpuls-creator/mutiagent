@@ -1066,7 +1066,7 @@ async def run_section_markdown_agent(
 
     try:
         for section in target_sections:
-            _resource_context(state, outline, section)
+            await asyncio.to_thread(_resource_context, state, outline, section)
     except ValueError as exc:
         return {"error": str(exc), "hard_error": True}
 
@@ -1096,7 +1096,8 @@ async def run_section_markdown_agent(
         async def generate_full_document() -> dict:
             section_issue = "请生成完整 Markdown 教学文档。"
             for attempt in range(_MARKDOWN_SECTION_BODY_ATTEMPTS):
-                query = _markdown_expansion_input(
+                query = await asyncio.to_thread(
+                    _markdown_expansion_input,
                     state,
                     outline,
                     section,
@@ -1274,7 +1275,7 @@ async def run_section_markdown_agent(
             target_section_id, markdown_value = await generate_markdown(section)
             if not target_section_id or _clean_text(markdown_value.get("error")):
                 error_message = "课程资源生成失败：Markdown 文档未生成，请稍后重试。"
-                persist_markdown_error(section, error_message)
+                await asyncio.to_thread(persist_markdown_error, section, error_message)
                 return {
                     "error": error_message,
                     "hard_error": True,
@@ -1282,7 +1283,9 @@ async def run_section_markdown_agent(
             section_markdowns[target_section_id] = markdown_value
     elif failed_sections:
         error_message = "课程资源生成失败：Markdown 文档未生成，请稍后重试。"
-        persist_markdown_error(failed_sections[0], error_message)
+        await asyncio.to_thread(
+            persist_markdown_error, failed_sections[0], error_message
+        )
         return {
             "error": error_message,
             "hard_error": True,
@@ -1301,7 +1304,9 @@ async def run_section_markdown_agent(
         section_composed_markdowns,
     )
     try:
-        _persist_outline(str(state.get("user_id", "")), updated_outline)
+        await asyncio.to_thread(
+            _persist_outline, str(state.get("user_id", "")), updated_outline
+        )
     except Exception as exc:
         logger.error(
             "Failed to persist course resources for user %s: %s",
@@ -1311,21 +1316,9 @@ async def run_section_markdown_agent(
         return {"error": "课程资源保存失败，请稍后重试。", "hard_error": True}
 
     try:
-        from app.models import UserProfile
-        from app.services.resource_quality_service import score_course_resources
-
-        user_id = str(state.get("user_id", ""))
-        course_id = updated_outline.get("course_id", "")
-        with Session(get_engine()) as quality_session:
-            profile_row = quality_session.get(UserProfile, user_id)
-            profile_data = (
-                profile_row.profile_data
-                if profile_row and isinstance(profile_row.profile_data, dict)
-                else None
-            )
-            score_course_resources(
-                quality_session, user_id, course_id, updated_outline, profile_data
-            )
+        await asyncio.to_thread(
+            _score_generated_resources, str(state.get("user_id", "")), updated_outline
+        )
     except Exception as exc:
         logger.warning(
             "Quality scoring failed for user %s, course %s: %s",
@@ -1393,3 +1386,23 @@ def _markdown_expansion_input(
         query = f"{query}\n\n{profile_summary}"
 
     return query
+
+
+def _score_generated_resources(user_id: str, outline: dict) -> None:
+    from app.models import UserProfile
+    from app.services.resource_quality_service import score_course_resources
+
+    with Session(get_engine()) as quality_session:
+        profile_row = quality_session.get(UserProfile, user_id)
+        profile_data = (
+            profile_row.profile_data
+            if profile_row and isinstance(profile_row.profile_data, dict)
+            else None
+        )
+        score_course_resources(
+            quality_session,
+            user_id,
+            outline.get("course_id", ""),
+            outline,
+            profile_data,
+        )

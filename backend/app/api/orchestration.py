@@ -15,6 +15,7 @@ from langchain_core.messages import (
 from sqlmodel import Session
 
 from app.core.security import create_get_current_user
+from app.database import request_engine_context, run_db, session_factory_from_session
 from app.models import User, UserProfile
 from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.graph import stream_orchestration_events
@@ -103,11 +104,13 @@ def _append_turn_with_user_fallback(
             extra={"session_id": session_id},
         )
         try:
-            append_messages(
-                session,
-                session_id,
-                messages_to_dict([current_user_message]),
-            )
+            session.rollback()
+            with Session(session.get_bind()) as fallback_session:
+                append_messages(
+                    fallback_session,
+                    session_id,
+                    messages_to_dict([current_user_message]),
+                )
         except Exception:
             logger.exception(
                 "conversation_turn_user_fallback_persistence_failed",
@@ -378,7 +381,38 @@ async def _stream_chat_events(
     db_session: Session,
     payload: ChatMessageRequest | None = None,
 ) -> AsyncGenerator[str, None]:
+    """Bind the engine while advancing, without keeping tokens across yields."""
+    iterator = _stream_chat_events_impl(
+        session_id, user_uid, user_message, db_session, payload
+    )
+    bind = db_session.get_bind()
+    try:
+        while True:
+            token = request_engine_context.set(bind)
+            try:
+                event = await anext(iterator)
+            except StopAsyncIteration:
+                break
+            finally:
+                request_engine_context.reset(token)
+            yield event
+    finally:
+        token = request_engine_context.set(bind)
+        try:
+            await iterator.aclose()
+        finally:
+            request_engine_context.reset(token)
+
+
+async def _stream_chat_events_impl(
+    session_id: str,
+    user_uid: str,
+    user_message: str,
+    db_session: Session,
+    payload: ChatMessageRequest | None = None,
+) -> AsyncGenerator[str, None]:
     """SSE generator: load context, dispatch to matched handler, stream events."""
+    factory = session_factory_from_session(db_session)
     from app.api import chat_handlers
     from app.api.chat_handlers import (
         ChatContextLoader,
@@ -396,19 +430,17 @@ async def _stream_chat_events(
         yield _sse("session_started", {"session_id": session_id, "query": user_message})
 
         # 2. Load context asynchronously
-        loader = ChatContextLoader(
-            db_session, user_uid, session_id, user_message, payload
-        )
+        loader = ChatContextLoader(factory, user_uid, session_id, user_message, payload)
         async for event in loader.load():
             yield event
 
         # 3. Instantiate handlers list
         handlers = [
-            ResourceGenerationHandler(db_session, user_uid, session_id, payload),
-            NavigationQueryHandler(db_session, user_uid, session_id),
-            OutlineReviewHandler(db_session, user_uid, session_id),
-            LearningPathReviewHandler(db_session, user_uid, session_id),
-            StandardOrchestrationHandler(db_session, user_uid, session_id),
+            ResourceGenerationHandler(factory, user_uid, session_id, payload),
+            NavigationQueryHandler(factory, user_uid, session_id),
+            OutlineReviewHandler(factory, user_uid, session_id),
+            LearningPathReviewHandler(factory, user_uid, session_id),
+            StandardOrchestrationHandler(factory, user_uid, session_id),
         ]
 
         # 4. Find matching handler and run
@@ -428,7 +460,9 @@ async def _stream_chat_events(
         yield _sse(
             "error",
             {
-                "message": _stream_error_message(db_session, session_id, user_uid, exc),
+                "message": await run_db(
+                    factory, _stream_error_message, session_id, user_uid, exc
+                ),
                 "recoverable": True,
             },
         )
@@ -439,7 +473,7 @@ def create_orchestration_router(session_dependency: SessionDependency) -> APIRou
     get_current_user = create_get_current_user(session_dependency)
 
     @router.post("/start", response_model=ChatResponse)
-    async def start_chat(
+    def start_chat(
         payload: ChatStartRequest,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(session_dependency),
@@ -463,7 +497,12 @@ def create_orchestration_router(session_dependency: SessionDependency) -> APIRou
         session: Session = Depends(session_dependency),
     ) -> StreamingResponse:
         """Send a message and receive SSE-streamed agent responses."""
-        _load_owned_session(session, payload.session_id, current_user.uid)
+        await run_db(
+            session_factory_from_session(session),
+            _load_owned_session,
+            payload.session_id,
+            current_user.uid,
+        )
 
         return StreamingResponse(
             _stream_chat_events(
@@ -478,7 +517,7 @@ def create_orchestration_router(session_dependency: SessionDependency) -> APIRou
         )
 
     @router.get("/sessions/{session_id}", response_model=SessionStateResponse)
-    async def get_session_state(
+    def get_session_state(
         session_id: str,
         current_user: User = Depends(get_current_user),
         session: Session = Depends(session_dependency),

@@ -35,7 +35,11 @@ _INGESTION_LEASE_COLUMNS = frozenset(
 
 
 def inspect_schema_state(engine: Engine) -> SchemaState:
-    inspector = inspect(engine)
+    with engine.connect() as connection:
+        return _inspect_schema_state(engine, inspect(connection))
+
+
+def _inspect_schema_state(engine: Engine, inspector: Inspector) -> SchemaState:
     table_names = set(inspector.get_table_names())
     if "alembic_version" in table_names:
         return "versioned"
@@ -45,9 +49,9 @@ def inspect_schema_state(engine: Engine) -> SchemaState:
         return "empty"
     if table_names != expected_tables:
         return "legacy"
-    if _matches_current_metadata(engine):
+    if _matches_current_metadata(engine, inspector):
         return "current_unversioned"
-    if _matches_production_baseline_metadata(engine):
+    if _matches_production_baseline_metadata(engine, inspector):
         return "baseline_unversioned"
     return "legacy"
 
@@ -85,16 +89,14 @@ def _alembic_config(engine: Engine) -> Config:
     return config
 
 
-def _matches_current_metadata(engine: Engine) -> bool:
-    inspector = inspect(engine)
+def _matches_current_metadata(engine: Engine, inspector: Inspector) -> bool:
     return all(
         _table_matches_metadata(engine, inspector, table_name, table)
         for table_name, table in SQLModel.metadata.tables.items()
     )
 
 
-def _matches_production_baseline_metadata(engine: Engine) -> bool:
-    inspector = inspect(engine)
+def _matches_production_baseline_metadata(engine: Engine, inspector: Inspector) -> bool:
     return all(
         _table_matches_metadata(
             engine,

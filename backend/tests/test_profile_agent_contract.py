@@ -285,7 +285,7 @@ def test_run_profile_agent_local_default_profile_persists(tmp_path: Path) -> Non
 
     engine = build_engine(postgresql_test_url(tmp_path, "profile-fast-path"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000000001",
@@ -293,6 +293,7 @@ def test_run_profile_agent_local_default_profile_persists(tmp_path: Path) -> Non
         "messages": [HumanMessage(content="大3，软件工程，ai，平时学习")],
     }
 
+    _create_profile_test_user(engine, state["user_id"])
     result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["type"] == "basic_profile"
@@ -322,7 +323,7 @@ def test_run_profile_agent_default_profile_ignores_greeting_as_major(
 
     engine = build_engine(postgresql_test_url(tmp_path, "profile-ignore-greeting"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000000001",
@@ -330,6 +331,7 @@ def test_run_profile_agent_default_profile_ignores_greeting_as_major(
         "messages": [HumanMessage(content="你好")],
     }
 
+    _create_profile_test_user(engine, state["user_id"])
     result = asyncio.run(run_profile_agent(state, llm))
 
     assert result["profile"]["confirmed_info"]["current_grade"] == "大三"
@@ -348,7 +350,7 @@ def test_run_profile_agent_keeps_pace_segment_out_of_major(tmp_path: Path) -> No
 
     engine = build_engine(postgresql_test_url(tmp_path, "profile-major-pace"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000000009",
@@ -370,7 +372,7 @@ def test_run_profile_agent_returns_collecting_for_unsupported_postgraduate_grade
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-unsupported-grade"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     unsupported_grade_message = (
         "当前学习路径只支持大一到大四。如果你想继续生成学习路径，"
@@ -447,7 +449,7 @@ def test_run_profile_agent_updates_explicit_major_field_without_treating_whole_s
 
     engine = build_engine(postgresql_test_url(tmp_path, "profile-explicit-major"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000000010",
@@ -479,7 +481,7 @@ def test_run_profile_agent_rewrites_system_generated_knowledge_foundation_after_
         postgresql_test_url(tmp_path, "profile-generated-knowledge-foundation")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     profile = _profile()
     profile["confirmed_info"]["knowledge_foundation"] = (
@@ -521,7 +523,7 @@ def test_run_profile_agent_restores_generated_knowledge_foundation_when_existing
         postgresql_test_url(tmp_path, "profile-empty-generated-knowledge-foundation")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     profile = _profile()
     profile["confirmed_info"]["knowledge_foundation"] = ""
@@ -555,7 +557,7 @@ def test_run_profile_agent_updates_multiple_explicit_fields_in_one_sentence(
 
     engine = build_engine(postgresql_test_url(tmp_path, "profile-explicit-multi-field"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000000011",
@@ -591,7 +593,7 @@ def test_run_profile_agent_prefers_latest_explicit_profile_update_from_history(
         postgresql_test_url(tmp_path, "profile-explicit-history-latest")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     profile = _profile()
     profile["confirmed_info"]["knowledge_foundation"] = (
@@ -632,7 +634,7 @@ def test_run_profile_agent_prefers_latest_implicit_grade_and_major_from_history(
         postgresql_test_url(tmp_path, "profile-implicit-history-latest")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000000016",
@@ -659,7 +661,7 @@ def test_run_profile_agent_first_profile_requests_missing_major_in_collecting_mo
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-first-signal"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     llm = ScriptedStructuredLlm(
         [
@@ -750,7 +752,7 @@ def test_run_profile_agent_uses_existing_collecting_profile_to_finish_basic_prof
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-follow-up"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     llm = ScriptedStructuredLlm(
         [
@@ -857,7 +859,7 @@ def test_run_profile_agent_uses_current_collecting_question_to_parse_free_text_a
         postgresql_test_url(tmp_path, "profile-current-question-parse")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     major_state = {
         "user_id": "00000000-0000-0000-0000-000000000022",
@@ -1021,7 +1023,7 @@ def test_run_profile_agent_maps_user_delimited_profile_without_fake_fields(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-delimited-real-input"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     user_text = "大三、软件工程、找工作、喜欢自己摸索，学习vibecoding"
     llm = ScriptedStructuredLlm(
@@ -1086,7 +1088,7 @@ def test_run_profile_agent_allows_llm_to_judge_brief_profile_input(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-brief-llm-judgement"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     user_text = "我现在大三、软件工程、想学习agent开发vibe coding"
     completed_profile = _profile()
@@ -1141,7 +1143,7 @@ def test_run_profile_agent_maps_major_before_grade_in_delimited_profile(
         postgresql_test_url(tmp_path, "profile-delimited-major-before-grade")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     user_text = "软件工程、大三、找工作、喜欢自己摸索，学习vibecoding"
     llm = ScriptedStructuredLlm(
@@ -1199,7 +1201,7 @@ def test_run_profile_agent_collecting_profile_understands_english_grade_without_
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-english-grade"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     llm = ScriptedStructuredLlm(
         [
@@ -1270,7 +1272,7 @@ def test_run_profile_agent_does_not_treat_learning_preference_sentence_as_major(
         postgresql_test_url(tmp_path, "profile-learning-preference-not-major")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     user_text = (
         "我现在大三、准备学习agent开发和vibecoding、我喜欢看文档，一步一步跟着操作"
@@ -1391,7 +1393,7 @@ def test_run_profile_agent_uses_structured_llm_for_rich_first_profile_message(
 
     engine = build_engine(postgresql_test_url(tmp_path, "profile-rich-first-message"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     user_text = (
         "我是软件工程专业的大三学生。"
@@ -1439,7 +1441,7 @@ def test_run_profile_agent_converts_unknown_values_to_collecting(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-unknown-values"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     existing_profile = _profile()
     existing_profile["type"] = "collecting"
@@ -1524,7 +1526,7 @@ def test_run_profile_agent_converts_empty_llm_values_to_collecting(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-empty-values"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     existing_profile = _profile()
     existing_profile["type"] = "collecting"
@@ -1601,7 +1603,7 @@ def test_run_profile_agent_repairs_stage_type_mismatch_before_persisting(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-repair-stage-type"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     broken_profile = {
         **_profile(),
@@ -1656,7 +1658,7 @@ def test_run_profile_agent_repairs_stage_type_mismatch_before_persisting(
 def test_profile_form_builder_and_submission(tmp_path: Path) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-form-test"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     from app.orchestration.agents.profile import (
         _build_collecting_profile,
@@ -1742,7 +1744,7 @@ def test_profile_form_builder_and_submission(tmp_path: Path) -> None:
 def test_profile_minimum_completion_routing(tmp_path: Path) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-routing-test"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     from app.orchestration.agents.profile import (
         _has_minimum_dynamic_profile_fields,
@@ -1799,7 +1801,7 @@ def test_profile_minimum_completion_routing(tmp_path: Path) -> None:
 def test_profile_form_submission_content_preference_persistence(tmp_path: Path) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-persistence-test"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     from app.orchestration.agents.profile import _extract_explicit_profile_updates
 
@@ -1853,7 +1855,7 @@ def test_profile_keeps_major_after_strengths_form_submission(tmp_path: Path) -> 
         postgresql_test_url(tmp_path, "profile-major-strengths-regression")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000001301",
@@ -1924,7 +1926,7 @@ def test_profile_preserves_data_structure_goal_from_initial_sentence(
 ) -> None:
     engine = build_engine(postgresql_test_url(tmp_path, "profile-data-structure-goal"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000001302",
@@ -1952,7 +1954,7 @@ def test_profile_does_not_extract_pace_word_as_learning_topic(tmp_path: Path) ->
         postgresql_test_url(tmp_path, "profile-ai-pace-topic-regression")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000001303",

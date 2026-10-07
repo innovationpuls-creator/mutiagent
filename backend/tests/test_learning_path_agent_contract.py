@@ -782,7 +782,7 @@ def test_run_learning_path_agent_uses_structured_llm_for_default_query(
     captured: dict[str, object] = {}
     engine = build_engine(postgresql_test_url(tmp_path, "learning-path-thinking"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     module = __import__(
         "app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"]
@@ -854,7 +854,7 @@ def test_run_learning_path_agent_accepts_missing_desired_outcome_in_structured_p
         postgresql_test_url(tmp_path, "learning-path-missing-desired-outcome")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
     with Session(engine) as session:
         session.add(
             User(
@@ -924,7 +924,7 @@ def test_run_learning_path_agent_rejects_incomplete_basic_profile(
         postgresql_test_url(tmp_path, "learning-path-incomplete-profile")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     result = asyncio.run(
         run_learning_path_agent(
@@ -948,7 +948,7 @@ def test_run_learning_path_agent_rejects_unsupported_postgraduate_grade(
         postgresql_test_url(tmp_path, "learning-path-unsupported-grade")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     profile = _complete_profile()
     profile["confirmed_info"]["current_grade"] = "研一"
@@ -984,7 +984,7 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_setup_fails(
 
     engine = build_engine(postgresql_test_url(tmp_path, "learning-path-fallback"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000000001",
@@ -1073,7 +1073,7 @@ def test_run_learning_path_agent_returns_error_when_contract_validation_fails(
         postgresql_test_url(tmp_path, "learning-path-two-course-fallback")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     module = __import__(
         "app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"]
@@ -1151,7 +1151,7 @@ def test_run_learning_path_agent_navigation_path_uses_user_topic_and_keeps_unkno
 
     engine = build_engine(postgresql_test_url(tmp_path, "learning-path-vibecoding"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000000002",
@@ -1250,7 +1250,7 @@ def test_run_learning_path_agent_returns_error_when_structured_llm_times_out(
         postgresql_test_url(tmp_path, "learning-path-timeout-fallback")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     module = __import__(
         "app.orchestration.agents.learning_path", fromlist=["ChatPromptTemplate"]
@@ -1311,7 +1311,7 @@ def test_run_learning_path_agent_requires_confirmed_intake_for_navigation_query(
 
     engine = build_engine(postgresql_test_url(tmp_path, "learning-path-navigation"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     state = {
         "user_id": "00000000-0000-0000-0000-000000000003",
@@ -1383,7 +1383,7 @@ def test_run_learning_path_agent_refresh_query_uses_existing_progress_for_llm_an
         postgresql_test_url(tmp_path, "learning-path-refresh-progress")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     existing_path = _single_year_learning_path_payload(
         "year_3",
@@ -1516,7 +1516,7 @@ def test_run_learning_path_agent_new_grade_generation_includes_previous_year_pro
         postgresql_test_url(tmp_path, "learning-path-cross-grade-progress")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     existing_path = _single_year_learning_path_payload(
         "year_3",
@@ -1636,7 +1636,7 @@ def test_run_learning_path_agent_refresh_query_returns_error_when_structured_llm
         postgresql_test_url(tmp_path, "learning-path-fallback-refresh")
     )
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     existing_path = _single_year_learning_path_payload(
         "year_3",
@@ -1719,7 +1719,7 @@ def test_learning_path_agent_node_updates_year_learning_paths_state(
 
     engine = build_engine(postgresql_test_url(tmp_path, "learning-path-node"))
     set_engine(engine)
-    init_db(engine)
+    init_db(engine, seed_users=False)
 
     node = create_learning_path_agent_node(ExplodingLlm())
     state = {

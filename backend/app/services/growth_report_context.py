@@ -1,11 +1,12 @@
 """User-scoped, read-only evidence catalog for growth reports."""
 
 import json
-from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from pydantic import JsonValue
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.models import (
@@ -101,26 +102,50 @@ def _add_paths(context: ReportContext, session: Session, uid: str) -> None:
             )
 
 
-def _add_quizzes(
-    context: ReportContext,
-    quizzes: list[ChapterQuiz],
-    attempts: list[ChapterQuizAttempt],
-) -> None:
-    by_quiz: dict[str, list[ChapterQuizAttempt]] = defaultdict(list)
-    for attempt in attempts:
-        by_quiz[attempt.quiz_id].append(attempt)
-    ordered = sorted(
-        [quiz for quiz in quizzes if by_quiz[quiz.quiz_id]],
-        key=lambda q: (
-            by_quiz[q.quiz_id][-1].created_at if by_quiz[q.quiz_id] else q.created_at
-        ),
-        reverse=True,
+def _owned_attempts(uid: str):
+    return (
+        select(ChapterQuizAttempt)
+        .join(ChapterQuiz, ChapterQuiz.quiz_id == ChapterQuizAttempt.quiz_id)
+        .where(ChapterQuizAttempt.user_uid == uid, ChapterQuiz.user_uid == uid)
     )
-    for quiz in ordered[:CATALOG_LIMIT]:
-        rows = by_quiz[quiz.quiz_id]
-        if not rows:
-            continue
-        first, latest = rows[0], rows[-1]
+
+
+def _add_quizzes(context: ReportContext, session: Session, uid: str) -> None:
+    first_order = (ChapterQuizAttempt.created_at, ChapterQuizAttempt.attempt_id)
+    partition = ChapterQuizAttempt.quiz_id
+    ranked = (
+        _owned_attempts(uid)
+        .with_only_columns(
+            ChapterQuizAttempt.quiz_id,
+            ChapterQuizAttempt.score,
+            ChapterQuizAttempt.created_at,
+            func.count().over(partition_by=partition).label("attempt_count"),
+            func.first_value(ChapterQuizAttempt.score)
+            .over(partition_by=partition, order_by=first_order)
+            .label("first_score"),
+            func.row_number()
+            .over(
+                partition_by=partition,
+                order_by=tuple(column.desc() for column in first_order),
+            )
+            .label("latest_rank"),
+        )
+        .subquery()
+    )
+    rows = session.exec(
+        select(
+            ChapterQuiz,
+            ranked.c.attempt_count,
+            ranked.c.first_score,
+            ranked.c.score,
+            ranked.c.created_at,
+        )
+        .join(ranked, ranked.c.quiz_id == ChapterQuiz.quiz_id)
+        .where(ranked.c.latest_rank == 1)
+        .order_by(ranked.c.created_at.desc())
+        .limit(CATALOG_LIMIT)
+    ).all()
+    for quiz, count, first_score, latest_score, created_at in rows:
         course = context.evidence.get(f"path:{quiz.course_node_id}")
         title = course.title if course else quiz.course_node_id
         context.add(
@@ -132,9 +157,8 @@ def _add_quizzes(
                 else None,
                 title=f"{title} · 章节 {quiz.chapter_id}",
                 detail=(
-                    f"作答 {len(rows)} 次；首次 {first.score} 分，"
-                    f"最近 {latest.score} 分；"
-                    f"最近作答 {latest.created_at.isoformat()}。"
+                    f"作答 {count} 次；首次 {first_score} 分，最近 {latest_score} 分；"
+                    f"最近作答 {created_at.isoformat()}。"
                     "同一章节的题目可能重新生成，分数变化仅描述记录，不等同能力增长。"
                 ),
             ),
@@ -144,10 +168,12 @@ def _add_quizzes(
 
 
 def _add_sections(
-    context: ReportContext, outlines: list[UserCourseKnowledgeOutline]
+    context: ReportContext, outlines: Iterable[UserCourseKnowledgeOutline]
 ) -> None:
     remaining = CATALOG_LIMIT
     for outline in outlines:
+        if remaining <= 0:
+            break
         sections = outline.outline_data.get("sections", [])
         if not isinstance(sections, list):
             continue
@@ -198,39 +224,26 @@ def build_report_context(session: Session, uid: str) -> ReportContext:
     confirmed = profile.profile_data.get("confirmed_info", {}) if profile else {}
     if not isinstance(confirmed, dict):
         confirmed = {}
-    quizzes = list(
-        session.exec(select(ChapterQuiz).where(ChapterQuiz.user_uid == uid)).all()
+    attempts_count = session.exec(
+        select(func.count()).select_from(_owned_attempts(uid).subquery())
+    ).one()
+    tested = (
+        _owned_attempts(uid)
+        .with_only_columns(ChapterQuiz.course_node_id, ChapterQuiz.chapter_id)
+        .distinct()
+        .subquery()
     )
-    quiz_ids = {q.quiz_id for q in quizzes}
-    attempts = [
-        a
-        for a in session.exec(
-            select(ChapterQuizAttempt)
-            .where(
-                ChapterQuizAttempt.user_uid == uid,
-            )
-            .order_by(ChapterQuizAttempt.created_at, ChapterQuizAttempt.attempt_id)
-        ).all()
-        if a.quiz_id in quiz_ids
-    ]
-    passed = session.exec(
-        select(ChapterProgress).where(
-            ChapterProgress.user_uid == uid,
-            ChapterProgress.state == "passed",
-        )
-    ).all()
-    attempted_ids = {a.quiz_id for a in attempts}
+    tested_count = session.exec(select(func.count()).select_from(tested)).one()
+    passed_count = session.exec(
+        select(func.count())
+        .select_from(ChapterProgress)
+        .where(ChapterProgress.user_uid == uid, ChapterProgress.state == "passed")
+    ).one()
     context = ReportContext(
         stats=ReportStats(
-            passed_chapters=len(passed),
-            attempts=len(attempts),
-            tested_chapters=len(
-                {
-                    (q.course_node_id, q.chapter_id)
-                    for q in quizzes
-                    if q.quiz_id in attempted_ids
-                }
-            ),
+            passed_chapters=passed_count,
+            attempts=attempts_count,
+            tested_chapters=tested_count,
         ),
         profile=compact(
             {
@@ -245,24 +258,24 @@ def build_report_context(session: Session, uid: str) -> ReportContext:
         ),
     )
     _add_paths(context, session, uid)
-    _add_quizzes(context, quizzes, attempts)
-    outlines = list(
-        session.exec(
-            select(UserCourseKnowledgeOutline)
-            .where(
-                UserCourseKnowledgeOutline.user_uid == uid,
-            )
-            .order_by(UserCourseKnowledgeOutline.updated_at.desc())
-        ).all()
+    _add_quizzes(context, session, uid)
+    outlines = session.exec(
+        select(UserCourseKnowledgeOutline)
+        .where(UserCourseKnowledgeOutline.user_uid == uid)
+        .order_by(UserCourseKnowledgeOutline.updated_at.desc())
+        .execution_options(yield_per=10)
     )
-    _add_sections(context, outlines)
+    try:
+        _add_sections(context, outlines)
+    finally:
+        outlines.close()
     _add_weaknesses(context, session, uid)
     context.coverage = (
         "统计覆盖截至生成时的全部通关与作答记录；详细分析目录最多收录最近 30 份测验、"
         "30 个课程小节和 30 条薄弱点，按需读取最多 6 项详情。"
         "课程路径代表学习安排，教材和资源不代表已掌握。"
     )
-    if not attempts:
+    if not attempts_count:
         context.coverage += (
             "尚无测验作答记录，本报告仅回顾目标与路径，学习表现待测验验证。"
         )

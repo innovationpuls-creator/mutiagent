@@ -9,7 +9,13 @@ from collections.abc import AsyncIterator
 from langchain_core.language_models import BaseChatModel
 from sqlmodel import Session
 
-from app.report_schemas import EvidenceSelection, GrowthReport, ReportNarrative
+from app.database import run_db, session_factory_from_session
+from app.report_schemas import (
+    EvidenceRequest,
+    EvidenceSelection,
+    GrowthReport,
+    ReportNarrative,
+)
 from app.services.growth_report_context import (
     ReportContext,
     build_report_context,
@@ -142,10 +148,11 @@ def sse(event: str, payload: dict) -> str:
 async def stream_growth_report(
     session: Session, uid: str, llm: BaseChatModel
 ) -> AsyncIterator[str]:
+    factory = session_factory_from_session(session)
     try:
         async with asyncio.timeout(180):
             yield sse("report_stage", {"stage": "collecting"})
-            context = build_report_context(session, uid)
+            context = await run_db(factory, build_report_context, uid)
             yield sse("report_stage", {"stage": "analyzing"})
             selection = await llm.with_structured_output(EvidenceSelection).ainvoke(
                 [
@@ -160,15 +167,24 @@ async def stream_growth_report(
                 ]
             )
             requests = EvidenceSelection.model_validate(selection).requests
-            details = {
-                request.evidence_id: read_report_evidence(
-                    session, uid, context, request
-                )
-                for request in requests
-            }
+            details = await run_db(
+                factory, _read_selected_evidence, uid, context, requests
+            )
             yield sse("report_stage", {"stage": "writing"})
             report = await generate_narrative(llm, context, details)
             yield sse("report_completed", report.model_dump(mode="json"))
     except Exception:
         logger.exception("Growth report generation failed")
         yield sse("report_error", {"message": "成长报告暂时未能生成，请稍后重试。"})
+
+
+def _read_selected_evidence(
+    session: Session,
+    uid: str,
+    context: ReportContext,
+    requests: list[EvidenceRequest],
+) -> dict[str, str]:
+    return {
+        request.evidence_id: read_report_evidence(session, uid, context, request)
+        for request in requests
+    }

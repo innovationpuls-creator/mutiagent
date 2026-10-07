@@ -71,7 +71,10 @@ def create_get_current_user(session_dependency):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="无效的认证凭证",
             )
-        user = session.exec(select(User).where(User.uid == uid)).first()
+        with Session(session.get_bind()) as auth_session:
+            user = auth_session.exec(select(User).where(User.uid == uid)).first()
+            if user is not None:
+                auth_session.expunge(user)
         if user is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

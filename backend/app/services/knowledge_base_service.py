@@ -4,13 +4,14 @@ import logging
 import os
 import re
 import socket
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from hashlib import sha1
 from ipaddress import ip_address
 from json import loads
 from time import monotonic
+from typing import Any, TypeVar
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -21,6 +22,7 @@ from sqlalchemy import func, or_, text
 from sqlmodel import Session, select
 
 from app.core.observability import get_request_id
+from app.database import SessionFactory, run_db_sync
 from app.models import (
     KnowledgeBaseIngestionJob,
     KnowledgeGap,
@@ -44,6 +46,7 @@ from app.services.document_parser_service import (
 )
 
 logger = logging.getLogger(__name__)
+_AgentResult = TypeVar("_AgentResult")
 
 _ADMITTED_SOURCE_VALUES = {
     "status": "enabled",
@@ -1559,10 +1562,46 @@ def get_embeddings_client() -> OpenAIEmbeddings:
     )
 
 
+def _supports_hybrid_search(session: Session) -> bool:
+    if session.get_bind().dialect.name != "postgresql":
+        return False
+    supported = session.execute(
+        text("""
+        SELECT EXISTS (
+            SELECT 1 FROM pg_attribute a
+            JOIN pg_type t ON t.oid = a.atttypid
+            WHERE a.attrelid = to_regclass('textbook')
+              AND a.attname = 'embedding' AND NOT a.attisdropped
+              AND t.typname = 'vector'
+              AND EXISTS (SELECT 1 FROM pg_operator op
+                          WHERE op.oprname = '<=>' AND op.oprleft = t.oid
+                            AND op.oprright = t.oid AND pg_operator_is_visible(op.oid))
+              AND EXISTS (SELECT 1 FROM pg_ts_config cfg
+                          WHERE cfg.cfgname = 'chinese'
+                            AND pg_ts_config_is_visible(cfg.oid))
+        )
+    """)
+    ).scalar_one()
+    return (
+        bool(supported)
+        and session.exec(
+            select(Textbook.textbook_id)
+            .where(
+                Textbook.embedding.is_not(None),
+                Textbook.student_availability_status == "published",
+            )
+            .limit(1)
+        ).first()
+        is not None
+    )
+
+
 def hybrid_search_textbooks(
     session: Session, query: str, limit: int = 15
 ) -> list[Textbook]:
     # Only search published textbooks
+    if not _supports_hybrid_search(session):
+        return _matching_textbooks(session, query, limit)
     try:
         embeddings = get_embeddings_client()
         query_vector = embeddings.embed_query(query)
@@ -1572,7 +1611,7 @@ def hybrid_search_textbooks(
             WITH vector_search AS (
                 SELECT textbook_id,
                        ROW_NUMBER() OVER (
-                           ORDER BY embedding <=> :vector
+                           ORDER BY embedding <=> CAST(:vector AS vector)
                        ) as rank
                 FROM textbook
                 WHERE embedding IS NOT NULL
@@ -1606,9 +1645,10 @@ def hybrid_search_textbooks(
             ORDER BY rrf_score DESC
             LIMIT :limit
         """)
-        res = session.execute(
-            sql, {"vector": query_vector, "query": query, "limit": limit}
-        ).all()
+        with session.begin_nested():
+            res = session.execute(
+                sql, {"vector": query_vector, "query": query, "limit": limit}
+            ).all()
         ids = [r[0] for r in res]
         if not ids:
             return []
@@ -1619,24 +1659,36 @@ def hybrid_search_textbooks(
     except Exception as e:
         logger.info("Hybrid search fallback to simple matching: %s", e)
 
+    return _matching_textbooks(session, query, limit)
+
+
+def _matching_textbooks(session: Session, query: str, limit: int) -> list[Textbook]:
     # Fallback: simple string matching (e.g., pgvector extension not available)
-    stmt = select(Textbook).where(Textbook.student_availability_status == "published")
+    stmt = select(Textbook.textbook_id, Textbook.title, Textbook.tags).where(
+        Textbook.student_availability_status == "published"
+    )
     all_tbs = session.exec(stmt).all()
 
     scored = []
-    for tb in all_tbs:
+    normalized_query = query.lower()
+    for textbook_id, title, tags in all_tbs:
         score = 0
-        if query.lower() in tb.title.lower():
+        if normalized_query in title.lower():
             score += 10
-        if tb.tags:
-            for tag in tb.tags:
-                if query.lower() in tag.lower():
+        if tags:
+            for tag in tags:
+                if normalized_query in tag.lower():
                     score += 5
         if score > 0:
-            scored.append((score, tb))
+            scored.append((score, textbook_id))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [item[1] for item in scored[:limit]]
+    ids = [item[1] for item in scored[:limit]]
+    if not ids:
+        return []
+    rows = session.exec(select(Textbook).where(Textbook.textbook_id.in_(ids))).all()
+    by_id = {row.textbook_id: row for row in rows}
+    return [by_id[textbook_id] for textbook_id in ids if textbook_id in by_id]
 
 
 def search_admin_textbooks(
@@ -2005,7 +2057,7 @@ def _matching_gap_hits(session: Session, query: str) -> list[KnowledgeBaseAgentG
 
 
 def run_knowledge_base_agent(
-    session: Session, message: str
+    session: Session | SessionFactory, message: str
 ) -> KnowledgeBaseAgentResponse:
     final_response: KnowledgeBaseAgentResponse | None = None
     for event in stream_knowledge_base_agent_events(session, message):
@@ -2053,8 +2105,30 @@ def _mark_imported_source_results(
             result.textbook_id = existing.textbook_id
 
 
+def _agent_database_operation(
+    database: Session | SessionFactory,
+    operation: Callable[..., _AgentResult],
+    *args: Any,
+) -> _AgentResult:
+    if isinstance(database, Session):
+        return operation(database, *args)
+    return run_db_sync(database, operation, *args)
+
+
+def _knowledge_base_counts(session: Session) -> dict[str, int]:
+    return {
+        "source_count": session.exec(
+            select(func.count()).select_from(KnowledgeSource)
+        ).one(),
+        "textbook_count": session.exec(
+            select(func.count()).select_from(Textbook)
+        ).one(),
+        "gap_count": session.exec(select(func.count()).select_from(KnowledgeGap)).one(),
+    }
+
+
 def stream_knowledge_base_agent_events(
-    session: Session, message: str
+    session: Session | SessionFactory, message: str
 ) -> Generator[dict[str, object], None, None]:
     query = message.strip()
     yield _agent_stream_event(
@@ -2070,15 +2144,11 @@ def stream_knowledge_base_agent_events(
         yield _agent_stream_event("completed", "本轮已结束。", response=response)
         return
 
-    source_count = session.exec(select(func.count()).select_from(KnowledgeSource)).one()
-    textbook_count = session.exec(select(func.count()).select_from(Textbook)).one()
-    gap_count = session.exec(select(func.count()).select_from(KnowledgeGap)).one()
+    counts = _agent_database_operation(session, _knowledge_base_counts)
     yield _agent_stream_event(
         "context_loaded",
         "已读取知识库现状。",
-        source_count=source_count,
-        textbook_count=textbook_count,
-        gap_count=gap_count,
+        **counts,
     )
     yield _agent_stream_event(
         "source_search_started",
@@ -2095,7 +2165,7 @@ def stream_knowledge_base_agent_events(
         "duplicate_check_started",
         "正在进行本地知识库查重。",
     )
-    _mark_imported_source_results(session, source_results)
+    _agent_database_operation(session, _mark_imported_source_results, source_results)
 
     imported_count = sum(1 for r in source_results if r.already_imported)
     yield _agent_stream_event(
@@ -2108,7 +2178,7 @@ def stream_knowledge_base_agent_events(
         "gap_search_started",
         "正在检查未覆盖待办是否命中本轮主题。",
     )
-    gap_hits = _matching_gap_hits(session, query)
+    gap_hits = _agent_database_operation(session, _matching_gap_hits, query)
     yield _agent_stream_event(
         "gap_search_completed",
         "待办检查完成。",

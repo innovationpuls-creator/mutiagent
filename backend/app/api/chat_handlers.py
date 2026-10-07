@@ -12,7 +12,9 @@ from langchain_core.messages import (
     messages_from_dict,
     messages_to_dict,
 )
+from sqlmodel import Session
 
+from app.database import SessionFactory, run_db, session_factory_from_session
 from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.graph import stream_orchestration_events
 from app.orchestration.rule_engine import (
@@ -30,8 +32,6 @@ from app.services.course_generation_status_service import (
 )
 
 if TYPE_CHECKING:
-    from sqlmodel import Session
-
     from app.schemas import ChatMessageRequest
 
 logger = logging.getLogger(__name__)
@@ -72,13 +72,17 @@ class ChatContextLoader:
 
     def __init__(
         self,
-        db_session: Session,
+        db_session: Session | SessionFactory,
         user_uid: str,
         session_id: str,
         user_message: str,
         payload: ChatMessageRequest | None = None,
     ) -> None:
-        self.db_session = db_session
+        self.db_session = (
+            session_factory_from_session(db_session)
+            if isinstance(db_session, Session)
+            else db_session
+        )
         self.user_uid = user_uid
         self.session_id = session_id
         self.user_message = user_message
@@ -98,8 +102,8 @@ class ChatContextLoader:
         )
         from app.services.profile_service import get_user_profile
 
-        conv_session = _load_owned_session(
-            self.db_session, self.session_id, self.user_uid
+        conv_session = await run_db(
+            self.db_session, _load_owned_session, self.session_id, self.user_uid
         )
 
         yield _sse(
@@ -129,7 +133,7 @@ class ChatContextLoader:
             "agent_calling",
             _memory_event("memory-profile-load", "正在提取用户画像数据"),
         )
-        profile = get_user_profile(self.db_session, self.user_uid)
+        profile = await run_db(self.db_session, get_user_profile, self.user_uid)
         yield _sse(
             "agent_result",
             _memory_event(
@@ -143,8 +147,12 @@ class ChatContextLoader:
         yield _sse(
             "agent_calling", _memory_event("memory-path-load", "正在提取学习路径数据")
         )
-        year_paths = get_all_year_learning_paths(self.db_session, self.user_uid)
-        latest_grade_year = get_latest_grade_year(self.db_session, self.user_uid)
+        year_paths = await run_db(
+            self.db_session, get_all_year_learning_paths, self.user_uid
+        )
+        latest_grade_year = await run_db(
+            self.db_session, get_latest_grade_year, self.user_uid
+        )
         yield _sse(
             "agent_result",
             _memory_event(
@@ -163,8 +171,11 @@ class ChatContextLoader:
             year_paths, latest_grade_year
         )
         course_knowledge = (
-            get_user_course_knowledge_outline(
-                self.db_session, self.user_uid, current_course_id
+            await run_db(
+                self.db_session,
+                get_user_course_knowledge_outline,
+                self.user_uid,
+                current_course_id,
             )
             if current_course_id
             else None
@@ -189,7 +200,9 @@ class ChatContextLoader:
                 ChapterWeakness.course_node_id == current_course_id,
                 ChapterWeakness.consumed.is_(False),
             )
-            unconsumed = self.db_session.exec(stmt).all()
+            unconsumed = await run_db(
+                self.db_session, lambda session: session.exec(stmt).all()
+            )
             if unconsumed:
                 kp_names = list(
                     dict.fromkeys(
@@ -261,8 +274,14 @@ class ChatContextLoader:
 class BaseChatHandler(abc.ABC):
     """Abstract Base Class for Chat Message Handlers."""
 
-    def __init__(self, db_session: Session, user_uid: str, session_id: str) -> None:
-        self.db_session = db_session
+    def __init__(
+        self, db_session: Session | SessionFactory, user_uid: str, session_id: str
+    ) -> None:
+        self.db_session = (
+            session_factory_from_session(db_session)
+            if isinstance(db_session, Session)
+            else db_session
+        )
         self.user_uid = user_uid
         self.session_id = session_id
 
@@ -285,7 +304,7 @@ class ResourceGenerationHandler(BaseChatHandler):
 
     def __init__(
         self,
-        db_session: Session,
+        db_session: Session | SessionFactory,
         user_uid: str,
         session_id: str,
         payload: ChatMessageRequest | None = None,
@@ -370,8 +389,12 @@ class ResourceGenerationHandler(BaseChatHandler):
 
         if requested_course_id != current_course_id:
             completed_text = "只能为当前课程生成教学内容。"
-            _append_turn_with_user_fallback(
-                self.db_session, self.session_id, current_user_message, completed_text
+            await run_db(
+                self.db_session,
+                _append_turn_with_user_fallback,
+                self.session_id,
+                current_user_message,
+                completed_text,
             )
             yield _sse("message_completed", {"full_text": completed_text})
             yield _sse(
@@ -385,16 +408,21 @@ class ResourceGenerationHandler(BaseChatHandler):
             )
             return
 
-        if not chapter_generation_is_available(
+        if not await run_db(
             self.db_session,
+            chapter_generation_is_available,
             self.user_uid,
             requested_course_id,
             requested_chapter_id,
             course_knowledge,
         ):
             completed_text = "通过章节测验后会开放下一章内容生成。"
-            _append_turn_with_user_fallback(
-                self.db_session, self.session_id, current_user_message, completed_text
+            await run_db(
+                self.db_session,
+                _append_turn_with_user_fallback,
+                self.session_id,
+                current_user_message,
+                completed_text,
             )
             yield _sse("message_completed", {"full_text": completed_text})
             yield _sse(
@@ -425,8 +453,12 @@ class ResourceGenerationHandler(BaseChatHandler):
                 f"chapter_section_id: {requested_chapter_id}\n"
                 "[/LEAF_REGEN_PENDING]"
             )
-            _append_turn_with_user_fallback(
-                self.db_session, self.session_id, current_user_message, completed_text
+            await run_db(
+                self.db_session,
+                _append_turn_with_user_fallback,
+                self.session_id,
+                current_user_message,
+                completed_text,
             )
             yield _sse("message_completed", {"full_text": completed_text})
             yield _sse(
@@ -441,16 +473,23 @@ class ResourceGenerationHandler(BaseChatHandler):
             return
 
         try:
-            outline = get_user_course_knowledge_outline(
-                self.db_session, self.user_uid, requested_course_id
+            outline = await run_db(
+                self.db_session,
+                get_user_course_knowledge_outline,
+                self.user_uid,
+                requested_course_id,
             )
             if not isinstance(outline, dict):
                 raise ValueError("课程大纲不存在。")
-            require_student_visible_textbooks(self.db_session, outline)
+            await run_db(self.db_session, require_student_visible_textbooks, outline)
         except ValueError as exc:
             completed_text = str(exc)
-            _append_turn_with_user_fallback(
-                self.db_session, self.session_id, current_user_message, completed_text
+            await run_db(
+                self.db_session,
+                _append_turn_with_user_fallback,
+                self.session_id,
+                current_user_message,
+                completed_text,
             )
             yield _sse("message_completed", {"full_text": completed_text})
             yield _sse(
@@ -512,13 +551,17 @@ class ResourceGenerationHandler(BaseChatHandler):
             )
 
         if had_resource_error:
-            _append_user_message_safely(
-                self.db_session, self.session_id, current_user_message
+            await run_db(
+                self.db_session,
+                _append_user_message_safely,
+                self.session_id,
+                current_user_message,
             )
             return
 
-        _append_turn_with_user_fallback(
+        await run_db(
             self.db_session,
+            _append_turn_with_user_fallback,
             self.session_id,
             current_user_message,
             "本章教学内容已生成。",
@@ -548,8 +591,9 @@ class NavigationQueryHandler(BaseChatHandler):
         course_knowledge = state.get("course_knowledge")
 
         completed_text = _format_course_next_step_text(course_knowledge)
-        _append_turn_with_user_fallback(
+        await run_db(
             self.db_session,
+            _append_turn_with_user_fallback,
             self.session_id,
             current_user_message,
             completed_text,
@@ -608,8 +652,9 @@ class OutlineReviewHandler(BaseChatHandler):
                 "summary": "已从数据库读取课程大纲",
             },
         )
-        _append_turn_with_user_fallback(
+        await run_db(
             self.db_session,
+            _append_turn_with_user_fallback,
             self.session_id,
             current_user_message,
             completed_text,
@@ -659,8 +704,9 @@ class LearningPathReviewHandler(BaseChatHandler):
                 "summary": "已从数据库读取学习路径",
             },
         )
-        _append_turn_with_user_fallback(
+        await run_db(
             self.db_session,
+            _append_turn_with_user_fallback,
             self.session_id,
             current_user_message,
             completed_text,
@@ -730,8 +776,11 @@ class StandardOrchestrationHandler(BaseChatHandler):
             if completed_text and not had_error:
                 new_messages.append(AIMessage(content=completed_text))
 
-            append_messages(
-                self.db_session, self.session_id, messages_to_dict(new_messages)
+            await run_db(
+                self.db_session,
+                append_messages,
+                self.session_id,
+                messages_to_dict(new_messages),
             )
             if completed_event_payload is not None:
                 yield _sse("message_completed", completed_event_payload)
@@ -743,16 +792,21 @@ class StandardOrchestrationHandler(BaseChatHandler):
                 _stream_error_message,
             )
 
-            _append_user_message_safely(
+            await run_db(
                 self.db_session,
+                _append_user_message_safely,
                 self.session_id,
                 current_user_message,
             )
             yield _sse(
                 "error",
                 {
-                    "message": _stream_error_message(
-                        self.db_session, self.session_id, self.user_uid, exc
+                    "message": await run_db(
+                        self.db_session,
+                        _stream_error_message,
+                        self.session_id,
+                        self.user_uid,
+                        exc,
                     ),
                     "recoverable": True,
                 },
