@@ -61,12 +61,14 @@ node_modules/
 .vite/
 .stitch/
 .opencode/
+.ruff_cache/
 
 # Word documents folder (locally generated docs)
 /word/
 
 # Local agent configuration and macOS metadata
 .agents/
+.impeccable/
 .DS_Store
 
 # Local planning, task reports, and generated output
