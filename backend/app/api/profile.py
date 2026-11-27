@@ -7,10 +7,12 @@ from sqlmodel import Session
 
 from app.core.security import create_get_current_user
 from app.models import User, UserProfile
+from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.grade_contract import (
     is_supported_current_grade,
     unsupported_current_grade_error,
 )
+from app.schemas import ProfileDashboardReadResponse
 from app.services.course_knowledge_service import get_user_course_knowledge_outline
 from app.services.learning_path_service import (
     find_current_course,
@@ -188,6 +190,9 @@ def _dashboard_from_profile(
         or not stored.profile_data
     ):
         return {
+            "hasCompleteProfile": is_complete_profile_data(stored.profile_data)
+            if stored
+            else False,
             "profile": DEFAULT_PROFILE,
             "profileCompleteness": 0,
             "profileSummaryText": (
@@ -220,6 +225,9 @@ def _dashboard_from_profile(
     )
     if profile_data.get("type") == "collecting":
         return {
+            "hasCompleteProfile": is_complete_profile_data(stored.profile_data)
+            if stored
+            else False,
             "profile": profile,
             "profileCompleteness": _profile_completeness(profile),
             "profileSummaryText": _summary_from_profile(profile_data, profile),
@@ -241,6 +249,9 @@ def _dashboard_from_profile(
         }
     if not has_supported_grade:
         return {
+            "hasCompleteProfile": is_complete_profile_data(stored.profile_data)
+            if stored
+            else False,
             "profile": profile,
             "profileCompleteness": _profile_completeness(profile),
             "profileSummaryText": _summary_from_profile(profile_data, profile),
@@ -267,6 +278,9 @@ def _dashboard_from_profile(
         profile.get("contentPreference"), "根据偏好推荐学习资源"
     )
     return {
+        "hasCompleteProfile": is_complete_profile_data(stored.profile_data)
+        if stored
+        else False,
         "profile": profile,
         "profileCompleteness": _profile_completeness(profile),
         "profileSummaryText": _summary_from_profile(stored.profile_data, profile),
@@ -313,7 +327,7 @@ def create_profile_router(session_dependency: SessionDependency) -> APIRouter:
     router = APIRouter(prefix="/api/profile", tags=["profile"])
     get_current_user = create_get_current_user(session_dependency)
 
-    @router.get("/dashboard")
+    @router.get("/dashboard", response_model=ProfileDashboardReadResponse)
     def get_dashboard(
         current_user: User = Depends(get_current_user),
         session: Session = Depends(session_dependency),

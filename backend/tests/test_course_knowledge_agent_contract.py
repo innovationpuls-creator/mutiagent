@@ -55,6 +55,26 @@ DEFAULT_SOURCE_SECTION_IDS = [
 ]
 
 
+async def _run_agent_with_saved_paths(state, llm):
+    """Seed the persisted learning paths represented by the agent input fixture."""
+    from app.database import get_engine
+    from app.models import UserYearLearningPath
+
+    with Session(get_engine()) as session:
+        if session.get(User, state.get("user_id")) is not None:
+            for grade_year, path in state.get("year_learning_paths", {}).items():
+                session.add(
+                    UserYearLearningPath(
+                        user_uid=state["user_id"],
+                        grade_year=grade_year,
+                        learning_topic="test",
+                        path_data=path,
+                    )
+                )
+            session.commit()
+    return await run_course_knowledge_agent(state, llm)
+
+
 def test_outline_prompt_budget_preserves_source_binding_markers() -> None:
     course = {
         "source_textbook_id": SOURCE_TEXTBOOK_ID,
@@ -1443,7 +1463,7 @@ def test_run_course_knowledge_agent_uses_structured_outline_and_persists(
 
     module.ChatPromptTemplate = PromptFactory
     try:
-        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+        result = asyncio.run(_run_agent_with_saved_paths(state, RecordingLlm()))
     finally:
         module.ChatPromptTemplate = original_factory
 
@@ -1593,7 +1613,7 @@ def test_run_course_knowledge_agent_uses_single_short_naming_call(
 
     module.ChatPromptTemplate = PromptFactory
     try:
-        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+        result = asyncio.run(_run_agent_with_saved_paths(state, RecordingLlm()))
     finally:
         module.ChatPromptTemplate = original_factory
 
@@ -1852,7 +1872,7 @@ def test_run_course_knowledge_agent_infers_published_source_for_unbound_complexi
 
     module.ChatPromptTemplate = PromptFactory
     try:
-        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+        result = asyncio.run(_run_agent_with_saved_paths(state, RecordingLlm()))
     finally:
         module.ChatPromptTemplate = original_factory
 
@@ -2088,7 +2108,7 @@ def test_run_course_knowledge_agent_rejects_bad_naming_output(
 
     module.ChatPromptTemplate = PromptFactory
     try:
-        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+        result = asyncio.run(_run_agent_with_saved_paths(state, RecordingLlm()))
     finally:
         module.ChatPromptTemplate = original_factory
 
@@ -2272,7 +2292,7 @@ def test_run_course_knowledge_agent_generates_all_grade_course_outlines_in_one_c
     module.ChatPromptTemplate = PromptFactory
     module.asyncio.wait_for = recording_wait_for
     try:
-        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+        result = asyncio.run(_run_agent_with_saved_paths(state, RecordingLlm()))
     finally:
         module.ChatPromptTemplate = original_factory
         module.asyncio.wait_for = original_wait_for
@@ -2394,7 +2414,7 @@ def test_run_course_knowledge_agent_empty_course_id_generates_current_course_onl
     module.ChatPromptTemplate = PromptFactory
     module.asyncio.wait_for = recording_wait_for
     try:
-        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+        result = asyncio.run(_run_agent_with_saved_paths(state, RecordingLlm()))
     finally:
         module.ChatPromptTemplate = original_factory
         module.asyncio.wait_for = original_wait_for
@@ -2436,7 +2456,7 @@ def test_run_course_knowledge_agent_rejects_incomplete_basic_profile(
         session.commit()
 
     result = asyncio.run(
-        run_course_knowledge_agent(
+        _run_agent_with_saved_paths(
             {
                 "user_id": "user-1",
                 "profile": {"type": "basic_profile", "summary_text": "旧画像摘要"},
@@ -2548,7 +2568,7 @@ def test_run_course_knowledge_agent_returns_hard_error_after_json_output_failure
 
     original_prompt.ChatPromptTemplate = PromptFactory
     try:
-        result = asyncio.run(run_course_knowledge_agent(state, ExplodingLlm()))
+        result = asyncio.run(_run_agent_with_saved_paths(state, ExplodingLlm()))
     finally:
         original_prompt.ChatPromptTemplate = original_factory
 
@@ -2640,7 +2660,7 @@ def test_run_course_knowledge_agent_does_not_repair_invalid_naming_output(
 
     module.ChatPromptTemplate = PromptFactory
     try:
-        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+        result = asyncio.run(_run_agent_with_saved_paths(state, RecordingLlm()))
     finally:
         module.ChatPromptTemplate = original_factory
 
@@ -2741,7 +2761,7 @@ def test_run_course_knowledge_agent_returns_hard_error_after_invalid_naming(
 
     module.ChatPromptTemplate = PromptFactory
     try:
-        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+        result = asyncio.run(_run_agent_with_saved_paths(state, RecordingLlm()))
     finally:
         module.ChatPromptTemplate = original_factory
 
@@ -2819,7 +2839,7 @@ def test_run_course_knowledge_agent_returns_hard_error_after_timeout(
     module.ChatPromptTemplate = PromptFactory
     module.COURSE_OUTLINE_NAMING_TIMEOUT_SECONDS = 0.01
     try:
-        result = asyncio.run(run_course_knowledge_agent(state, HangingLlm()))
+        result = asyncio.run(_run_agent_with_saved_paths(state, HangingLlm()))
     finally:
         module.ChatPromptTemplate = original_factory
         module.COURSE_OUTLINE_NAMING_TIMEOUT_SECONDS = original_timeout
@@ -2940,7 +2960,7 @@ def test_run_course_knowledge_agent_normalizes_partial_json_outline(
     module.ChatPromptTemplate = PromptFactory
     try:
         result = asyncio.run(
-            run_course_knowledge_agent(
+            _run_agent_with_saved_paths(
                 {
                     "user_id": "user-1",
                     "profile": _complete_profile(
@@ -3188,7 +3208,7 @@ def test_run_course_knowledge_agent_uses_llm_even_when_textbook_mapped(
 
     module.ChatPromptTemplate = PromptFactory
     try:
-        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+        result = asyncio.run(_run_agent_with_saved_paths(state, RecordingLlm()))
     finally:
         module.ChatPromptTemplate = original_factory
 
@@ -3349,7 +3369,7 @@ def test_run_course_knowledge_agent_fallback_title_mapping(
 
     module.ChatPromptTemplate = PromptFactory
     try:
-        result = asyncio.run(run_course_knowledge_agent(state, RecordingLlm()))
+        result = asyncio.run(_run_agent_with_saved_paths(state, RecordingLlm()))
     finally:
         module.ChatPromptTemplate = original_factory
 

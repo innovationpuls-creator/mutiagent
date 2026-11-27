@@ -9,11 +9,11 @@ import {
 import type React from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AiWidgetProvider } from "../../context/AiWidgetContext";
+import { AiWidgetProvider } from "../../contexts/AiWidgetContext";
 import { AuthProvider } from "../../contexts/AuthContext";
 import { BranchPage } from "./BranchPage";
 
-vi.mock("../../context/AiWidgetContext", () => ({
+vi.mock("../../contexts/AiWidgetContext", () => ({
 	useAiWidget: () => ({
 		setWidgetState: vi.fn(),
 		openWithMessage: vi.fn(),

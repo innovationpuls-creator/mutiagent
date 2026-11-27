@@ -178,6 +178,10 @@ class ChapterQuizAttempt(SQLModel, table=True):
     quiz_id: str = Field(foreign_key="chapterquiz.quiz_id", index=True, max_length=64)
     user_uid: str = Field(foreign_key="user.uid", index=True)
     answers: dict = Field(default_factory=dict, sa_column=Column(_jsonb))
+    quiz_version: str | None = Field(default=None, max_length=64)
+    recovery_snapshot: dict | None = Field(
+        default=None, sa_column=Column(_jsonb, nullable=True)
+    )
     score: int = Field(default=0)
     passed: bool = Field(default=False, index=True)
     grading_result: dict = Field(default_factory=dict, sa_column=Column(_jsonb))

@@ -20,16 +20,6 @@ export interface AuthPageProps {
 	authApi?: AuthApi;
 }
 
-const SPROUT_INIT_OVERLAY_KEY = "mutiagent-sprout-init-overlay";
-
-function rememberSproutInitOverlay() {
-	try {
-		window.sessionStorage.setItem(SPROUT_INIT_OVERLAY_KEY, "1");
-	} catch {
-		/* Storage availability must not block the authenticated route transition. */
-	}
-}
-
 function routeForAuthResult(authResult: AuthResponse): string {
 	if (authResult.user.role === "admin") return "/admin/programs";
 	return "/sprout";
@@ -55,12 +45,11 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
 			const authResult = await action();
 			setResult(authResult);
 			auth.login(authResult);
-			rememberSproutInitOverlay();
-			setTimeout(() => {
-				navigate(routeForAuthResult(authResult), {
-					state: { isFirstLogin: true },
-				});
-			}, 1500);
+			if (authResult.user.role === "admin") {
+				setTimeout(() => navigate(routeForAuthResult(authResult)), 1500);
+			} else {
+				navigate(routeForAuthResult(authResult), { replace: true });
+			}
 		} catch (authError) {
 			setError(authError instanceof Error ? authError.message : "登录失败");
 		} finally {
@@ -79,7 +68,7 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
 			exit={
 				reduceMotion
 					? { opacity: 0 }
-					: { opacity: 0, filter: "blur(10px)", transition: { duration: 0.4 } }
+					: { opacity: 0, transition: { duration: 0.4 } }
 			}
 		>
 			<MultiAgentHero />

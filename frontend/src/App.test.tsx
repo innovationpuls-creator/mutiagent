@@ -1,7 +1,7 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { Outlet } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App } from "./App";
+import { App, createAppRouter } from "./App";
 import { AUTH_INVALID_EVENT } from "./api/http";
 import { AuthProvider } from "./contexts/AuthContext";
 import type { AuthRole } from "./types/auth";
@@ -47,7 +47,11 @@ vi.mock("./components/layout/MainLayout", () => ({
 	),
 }));
 
+const routers: ReturnType<typeof createAppRouter>[] = [];
 afterEach(() => {
+	routers.splice(0).forEach((router) => {
+		router.dispose();
+	});
 	cleanup();
 	vi.unstubAllGlobals();
 	vi.unstubAllEnvs();
@@ -80,9 +84,20 @@ function stubStoredAuth(enabled: boolean, role: AuthRole = "student") {
 }
 
 function renderApp() {
+	const NativeRequest = globalThis.Request;
+	vi.stubGlobal(
+		"Request",
+		class extends NativeRequest {
+			constructor(input: RequestInfo | URL, init?: RequestInit) {
+				super(input, { ...init, signal: undefined });
+			}
+		},
+	);
+	const router = createAppRouter();
+	routers.push(router);
 	return render(
 		<AuthProvider>
-			<App />
+			<App router={router} />
 		</AuthProvider>,
 	);
 }

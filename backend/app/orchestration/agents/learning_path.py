@@ -184,9 +184,12 @@ def _persist_learning_path(
     try:
         with Session(get_engine()) as db_session:
             upsert_year_learning_path(
-                db_session, user_id, grade_year, learning_topic, path_dict
+                db_session, user_id, grade_year, learning_topic, path_dict, commit=False
             )
-            delete_user_course_outlines_by_grade_year(db_session, user_id, grade_year)
+            delete_user_course_outlines_by_grade_year(
+                db_session, user_id, grade_year, commit=False
+            )
+            db_session.commit()
         logger.info("LearningPath persisted for user %s, year %s", user_id, grade_year)
     except Exception as exc:
         logger.error("Failed to persist learning_path for user %s: %s", user_id, exc)

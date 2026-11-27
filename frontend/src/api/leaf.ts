@@ -236,6 +236,9 @@ export async function fetchLeafCourse(
 
 	return {
 		access_state: payload.access_state,
+		chapter_progress: Array.isArray(payload.chapter_progress)
+			? (payload.chapter_progress as import("../types/leaf").LeafChapterProgress[])
+			: [],
 		course: normalizeCourse(payload.course),
 		outline: isRecord(payload.outline) ? payload.outline : null,
 		sections: payload.sections.map(normalizeSection),

@@ -1,15 +1,16 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { lazy, Suspense } from "react";
 import {
-	BrowserRouter,
+	createBrowserRouter,
 	Navigate,
 	Outlet,
 	Route,
+	RouterProvider,
 	Routes,
 	useLocation,
 } from "react-router-dom";
 import { IcpFilingLink } from "./components/layout/IcpFilingLink";
-import { AiWidgetProvider } from "./context/AiWidgetContext";
+import { AiWidgetProvider } from "./contexts/AiWidgetContext";
 import { useAuth } from "./contexts/AuthContext";
 import type { AuthRole } from "./types/auth";
 
@@ -18,10 +19,10 @@ const AuthPage = lazy(() =>
 		default: Component,
 	})),
 );
-const BlankPage = lazy(() =>
-	import("./components/home/BlankPage").then(({ BlankPage: Component }) => ({
-		default: Component,
-	})),
+const StudentCoursesPage = lazy(() =>
+	import("./pages/StudentCoursesPage").then(
+		({ StudentCoursesPage: Component }) => ({ default: Component }),
+	),
 );
 const AdminLayout = lazy(() =>
 	import("./components/layout/AdminLayout").then(
@@ -209,9 +210,15 @@ function AnimatedRoutes() {
 								<Route element={<MainLayout />}>
 									<Route path="/sprout" element={<SproutPage />} />
 									<Route path="/branch" element={<BranchPage />} />
-									<Route path="/leaf" element={<BranchPage />} />
+									<Route
+										path="/leaf"
+										element={<StudentCoursesPage mode="learn" />}
+									/>
 									<Route path="/leaf/:courseNodeId" element={<LeafPage />} />
-									<Route path="/forest" element={<BlankPage title="成林" />} />
+									<Route
+										path="/forest"
+										element={<StudentCoursesPage mode="quiz" />}
+									/>
 									<Route
 										path="/forest/:courseNodeId"
 										element={<ForestQuizPage />}
@@ -247,16 +254,42 @@ function AppGlobalAiWidget() {
 	);
 }
 
-export function App() {
+function AppFilingLink() {
+	const { pathname } = useLocation();
+	if (/^\/(sprout|branch|leaf|forest|canopy|canvas)(\/|$)/.test(pathname))
+		return null;
+	return <IcpFilingLink />;
+}
+
+function AppContent() {
 	return (
-		<BrowserRouter
-			future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-		>
-			<AiWidgetProvider>
-				<AnimatedRoutes />
-				<AppGlobalAiWidget />
-				<IcpFilingLink />
-			</AiWidgetProvider>
-		</BrowserRouter>
+		<AiWidgetProvider>
+			<AnimatedRoutes />
+			<AppGlobalAiWidget />
+			<AppFilingLink />
+		</AiWidgetProvider>
+	);
+}
+export function createAppRouter() {
+	return createBrowserRouter([{ path: "*", element: <AppContent /> }], {
+		future: { v7_relativeSplatPath: true },
+	});
+}
+let browserRouter: ReturnType<typeof createAppRouter> | null = null;
+export function App({
+	router,
+}: {
+	router?: ReturnType<typeof createAppRouter>;
+} = {}) {
+	let activeRouter = router;
+	if (!activeRouter) {
+		browserRouter ??= createAppRouter();
+		activeRouter = browserRouter;
+	}
+	return (
+		<RouterProvider
+			router={activeRouter}
+			future={{ v7_startTransition: true }}
+		/>
 	);
 }

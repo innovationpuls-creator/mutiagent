@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AiWidgetProvider } from "../../context/AiWidgetContext";
+import { AiWidgetProvider } from "../../contexts/AiWidgetContext";
 import { AuthProvider } from "../../contexts/AuthContext";
 import { SproutHero } from "./SproutHero";
 
@@ -73,7 +73,7 @@ function renderSproutHero() {
 								</>
 							}
 						/>
-						<Route path="/branch" element={<LocationProbe />} />
+						<Route path="/leaf/:courseNodeId" element={<LocationProbe />} />
 					</Routes>
 				</MemoryRouter>
 			</AiWidgetProvider>
@@ -82,7 +82,7 @@ function renderSproutHero() {
 }
 
 describe("SproutHero", () => {
-	it("navigates to /branch when start learning is available", async () => {
+	it("navigates directly to the current course when start learning is available", async () => {
 		fetchProfileDashboardMock.mockResolvedValue({
 			profile: {
 				currentGrade: "大四",
@@ -155,9 +155,11 @@ describe("SproutHero", () => {
 			expect(screen.getByText("最新路径课程")).toBeTruthy();
 		});
 
-		fireEvent.click(screen.getByRole("button", { name: "开始学习" }));
+		fireEvent.click(screen.getByRole("button", { name: "继续学习" }));
 
-		expect(screen.getByTestId("current-path").textContent).toBe("/branch");
+		expect(screen.getByTestId("current-path").textContent).toBe(
+			"/leaf/year_4_course_1",
+		);
 	});
 
 	it("does not expose a start-learning button when the current course is already completed", async () => {
@@ -233,7 +235,7 @@ describe("SproutHero", () => {
 			expect(screen.getByText("AI Agent 项目实战")).toBeTruthy();
 		});
 
-		expect(screen.queryByRole("button", { name: "开始学习" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "继续学习" })).toBeNull();
 		expect(
 			screen.getByRole("button", { name: "打开今日学习详情" }),
 		).toBeTruthy();

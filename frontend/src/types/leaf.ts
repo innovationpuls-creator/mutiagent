@@ -84,7 +84,15 @@ export interface LeafSectionResourceError {
 	updated_at: string;
 }
 
+export interface LeafChapterProgress {
+	chapter_id: string;
+	state: "locked" | "available" | "passed";
+	best_score: number;
+	latest_attempt_id: string | null;
+}
+
 export interface LeafCourseResponse {
+	chapter_progress?: LeafChapterProgress[];
 	access_state: LeafAccessState;
 	course: LeafCourse;
 	outline: Record<string, unknown> | null;

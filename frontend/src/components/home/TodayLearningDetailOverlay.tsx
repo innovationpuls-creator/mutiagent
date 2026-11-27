@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from "framer-motion";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { motionTokens } from "../../styles/motion-tokens";
 import type { TodayLearning } from "../../types/profile";
 import {
@@ -12,6 +12,7 @@ import {
 	getSectionHeading,
 	getSectionLabel,
 } from "../learning/courseKnowledgeHelpers";
+import { useDialogAccessibility } from "../ui/useDialogAccessibility";
 import "./TodayLearningDetailOverlay.css";
 
 interface TodayLearningDetailOverlayProps {
@@ -76,15 +77,15 @@ export function TodayLearningDetailOverlay({
 	onClose,
 	data,
 }: TodayLearningDetailOverlayProps) {
+	const closeRef = useRef<HTMLButtonElement>(null);
+	useDialogAccessibility({ isOpen, onClose, initialFocusRef: closeRef });
 	const reduceMotion = useReducedMotion();
 
 	useEffect(() => {
 		if (isOpen) {
-			document.body.style.overflow = "hidden";
 			document.documentElement.setAttribute("data-overlay-open", "true");
 		}
 		return () => {
-			document.body.style.overflow = "";
 			document.documentElement.removeAttribute("data-overlay-open");
 		};
 	}, [isOpen]);
@@ -127,7 +128,12 @@ export function TodayLearningDetailOverlay({
 			>
 				<header className="today-detail-header">
 					<span>今日推荐 · 当前课程</span>
-					<button type="button" onClick={onClose} aria-label="关闭今日学习详情">
+					<button
+						ref={closeRef}
+						type="button"
+						onClick={onClose}
+						aria-label="关闭今日学习详情"
+					>
 						✕
 					</button>
 				</header>

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -20,8 +22,17 @@ from app.services.learning_path_service import (
     get_all_year_learning_paths,
     get_grade_courses,
 )
+from app.services.student_lock import lock_student
 
 PASSING_SCORE = 70
+
+
+def quiz_version(questions: list) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            questions, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        ).encode()
+    ).hexdigest()
 
 
 def _clean_text(value: object) -> str:
@@ -164,6 +175,7 @@ def _quiz_to_read(quiz: ChapterQuiz) -> ForestQuizRead:
             )
     return ForestQuizRead(
         quiz_id=quiz.quiz_id,
+        quiz_version=quiz_version(quiz.questions),
         course_node_id=quiz.course_node_id,
         chapter_id=quiz.chapter_id,
         status=quiz.status,
@@ -179,6 +191,7 @@ def _attempt_to_read(attempt: ChapterQuizAttempt | None) -> ForestAttemptRead | 
         return None
     return ForestAttemptRead(
         attempt_id=attempt.attempt_id,
+        quiz_version=attempt.quiz_version,
         quiz_id=attempt.quiz_id,
         score=attempt.score,
         passed=attempt.passed,
@@ -204,8 +217,7 @@ def _ensure_progress(
             state=initial_state,
         )
         session.add(progress)
-        session.commit()
-        session.refresh(progress)
+        session.flush()
     return progress
 
 
@@ -303,18 +315,39 @@ def _course_to_read_dict(course_node_id: str, grade_year: str, course: dict) -> 
     }
 
 
+def _chapter_context(outline: dict, chapter_id: str) -> dict | None:
+    chapter = next(
+        (
+            item
+            for item in _top_level_sections(outline)
+            if item.get("section_id") == chapter_id
+        ),
+        None,
+    )
+    if chapter is None:
+        return None
+    for key in ("section_composed_markdowns", "section_markdowns"):
+        markdowns = outline.get(key)
+        markdown = markdowns.get(chapter_id) if isinstance(markdowns, dict) else None
+        if isinstance(markdown, dict) and markdown:
+            return {**chapter, "composed_markdown": markdown}
+    return chapter
+
+
 def read_forest_quiz_session(
     session: Session,
     user_uid: str,
     course_node_id: str,
     chapter_id: str,
 ) -> ForestQuizSessionReadResponse:
-    year_paths = get_all_year_learning_paths(session, user_uid)
-    found = _find_course(year_paths, course_node_id)
-    if found is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="课程不存在")
+    from app.services.leaf_service import read_leaf_course
 
-    grade_year, _path_data, course = found
+    lock_student(session, user_uid)
+    leaf = read_leaf_course(session, user_uid, course_node_id)
+    if leaf.access_state == "locked":
+        raise HTTPException(status_code=403, detail="课程尚未解锁")
+    grade_year = leaf.course.grade_id
+    course = leaf.course.model_dump()
     outline = get_user_course_knowledge_outline(session, user_uid, course_node_id)
     if not isinstance(outline, dict):
         raise HTTPException(
@@ -322,24 +355,9 @@ def read_forest_quiz_session(
         )
 
     chapters = _top_level_sections(outline)
-    chapter = next(
-        (item for item in chapters if item.get("section_id") == chapter_id), None
-    )
+    chapter = _chapter_context(outline, chapter_id)
     if chapter is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="章节不存在")
-
-    composed_markdowns = outline.get("section_composed_markdowns")
-    if not isinstance(composed_markdowns, dict):
-        composed_markdowns = {}
-    chapter_markdown_data = composed_markdowns.get(chapter_id)
-    if not chapter_markdown_data:
-        markdowns = outline.get("section_markdowns")
-        if not isinstance(markdowns, dict):
-            markdowns = {}
-        chapter_markdown_data = markdowns.get(chapter_id)
-
-    if isinstance(chapter_markdown_data, dict):
-        chapter = {**chapter, "composed_markdown": chapter_markdown_data}
+        raise HTTPException(status_code=404, detail="章节不存在")
 
     available = _chapter_is_available(
         session, user_uid, course_node_id, chapter_id, chapters
@@ -355,9 +373,9 @@ def read_forest_quiz_session(
         progress.state = "available"
         progress.updated_at = datetime.now(timezone.utc)
         session.add(progress)
-        session.commit()
-        session.refresh(progress)
 
+    session.commit()
+    session.refresh(progress)
     quiz = _read_quiz(session, user_uid, course_node_id, chapter_id)
     latest_attempt = (
         _latest_attempt(session, user_uid, quiz.quiz_id) if quiz is not None else None
@@ -382,7 +400,34 @@ def generate_or_read_quiz(
     questions: list[dict],
     *,
     regenerate: bool,
+    expected_chapter: dict | None = None,
 ) -> ForestQuizRead:
+    quiz_session = read_forest_quiz_session(
+        session, user_uid, course_node_id, chapter_id
+    )
+    if quiz_session.progress.state == "locked":
+        raise HTTPException(status_code=403, detail="章节尚未解锁")
+    lock_student(session, user_uid)
+    from app.services.leaf_service import read_leaf_course
+
+    leaf = read_leaf_course(session, user_uid, course_node_id)
+    current_chapter = _chapter_context(leaf.outline or {}, chapter_id)
+    if (
+        leaf.access_state == "locked"
+        or current_chapter is None
+        or (expected_chapter is not None and current_chapter != expected_chapter)
+    ):
+        raise HTTPException(
+            status_code=409, detail="课程或章节内容已更新，请重新生成测验"
+        )
+    if not _chapter_is_available(
+        session,
+        user_uid,
+        course_node_id,
+        chapter_id,
+        _top_level_sections(leaf.outline or {}),
+    ):
+        raise HTTPException(status_code=403, detail="章节尚未解锁")
     existing = _read_quiz(session, user_uid, course_node_id, chapter_id)
     if existing is not None and existing.status == "ready" and not regenerate:
         return _quiz_to_read(existing)
@@ -580,7 +625,11 @@ def submit_quiz_attempt(
     grading_result: dict,
     *,
     questions_snapshot: list[dict] | None = None,
+    attempt_id: str | None = None,
+    version: str | None = None,
+    commit: bool = True,
 ) -> tuple[ForestAttemptRead, list[ChapterWeakness]]:
+    lock_student(session, user_uid)
     quiz = session.get(ChapterQuiz, quiz_id)
     if quiz is None or quiz.user_uid != user_uid:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="测验不存在")
@@ -588,7 +637,8 @@ def submit_quiz_attempt(
     score = int(grading_result.get("score", 0))
     passed = score > PASSING_SCORE
     attempt = ChapterQuizAttempt(
-        attempt_id=make_id("attempt"),
+        attempt_id=attempt_id or make_id("attempt"),
+        quiz_version=version,
         quiz_id=quiz.quiz_id,
         user_uid=user_uid,
         answers=answers,
@@ -617,9 +667,10 @@ def submit_quiz_attempt(
     current_progress.latest_attempt_id = attempt.attempt_id
     current_progress.updated_at = now
 
+    first_pass = passed and current_progress.state != "passed"
     if passed:
         current_progress.state = "passed"
-        current_progress.passed_at = now
+        current_progress.passed_at = current_progress.passed_at or now
         grade_year, chapter_ids = _chapter_ids_for_course(
             session, user_uid, quiz.course_node_id
         )
@@ -628,15 +679,25 @@ def submit_quiz_attempt(
             next_progress = _ensure_progress(
                 session, user_uid, quiz.course_node_id, next_chapter_id, "available"
             )
-            next_progress.state = "available"
+            if next_progress.state != "passed":
+                next_progress.state = "available"
             next_progress.updated_at = now
             session.add(next_progress)
-        elif grade_year:
-            advance_current_learning_course(session, user_uid, grade_year, score)
+        elif grade_year and first_pass:
+            advance_current_learning_course(
+                session,
+                user_uid,
+                grade_year,
+                score,
+                expected_course_id=quiz.course_node_id,
+                commit=False,
+            )
 
     session.add(current_progress)
-    session.commit()
-    session.refresh(attempt)
+    session.flush()
+    if commit:
+        session.commit()
+        session.refresh(attempt)
     return _attempt_to_read(attempt), weaknesses  # type: ignore[return-value]
 
 

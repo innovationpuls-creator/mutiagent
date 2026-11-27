@@ -18,7 +18,7 @@ vi.mock("react-router-dom", async () => {
 	};
 });
 
-vi.mock("../../../context/AiWidgetContext", () => ({
+vi.mock("../../../contexts/AiWidgetContext", () => ({
 	useAiWidget: () => ({
 		setWidgetState: mockSetWidgetState,
 		openWithDraft: mockOpenWithDraft,

@@ -4981,7 +4981,7 @@ def test_persist_outline_consumes_weaknesses(tmp_path: Path) -> None:
 
     from sqlmodel import SQLModel
 
-    from app.models import ChapterWeakness
+    from app.models import ChapterWeakness, UserCourseKnowledgeOutline
     from app.orchestration.agents.course_resources import _persist_outline
 
     database_url = postgresql_test_url(tmp_path, "weakness-consume-test")
@@ -4999,6 +4999,19 @@ def test_persist_outline_consumes_weaknesses(tmp_path: Path) -> None:
         )
         session.add(user)
         session.commit()
+
+        session.add(
+            UserCourseKnowledgeOutline(
+                user_uid=user_uid,
+                course_id="year_3_course_1",
+                grade_year="year_3",
+                course_name="测试课程",
+                outline_data={
+                    "course_id": "year_3_course_1",
+                    "sections": [],
+                },
+            )
+        )
 
         w1 = ChapterWeakness(
             weakness_id="w1",

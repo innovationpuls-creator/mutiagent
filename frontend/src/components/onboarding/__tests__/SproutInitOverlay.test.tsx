@@ -4,7 +4,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import {
 	AiWidgetProvider,
 	useAiWidget,
-} from "../../../context/AiWidgetContext";
+} from "../../../contexts/AiWidgetContext";
 import { SproutInitOverlay } from "../SproutInitOverlay";
 
 let reduceMotionValue = false;

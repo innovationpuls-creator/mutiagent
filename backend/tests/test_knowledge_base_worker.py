@@ -3,8 +3,10 @@ from __future__ import annotations
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
+from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.models import KnowledgeBaseIngestionJob, Textbook
@@ -285,9 +287,18 @@ def test_claim_marks_exhausted_expired_job_failed(tmp_path: Path) -> None:
         stored_job = session.get(KnowledgeBaseIngestionJob, job.job_id)
         stored_textbook = session.get(Textbook, "textbook-worker")
 
+    with engine.connect() as connection:
+        db_timezone = connection.execute(text("SHOW TIME ZONE")).scalar_one()
+    try:
+        expected_finished_at = now.astimezone(ZoneInfo(str(db_timezone))).replace(
+            tzinfo=None
+        )
+    except Exception:
+        expected_finished_at = now.astimezone().replace(tzinfo=None)
+
     assert claimed is None
     assert stored_job is not None
     assert stored_job.status == "failed"
-    assert stored_job.finished_at == now.astimezone().replace(tzinfo=None)
+    assert stored_job.finished_at == expected_finished_at
     assert stored_textbook is not None
     assert stored_textbook.ingestion_status == "failed"

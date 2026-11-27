@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import React from "react";
 import { afterEach, expect, test, vi } from "vitest";
-import { AiWidgetProvider, useAiWidget } from "../../context/AiWidgetContext";
+import { AiWidgetProvider, useAiWidget } from "../../contexts/AiWidgetContext";
 import { AuthProvider, useAuth } from "../../contexts/AuthContext";
 import { GlobalAiWidget } from "./GlobalAiWidget";
 

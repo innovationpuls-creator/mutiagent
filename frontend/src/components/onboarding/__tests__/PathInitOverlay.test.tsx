@@ -55,7 +55,7 @@ vi.mock("framer-motion", () => {
 	};
 });
 
-vi.mock("../../../context/AiWidgetContext", () => ({
+vi.mock("../../../contexts/AiWidgetContext", () => ({
 	useAiWidget: () => ({
 		setWidgetState: vi.fn(),
 		openWithDraft: openWithDraftMock,

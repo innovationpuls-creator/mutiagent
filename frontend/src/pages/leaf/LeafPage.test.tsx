@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AiWidgetProvider } from "../../context/AiWidgetContext";
+import { AiWidgetProvider } from "../../contexts/AiWidgetContext";
 import { AuthProvider } from "../../contexts/AuthContext";
 import { LeafPage } from "./LeafPage";
 
@@ -18,10 +18,10 @@ vi.mock("../../api/leaf", () => ({
 	fetchLeafCourse: (...args: unknown[]) => fetchLeafCourseMock(...args),
 }));
 
-vi.mock("../../context/AiWidgetContext", async () => {
+vi.mock("../../contexts/AiWidgetContext", async () => {
 	const actual = await vi.importActual<
-		typeof import("../../context/AiWidgetContext")
-	>("../../context/AiWidgetContext");
+		typeof import("../../contexts/AiWidgetContext")
+	>("../../contexts/AiWidgetContext");
 	return {
 		...actual,
 		useAiWidget: () => ({

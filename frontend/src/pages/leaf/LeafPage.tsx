@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { useParams, useSearchParams } from "react-router-dom";
 import { fetchLeafCourse } from "../../api/leaf";
-import { useAiWidget } from "../../context/AiWidgetContext";
+import { useAiWidget } from "../../contexts/AiWidgetContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { motionTokens } from "../../styles/motion-tokens";
 import type {
@@ -142,10 +142,18 @@ function getGenerationSection(
 export function LeafPage() {
 	const { courseNodeId } = useParams<{ courseNodeId: string }>();
 	const [searchParams, setSearchParams] = useSearchParams();
-	const { token } = useAuth();
+	const { token, user } = useAuth();
 	const { openWithDraft } = useAiWidget();
 	const reduceMotion = useReducedMotion();
 	const sectionIdFromUrl = searchParams.get("section_id");
+	const readingKey = `onetree:reading:${user?.uid}:${courseNodeId}`;
+	const rememberedSection = (() => {
+		try {
+			return localStorage.getItem(readingKey);
+		} catch {
+			return null;
+		}
+	})();
 
 	const [status, setStatus] = useState<LeafPageStatus>("idle");
 	const [response, setResponse] = useState<LeafCourseResponse | null>(null);
@@ -203,7 +211,7 @@ export function LeafPage() {
 			if (!nextResponse) return;
 			const nextSelectedSectionId = resolveSelectedSectionId(
 				nextResponse,
-				sectionIdFromUrl,
+				sectionIdFromUrl ?? rememberedSection,
 			);
 			if (
 				!nextSelectedSectionId ||
@@ -218,12 +226,34 @@ export function LeafPage() {
 				window.setTimeout(resolve, LEAF_GENERATION_REFRESH_RETRY_MS);
 			});
 		}
-	}, [loadLeafCourse, sectionIdFromUrl]);
+	}, [loadLeafCourse, sectionIdFromUrl, rememberedSection]);
 
 	useEffect(() => {
 		if (!response) return;
-		setSelectedSectionId(resolveSelectedSectionId(response, sectionIdFromUrl));
-	}, [response, sectionIdFromUrl]);
+		const validUrl = response.sections.some(
+			(section) => section.section_id === sectionIdFromUrl,
+		);
+		setSelectedSectionId(
+			resolveSelectedSectionId(
+				response,
+				validUrl ? sectionIdFromUrl : rememberedSection,
+			),
+		);
+	}, [response, sectionIdFromUrl, rememberedSection]);
+
+	useEffect(() => {
+		if (
+			!user ||
+			!selectedSectionId ||
+			!response?.sections.some((s) => s.section_id === selectedSectionId)
+		)
+			return;
+		try {
+			localStorage.setItem(readingKey, selectedSectionId);
+		} catch {
+			/* Reading remains available without local storage. */
+		}
+	}, [user, response, selectedSectionId, readingKey]);
 
 	useEffect(() => {
 		const handleGenerationEvent = (event: Event) => {

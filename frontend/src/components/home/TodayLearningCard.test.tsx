@@ -154,7 +154,7 @@ describe("TodayLearningCard", () => {
 			/>,
 		);
 
-		fireEvent.click(screen.getAllByRole("button", { name: "开始学习" })[0]);
+		fireEvent.click(screen.getAllByRole("button", { name: "继续学习" })[0]);
 
 		expect(onStartLearning).toHaveBeenCalledTimes(1);
 		expect(onClick).toHaveBeenCalledTimes(0);
@@ -163,6 +163,6 @@ describe("TodayLearningCard", () => {
 	it("does not render a start button when no start action is available", () => {
 		render(<TodayLearningCard data={todayLearning} />);
 
-		expect(screen.queryByRole("button", { name: "开始学习" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "继续学习" })).toBeNull();
 	});
 });

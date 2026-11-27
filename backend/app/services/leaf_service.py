@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import HTTPException, status
 from sqlmodel import Session
 
-from app.models import User
+from app.models import ChapterProgress, User
 from app.schemas import LeafCourseRead, LeafCourseReadResponse, LeafGenerationStatusRead
 from app.services.course_generation_status_service import get_course_generation_status
 from app.services.course_knowledge_service import get_user_course_knowledge_outline
@@ -191,8 +191,37 @@ def read_leaf_course(
         else None
     )
 
+    from app.services.forest_service import _chapter_is_available, _top_level_sections
+
+    chapters = _top_level_sections(outline or {})
     return LeafCourseReadResponse(
         access_state="available",
+        chapter_progress=[
+            {
+                "chapter_id": chapter["section_id"],
+                "state": progress.state
+                if progress
+                else (
+                    "available"
+                    if _chapter_is_available(
+                        session,
+                        user_uid,
+                        course_node_id,
+                        chapter["section_id"],
+                        chapters,
+                    )
+                    else "locked"
+                ),
+                "best_score": progress.best_score if progress else 0,
+                "latest_attempt_id": progress.latest_attempt_id if progress else None,
+            }
+            for chapter in chapters
+            for progress in [
+                session.get(
+                    ChapterProgress, (user_uid, course_node_id, chapter["section_id"])
+                )
+            ]
+        ],
         course=leaf_course,
         outline=outline,
         sections=sections,

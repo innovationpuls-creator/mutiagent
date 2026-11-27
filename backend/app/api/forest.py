@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncGenerator, Callable, Generator
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -9,7 +10,7 @@ from sqlmodel import Session
 
 from app.core.security import create_get_current_user
 from app.database import run_db, session_factory_from_session
-from app.models import ChapterQuiz, User
+from app.models import User
 from app.orchestration.agents.quiz import (
     generate_quiz_questions,
     grade_quiz_answers,
@@ -23,17 +24,17 @@ from app.schemas import (
     ForestQuizGenerateRequest,
     ForestQuizRead,
     ForestQuizSessionReadResponse,
+    ForestSubmissionRead,
 )
 from app.services.forest_service import (
-    _chapter_ids_for_course,
-    _next_chapter_id,
     generate_or_read_quiz,
     read_forest_quiz_session,
-    submit_quiz_attempt,
 )
-from app.services.learning_path_service import (
-    get_canopy_overview,
-    get_year_learning_path,
+from app.services.forest_submission_service import (
+    existing_submission,
+    persist_submission,
+    prepare_submission,
+    read_submission,
 )
 
 SessionDependency = Callable[[], Generator[Session, None, None]]
@@ -76,34 +77,6 @@ async def _stream_forest_ai_events(
         yield _sse("forest_ai_completed", {"message": "completed"})
     except Exception as exc:
         yield _sse("forest_error", {"message": str(exc) or "Forest AI 暂时不可用"})
-
-
-def _owned_quiz(session: Session, quiz_id: str, uid: str) -> ChapterQuiz:
-    quiz = session.get(ChapterQuiz, quiz_id)
-    if quiz is None or quiz.user_uid != uid:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="测验不存在")
-    return quiz
-
-
-def _submit_attempt_snapshot(
-    session: Session,
-    uid: str,
-    quiz_id: str,
-    answers: dict,
-    grading_result: dict,
-    questions: list[dict],
-) -> tuple[ForestAttemptRead, list[dict]]:
-    attempt, weaknesses = submit_quiz_attempt(
-        session, uid, quiz_id, answers, grading_result, questions_snapshot=questions
-    )
-    return attempt, [
-        {
-            "knowledge_point_id": w.knowledge_point_id,
-            "knowledge_point_name": w.knowledge_point_name,
-            "severity": w.severity,
-        }
-        for w in weaknesses
-    ]
 
 
 def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  # noqa: C901
@@ -169,6 +142,7 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  #
             chapter_id,
             questions,
             regenerate=payload.regenerate,
+            expected_chapter=quiz_session.chapter,
         )
 
     @router.post("/quizzes/{quiz_id}/attempts", response_model=ForestAttemptRead)
@@ -179,23 +153,40 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  #
         session: Session = Depends(session_dependency),
     ) -> ForestAttemptRead:
         factory = session_factory_from_session(session)
-        quiz = await run_db(factory, _owned_quiz, quiz_id, current_user.uid)
-
-        grading_result = await grade_quiz_answers(
-            get_worker_llm(),
-            questions=quiz.questions,
-            answers=payload.answers,
+        existing = await run_db(
+            factory, existing_submission, current_user.uid, quiz_id, payload
         )
-        attempt, _weaknesses = await run_db(
+        if existing:
+            return ForestAttemptRead.model_validate(existing["attempt"])
+        questions, version = await run_db(
+            factory, prepare_submission, current_user.uid, quiz_id, payload
+        )
+        grading = await grade_quiz_answers(
+            get_worker_llm(), questions=questions, answers=payload.answers
+        )
+        result = await run_db(
             factory,
-            _submit_attempt_snapshot,
+            persist_submission,
             current_user.uid,
-            quiz.quiz_id,
-            payload.answers,
-            grading_result,
-            quiz.questions,
+            quiz_id,
+            payload,
+            questions,
+            version,
+            grading,
         )
-        return attempt
+        return ForestAttemptRead.model_validate(result["attempt"])
+
+    @router.get(
+        "/quizzes/{quiz_id}/submissions/{client_submission_id}",
+        response_model=ForestSubmissionRead,
+    )
+    def recover_submission(
+        quiz_id: str,
+        client_submission_id: UUID,
+        current_user: User = Depends(get_current_user),
+        session: Session = Depends(session_dependency),
+    ) -> dict:
+        return read_submission(session, current_user.uid, quiz_id, client_submission_id)
 
     @router.post("/quizzes/{quiz_id}/attempts/stream")
     async def submit_quiz_attempt_stream(
@@ -205,92 +196,54 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  #
         session: Session = Depends(session_dependency),
     ) -> StreamingResponse:
         factory = session_factory_from_session(session)
-        quiz = await run_db(factory, _owned_quiz, quiz_id, current_user.uid)
+        existing = await run_db(
+            factory, existing_submission, current_user.uid, quiz_id, payload
+        )
+        questions, version = (
+            ([], "")
+            if existing
+            else await run_db(
+                factory, prepare_submission, current_user.uid, quiz_id, payload
+            )
+        )
 
         async def event_generator() -> AsyncGenerator[str, None]:
             try:
+                if existing:
+                    yield _sse("done", existing)
+                    return
                 yield _sse(
-                    "status", {"phase": "grading", "message": "正在批改你的答案..."}
+                    "status", {"phase": "grading", "message": "正在批改你的答案…"}
                 )
-
-                grading_result = await grade_quiz_answers(
-                    get_worker_llm(),
-                    questions=quiz.questions,
-                    answers=payload.answers,
+                grading = await grade_quiz_answers(
+                    get_worker_llm(), questions=questions, answers=payload.answers
                 )
-
                 yield _sse(
-                    "status", {"phase": "analyzing", "message": "正在分析薄弱知识点..."}
+                    "status", {"phase": "analyzing", "message": "正在分析学习进度…"}
                 )
-
-                attempt, weakness_data = await run_db(
+                result = await run_db(
                     factory,
-                    _submit_attempt_snapshot,
+                    persist_submission,
                     current_user.uid,
-                    quiz.quiz_id,
-                    payload.answers,
-                    grading_result,
-                    quiz.questions,
+                    quiz_id,
+                    payload,
+                    questions,
+                    version,
+                    grading,
                 )
-
-                if weakness_data:
-                    yield _sse(
-                        "status",
-                        {
-                            "phase": "weakness_found",
-                            "message": f"发现 {len(weakness_data)} 个薄弱知识点",
-                            "weak_points": weakness_data,
-                        },
-                    )
-
+                yield _sse("done", result)
+            except Exception as exc:
                 yield _sse(
-                    "status", {"phase": "unlocking", "message": "正在解锁下一章节..."}
-                )
-
-                canopy = await run_db(factory, get_canopy_overview, current_user.uid)
-                grade_year, chapter_ids = await run_db(
-                    factory,
-                    _chapter_ids_for_course,
-                    current_user.uid,
-                    quiz.course_node_id,
-                )
-                next_chapter_id = _next_chapter_id(chapter_ids, quiz.chapter_id)
-
-                next_unlocked_chapter_id = next_chapter_id if attempt.passed else None
-                next_course_id = None
-                if attempt.passed and not next_chapter_id:
-                    updated_path = await run_db(
-                        factory, get_year_learning_path, current_user.uid, grade_year
-                    )
-                    if updated_path:
-                        current_course = updated_path.get("current_learning_course", {})
-                        if (
-                            current_course
-                            and current_course.get("course_node_id")
-                            != quiz.course_node_id
-                        ):
-                            next_course_id = current_course.get("course_node_id")
-
-                yield _sse(
-                    "done",
+                    "error",
                     {
-                        "attempt": {
-                            "attempt_id": attempt.attempt_id,
-                            "quiz_id": attempt.quiz_id,
-                            "score": attempt.score,
-                            "passed": attempt.passed,
-                            "answers": attempt.answers,
-                            "grading_result": attempt.grading_result,
-                            "created_at": attempt.created_at.isoformat(),
-                        },
-                        "weaknesses": weakness_data,
-                        "canopy_overview": canopy,
-                        "next_unlocked_chapter_id": next_unlocked_chapter_id,
-                        "next_course_id": next_course_id,
+                        "message": str(exc.detail)
+                        if isinstance(exc, HTTPException)
+                        else str(exc) or "测验提交失败",
+                        "status_code": exc.status_code
+                        if isinstance(exc, HTTPException)
+                        else 500,
                     },
                 )
-            except Exception as exc:
-                yield _sse("error", {"message": str(exc) or "测验提交失败"})
 
         return StreamingResponse(
             event_generator(),

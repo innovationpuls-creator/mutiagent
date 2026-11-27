@@ -1,533 +1,51 @@
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { PenTool } from "lucide-react";
+import { useReducedMotion } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
-	type ChangeEvent,
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
-import { useParams, useSearchParams } from "react-router-dom";
-import {
+	ForestSubmissionError,
 	fetchForestQuizSession,
+	fetchForestSubmission,
 	generateForestQuiz,
 	streamForestAi,
 	submitForestQuizAttemptStream,
 } from "../../api/forest";
 import { ForestQuizOverlay } from "../../components/forest/ForestQuizOverlay";
-import { MarkdownRenderer } from "../../components/markdown/MarkdownRenderer";
-import { MessageBubble } from "../../components/onboarding/MessageBubble";
-import { HandwritingCanvas } from "../../components/ui/HandwritingCanvas";
 import { useAuth } from "../../contexts/AuthContext";
-import { motionTokens } from "../../styles/motion-tokens";
+import { DraftNavigationGuard } from "../../lib/quizDraft/DraftNavigationGuard";
+import type { PendingSubmission, QuizDraft } from "../../lib/quizDraft/store";
+import { useQuizDraft } from "../../lib/quizDraft/useQuizDraft";
 import type {
-	ForestAiContext,
 	ForestAttempt,
 	ForestQuiz,
-	ForestQuizQuestion,
 	ForestQuizSession,
 	ForestSubmitStreamDonePayload,
 } from "../../types/forest";
+import {
+	buildAiContext,
+	EmptyForestState,
+	ForestAiPanel,
+	type ForestAiStatus,
+	type ForestAnswerDraft,
+	type ForestMessage,
+	type ForestPageStatus,
+	ForestQuestionPanel,
+	getAnswerValue,
+	initAnswers,
+	toAnswerRecord,
+} from "./ForestQuizPanels";
 import "./forest-quiz.css";
-
-interface ForestMessage {
-	id: string;
-	role: "user" | "assistant";
-	content: string;
-	imageAttachment?: string | null;
-}
-
-type ForestPageStatus = "idle" | "loading" | "ready" | "error";
-type ForestAiStatus = "idle" | "streaming" | "error";
-
-interface ForestAnswerDraft {
-	question_id: string;
-	value: unknown;
-}
-
-interface EmptyForestStateProps {
-	label: string;
-	title: string;
-	message: string;
-	ariaLabel: string;
-}
-
-interface ForestQuestionPanelProps {
-	session: ForestQuizSession;
-	quiz: ForestQuiz | null;
-	attempt: ForestAttempt | null;
-	selectedQuestion: ForestQuizQuestion | null;
-	selectedAnswer: unknown;
-	canSubmit: boolean;
-	isSubmitting: boolean;
-	isGenerating: boolean;
-	errorMessage: string | null;
-	reduceMotion: boolean;
-	onSelectQuestion(questionId: string): void;
-	onUpdateAnswer(questionId: string, value: unknown): void;
-	onGenerateQuiz(): void;
-	onSubmit(): void;
-}
-
-interface ForestQuestionCardProps {
-	question: ForestQuizQuestion;
-	selectedAnswer: unknown;
-	reduceMotion: boolean;
-	onUpdateAnswer(questionId: string, value: unknown): void;
-}
-
-interface ForestAiPanelProps {
-	quiz: ForestQuiz | null;
-	attempt: ForestAttempt | null;
-	selectedQuestion: ForestQuizQuestion | null;
-	aiStatus: ForestAiStatus;
-	messages: ForestMessage[];
-	reduceMotion: boolean;
-	onAskForestAi(customMessage?: string, attachment?: string | null): void;
-}
-
-function getAnswerValue(
-	answers: ForestAnswerDraft[],
-	questionId: string,
-): unknown {
-	return (
-		answers.find((answer) => answer.question_id === questionId)?.value ?? ""
-	);
-}
-
-function toAnswerRecord(answers: ForestAnswerDraft[]): Record<string, unknown> {
-	return answers.reduce<Record<string, unknown>>((record, answer) => {
-		if (typeof answer.value === "string" && answer.value.trim() === "")
-			return record;
-		return { ...record, [answer.question_id]: answer.value };
-	}, {});
-}
-
-function getQuestionResult(
-	attempt: ForestAttempt | null,
-	questionId: string | null,
-): Record<string, unknown> | null {
-	const questionResults = attempt?.grading_result.question_results;
-	if (!Array.isArray(questionResults) || !questionId) return null;
-	const result = questionResults.find(
-		(item) =>
-			item !== null &&
-			typeof item === "object" &&
-			"question_id" in item &&
-			item.question_id === questionId,
-	);
-	return result && typeof result === "object"
-		? (result as Record<string, unknown>)
-		: null;
-}
-
-function getResultText(attempt: ForestAttempt | null): string {
-	if (!attempt) return "提交后，Forest AI 会结合判题结果继续解析。";
-	const summary = attempt.grading_result.summary;
-	if (typeof summary === "string" && summary.trim()) return summary;
-	return attempt.passed ? "本次测验已通过。" : "本次测验还需要继续打磨。";
-}
-
-function getUploadedFileName(answer: unknown): string {
-	if (answer === null || typeof answer !== "object" || !("file_name" in answer))
-		return "";
-	const fileName = answer.file_name;
-	return typeof fileName === "string" ? fileName : "";
-}
-
-function readImageAnswer(file: File): Promise<Record<string, string>> {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = () => {
-			resolve({
-				file_name: file.name,
-				mime_type: file.type,
-				data_url: typeof reader.result === "string" ? reader.result : "",
-			});
-		};
-		reader.onerror = () => reject(new Error("图片读取失败"));
-		reader.readAsDataURL(file);
-	});
-}
-
-function buildAiContext(
-	courseNodeId: string,
-	chapterId: string,
-	quiz: ForestQuiz | null,
-	question: ForestQuizQuestion | null,
-	answer: unknown,
-	attempt: ForestAttempt | null,
-): ForestAiContext {
-	return {
-		course_node_id: courseNodeId,
-		chapter_id: chapterId,
-		quiz_id: quiz?.quiz_id ?? null,
-		question_id: question?.question_id ?? null,
-		question,
-		answer,
-		grading_result:
-			getQuestionResult(attempt, question?.question_id ?? null) ??
-			attempt?.grading_result ??
-			null,
-	};
-}
-
-function initAnswers(questions: ForestQuizQuestion[]): ForestAnswerDraft[] {
-	return questions
-		.filter((q) => q.type === "code" && q.starter_code)
-		.map((q) => ({ question_id: q.question_id, value: q.starter_code }));
-}
-
-function EmptyForestState({
-	label,
-	title,
-	message,
-	ariaLabel,
-}: EmptyForestStateProps) {
-	return (
-		<section className="forest-quiz-page" aria-label={ariaLabel}>
-			<div className="forest-ambient-sun" aria-hidden="true" />
-			<div className="forest-empty-state">
-				<span>{label}</span>
-				<h1>{title}</h1>
-				<p>{message}</p>
-			</div>
-		</section>
-	);
-}
-
-function ForestQuestionCard({
-	question,
-	selectedAnswer,
-	reduceMotion,
-	onUpdateAnswer,
-}: ForestQuestionCardProps) {
-	const handleImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
-		const file = event.target.files?.[0];
-		if (!file) return;
-		onUpdateAnswer(question.question_id, await readImageAnswer(file));
-	};
-	const uploadedFileName = getUploadedFileName(selectedAnswer);
-
-	return (
-		<motion.article
-			key={question.question_id}
-			className="forest-question-card"
-			initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
-			animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-			exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -12 }}
-			transition={motionTokens.lazy}
-		>
-			<div className="forest-question-meta">
-				<span>{question.type}</span>
-				<span>{question.points} 分</span>
-			</div>
-			<h2>{question.prompt}</h2>
-			{question.type === "single_choice" ? (
-				<div className="forest-options" role="radiogroup" aria-label="选择答案">
-					{question.options.map((option) => (
-						<label key={option.option_id} className="forest-option">
-							<input
-								type="radio"
-								name={question.question_id}
-								value={option.option_id}
-								checked={selectedAnswer === option.option_id}
-								onChange={() =>
-									onUpdateAnswer(question.question_id, option.option_id)
-								}
-							/>
-							<span>{option.text}</span>
-						</label>
-					))}
-				</div>
-			) : question.type === "image_upload" ? (
-				<label className="forest-upload-box">
-					<input
-						type="file"
-						accept="image/png,image/jpeg,image/webp"
-						onChange={handleImageChange}
-					/>
-					<span>
-						{uploadedFileName || question.image_prompt || "上传图片答案"}
-					</span>
-				</label>
-			) : (
-				<textarea
-					className="forest-answer-box"
-					value={typeof selectedAnswer === "string" ? selectedAnswer : ""}
-					onChange={(event) =>
-						onUpdateAnswer(question.question_id, event.target.value)
-					}
-					placeholder={
-						question.type === "code"
-							? question.starter_code
-							: question.image_prompt
-					}
-				/>
-			)}
-		</motion.article>
-	);
-}
-
-function ForestQuestionPanel({
-	session,
-	quiz,
-	attempt,
-	selectedQuestion,
-	selectedAnswer,
-	canSubmit,
-	isSubmitting,
-	isGenerating,
-	errorMessage,
-	reduceMotion,
-	onSelectQuestion,
-	onUpdateAnswer,
-	onGenerateQuiz,
-	onSubmit,
-}: ForestQuestionPanelProps) {
-	return (
-		<motion.div
-			className="forest-question-panel"
-			initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 16 }}
-			animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-			transition={motionTokens.editorial}
-		>
-			<header className="forest-panel-header">
-				<span>{"// quiz"}</span>
-				<h1>{session.chapter.title}</h1>
-				<p>{session.course.course_or_chapter_theme}</p>
-			</header>
-
-			{quiz ? (
-				<>
-					<nav className="forest-question-tabs" aria-label="题目列表">
-						{quiz.questions.map((question, index) => (
-							<button
-								key={question.question_id}
-								type="button"
-								className={
-									question.question_id === selectedQuestion?.question_id
-										? "is-active"
-										: ""
-								}
-								onClick={() => onSelectQuestion(question.question_id)}
-							>
-								{index + 1}
-							</button>
-						))}
-					</nav>
-
-					<AnimatePresence mode="wait">
-						{selectedQuestion && (
-							<ForestQuestionCard
-								question={selectedQuestion}
-								selectedAnswer={selectedAnswer}
-								reduceMotion={reduceMotion}
-								onUpdateAnswer={onUpdateAnswer}
-							/>
-						)}
-					</AnimatePresence>
-
-					<div className="forest-actions">
-						<p>{getResultText(attempt)}</p>
-						<button
-							type="button"
-							onClick={onSubmit}
-							disabled={!canSubmit || isSubmitting}
-						>
-							{isSubmitting ? "提交中" : "提交测验"}
-						</button>
-					</div>
-				</>
-			) : (
-				<div className="forest-empty-quiz">
-					<h2>这一章还没有题目</h2>
-					<p>生成后即可开始作答，Forest AI 会使用当前题目上下文解析。</p>
-					<button
-						type="button"
-						onClick={onGenerateQuiz}
-						disabled={isGenerating}
-					>
-						{isGenerating ? "生成中" : "生成测验"}
-					</button>
-				</div>
-			)}
-
-			{errorMessage && <p className="forest-inline-error">{errorMessage}</p>}
-		</motion.div>
-	);
-}
-
-function ForestAiPanel({
-	quiz,
-	attempt,
-	selectedQuestion,
-	aiStatus,
-	messages,
-	reduceMotion,
-	onAskForestAi,
-}: ForestAiPanelProps) {
-	const [showCanvas, setShowCanvas] = useState(false);
-	const [imageAttachment, setImageAttachment] = useState<string | null>(null);
-	const [inputValue, setInputValue] = useState("");
-
-	return (
-		<motion.aside
-			className="forest-ai-panel"
-			initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 16 }}
-			animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-			transition={motionTokens.editorial}
-			aria-label="Forest AI 对话解析"
-		>
-			<header className="forest-ai-header">
-				<span>{"// Forest AI"}</span>
-			</header>
-			{messages.length > 0 && (
-				<div className="forest-ai-messages-scroll">
-					<div className="forest-ai-messages-list">
-						{messages.map((message) => {
-							if (message.role === "user") {
-								return (
-									<div
-										key={message.id}
-										className="forest-message-bubble-user-container"
-									>
-										<MessageBubble
-											content={message.content}
-											imageAttachment={message.imageAttachment}
-										/>
-									</div>
-								);
-							} else {
-								return (
-									<div
-										key={message.id}
-										className="forest-message-bubble-assistant"
-									>
-										<MarkdownRenderer content={message.content} />
-									</div>
-								);
-							}
-						})}
-					</div>
-				</div>
-			)}
-			{messages.length === 0 && (
-				<button
-					type="button"
-					className="forest-ask-initial-button"
-					onClick={() => onAskForestAi()}
-					disabled={aiStatus === "streaming" || !quiz}
-					style={{
-						paddingInline: "var(--space-32)",
-						minBlockSize: "calc(var(--space-40) + var(--space-8))",
-						borderRadius: "var(--radius-full)",
-						fontWeight: "var(--font-weight-medium)",
-						cursor: "pointer",
-						background: "var(--gradient-coral)",
-						color: "var(--color-text-inverse)",
-						boxShadow: "var(--shadow-sm)",
-						border: "none",
-					}}
-				>
-					{aiStatus === "streaming" ? "解析中" : "请 Forest AI 解析"}
-				</button>
-			)}
-
-			{quiz && (
-				<div className="forest-composer-container">
-					{imageAttachment && (
-						<div className="image-preview-box">
-							<img
-								src={imageAttachment}
-								alt="预览"
-								className="preview-thumbnail"
-							/>
-							<button
-								type="button"
-								className="delete-preview-button"
-								onClick={() => setImageAttachment(null)}
-							>
-								✕
-							</button>
-						</div>
-					)}
-					<form
-						className="chat-composer"
-						onSubmit={(e) => {
-							e.preventDefault();
-							if (
-								aiStatus === "streaming" ||
-								(!inputValue.trim() && !imageAttachment)
-							)
-								return;
-							onAskForestAi(inputValue, imageAttachment);
-							setInputValue("");
-							setImageAttachment(null);
-						}}
-					>
-						<button
-							type="button"
-							className="pen-button"
-							onClick={() => setShowCanvas(true)}
-							title="手写画板"
-							disabled={aiStatus === "streaming"}
-						>
-							<PenTool className="w-4 h-4" />
-						</button>
-						<textarea
-							value={inputValue}
-							onChange={(e) => setInputValue(e.target.value)}
-							placeholder="自定义追问或手写演算草稿..."
-							disabled={aiStatus === "streaming"}
-							onKeyDown={(e) => {
-								if (e.key === "Enter" && !e.shiftKey) {
-									e.preventDefault();
-									if (
-										aiStatus === "streaming" ||
-										(!inputValue.trim() && !imageAttachment)
-									)
-										return;
-									onAskForestAi(inputValue, imageAttachment);
-									setInputValue("");
-									setImageAttachment(null);
-								}
-							}}
-						/>
-						<button
-							type="submit"
-							className="submit-button"
-							disabled={
-								aiStatus === "streaming" ||
-								(!inputValue.trim() && !imageAttachment)
-							}
-						>
-							发送
-						</button>
-					</form>
-				</div>
-			)}
-
-			{showCanvas && (
-				<HandwritingCanvas
-					onSave={(data) => {
-						setImageAttachment(data);
-						setShowCanvas(false);
-					}}
-					onClose={() => setShowCanvas(false)}
-				/>
-			)}
-		</motion.aside>
-	);
-}
 
 export function ForestQuizPage() {
 	const { courseNodeId } = useParams<{ courseNodeId: string }>();
 	const [searchParams] = useSearchParams();
-	const { token } = useAuth();
+	const { token, user } = useAuth();
 	const reduceMotion = useReducedMotion() ?? false;
 	const chapterId = searchParams.get("chapter_id");
+
+	const routeIdentity = `${user?.uid}/${courseNodeId}/${chapterId}`;
+	const routeIdentityRef = useRef(routeIdentity);
+	routeIdentityRef.current = routeIdentity;
+	const [loadedIdentity, setLoadedIdentity] = useState("");
 
 	const [status, setStatus] = useState<ForestPageStatus>("idle");
 	const [session, setSession] = useState<ForestQuizSession | null>(null);
@@ -544,7 +62,6 @@ export function ForestQuizPage() {
 		null,
 	);
 	const [aiStatus, setAiStatus] = useState<ForestAiStatus>("idle");
-	const [aiText, setAiText] = useState("");
 	const [messages, setMessages] = useState<ForestMessage[]>([]);
 
 	const selectQuestion = useCallback((questionId: string | null) => {
@@ -566,15 +83,19 @@ export function ForestQuizPage() {
 	const selectedAnswer = selectedQuestion
 		? getAnswerValue(answers, selectedQuestion.question_id)
 		: "";
+	const [imageReading, setImageReading] = useState(false);
 	const canSubmit = Boolean(
-		quiz &&
+		!imageReading &&
+			quiz &&
 			quiz.questions.length > 0 &&
 			Object.keys(toAnswerRecord(answers)).length === quiz.questions.length,
 	);
 
 	const loadSession = useCallback(async () => {
 		if (!token || !courseNodeId || !chapterId) return;
+		const requestIdentity = routeIdentity;
 		setStatus("loading");
+		setImageReading(false);
 		setErrorMessage(null);
 		try {
 			const nextSession = await fetchForestQuizSession(
@@ -582,11 +103,17 @@ export function ForestQuizPage() {
 				courseNodeId,
 				chapterId,
 			);
+			if (requestIdentity !== routeIdentityRef.current) return;
+			setLoadedIdentity(requestIdentity);
 			setSession(nextSession);
 			setQuiz(nextSession.quiz);
 			setAttempt(nextSession.latest_attempt);
 			selectQuestion(nextSession.quiz?.questions[0]?.question_id ?? null);
-			if (nextSession.latest_attempt) {
+			if (
+				nextSession.latest_attempt?.quiz_version &&
+				nextSession.latest_attempt.quiz_version ===
+					nextSession.quiz?.quiz_version
+			) {
 				const attemptAnswers = Object.entries(
 					nextSession.latest_attempt.answers,
 				).map(([qId, val]) => ({
@@ -601,35 +128,94 @@ export function ForestQuizPage() {
 			}
 			setStatus("ready");
 		} catch (error) {
+			if (requestIdentity !== routeIdentityRef.current) return;
 			setErrorMessage(
 				error instanceof Error ? error.message : "成林测验加载失败",
 			);
 			setStatus("error");
 		}
-	}, [chapterId, courseNodeId, selectQuestion, token]);
+	}, [chapterId, courseNodeId, selectQuestion, token, routeIdentity]);
 
 	useEffect(() => {
 		void loadSession();
 	}, [loadSession]);
 
-	const updateAnswer = useCallback((questionId: string, value: unknown) => {
-		setAnswers((currentAnswers) => {
-			const exists = currentAnswers.some(
-				(answer) => answer.question_id === questionId,
-			);
-			if (exists) {
-				return currentAnswers.map((answer) =>
-					answer.question_id === questionId
-						? { question_id: questionId, value }
-						: answer,
-				);
-			}
-			return [...currentAnswers, { question_id: questionId, value }];
-		});
+	const draftAnswers = useMemo(() => toAnswerRecord(answers), [answers]);
+	const scope = useMemo(
+		() =>
+			loadedIdentity === routeIdentity &&
+			status === "ready" &&
+			user &&
+			quiz?.quiz_version &&
+			courseNodeId &&
+			chapterId
+				? {
+						uid: user.uid,
+						courseId: courseNodeId,
+						chapterId,
+						quizId: quiz.quiz_id,
+						version: quiz.quiz_version,
+					}
+				: null,
+		[
+			user,
+			quiz,
+			courseNodeId,
+			chapterId,
+			loadedIdentity,
+			routeIdentity,
+			status,
+		],
+	);
+	const restoreDraft = useCallback((saved: QuizDraft) => {
+		setAnswers(
+			Object.entries(saved.answers).map(([question_id, value]) => ({
+				question_id,
+				value,
+			})),
+		);
+		setSelectedQuestionId(saved.selectedQuestionId);
 	}, []);
+	const draft = useQuizDraft(
+		scope,
+		draftAnswers,
+		selectedQuestionId,
+		restoreDraft,
+	);
+	const saveBeforeLeaving = useCallback(async () => {
+		if (imageReading) throw new Error("图片仍在读取，请稍后重试保存");
+		await draft.save();
+	}, [imageReading, draft.save]);
+	const scopeIdentity = `${user?.uid}/${courseNodeId}/${chapterId}/${quiz?.quiz_version}`;
+	const scopeIdentityRef = useRef(scopeIdentity);
+	scopeIdentityRef.current = scopeIdentity;
+	const submissionBusyRef = useRef(false);
+	const [submissionInvalid, setSubmissionInvalid] = useState(false);
+
+	const updateAnswer = useCallback(
+		(questionId: string, value: unknown) => {
+			if (submissionBusyRef.current || draft.pending) return;
+			draft.markDirty();
+			setAnswers((currentAnswers) => {
+				const exists = currentAnswers.some(
+					(answer) => answer.question_id === questionId,
+				);
+				if (exists) {
+					return currentAnswers.map((answer) =>
+						answer.question_id === questionId
+							? { question_id: questionId, value }
+							: answer,
+					);
+				}
+				return [...currentAnswers, { question_id: questionId, value }];
+			});
+		},
+		[draft.pending, draft.markDirty],
+	);
 
 	const handleGenerateQuiz = useCallback(async () => {
 		if (!token || !courseNodeId || !chapterId) return;
+		const requestIdentity = routeIdentity;
 		setIsGenerating(true);
 		setErrorMessage(null);
 		try {
@@ -639,18 +225,20 @@ export function ForestQuizPage() {
 				chapterId,
 				false,
 			);
+			if (requestIdentity !== routeIdentityRef.current) return;
 			setQuiz(nextQuiz);
 			selectQuestion(nextQuiz.questions[0]?.question_id ?? null);
 			setAnswers(initAnswers(nextQuiz.questions));
 			setAttempt(null);
 		} catch (error) {
+			if (requestIdentity !== routeIdentityRef.current) return;
 			setErrorMessage(
 				error instanceof Error ? error.message : "章节测验生成失败",
 			);
 		} finally {
-			setIsGenerating(false);
+			if (requestIdentity === routeIdentityRef.current) setIsGenerating(false);
 		}
-	}, [chapterId, courseNodeId, selectQuestion, token]);
+	}, [chapterId, courseNodeId, selectQuestion, token, routeIdentity]);
 
 	const askForestAi = useCallback(
 		async (
@@ -748,49 +336,155 @@ export function ForestQuizPage() {
 	const [overlayOpen, setOverlayOpen] = useState(false);
 	const doneDataRef = useRef<ForestSubmitStreamDonePayload | null>(null);
 
+	const acceptResult = useCallback(
+		async (result: ForestSubmitStreamDonePayload) => {
+			setAttempt(result.attempt);
+			doneDataRef.current = result;
+			setOverlayOpen(true);
+			setErrorMessage(null);
+			setSubmitStatusMessage(null);
+			try {
+				await draft.complete();
+			} catch {
+				setErrorMessage(
+					"成绩已保存，本机草稿清理失败；再次进入时会重新确认结果",
+				);
+			}
+		},
+		[draft.complete],
+	);
+	const confirmSubmission = useCallback(
+		async (pending: PendingSubmission) => {
+			if (!token || !quiz || !courseNodeId || !chapterId) return false;
+			const identity = scopeIdentityRef.current;
+			setSubmitStatusMessage("正在确认本次提交结果…");
+			try {
+				const result = await fetchForestSubmission(
+					token,
+					quiz.quiz_id,
+					pending.client_submission_id,
+				);
+				if (identity !== scopeIdentityRef.current) return false;
+				if (result) {
+					await acceptResult(result);
+					return true;
+				}
+				const current = await fetchForestQuizSession(
+					token,
+					courseNodeId,
+					chapterId,
+				);
+				if (current.quiz?.quiz_version !== pending.quiz_version) {
+					setSubmissionInvalid(true);
+					setErrorMessage("题目已更新，原草稿仍保留。请重新加载当前题目。");
+					return false;
+				}
+				setErrorMessage(
+					"尚未确认本次提交是否保存。请重新查询，或使用原答案重试；本机草稿仍保留。",
+				);
+			} catch (error) {
+				if (identity === scopeIdentityRef.current) {
+					if (
+						error instanceof ForestSubmissionError &&
+						[403, 404, 409].includes(error.status)
+					)
+						setSubmissionInvalid(true);
+					setErrorMessage(
+						error instanceof Error ? error.message : "结果查询失败，请重试",
+					);
+				}
+			} finally {
+				if (identity === scopeIdentityRef.current) setSubmitStatusMessage(null);
+			}
+			return false;
+		},
+		[token, quiz, acceptResult, courseNodeId, chapterId],
+	);
+	const resumedSubmissionRef = useRef("");
+	useEffect(() => {
+		if (!draft.ready || !draft.pending || !quiz || submissionBusyRef.current)
+			return;
+		const key = `${scopeIdentity}/${draft.pending.client_submission_id}`;
+		if (resumedSubmissionRef.current === key) return;
+		resumedSubmissionRef.current = key;
+		void confirmSubmission(draft.pending);
+	}, [draft.ready, draft.pending, quiz, scopeIdentity, confirmSubmission]);
 	const handleSubmit = useCallback(async () => {
-		if (!token || !quiz || !canSubmit) return;
+		if (
+			!token ||
+			!quiz ||
+			(!canSubmit && !draft.pending) ||
+			submissionBusyRef.current ||
+			!draft.ready
+		)
+			return;
+		const identity = scopeIdentityRef.current;
+		submissionBusyRef.current = true;
 		setIsSubmitting(true);
 		setErrorMessage(null);
-		setSubmitStatusMessage(null);
+		const pending = draft.pending ?? {
+			client_submission_id: crypto.randomUUID(),
+			quiz_version: quiz.quiz_version,
+			answers: toAnswerRecord(answers),
+		};
+		let result: ForestSubmitStreamDonePayload | null = null;
+		let snapshotSaved = false;
 		try {
+			await draft.save(false, pending);
+			snapshotSaved = true;
 			await submitForestQuizAttemptStream(
 				token,
 				quiz.quiz_id,
-				{ answers: toAnswerRecord(answers) },
+				pending,
 				(event) => {
-					if (event.event === "status") {
-						const phaseLabels: Record<string, string> = {
-							grading: "正在判题…",
-							analyzing: "分析薄弱方向…",
-							unlocking: "解锁下一关…",
-						};
-						setSubmitStatusMessage(
-							event.phase
-								? (phaseLabels[event.phase] ?? event.message ?? "处理中…")
-								: "处理中…",
-						);
-					} else if (event.event === "done" && event.doneData) {
-						const d = event.doneData;
-						setAttempt(d.attempt);
-						doneDataRef.current = d;
-						setIsSubmitting(false);
-						setSubmitStatusMessage(null);
-						setOverlayOpen(true);
-						void askForestAi(undefined, null, d.attempt);
-					} else if (event.event === "error") {
-						setErrorMessage(event.message ?? "测验提交失败");
-						setIsSubmitting(false);
-						setSubmitStatusMessage(null);
-					}
+					if (identity !== scopeIdentityRef.current) return;
+					if (event.event === "status")
+						setSubmitStatusMessage(event.message ?? "正在提交…");
+					if (event.event === "done" && event.doneData) result = event.doneData;
+					if (event.event === "error")
+						throw new Error(event.message ?? "测验提交失败");
 				},
 			);
+			if (result && identity === scopeIdentityRef.current) {
+				await acceptResult(result);
+				void askForestAi(
+					undefined,
+					null,
+					(result as ForestSubmitStreamDonePayload).attempt,
+				);
+			} else if (identity === scopeIdentityRef.current)
+				await confirmSubmission(pending);
 		} catch (error) {
-			setErrorMessage(error instanceof Error ? error.message : "测验提交失败");
-			setIsSubmitting(false);
-			setSubmitStatusMessage(null);
+			if (identity === scopeIdentityRef.current) {
+				setErrorMessage(
+					error instanceof Error ? error.message : "测验提交失败",
+				);
+				if (
+					error instanceof ForestSubmissionError &&
+					[403, 404, 409].includes(error.status)
+				)
+					setSubmissionInvalid(true);
+				else if (snapshotSaved) await confirmSubmission(pending);
+			}
+		} finally {
+			submissionBusyRef.current = false;
+			if (identity === scopeIdentityRef.current) {
+				setIsSubmitting(false);
+				setSubmitStatusMessage(null);
+			}
 		}
-	}, [answers, askForestAi, canSubmit, quiz, token]);
+	}, [
+		token,
+		quiz,
+		canSubmit,
+		draft.pending,
+		draft.ready,
+		draft.save,
+		answers,
+		acceptResult,
+		confirmSubmission,
+		askForestAi,
+	]);
 
 	const handleAskForestAi = useCallback(
 		(customMessage?: string, attachment?: string | null) => {
@@ -814,7 +508,11 @@ export function ForestQuizPage() {
 		);
 	}
 
-	if (status === "loading" || status === "idle") {
+	if (
+		status === "loading" ||
+		status === "idle" ||
+		(status === "ready" && loadedIdentity !== routeIdentity)
+	) {
 		return (
 			<EmptyForestState
 				ariaLabel="成林测验加载中"
@@ -841,35 +539,120 @@ export function ForestQuizPage() {
 			className="forest-quiz-page"
 			aria-label={`${session.chapter.title}章节测验`}
 		>
-			<div className="forest-ambient-sun" aria-hidden="true" />
 			<div className="forest-paper-canvas" aria-hidden="true" />
+			<DraftNavigationGuard
+				dirty={draft.dirty || imageReading}
+				save={saveBeforeLeaving}
+			/>
+			<div className="forest-draft-status" aria-live="polite">
+				<p>{draft.message}</p>
+				{draft.notice && <p>{draft.notice}</p>}
+				{(draft.dirty || draft.conflict) && (
+					<button
+						type="button"
+						onClick={() => {
+							void draft.save().catch(() => {});
+						}}
+					>
+						重试保存
+					</button>
+				)}
+				{draft.conflict && (
+					<>
+						<button
+							type="button"
+							onClick={() => {
+								void draft
+									.reload()
+									.catch(() => setErrorMessage("草稿读取失败，请重试"));
+							}}
+						>
+							读取已保存草稿
+						</button>
+						<button
+							type="button"
+							onClick={() => {
+								void draft.save(true).catch(() => {});
+							}}
+						>
+							保留当前输入
+						</button>
+					</>
+				)}
+				{draft.pending && !isSubmitting && !submissionInvalid && (
+					<>
+						<button
+							type="button"
+							onClick={() => {
+								if (draft.pending) void confirmSubmission(draft.pending);
+							}}
+						>
+							重新查询提交结果
+						</button>
+						<button
+							type="button"
+							onClick={() => {
+								void handleSubmit();
+							}}
+						>
+							使用原答案重试
+						</button>
+						<Link to="/forest">返回章节列表</Link>
+					</>
+				)}
+			</div>
+			{submissionInvalid && (
+				<div role="alert">
+					<p>{errorMessage}</p>
+					<button type="button" onClick={() => window.location.reload()}>
+						重新加载题目
+					</button>
+					<Link to="/forest">返回章节列表</Link>
+				</div>
+			)}
 			<main className="forest-quiz-shell">
-				<ForestQuestionPanel
-					session={session}
-					quiz={quiz}
-					attempt={attempt}
-					selectedQuestion={selectedQuestion}
-					selectedAnswer={selectedAnswer}
-					canSubmit={canSubmit}
-					isSubmitting={isSubmitting}
-					isGenerating={isGenerating}
-					errorMessage={errorMessage}
-					reduceMotion={reduceMotion}
-					onSelectQuestion={selectQuestion}
-					onUpdateAnswer={updateAnswer}
-					onGenerateQuiz={handleGenerateQuiz}
-					onSubmit={handleSubmit}
-				/>
-
-				<ForestAiPanel
-					quiz={quiz}
-					attempt={attempt}
-					selectedQuestion={selectedQuestion}
-					aiStatus={aiStatus}
-					messages={messages}
-					reduceMotion={reduceMotion}
-					onAskForestAi={handleAskForestAi}
-				/>
+				<fieldset
+					className="forest-answer-fieldset"
+					disabled={
+						(Boolean(quiz) && !draft.ready) ||
+						imageReading ||
+						isSubmitting ||
+						Boolean(draft.pending)
+					}
+				>
+					<ForestQuestionPanel
+						session={session}
+						quiz={quiz}
+						attempt={attempt}
+						selectedQuestion={selectedQuestion}
+						selectedAnswer={selectedAnswer}
+						canSubmit={canSubmit && draft.ready && !draft.conflict}
+						isSubmitting={isSubmitting}
+						isGenerating={isGenerating}
+						errorMessage={errorMessage}
+						reduceMotion={reduceMotion}
+						onSelectQuestion={(id) => {
+							draft.markDirty();
+							selectQuestion(id);
+						}}
+						onUpdateAnswer={updateAnswer}
+						onImageReading={setImageReading}
+						onGenerateQuiz={handleGenerateQuiz}
+						onSubmit={handleSubmit}
+					/>
+				</fieldset>
+				<details className="forest-ai-disclosure">
+					<summary>AI 解析与帮助</summary>
+					<ForestAiPanel
+						quiz={quiz}
+						attempt={attempt}
+						selectedQuestion={selectedQuestion}
+						aiStatus={aiStatus}
+						messages={messages}
+						reduceMotion={reduceMotion}
+						onAskForestAi={handleAskForestAi}
+					/>
+				</details>
 			</main>
 
 			{submitStatusMessage && (
@@ -884,7 +667,7 @@ export function ForestQuizPage() {
 					canopyOverview={doneDataRef.current.canopy_overview}
 					nextUnlockedChapterId={doneDataRef.current.next_unlocked_chapter_id}
 					nextCourseId={doneDataRef.current.next_course_id}
-					courseNodeId={courseNodeId!}
+					courseNodeId={courseNodeId}
 					weaknesses={doneDataRef.current.weaknesses}
 					reduceMotion={reduceMotion}
 				/>

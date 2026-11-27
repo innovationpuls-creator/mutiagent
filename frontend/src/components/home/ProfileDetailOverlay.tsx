@@ -2,6 +2,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useEffect, useRef } from "react";
 import { motionTokens } from "../../styles/motion-tokens";
 import type { UserProfile } from "../../types/profile";
+import { useDialogAccessibility } from "../ui/useDialogAccessibility";
 import "./ProfileDetailOverlay.css";
 
 interface ProfileDetailOverlayProps {
@@ -27,18 +28,17 @@ export function ProfileDetailOverlay({
 }: ProfileDetailOverlayProps) {
 	const reduceMotion = useReducedMotion();
 	const overlayRef = useRef<HTMLDivElement>(null);
+	const closeRef = useRef<HTMLButtonElement>(null);
+	useDialogAccessibility({ isOpen, onClose, initialFocusRef: closeRef });
 
 	// 展开时锁定背景滚动
 	useEffect(() => {
 		if (isOpen) {
-			document.body.style.overflow = "hidden";
 			document.documentElement.setAttribute("data-overlay-open", "true");
 		} else {
-			document.body.style.overflow = "";
 			document.documentElement.removeAttribute("data-overlay-open");
 		}
 		return () => {
-			document.body.style.overflow = "";
 			document.documentElement.removeAttribute("data-overlay-open");
 		};
 	}, [isOpen]);
@@ -59,15 +59,15 @@ export function ProfileDetailOverlay({
 
 			{/* 与首页小卡片联动的 Hero 形变容器 */}
 			<motion.div
-				layoutId="profile-card-container"
+				aria-label="我的完整画像"
 				ref={overlayRef}
 				className="overlay-content"
 				role="dialog"
 				aria-modal="true"
-				style={{ borderRadius: 32 }}
-				initial={reduceMotion ? false : { borderRadius: 24 }}
-				animate={reduceMotion ? undefined : { borderRadius: 32 }}
-				exit={reduceMotion ? undefined : { borderRadius: 24 }}
+				style={{ borderRadius: "var(--radius-lg)" }}
+				initial={reduceMotion ? false : { opacity: 0 }}
+				animate={reduceMotion ? undefined : { opacity: 1 }}
+				exit={reduceMotion ? undefined : { opacity: 0 }}
 				transition={{
 					...motionTokens.editorial,
 					duration: 0.5,
@@ -82,6 +82,7 @@ export function ProfileDetailOverlay({
 					<button
 						type="button"
 						className="overlay-close-btn"
+						ref={closeRef}
 						onClick={onClose}
 						aria-label="关闭"
 					>

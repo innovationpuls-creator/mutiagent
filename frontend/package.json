@@ -9,6 +9,7 @@
 		"test": "vitest run --config vitest.config.ts",
 		"test:watch": "vitest --config vitest.config.ts",
 		"e2e": "playwright test",
+		"e2e:student:integration": "playwright test --config playwright.student-integration.config.ts",
 		"gen:api": "(cd ../backend && uv run python -m app.export_openapi) > openapi.json && npx openapi-typescript openapi.json --output src/types/api.ts && npx biome format --write openapi.json src/types/api.ts"
 	},
 	"dependencies": {
@@ -47,6 +48,7 @@
 		"@types/react-dom": "^18.3.5",
 		"@types/styled-components": "^5.1.36",
 		"autoprefixer": "^10.5.0",
+		"fake-indexeddb": "^6.2.5",
 		"jsdom": "^25.0.1",
 		"openapi-typescript": "^7.13.0",
 		"postcss": "^8.5.15",

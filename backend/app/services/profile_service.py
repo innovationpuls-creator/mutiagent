@@ -15,7 +15,7 @@ def get_user_profile(session: Session, user_uid: str) -> dict | None:
 
 
 def upsert_user_profile(
-    session: Session, user_uid: str, profile_data: dict
+    session: Session, user_uid: str, profile_data: dict, *, commit: bool = True
 ) -> UserProfile:
     now = datetime.now(timezone.utc)
     profile_text = profile_data.get("summary_text", profile_data.get("text", ""))
@@ -33,6 +33,8 @@ def upsert_user_profile(
         row.profile_text = profile_text
         row.updated_at = now
     session.add(row)
-    session.commit()
-    session.refresh(row)
+    session.flush()
+    if commit:
+        session.commit()
+        session.refresh(row)
     return row

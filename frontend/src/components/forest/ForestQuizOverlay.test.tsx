@@ -42,14 +42,21 @@ function baseAttempt(overrides: Partial<ForestAttempt> = {}): ForestAttempt {
 
 function baseCanopy(overrides: Partial<CanopyOverview> = {}): CanopyOverview {
 	return {
-		total_courses: 5,
-		completed_courses: 2,
-		total_chapters: 20,
-		completed_chapters: 6,
+		courses: Array.from({ length: 5 }, (_, index) => ({
+			id: `course-${index}`,
+			title: `课程 ${index}`,
+			grade: "year_1",
+			status: index < 2 ? "completed" : "locked",
+			description: "",
+		})),
+		active_rate: 50,
+		quality_scores: {},
+		completed_count: 2,
+
 		avg_score: 80,
-		total_focus_hours: 15,
-		growth_tree_stage: 3,
-		growth_advanced_steps: 2,
+		focused_hours: 15,
+		growth_stage: 3,
+
 		milestones: [],
 		...overrides,
 	};
@@ -102,7 +109,7 @@ describe("ForestQuizOverlay", () => {
 	it("displays canopy stats", () => {
 		renderOverlay();
 		expect(screen.getByText("2 / 5")).toBeTruthy();
-		expect(screen.getByText("6 / 20")).toBeTruthy();
+		expect(screen.getByText("2 章")).toBeTruthy();
 		expect(screen.getByText("80 分")).toBeTruthy();
 		expect(screen.getByText("15 小时")).toBeTruthy();
 	});
@@ -160,7 +167,7 @@ describe("ForestQuizOverlay", () => {
 		fireEvent.click(screen.getByText("解锁下一章 →"));
 		expect(onClose).toHaveBeenCalled();
 		expect(navigateMock).toHaveBeenCalledWith(
-			"/leaf/year_3_course_2?chapter_id=ch2",
+			"/leaf/year_3_course_2?section_id=ch2",
 		);
 	});
 

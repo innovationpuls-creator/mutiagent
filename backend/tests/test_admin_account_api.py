@@ -252,7 +252,23 @@ def test_admin_batch_delete_removes_forest_rows(tmp_path: Path, monkeypatch) -> 
                 user_uid=created["uid"],
                 grade_year="year_3",
                 learning_topic="AI",
-                path_data={},
+                path_data={
+                    "current_learning_course": {
+                        "grade_id": "year_3",
+                        "course_node_id": "year_3_course_2",
+                    },
+                    "grade_plans": {
+                        "year_3": {
+                            "course_nodes": [
+                                {
+                                    "course_node_id": "year_3_course_2",
+                                    "course_or_chapter_theme": "AI Agent 开发",
+                                    "course_goal": "掌握智能体开发",
+                                }
+                            ]
+                        }
+                    },
+                },
             )
         )
         session.add(

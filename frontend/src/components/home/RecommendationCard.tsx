@@ -1,9 +1,6 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { motionTokens } from "../../styles/motion-tokens";
-import type {
-	LearningRecommendation,
-	RecommendationAccent,
-} from "../../types/profile";
+import type { LearningRecommendation } from "../../types/profile";
 
 interface RecommendationCardProps {
 	data: LearningRecommendation;
@@ -19,9 +16,8 @@ export function RecommendationCard({ data, index }: RecommendationCardProps) {
 	const reduceMotion = useReducedMotion();
 
 	return (
-		<motion.button
+		<motion.article
 			className={`rec-card rec-card--${data.accent}`}
-			type="button"
 			initial={reduceMotion ? false : { opacity: 0, y: 16 }}
 			animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
 			transition={{ ...motionTokens.editorial, delay: 0.5 + index * 0.1 }}
@@ -32,6 +28,6 @@ export function RecommendationCard({ data, index }: RecommendationCardProps) {
 			<p className="rec-meta">
 				{data.duration} · {data.description}
 			</p>
-		</motion.button>
+		</motion.article>
 	);
 }

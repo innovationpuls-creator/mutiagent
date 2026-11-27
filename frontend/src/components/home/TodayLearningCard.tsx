@@ -95,14 +95,15 @@ export function TodayLearningCard({
 				<div className="today-card-actions">
 					{hasStartAction && (
 						<button
-							className="today-play-btn"
+							className="today-continue-btn"
 							type="button"
-							aria-label="开始学习"
+							aria-label="继续学习"
 							onClick={() => {
 								onStartLearning();
 							}}
 						>
 							<span className="today-play-icon" aria-hidden="true" />
+							<span>继续学习</span>
 						</button>
 					)}
 					{hasDetailAction && (

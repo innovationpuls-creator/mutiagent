@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from sqlmodel import Session, select
 
 from app.models import UserCourseKnowledgeOutline
+from app.services.student_lock import lock_student
 
 SECTION_GENERATED_ASSET_KEYS = (
     "section_markdowns",
@@ -48,7 +49,10 @@ def list_user_course_outlines(
     return list(session.exec(stmt).all())
 
 
-def delete_user_course_outlines(session: Session, user_uid: str) -> int:
+def delete_user_course_outlines(
+    session: Session, user_uid: str, *, commit: bool = True
+) -> int:
+    lock_student(session, user_uid)
     stmt = select(UserCourseKnowledgeOutline).where(
         UserCourseKnowledgeOutline.user_uid == user_uid
     )
@@ -56,7 +60,9 @@ def delete_user_course_outlines(session: Session, user_uid: str) -> int:
     for row in rows:
         session.delete(row)
     if rows:
-        session.commit()
+        session.flush()
+        if commit:
+            session.commit()
     return len(rows)
 
 
@@ -64,7 +70,10 @@ def delete_user_course_outlines_by_grade_year(
     session: Session,
     user_uid: str,
     grade_year: str,
+    *,
+    commit: bool = True,
 ) -> int:
+    lock_student(session, user_uid)
     stmt = select(UserCourseKnowledgeOutline).where(
         UserCourseKnowledgeOutline.user_uid == user_uid,
         UserCourseKnowledgeOutline.grade_year == grade_year,
@@ -73,7 +82,9 @@ def delete_user_course_outlines_by_grade_year(
     for row in rows:
         session.delete(row)
     if rows:
-        session.commit()
+        session.flush()
+        if commit:
+            session.commit()
     return len(rows)
 
 
@@ -126,7 +137,10 @@ def upsert_user_course_knowledge_outline(
     session: Session,
     user_uid: str,
     outline_data: dict,
+    *,
+    commit: bool = True,
 ) -> UserCourseKnowledgeOutline:
+    lock_student(session, user_uid)
     now = datetime.now(timezone.utc)
     course_id = outline_data.get("course_id", "")
     row = session.get(UserCourseKnowledgeOutline, (user_uid, course_id))
@@ -148,6 +162,8 @@ def upsert_user_course_knowledge_outline(
         row.outline_data = outline_data
         row.updated_at = now
     session.add(row)
-    session.commit()
-    session.refresh(row)
+    session.flush()
+    if commit:
+        session.commit()
+        session.refresh(row)
     return row

@@ -1982,11 +1982,15 @@ def _persist_profile(user_id: str, profile_dict: dict) -> None:
 
     try:
         with Session(get_engine()) as db_session:
-            upsert_user_profile(db_session, user_id, profile_dict)
+            from app.services.student_lock import lock_student
+
+            lock_student(db_session, user_id)
+            upsert_user_profile(db_session, user_id, profile_dict, commit=False)
             # Any profile rewrite can invalidate saved outlines because chapter pacing
             # and learning checkpoints are derived from the latest profile assumptions.
             if profile_dict.get("type") in {"basic_profile", "collecting"}:
-                delete_user_course_outlines(db_session, user_id)
+                delete_user_course_outlines(db_session, user_id, commit=False)
+            db_session.commit()
         logger.info("Profile persisted for user %s", user_id)
     except Exception as exc:
         logger.error("Failed to persist profile for user %s: %s", user_id, exc)

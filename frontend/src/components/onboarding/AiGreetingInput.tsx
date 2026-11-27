@@ -9,6 +9,7 @@ import { PenTool } from "lucide-react";
 import React, {
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useReducer,
 	useRef,
 	useState,
@@ -28,7 +29,7 @@ import {
 	SessionStreamError,
 	streamSession,
 } from "../../api/orchestration";
-import { useAiWidget } from "../../context/AiWidgetContext";
+import { useAiWidget } from "../../contexts/AiWidgetContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { hasCompleteBasicProfileSessionMessage } from "../../lib/profileContract";
 import {
@@ -657,6 +658,29 @@ export function AiGreetingInput({
 		[clearPersistedSession, clearSessionFromUrl],
 	);
 
+	const previousWidgetState = useRef(widgetState);
+	useLayoutEffect(() => {
+		const wasExpanded = previousWidgetState.current === "EXPANDED";
+		previousWidgetState.current = widgetState;
+		if (widgetState === "EXPANDED") {
+			cardRef.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+		} else if (wasExpanded) {
+			cardRef.current
+				?.querySelector<HTMLButtonElement>(".widget-shell")
+				?.focus();
+		}
+		const handleEscape = (event: KeyboardEvent) => {
+			if (
+				event.key === "Escape" &&
+				!event.defaultPrevented &&
+				widgetState === "EXPANDED"
+			)
+				setWidgetState("WIDGET");
+		};
+		window.addEventListener("keydown", handleEscape);
+		return () => window.removeEventListener("keydown", handleEscape);
+	}, [widgetState, setWidgetState]);
+
 	const x = useMotionValue(0);
 	const y = useMotionValue(0);
 	const mouseXSpring = useSpring(x, { stiffness: 150, damping: 20 });
@@ -1271,13 +1295,11 @@ export function AiGreetingInput({
 		<StyledWrapper>
 			<motion.div
 				ref={cardRef}
-				layout
-				onClick={handleCardClick}
 				className={`card ${widgetState === "CENTER_INPUT" ? "initial" : widgetState}`}
 				variants={{
-					initial: { width: 260, height: 160 },
-					expanded: expandedCardVariant,
-					widget: { width: 100, height: 100 },
+					initial: {},
+					expanded: {},
+					widget: {},
 				}}
 				initial="initial"
 				animate={
@@ -1289,6 +1311,9 @@ export function AiGreetingInput({
 				}
 				transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
 				style={{
+					...(widgetState === "EXPANDED"
+						? expandedCardVariant
+						: { width: "var(--space-80)", height: "var(--space-80)" }),
 					rotateX: widgetState === "EXPANDED" ? 0 : rotateX,
 					rotateY: widgetState === "EXPANDED" ? 0 : rotateY,
 					cursor: widgetState === "EXPANDED" ? "default" : "pointer",
@@ -1424,6 +1449,7 @@ export function AiGreetingInput({
 												}}
 											>
 												<textarea
+													aria-label="发送给 AI 的消息"
 													rows={1}
 													placeholder="输入你的学习情况..."
 													value={inputValue}
@@ -1466,128 +1492,138 @@ export function AiGreetingInput({
 								</div>
 							</main>
 
-							<aside
-								className="codex-agent-panel"
-								aria-label="多智能体调用状态"
-							>
-								<section className="agent-panel-section agent-panel-progress">
-									{agentEvents.length > 0 ? (
-										<button
-											type="button"
-											className="agent-panel-heading"
-											onClick={() => setShowEventLog((value) => !value)}
-											aria-expanded={showEventLog}
-										>
-											<span>进度</span>
-											<span aria-hidden="true">{showEventLog ? "⌃" : "⌄"}</span>
-										</button>
-									) : (
-										<div className="agent-panel-heading static">
-											<span>进度</span>
-										</div>
-									)}
-									<p>{currentProgressLabel(agentSteps)}</p>
-								</section>
-
-								<section className="agent-panel-section">
-									<div className="agent-panel-heading static">
-										<span>Agent 步骤</span>
-										{agentSteps.some((s) => s.status !== "pending") && (
-											<strong>{isPending ? "运行中" : "待命"}</strong>
+							<details className="session-secondary-details">
+								<summary>学习进度与执行详情</summary>
+								<aside
+									className="codex-agent-panel"
+									aria-label="多智能体调用状态"
+								>
+									<section className="agent-panel-section agent-panel-progress">
+										{agentEvents.length > 0 ? (
+											<button
+												type="button"
+												className="agent-panel-heading"
+												onClick={() => setShowEventLog((value) => !value)}
+												aria-expanded={showEventLog}
+											>
+												<span>进度</span>
+												<span aria-hidden="true">
+													{showEventLog ? "⌃" : "⌄"}
+												</span>
+											</button>
+										) : (
+											<div className="agent-panel-heading static">
+												<span>进度</span>
+											</div>
 										)}
-									</div>
-									<div className="agent-step-list">
-										{(() => {
-											const activeSteps = agentSteps.filter(
-												(s) =>
-													s.status === "running" ||
-													s.status === "routed" ||
-													s.status === "error",
-											);
-											if (activeSteps.length === 0) {
-												const label = isPending
-													? "等待调用..."
-													: agentSteps.some((s) => s.status === "completed")
-														? "本轮调用已完成"
-														: "等待本轮调用开始...";
-												return (
-													<p className="agent-step-placeholder">{label}</p>
-												);
-											}
-											return (
-												<AnimatePresence mode="popLayout">
-													{activeSteps.map((step) => (
-														<motion.div
-															className="agent-step-row"
-															data-status={step.status}
-															data-agent-type={step.agentType || "default"}
-															key={step.id}
-															initial={{ opacity: 0, x: -16, scale: 0.96 }}
-															animate={{ opacity: 1, x: 0, scale: 1 }}
-															exit={{ opacity: 0, scale: 0.94, y: -4 }}
-															transition={{
-																duration: 0.42,
-																ease: [0.25, 1, 0.5, 1],
-															}}
-														>
-															<span
-																className="agent-step-dot"
-																aria-hidden="true"
-															/>
-															<div>
-																<strong>{step.title}</strong>
-																<p>{step.detail}</p>
-															</div>
-															<span>{statusLabel(step.status)}</span>
-														</motion.div>
-													))}
-												</AnimatePresence>
-											);
-										})()}
-									</div>
-								</section>
+										<p>{currentProgressLabel(agentSteps)}</p>
+									</section>
 
-								{agentEvents.length > 0 && showEventLog && (
 									<section className="agent-panel-section">
-										<div className="agent-event-log">
-											{agentEvents.map((event, index) => (
-												<p
-													key={[
-														event.event,
-														event.stepId,
-														event.agent,
-														event.label,
-														event.summary,
-														index,
-													]
-														.filter((part) => part !== undefined)
-														.join("-")}
-												>
-													<strong>
-														{event.label ||
-															getSessionEventAgent(event) ||
-															event.event}
-													</strong>
-													<span>
-														{event.message ||
-															event.summary ||
-															event.reason ||
-															event.intent ||
-															event.event}
-													</span>
-												</p>
-											))}
+										<div className="agent-panel-heading static">
+											<span>Agent 步骤</span>
+											{agentSteps.some((s) => s.status !== "pending") && (
+												<strong>{isPending ? "运行中" : "待命"}</strong>
+											)}
+										</div>
+										<div className="agent-step-list">
+											{(() => {
+												const activeSteps = agentSteps.filter(
+													(s) =>
+														s.status === "running" ||
+														s.status === "routed" ||
+														s.status === "error",
+												);
+												if (activeSteps.length === 0) {
+													const label = isPending
+														? "等待调用..."
+														: agentSteps.some((s) => s.status === "completed")
+															? "本轮调用已完成"
+															: "等待本轮调用开始...";
+													return (
+														<p className="agent-step-placeholder">{label}</p>
+													);
+												}
+												return (
+													<AnimatePresence mode="popLayout">
+														{activeSteps.map((step) => (
+															<motion.div
+																className="agent-step-row"
+																data-status={step.status}
+																data-agent-type={step.agentType || "default"}
+																key={step.id}
+																initial={{ opacity: 0, x: -16, scale: 0.96 }}
+																animate={{ opacity: 1, x: 0, scale: 1 }}
+																exit={{ opacity: 0, scale: 0.94, y: -4 }}
+																transition={{
+																	duration: 0.42,
+																	ease: [0.25, 1, 0.5, 1],
+																}}
+															>
+																<span
+																	className="agent-step-dot"
+																	aria-hidden="true"
+																/>
+																<div>
+																	<strong>{step.title}</strong>
+																	<p>{step.detail}</p>
+																</div>
+																<span>{statusLabel(step.status)}</span>
+															</motion.div>
+														))}
+													</AnimatePresence>
+												);
+											})()}
 										</div>
 									</section>
-								)}
-							</aside>
+
+									{agentEvents.length > 0 && showEventLog && (
+										<section className="agent-panel-section">
+											<div className="agent-event-log">
+												{agentEvents.map((event, index) => (
+													<p
+														key={[
+															event.event,
+															event.stepId,
+															event.agent,
+															event.label,
+															event.summary,
+															index,
+														]
+															.filter((part) => part !== undefined)
+															.join("-")}
+													>
+														<strong>
+															{event.label ||
+																getSessionEventAgent(event) ||
+																event.event}
+														</strong>
+														<span>
+															{event.message ||
+																event.summary ||
+																event.reason ||
+																event.intent ||
+																event.event}
+														</span>
+													</p>
+												))}
+											</div>
+										</section>
+									)}
+								</aside>
+							</details>
 						</div>
 					</section>
 				) : (
-					<div className="widget-shell">
+					<button
+						type="button"
+						className="widget-shell"
+						aria-label="打开 AI 学习助手"
+						onClick={handleCardClick}
+					>
 						<AiEyes layoutId="eyes" />
 						<AiEyes isHappy />
-					</div>
+					</button>
 				)}
 			</motion.div>
 			{showCanvas && (
@@ -1609,9 +1645,13 @@ const StyledWrapper = styled.div`
   align-items: center;
   justify-content: center;
 
+  .session-secondary-details { min-inline-size: 0; overflow:auto; }
+  .session-secondary-details summary { cursor:pointer; padding:var(--space-12); color:var(--color-text-primary); }
   .card {
+    max-inline-size: calc(100vw - var(--space-32));
+    max-block-size: calc(100dvh - var(--space-120));
     transform-style: preserve-3d;
-    will-change: transform, width, height;
+    will-change: transform;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1637,6 +1677,7 @@ const StyledWrapper = styled.div`
   }
 
   .widget-shell {
+    border: 0; background: transparent; cursor: pointer; color: var(--color-text-primary);
     inline-size: 100%;
     block-size: 100%;
     display: flex;
@@ -1768,7 +1809,8 @@ const StyledWrapper = styled.div`
     flex: 1;
     min-block-size: 0;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0,1fr) auto;
     gap: var(--gap-md);
     align-items: stretch;
     overflow: hidden;
@@ -2401,7 +2443,7 @@ const StyledWrapper = styled.div`
     }
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 1023px) {
     .session-header { align-items: flex-start; }
 
     .session-workbench {

@@ -1,5 +1,5 @@
 import React from "react";
-import { useAiWidget } from "../../context/AiWidgetContext";
+import { useAiWidget } from "../../contexts/AiWidgetContext";
 import { buildLearningPathGenerationDraft } from "../../onboarding/learningPathFlow";
 import type {
 	ConfirmedInfo,

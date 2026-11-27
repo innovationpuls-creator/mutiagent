@@ -12,7 +12,7 @@ import { afterEach, expect, it, test, vi } from "vitest";
 import {
 	AiWidgetProvider,
 	useAiWidget,
-} from "../../../context/AiWidgetContext";
+} from "../../../contexts/AiWidgetContext";
 import { AuthProvider } from "../../../contexts/AuthContext";
 import { AiGreetingInput } from "../AiGreetingInput";
 

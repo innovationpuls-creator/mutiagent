@@ -578,6 +578,23 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	"/api/forest/quizzes/{quiz_id}/submissions/{client_submission_id}": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Recover Submission */
+		get: operations["recover_submission_api_forest_quizzes__quiz_id__submissions__client_submission_id__get"];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	"/api/forest/quizzes/{quiz_id}/attempts/stream": {
 		parameters: {
 			query?: never;
@@ -1386,6 +1403,8 @@ export interface components {
 		};
 		/** ForestAttemptRead */
 		ForestAttemptRead: {
+			/** Quiz Version */
+			quiz_version?: string | null;
 			/** Attempt Id */
 			attempt_id: string;
 			/** Quiz Id */
@@ -1437,6 +1456,10 @@ export interface components {
 			answers: {
 				[key: string]: unknown;
 			};
+			/** Client Submission Id */
+			client_submission_id?: string | null;
+			/** Quiz Version */
+			quiz_version?: string | null;
 		};
 		/** ForestQuizGenerateRequest */
 		ForestQuizGenerateRequest: {
@@ -1479,6 +1502,8 @@ export interface components {
 		};
 		/** ForestQuizRead */
 		ForestQuizRead: {
+			/** Quiz Version */
+			quiz_version: string;
 			/** Quiz Id */
 			quiz_id: string;
 			/** Course Node Id */
@@ -1518,6 +1543,19 @@ export interface components {
 			quiz?: components["schemas"]["ForestQuizRead"] | null;
 			latest_attempt?: components["schemas"]["ForestAttemptRead"] | null;
 			progress: components["schemas"]["ForestChapterProgressRead"];
+			/** Next Unlocked Chapter Id */
+			next_unlocked_chapter_id?: string | null;
+			/** Next Course Id */
+			next_course_id?: string | null;
+		};
+		/** ForestSubmissionRead */
+		ForestSubmissionRead: {
+			attempt: components["schemas"]["ForestAttemptRead"];
+			/** Weaknesses */
+			weaknesses: {
+				[key: string]: unknown;
+			}[];
+			canopy_overview: components["schemas"]["CanopyOverviewResponse"];
 			/** Next Unlocked Chapter Id */
 			next_unlocked_chapter_id?: string | null;
 			/** Next Course Id */
@@ -1984,6 +2022,23 @@ export interface components {
 			 */
 			human_review_status: "unreviewed" | "reviewed";
 		};
+		/** LeafChapterProgressRead */
+		LeafChapterProgressRead: {
+			/** Chapter Id */
+			chapter_id: string;
+			/**
+			 * State
+			 * @enum {string}
+			 */
+			state: "locked" | "available" | "passed";
+			/**
+			 * Best Score
+			 * @default 0
+			 */
+			best_score: number;
+			/** Latest Attempt Id */
+			latest_attempt_id?: string | null;
+		};
 		/** LeafCourseRead */
 		LeafCourseRead: {
 			/** Course Node Id */
@@ -2004,6 +2059,8 @@ export interface components {
 		};
 		/** LeafCourseReadResponse */
 		LeafCourseReadResponse: {
+			/** Chapter Progress */
+			chapter_progress?: components["schemas"]["LeafChapterProgressRead"][];
 			/**
 			 * Access State
 			 * @enum {string}
@@ -2078,6 +2135,27 @@ export interface components {
 			provider: "qq" | "xuexitong";
 			/** Authorization Code */
 			authorization_code: string;
+		};
+		/** ProfileDashboardReadResponse */
+		ProfileDashboardReadResponse: {
+			/** Hascompleteprofile */
+			hasCompleteProfile: boolean;
+			/** Profile */
+			profile: {
+				[key: string]: unknown;
+			};
+			/** Profilecompleteness */
+			profileCompleteness: number;
+			/** Profilesummarytext */
+			profileSummaryText: string;
+			/** Todaylearning */
+			todayLearning: {
+				[key: string]: unknown;
+			};
+			/** Recommendations */
+			recommendations: {
+				[key: string]: unknown;
+			}[];
 		};
 		/** RegisterRequest */
 		RegisterRequest: {
@@ -3389,9 +3467,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					"application/json": {
-						[key: string]: unknown;
-					};
+					"application/json": components["schemas"]["ProfileDashboardReadResponse"];
 				};
 			};
 		};
@@ -3597,6 +3673,38 @@ export interface operations {
 				};
 				content: {
 					"application/json": components["schemas"]["ForestAttemptRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	recover_submission_api_forest_quizzes__quiz_id__submissions__client_submission_id__get: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				quiz_id: string;
+				client_submission_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["ForestSubmissionRead"];
 				};
 			};
 			/** @description Validation Error */

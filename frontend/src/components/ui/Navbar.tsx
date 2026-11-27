@@ -21,11 +21,11 @@ interface NavTab {
 }
 
 const NAV_TABS: NavTab[] = [
-	{ label: "萌芽", path: "/sprout", hint: "用户画像采集" },
-	{ label: "繁枝", path: "/branch", hint: "课程学习总览" },
-	{ label: "叶茂", path: "/leaf", hint: "知识图谱入口" },
-	{ label: "成林", path: "/forest", hint: "学习资源生成" },
-	{ label: "成森", path: "/canopy", hint: "测验与巩固" },
+	{ label: "萌芽", path: "/sprout", hint: "学习首页" },
+	{ label: "繁枝", path: "/branch", hint: "学习路径" },
+	{ label: "叶茂", path: "/leaf", hint: "课程学习" },
+	{ label: "成林", path: "/forest", hint: "章节测验" },
+	{ label: "成森", path: "/canopy", hint: "学习成长" },
 ];
 
 const navContentVariants: Variants = {
@@ -146,7 +146,7 @@ export function Navbar() {
 		}, 1500);
 	};
 
-	const avatarLabel = isLoggedIn ? auth.user!.username.charAt(0) : "访";
+	const avatarLabel = isLoggedIn ? auth.user?.username.charAt(0) : "访";
 
 	return (
 		<>
@@ -244,10 +244,10 @@ export function Navbar() {
 								>
 									<div className={styles.dropdownHeader}>
 										<span className={styles.dropdownName}>
-											{isLoggedIn ? auth.user!.username : "个人空间"}
+											{isLoggedIn ? auth.user?.username : "个人空间"}
 										</span>
 										<span className={styles.dropdownMeta}>
-											{isLoggedIn ? auth.user!.identifier : "本地会话"}
+											{isLoggedIn ? auth.user?.identifier : "本地会话"}
 										</span>
 									</div>
 
@@ -255,7 +255,10 @@ export function Navbar() {
 										className={styles.dropdownItem}
 										type="button"
 										role="menuitem"
-										onClick={closeDropdown}
+										onClick={() => {
+											closeDropdown();
+											navigate("/sprout?panel=profile");
+										}}
 										variants={reduceMotion ? undefined : dropdownItemVariants}
 										initial={reduceMotion ? { opacity: 0 } : "hidden"}
 										animate={reduceMotion ? { opacity: 1 } : "visible"}
@@ -269,7 +272,8 @@ export function Navbar() {
 										className={styles.dropdownItem}
 										type="button"
 										role="menuitem"
-										onClick={closeDropdown}
+										disabled
+										aria-disabled="true"
 										variants={reduceMotion ? undefined : dropdownItemVariants}
 										initial={reduceMotion ? { opacity: 0 } : "hidden"}
 										animate={reduceMotion ? { opacity: 1 } : "visible"}
@@ -277,7 +281,9 @@ export function Navbar() {
 										<span className={styles.dropdownSymbol} aria-hidden="true">
 											·
 										</span>
-										<span className={styles.dropdownText}>偏好设置</span>
+										<span className={styles.dropdownText}>
+											偏好设置 · 暂不可用
+										</span>
 									</motion.button>
 									<motion.button
 										className={styles.dropdownItem}

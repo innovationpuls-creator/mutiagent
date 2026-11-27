@@ -18,6 +18,7 @@ from app.models import (
     UserYearLearningPath,
 )
 from app.services.resource_quality_service import get_quality_scores_for_user
+from app.services.student_lock import lock_student
 
 YEAR_ORDER = ("year_1", "year_2", "year_3", "year_4")
 YEAR_INDEX = {grade_year: index for index, grade_year in enumerate(YEAR_ORDER)}
@@ -665,7 +666,10 @@ def upsert_year_learning_path(
     grade_year: str,
     learning_topic: str,
     path_data: dict,
+    *,
+    commit: bool = True,
 ) -> UserYearLearningPath:
+    lock_student(session, user_uid)
     now = datetime.now(timezone.utc)
     row = session.get(UserYearLearningPath, (user_uid, grade_year))
     if row is None:
@@ -688,8 +692,10 @@ def upsert_year_learning_path(
         row.path_data = path_data
         row.updated_at = now
     session.add(row)
-    session.commit()
-    session.refresh(row)
+    session.flush()
+    if commit:
+        session.commit()
+        session.refresh(row)
     return row
 
 
@@ -725,18 +731,34 @@ def _course_to_current(course: dict) -> dict:
     }
 
 
-def advance_current_learning_course(
-    session: Session,
-    user_uid: str,
-    grade_year: str,
-    score: int,
-) -> dict:
-    path_data = get_year_learning_path(session, user_uid, grade_year)
-    if path_data is None:
+def _persisted_year_row(
+    session: Session, user_uid: str, grade_year: str
+) -> UserYearLearningPath:
+    row = session.get(UserYearLearningPath, (user_uid, grade_year))
+    if row is None:
+        rows = session.exec(
+            select(UserYearLearningPath)
+            .where(UserYearLearningPath.user_uid == user_uid)
+            .order_by(UserYearLearningPath.updated_at.desc())
+        ).all()
+        row = next(
+            (
+                candidate
+                for candidate in rows
+                if grade_year
+                in _expanded_grade_years(
+                    candidate.grade_year,
+                    _normalize_current_learning_courses(candidate.path_data),
+                )
+            ),
+            None,
+        )
+    if row is None:
         raise ValueError("学习路径不存在。")
-    current = path_data.get("current_learning_course")
-    if not isinstance(current, dict):
-        raise ValueError("学习路径缺少 current_learning_course。")
+    return row
+
+
+def _progress_course_position(path_data: dict, current: dict) -> tuple[list, int]:
     grade_id = current.get("grade_id")
     course_id = current.get("course_node_id")
     grade_plans = path_data.get("grade_plans")
@@ -758,6 +780,33 @@ def advance_current_learning_course(
     )
     if index < 0:
         raise ValueError("current_learning_course.course_node_id 无法定位。")
+    return courses, index
+
+
+def advance_current_learning_course(
+    session: Session,
+    user_uid: str,
+    grade_year: str,
+    score: int,
+    *,
+    expected_course_id: str | None = None,
+    commit: bool = True,
+) -> dict:
+    lock_student(session, user_uid)
+    path_data = get_year_learning_path(session, user_uid, grade_year)
+    if path_data is None:
+        if expected_course_id:
+            return {}
+        raise ValueError("学习路径不存在。")
+    current = path_data.get("current_learning_course")
+    if not isinstance(current, dict):
+        raise ValueError("学习路径缺少 current_learning_course。")
+    if expected_course_id and (
+        current.get("course_node_id") != expected_course_id
+        or current.get("progress_state") == "completed"
+    ):
+        return path_data
+    courses, index = _progress_course_position(path_data, current)
     if score > 70 and index + 1 < len(courses):
         next_course = courses[index + 1]
         if not isinstance(next_course, dict):
@@ -772,5 +821,11 @@ def advance_current_learning_course(
         path_data["current_learning_courses"] = [current]
     else:
         path_data = _normalize_current_learning_courses(path_data)
-    upsert_year_learning_path(session, user_uid, grade_year, "", path_data)
+    row = _persisted_year_row(session, user_uid, grade_year)
+    row.path_data = path_data
+    row.updated_at = datetime.now(timezone.utc)
+    session.add(row)
+    session.flush()
+    if commit:
+        session.commit()
     return _normalize_current_learning_courses(path_data)

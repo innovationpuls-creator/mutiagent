@@ -1,19 +1,26 @@
+import "../../pages/student-workspace.css";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import React from "react";
 import { useLocation, useOutlet } from "react-router-dom";
 import { Navbar } from "../ui/Navbar";
+import { IcpFilingLink } from "./IcpFilingLink";
+
+import { useStudentViewport } from "./useStudentViewport";
 
 export function MainLayout() {
+	useStudentViewport();
 	const location = useLocation();
 	const outlet = useOutlet();
 	const reduceMotion = useReducedMotion();
 
 	return (
 		<div
-			style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}
+			className="student-app-layout"
+			style={{ display: "flex", flexDirection: "column" }}
 		>
 			<Navbar />
 			<main
+				className="student-content-viewport"
 				style={{
 					flex: 1,
 					display: "flex",
@@ -39,6 +46,7 @@ export function MainLayout() {
 						</motion.div>
 					)}
 				</AnimatePresence>
+				<IcpFilingLink />
 			</main>
 		</div>
 	);

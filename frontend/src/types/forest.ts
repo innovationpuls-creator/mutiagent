@@ -1,3 +1,4 @@
+import type { components } from "./api";
 import type { LeafCourse, LeafSection } from "./leaf";
 
 export type ForestQuestionType = "single_choice" | "code" | "image_upload";
@@ -15,6 +16,7 @@ export interface ForestQuizQuestion {
 }
 
 export interface ForestQuiz {
+	quiz_version: string;
 	quiz_id: string;
 	course_node_id: string;
 	chapter_id: string;
@@ -26,6 +28,7 @@ export interface ForestQuiz {
 }
 
 export interface ForestAttempt {
+	quiz_version?: string | null;
 	attempt_id: string;
 	quiz_id: string;
 	score: number;
@@ -56,6 +59,8 @@ export interface ForestQuizSession {
 }
 
 export interface ForestQuizAttemptCreateRequest {
+	client_submission_id?: string;
+	quiz_version?: string;
 	answers: Record<string, unknown>;
 }
 
@@ -75,24 +80,11 @@ export interface ForestAiEvent {
 	message?: string;
 }
 
-export interface CanopyMilestone {
-	title: string;
-	desc: string;
-	achieved: boolean;
-	achieved_at: string | null;
-}
-
-export interface CanopyOverview {
-	total_courses: number;
-	completed_courses: number;
-	total_chapters: number;
-	completed_chapters: number;
-	avg_score: number;
-	total_focus_hours: number;
-	growth_tree_stage: number;
-	growth_advanced_steps: number;
-	milestones: CanopyMilestone[];
-}
+export type CanopyOverview = components["schemas"]["CanopyOverviewResponse"] & {
+	courses: NonNullable<
+		components["schemas"]["CanopyOverviewResponse"]["courses"]
+	>;
+};
 
 export interface ChapterWeaknessData {
 	knowledge_point_id: string;

@@ -14,6 +14,26 @@ from app.schema_upgrades import run_schema_upgrades
 from tests.postgres import postgresql_test_url
 
 
+async def _run_agent_with_saved_paths(state, llm):
+    """Seed the persisted learning paths represented by the agent input fixture."""
+    from app.database import get_engine
+    from app.models import UserYearLearningPath
+
+    with Session(get_engine()) as session:
+        if session.get(User, state.get("user_id")) is not None:
+            for grade_year, path in state.get("year_learning_paths", {}).items():
+                session.add(
+                    UserYearLearningPath(
+                        user_uid=state["user_id"],
+                        grade_year=grade_year,
+                        learning_topic="test",
+                        path_data=path,
+                    )
+                )
+            session.commit()
+    return await run_course_knowledge_agent(state, llm)
+
+
 def _naming_payload_from_outline(outline: dict) -> dict:
     return {
         "personalization_summary": outline["personalization_summary"],
@@ -124,7 +144,9 @@ def test_run_course_knowledge_agent_requires_published_textbook(
         )
         session.commit()
 
-    result = asyncio.run(run_course_knowledge_agent(_state("textbook-draft"), object()))
+    result = asyncio.run(
+        _run_agent_with_saved_paths(_state("textbook-draft"), object())
+    )
     assert result == {"error": "教材未发布。", "hard_error": True}
 
 
@@ -146,7 +168,7 @@ def test_run_course_knowledge_agent_requires_textbook_binding(
         async def ainvoke(self, *args, **kwargs):
             raise AssertionError("LLM should not be used without textbook binding")
 
-    result = asyncio.run(run_course_knowledge_agent(_state(None), ExplodingLlm()))
+    result = asyncio.run(_run_agent_with_saved_paths(_state(None), ExplodingLlm()))
     assert result == {"error": "课程缺少已发布教材绑定。", "hard_error": True}
 
 
@@ -260,7 +282,7 @@ def test_run_course_knowledge_agent_uses_llm_for_published_textbook(
     module.ChatPromptTemplate = PromptFactory
     try:
         result = asyncio.run(
-            run_course_knowledge_agent(_state("textbook-published"), RecordingLlm())
+            _run_agent_with_saved_paths(_state("textbook-published"), RecordingLlm())
         )
     finally:
         module.ChatPromptTemplate = original_factory

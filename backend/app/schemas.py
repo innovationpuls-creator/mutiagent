@@ -5,6 +5,7 @@ import binascii
 import re
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -709,7 +710,15 @@ class LeafGenerationStatusRead(BaseModel):
     message: str
 
 
+class LeafChapterProgressRead(BaseModel):
+    chapter_id: str
+    state: Literal["locked", "available", "passed"]
+    best_score: int = 0
+    latest_attempt_id: str | None = None
+
+
 class LeafCourseReadResponse(BaseModel):
+    chapter_progress: list[LeafChapterProgressRead] = Field(default_factory=list)
     access_state: LeafAccessState
     course: LeafCourseRead
     outline: dict | None = None
@@ -738,6 +747,7 @@ class ForestQuizQuestionRead(BaseModel):
 
 
 class ForestQuizRead(BaseModel):
+    quiz_version: str
     quiz_id: str
     course_node_id: str
     chapter_id: str
@@ -749,6 +759,7 @@ class ForestQuizRead(BaseModel):
 
 
 class ForestAttemptRead(BaseModel):
+    quiz_version: str | None = None
     attempt_id: str
     quiz_id: str
     score: int
@@ -784,6 +795,24 @@ class ForestQuizGenerateRequest(BaseModel):
 
 class ForestQuizAttemptCreateRequest(BaseModel):
     answers: dict
+    client_submission_id: UUID | None = None
+    quiz_version: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def paired_submission_fields(self) -> ForestQuizAttemptCreateRequest:
+        if (self.client_submission_id is None) != (self.quiz_version is None):
+            raise ValueError(
+                "client_submission_id and quiz_version must be supplied together"
+            )
+        return self
+
+
+class ForestSubmissionRead(BaseModel):
+    attempt: ForestAttemptRead
+    weaknesses: list[dict]
+    canopy_overview: CanopyOverviewResponse
+    next_unlocked_chapter_id: str | None = None
+    next_course_id: str | None = None
 
 
 class ForestAiContext(BaseModel):
@@ -811,3 +840,12 @@ class ForestAiStreamRequest(BaseModel):
     @classmethod
     def validate_image_attachment(cls, value: str | None) -> str | None:
         return _validate_image_attachment(value)
+
+
+class ProfileDashboardReadResponse(BaseModel):
+    hasCompleteProfile: bool
+    profile: dict
+    profileCompleteness: int
+    profileSummaryText: str
+    todayLearning: dict
+    recommendations: list[dict]

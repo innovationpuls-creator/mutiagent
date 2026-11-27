@@ -1,7 +1,8 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { fetchProfileDashboard } from "../../api/profile";
+import { useAiWidget } from "../../contexts/AiWidgetContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { motionTokens } from "../../styles/motion-tokens";
 import type { ProfileDashboardData } from "../../types/profile";
@@ -44,8 +45,11 @@ function getWeekday(): string {
 export function SproutHero() {
 	const auth = useAuth();
 	const navigate = useNavigate();
+	const { setWidgetState } = useAiWidget();
+	const [params, setParams] = useSearchParams();
 	const reduceMotion = useReducedMotion();
 	const [data, setData] = useState<ProfileDashboardData | null>(null);
+	const [retry, setRetry] = useState(0);
 	const [error, setError] = useState<string | null>(null);
 	const [isOverlayOpen, setIsOverlayOpen] = useState(false);
 	const [isTodayOverlayOpen, setIsTodayOverlayOpen] = useState(false);
@@ -59,6 +63,7 @@ export function SproutHero() {
 		}
 
 		const token = auth.token;
+		void retry;
 		let alive = true;
 		const loadDashboard = () => {
 			fetchProfileDashboard(token)
@@ -80,13 +85,20 @@ export function SproutHero() {
 			alive = false;
 			window.removeEventListener("mutiagent-profile-updated", loadDashboard);
 		};
-	}, [auth.token]);
+	}, [auth.token, retry]);
+
+	useEffect(() => {
+		if (params.get("panel") === "profile" && data) setIsOverlayOpen(true);
+	}, [params, data]);
 
 	if (error) {
 		return (
 			<section className="sprout-hero">
 				<div className="hero-greeting-zone">
-					<p className="hero-whisper">{error}</p>
+					<p role="alert">{error}</p>
+					<button type="button" onClick={() => setRetry((n) => n + 1)}>
+						重新加载
+					</button>
 				</div>
 			</section>
 		);
@@ -137,8 +149,11 @@ export function SproutHero() {
 					animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
 					transition={{ ...motionTokens.editorial, delay: 0.1 }}
 				>
-					了解自己，是成长的
-					<span className="hero-title-accent">第一步</span>。
+					{canStartCurrentLearning
+						? "继续今天的学习"
+						: data.hasCompleteProfile
+							? "准备好，迈出下一步"
+							: "从了解自己开始"}
 				</motion.h1>
 
 				{/* 辅助信息条 — 对应 Headspace 的 streak / sunrise */}
@@ -159,6 +174,31 @@ export function SproutHero() {
 				</motion.div>
 			</div>
 
+			{(!data.hasCompleteProfile || !canStartCurrentLearning) && (
+				<div className="hero-primary-actions">
+					{!data.hasCompleteProfile && (
+						<button
+							className="hero-primary-action"
+							type="button"
+							onClick={() => setWidgetState("EXPANDED")}
+						>
+							完善学习画像
+						</button>
+					)}
+					{!canStartCurrentLearning && data.hasCompleteProfile && (
+						<button
+							className="hero-primary-action"
+							type="button"
+							onClick={() => navigate("/branch")}
+						>
+							查看学习路径
+						</button>
+					)}
+					<button type="button" onClick={() => setIsOverlayOpen(true)}>
+						查看学习画像
+					</button>
+				</div>
+			)}
 			{/* ── 双卡区 ── */}
 			<div className="hero-cards-row">
 				<ProfileCard
@@ -175,11 +215,23 @@ export function SproutHero() {
 							: undefined
 					}
 					onStartLearning={
-						canStartCurrentLearning ? () => navigate("/branch") : undefined
+						canStartCurrentLearning
+							? () =>
+									navigate(
+										`/leaf/${encodeURIComponent(currentLearningCourse?.course_node_id ?? "")}`,
+									)
+							: undefined
 					}
 				/>
 			</div>
 
+			{data.hasCompleteProfile && canStartCurrentLearning && (
+				<div className="hero-primary-actions">
+					<button type="button" onClick={() => setIsOverlayOpen(true)}>
+						查看学习画像
+					</button>
+				</div>
+			)}
 			{/* ── 底部推荐行 ── */}
 			<div className="hero-recs-row">
 				{data.recommendations.map((rec, i) => (
@@ -191,7 +243,14 @@ export function SproutHero() {
 				{isOverlayOpen && (
 					<ProfileDetailOverlay
 						isOpen={isOverlayOpen}
-						onClose={() => setIsOverlayOpen(false)}
+						onClose={() => {
+							setIsOverlayOpen(false);
+							if (params.has("panel")) {
+								const next = new URLSearchParams(params);
+								next.delete("panel");
+								setParams(next, { replace: true });
+							}
+						}}
 						profile={data.profile}
 					/>
 				)}

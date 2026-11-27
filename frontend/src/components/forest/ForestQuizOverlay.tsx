@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motionTokens } from "../../styles/motion-tokens";
 import type {
@@ -6,6 +7,7 @@ import type {
 	ChapterWeaknessData,
 	ForestAttempt,
 } from "../../types/forest";
+import { useDialogAccessibility } from "../ui/useDialogAccessibility";
 
 interface ForestQuizOverlayProps {
 	isOpen: boolean;
@@ -287,13 +289,15 @@ export function ForestQuizOverlay({
 	weaknesses,
 	reduceMotion = false,
 }: ForestQuizOverlayProps) {
+	const closeRef = useRef<HTMLButtonElement>(null);
+	useDialogAccessibility({ isOpen, onClose, initialFocusRef: closeRef });
 	const navigate = useNavigate();
 
 	if (!isOpen) return null;
 
 	const score = attempt.score;
 	const passed = attempt.passed;
-	const stage = canopyOverview.growth_tree_stage || 1;
+	const stage = canopyOverview.growth_stage || 1;
 
 	const handleGoCanopy = () => {
 		onClose();
@@ -303,14 +307,19 @@ export function ForestQuizOverlay({
 	const handleGoNext = () => {
 		onClose();
 		if (nextUnlockedChapterId) {
-			navigate(`/leaf/${courseNodeId}?chapter_id=${nextUnlockedChapterId}`);
+			navigate(`/leaf/${courseNodeId}?section_id=${nextUnlockedChapterId}`);
 		} else if (nextCourseId) {
 			navigate(`/leaf/${nextCourseId}`);
 		}
 	};
 
 	return (
-		<div className="forest-overlay-backdrop" role="dialog" aria-modal="true">
+		<div
+			className="forest-overlay-backdrop"
+			role="dialog"
+			aria-modal="true"
+			aria-label="测验结果"
+		>
 			<motion.div
 				className="forest-overlay-panel"
 				initial={
@@ -327,6 +336,7 @@ export function ForestQuizOverlay({
 					className="forest-overlay-close-btn"
 					onClick={onClose}
 					aria-label="关闭"
+					ref={closeRef}
 				>
 					✕
 				</button>
@@ -373,15 +383,18 @@ export function ForestQuizOverlay({
 								<div className="stat-item">
 									<span className="stat-label">点亮课程</span>
 									<span className="stat-value">
-										{canopyOverview.completed_courses} /{" "}
-										{canopyOverview.total_courses}
+										{
+											canopyOverview.courses.filter(
+												(course) => course.status === "completed",
+											).length
+										}{" "}
+										/ {canopyOverview.courses.length}
 									</span>
 								</div>
 								<div className="stat-item">
 									<span className="stat-label">通关章节</span>
 									<span className="stat-value">
-										{canopyOverview.completed_chapters} /{" "}
-										{canopyOverview.total_chapters}
+										{canopyOverview.completed_count} 章
 									</span>
 								</div>
 							</div>
@@ -398,7 +411,7 @@ export function ForestQuizOverlay({
 								<div className="stat-item">
 									<span className="stat-label">专注时长</span>
 									<span className="stat-value">
-										{canopyOverview.total_focus_hours} 小时
+										{canopyOverview.focused_hours} 小时
 									</span>
 								</div>
 							</div>

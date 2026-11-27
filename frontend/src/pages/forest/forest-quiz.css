@@ -27,32 +27,6 @@
 		linear-gradient(135deg, oklch(96% 0.03 75) 0%, oklch(93% 0.04 70) 100%);
 }
 
-.forest-ambient-sun {
-	position: absolute;
-	inset-block-start: -150px;
-	inset-inline-end: -150px;
-	width: 550px;
-	height: 550px;
-	border-radius: 50%;
-	background: linear-gradient(135deg, oklch(98% 0.05 85), oklch(84% 0.14 55));
-	filter: blur(2px);
-	box-shadow:
-		0 0 120px 0 oklch(88% 0.12 60 / 0.4),
-		inset -20px -20px 60px 0 oklch(75% 0.16 45 / 0.15);
-	z-index: 0;
-	pointer-events: none;
-	animation: sun-breathe 15000ms ease-in-out infinite alternate;
-}
-
-@keyframes sun-breathe {
-	from {
-		transform: scale(0.98) translate(5px, -5px);
-	}
-	to {
-		transform: scale(1.02) translate(-5px, 5px);
-	}
-}
-
 .forest-paper-canvas {
 	position: absolute;
 	inset: 0;
@@ -410,14 +384,6 @@
 	.forest-actions {
 		align-items: stretch;
 		flex-direction: column;
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.forest-ambient-sun {
-		animation: none;
-		opacity: 0.68;
-		transform: none;
 	}
 }
 
@@ -875,5 +841,87 @@
 	.forest-btn-primary:hover {
 		transform: none;
 		transition: none;
+	}
+}
+.forest-answer-fieldset {
+	border: 0;
+	padding: 0;
+	margin: 0;
+	min-inline-size: 0;
+}
+.forest-ai-disclosure {
+	min-inline-size: 0;
+}
+.forest-ai-disclosure summary {
+	cursor: pointer;
+	padding: var(--space-16);
+	color: var(--color-text-primary);
+}
+.forest-draft-status {
+	max-inline-size: var(--container-wide);
+	margin-inline: auto;
+	padding: var(--space-16) var(--space-32);
+	color: var(--color-text-primary);
+}
+.forest-draft-status button {
+	margin: var(--space-8);
+	min-block-size: var(--space-48);
+	padding: var(--space-12);
+	background: var(--color-surface);
+	border: 0;
+	color: var(--color-text-primary);
+	border-radius: var(--radius-md);
+}
+.draft-navigation-warning {
+	position: fixed;
+	inset: var(--space-24);
+	margin: auto;
+	max-inline-size: var(--container-narrow);
+	block-size: fit-content;
+	z-index: 100000;
+	padding: var(--space-32);
+	background: var(--color-surface-raised);
+	box-shadow: var(--shadow-lg);
+	border-radius: var(--radius-lg);
+}
+@media (max-width: 1023px) {
+	.forest-quiz-shell {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.forest-draft-status {
+		padding-inline: var(--space-16);
+	}
+	.forest-question-panel {
+		padding: var(--space-16);
+	}
+}
+
+.draft-navigation-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 100000;
+	background: var(--color-overlay);
+	display: grid;
+	place-items: center;
+	padding: var(--space-24);
+}
+.draft-navigation-backdrop .draft-navigation-warning {
+	position: relative;
+	inset: auto;
+	inline-size: 100%;
+}
+
+@media (max-width: 1023px) {
+	.forest-quiz-page {
+		padding-inline: var(--space-16);
+		padding-block-end: calc(var(--space-96) + env(safe-area-inset-bottom));
+	}
+	.forest-question-panel {
+		block-size: auto;
+		overflow: visible;
+	}
+	.forest-ai-panel {
+		block-size: auto;
+		max-block-size: 80dvh;
 	}
 }

@@ -1723,7 +1723,10 @@ async def run_course_knowledge_agent(
 
     try:
         await asyncio.to_thread(
-            _persist_generated_outlines, state["user_id"], generated_outlines
+            _persist_generated_outlines,
+            state["user_id"],
+            generated_outlines,
+            year_learning_paths,
         )
         logger.info(
             "CourseKnowledgeOutline persisted for user %s, %d course(s)",
@@ -1805,11 +1808,36 @@ def _prepare_courses_for_outline(
     return selected_course
 
 
-def _persist_generated_outlines(user_id: str, outlines: list[dict]) -> None:
+def _persist_generated_outlines(
+    user_id: str, outlines: list[dict], expected_paths: dict | None = None
+) -> None:
     from app.services.course_knowledge_service import (
         upsert_user_course_knowledge_outline,
     )
 
     with Session(get_engine()) as db_session:
+        from app.services.leaf_service import read_leaf_course
+        from app.services.learning_path_service import (
+            _grade_courses_changed,
+            get_year_learning_path,
+        )
+        from app.services.student_lock import lock_student
+
+        lock_student(db_session, user_id)
         for outline in outlines:
-            upsert_user_course_knowledge_outline(db_session, user_id, outline)
+            grade_year = outline.get("grade_year", "")
+            if expected_paths is not None:
+                previous = expected_paths.get(grade_year)
+                current = get_year_learning_path(db_session, user_id, grade_year)
+                if (
+                    not isinstance(previous, dict)
+                    or current is None
+                    or _grade_courses_changed(previous, current, grade_year)
+                ):
+                    raise ValueError("学习路径已更新，请重新生成课程大纲。")
+            # A long generation may finish after its source course was replaced.
+            read_leaf_course(db_session, user_id, outline.get("course_id", ""))
+            upsert_user_course_knowledge_outline(
+                db_session, user_id, outline, commit=False
+            )
+        db_session.commit()

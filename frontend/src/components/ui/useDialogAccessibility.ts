@@ -28,9 +28,29 @@ export function useDialogAccessibility({
 		document.body.style.overflow = "hidden";
 
 		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.key !== "Escape") return;
-			event.preventDefault();
-			onCloseRef.current();
+			if (event.key === "Escape") {
+				event.preventDefault();
+				onCloseRef.current();
+				return;
+			}
+			if (event.key !== "Tab") return;
+			const dialog = initialFocusRef.current?.closest(
+				'[role="dialog"], [role="alertdialog"]',
+			);
+			const controls = Array.from(
+				dialog?.querySelectorAll<HTMLElement>(
+					'button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]',
+				) ?? [],
+			).filter((element) => element.getClientRects().length > 0);
+			const first = controls[0],
+				last = controls.at(-1);
+			if (event.shiftKey && document.activeElement === first) {
+				event.preventDefault();
+				last?.focus();
+			} else if (!event.shiftKey && document.activeElement === last) {
+				event.preventDefault();
+				first?.focus();
+			}
 		};
 
 		document.addEventListener("keydown", handleKeyDown);

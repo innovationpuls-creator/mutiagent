@@ -254,14 +254,24 @@ def test_rag_knowledge_base_end_to_end_flow(tmp_path: Path) -> None:
     assert course_node["source_textbook_title"] == "FastAPI 开发基础"
     assert course_node["source_outline_section_ids"] == ["1.1", "1.2", "1.3"]
 
+    from app.services.learning_path_service import upsert_year_learning_path
+
+    agent_state = _state("textbook-published-e2e")
+    with Session(engine) as session:
+        upsert_year_learning_path(
+            session,
+            "user-1",
+            "year_3",
+            "FastAPI 开发基础",
+            agent_state["year_learning_paths"]["year_3"],
+        )
+
     import app.orchestration.agents.course_knowledge as course_knowledge_module
 
     original_factory = course_knowledge_module.ChatPromptTemplate
     course_knowledge_module.ChatPromptTemplate = PromptFactory
     try:
-        result = asyncio.run(
-            run_course_knowledge_agent(_state("textbook-published-e2e"), RecordingLlm())
-        )
+        result = asyncio.run(run_course_knowledge_agent(agent_state, RecordingLlm()))
     finally:
         course_knowledge_module.ChatPromptTemplate = original_factory
 

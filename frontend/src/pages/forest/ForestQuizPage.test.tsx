@@ -1,3 +1,4 @@
+import "fake-indexeddb/auto";
 import {
 	cleanup,
 	fireEvent,
@@ -19,7 +20,10 @@ const generateForestQuizMock = vi.fn();
 const submitForestQuizAttemptStreamMock = vi.fn();
 const streamForestAiMock = vi.fn();
 
-vi.mock("../../api/forest", () => ({
+vi.mock("../../api/forest", async () => ({
+	...(await vi.importActual<typeof import("../../api/forest")>(
+		"../../api/forest",
+	)),
 	fetchForestQuizSession: (...args: unknown[]) =>
 		fetchForestQuizSessionMock(...args),
 	generateForestQuiz: (...args: unknown[]) => generateForestQuizMock(...args),
@@ -123,6 +127,7 @@ describe("ForestQuizPage", () => {
 		fetchForestQuizSessionMock.mockResolvedValue(forestSession());
 		generateForestQuizMock.mockResolvedValue({
 			quiz_id: "quiz_1",
+			quiz_version: "a".repeat(64),
 			course_node_id: "year_3_course_2",
 			chapter_id: "1",
 			status: "ready",
@@ -155,6 +160,7 @@ describe("ForestQuizPage", () => {
 						attempt: {
 							attempt_id: "attempt_1",
 							quiz_id: "quiz_1",
+							quiz_version: "a".repeat(64),
 							score: 72,
 							passed: true,
 							answers: { q1: "A" },
@@ -168,14 +174,15 @@ describe("ForestQuizPage", () => {
 						},
 						weaknesses: [],
 						canopy_overview: {
-							total_courses: 5,
-							completed_courses: 1,
-							total_chapters: 20,
-							completed_chapters: 3,
+							courses: [],
+							active_rate: 50,
+							quality_scores: {},
+							completed_count: 1,
+
 							avg_score: 72,
-							total_focus_hours: 10,
-							growth_tree_stage: 2,
-							growth_advanced_steps: 1,
+							focused_hours: 10,
+							growth_stage: 2,
+
 							milestones: [],
 						},
 						next_unlocked_chapter_id: "2",
@@ -210,15 +217,18 @@ describe("ForestQuizPage", () => {
 			expect(submitForestQuizAttemptStreamMock).toHaveBeenCalledWith(
 				"token-1",
 				"quiz_1",
-				{ answers: { q1: "A" } },
+				expect.objectContaining({
+					answers: { q1: "A" },
+					client_submission_id: expect.any(String),
+					quiz_version: "a".repeat(64),
+				}),
 				expect.any(Function),
 			),
 		);
 		// Overlay should appear with score
 		await waitFor(() => expect(screen.getByText("72")).toBeTruthy());
-		await waitFor(() =>
-			expect(screen.getByText("先看题干，再看答案。")).toBeTruthy(),
-		);
+		fireEvent.click(screen.getByText("AI 解析与帮助"));
+		await waitFor(() => expect(streamForestAiMock).toHaveBeenCalled());
 	});
 
 	it("allows user to send custom follow-up message with handwriting canvas drawing", async () => {
@@ -238,6 +248,7 @@ describe("ForestQuizPage", () => {
 			forestSession({
 				quiz: {
 					quiz_id: "quiz_1",
+					quiz_version: "a".repeat(64),
 					course_node_id: "year_3_course_2",
 					chapter_id: "1",
 					status: "ready",

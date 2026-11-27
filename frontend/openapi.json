@@ -1007,9 +1007,7 @@
 						"content": {
 							"application/json": {
 								"schema": {
-									"additionalProperties": true,
-									"type": "object",
-									"title": "Response Get Dashboard Api Profile Dashboard Get"
+									"$ref": "#/components/schemas/ProfileDashboardReadResponse"
 								}
 							}
 						}
@@ -1315,6 +1313,61 @@
 							"application/json": {
 								"schema": {
 									"$ref": "#/components/schemas/ForestAttemptRead"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/forest/quizzes/{quiz_id}/submissions/{client_submission_id}": {
+			"get": {
+				"tags": ["forest"],
+				"summary": "Recover Submission",
+				"operationId": "recover_submission_api_forest_quizzes__quiz_id__submissions__client_submission_id__get",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "quiz_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Quiz Id"
+						}
+					},
+					{
+						"name": "client_submission_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid",
+							"title": "Client Submission Id"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ForestSubmissionRead"
 								}
 							}
 						}
@@ -3533,6 +3586,17 @@
 			},
 			"ForestAttemptRead": {
 				"properties": {
+					"quiz_version": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Quiz Version"
+					},
 					"attempt_id": {
 						"type": "string",
 						"title": "Attempt Id"
@@ -3641,6 +3705,30 @@
 						"additionalProperties": true,
 						"type": "object",
 						"title": "Answers"
+					},
+					"client_submission_id": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "uuid"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Client Submission Id"
+					},
+					"quiz_version": {
+						"anyOf": [
+							{
+								"type": "string",
+								"pattern": "^[a-f0-9]{64}$"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Quiz Version"
 					}
 				},
 				"type": "object",
@@ -3703,6 +3791,10 @@
 			},
 			"ForestQuizRead": {
 				"properties": {
+					"quiz_version": {
+						"type": "string",
+						"title": "Quiz Version"
+					},
 					"quiz_id": {
 						"type": "string",
 						"title": "Quiz Id"
@@ -3745,6 +3837,7 @@
 				},
 				"type": "object",
 				"required": [
+					"quiz_version",
 					"quiz_id",
 					"course_node_id",
 					"chapter_id",
@@ -3813,6 +3906,49 @@
 				"type": "object",
 				"required": ["course", "chapter", "progress"],
 				"title": "ForestQuizSessionReadResponse"
+			},
+			"ForestSubmissionRead": {
+				"properties": {
+					"attempt": {
+						"$ref": "#/components/schemas/ForestAttemptRead"
+					},
+					"weaknesses": {
+						"items": {
+							"additionalProperties": true,
+							"type": "object"
+						},
+						"type": "array",
+						"title": "Weaknesses"
+					},
+					"canopy_overview": {
+						"$ref": "#/components/schemas/CanopyOverviewResponse"
+					},
+					"next_unlocked_chapter_id": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Next Unlocked Chapter Id"
+					},
+					"next_course_id": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Next Course Id"
+					}
+				},
+				"type": "object",
+				"required": ["attempt", "weaknesses", "canopy_overview"],
+				"title": "ForestSubmissionRead"
 			},
 			"GrowthReport": {
 				"properties": {
@@ -4768,6 +4904,38 @@
 				"required": ["source_id", "name"],
 				"title": "KnowledgeSourceRead"
 			},
+			"LeafChapterProgressRead": {
+				"properties": {
+					"chapter_id": {
+						"type": "string",
+						"title": "Chapter Id"
+					},
+					"state": {
+						"type": "string",
+						"enum": ["locked", "available", "passed"],
+						"title": "State"
+					},
+					"best_score": {
+						"type": "integer",
+						"title": "Best Score",
+						"default": 0
+					},
+					"latest_attempt_id": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Latest Attempt Id"
+					}
+				},
+				"type": "object",
+				"required": ["chapter_id", "state"],
+				"title": "LeafChapterProgressRead"
+			},
 			"LeafCourseRead": {
 				"properties": {
 					"course_node_id": {
@@ -4809,6 +4977,13 @@
 			},
 			"LeafCourseReadResponse": {
 				"properties": {
+					"chapter_progress": {
+						"items": {
+							"$ref": "#/components/schemas/LeafChapterProgressRead"
+						},
+						"type": "array",
+						"title": "Chapter Progress"
+					},
 					"access_state": {
 						"type": "string",
 						"enum": ["available", "locked"],
@@ -4971,6 +5146,50 @@
 				"type": "object",
 				"required": ["provider", "authorization_code"],
 				"title": "OAuthRequest"
+			},
+			"ProfileDashboardReadResponse": {
+				"properties": {
+					"hasCompleteProfile": {
+						"type": "boolean",
+						"title": "Hascompleteprofile"
+					},
+					"profile": {
+						"additionalProperties": true,
+						"type": "object",
+						"title": "Profile"
+					},
+					"profileCompleteness": {
+						"type": "integer",
+						"title": "Profilecompleteness"
+					},
+					"profileSummaryText": {
+						"type": "string",
+						"title": "Profilesummarytext"
+					},
+					"todayLearning": {
+						"additionalProperties": true,
+						"type": "object",
+						"title": "Todaylearning"
+					},
+					"recommendations": {
+						"items": {
+							"additionalProperties": true,
+							"type": "object"
+						},
+						"type": "array",
+						"title": "Recommendations"
+					}
+				},
+				"type": "object",
+				"required": [
+					"hasCompleteProfile",
+					"profile",
+					"profileCompleteness",
+					"profileSummaryText",
+					"todayLearning",
+					"recommendations"
+				],
+				"title": "ProfileDashboardReadResponse"
 			},
 			"RegisterRequest": {
 				"properties": {

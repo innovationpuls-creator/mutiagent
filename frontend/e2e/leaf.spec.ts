@@ -4,6 +4,7 @@ const authState = {
 	token: "e2e-token",
 	user: {
 		uid: "e2e-user",
+		role: "student",
 		username: "端到端用户",
 		identifier: "e2e@example.com",
 		provider: "password",
@@ -14,6 +15,7 @@ const authState = {
 };
 
 const profileDashboard = {
+	hasCompleteProfile: true,
 	profile: {
 		currentGrade: "大三",
 		major: "软件工程",
@@ -41,6 +43,7 @@ const profileDashboard = {
 		currentLearningCourse: null,
 		currentCourseDetail: null,
 		currentCourseOutline: null,
+		gradeCourses: [],
 		followingCourses: [],
 	},
 	recommendations: [],
@@ -131,6 +134,11 @@ function leafPayload(courseNodeId: string) {
 				order_index: 1,
 				description: "确认边界",
 				key_knowledge_points: ["边界"],
+				source_textbook_id: "tb-1",
+				source_textbook_title: "AI Agent 教材",
+				source_section_ids: ["1"],
+				source_section_titles: ["第一章：需求拆解"],
+				source_content_chars: 1200,
 			},
 			{
 				section_id: "1.1",
@@ -140,6 +148,11 @@ function leafPayload(courseNodeId: string) {
 				order_index: 2,
 				description: "明确目标",
 				key_knowledge_points: ["目标"],
+				source_textbook_id: "tb-1",
+				source_textbook_title: "AI Agent 教材",
+				source_section_ids: ["1.1"],
+				source_section_titles: ["学习目标"],
+				source_content_chars: 600,
 			},
 			{
 				section_id: "2",
@@ -149,6 +162,11 @@ function leafPayload(courseNodeId: string) {
 				order_index: 3,
 				description: "整理资源",
 				key_knowledge_points: ["资源"],
+				source_textbook_id: "tb-1",
+				source_textbook_title: "AI Agent 教材",
+				source_section_ids: ["2"],
+				source_section_titles: ["第二章：资源编排"],
+				source_content_chars: 900,
 			},
 		],
 		section_composed_markdowns: {
@@ -181,6 +199,8 @@ function leafPayload(courseNodeId: string) {
 				],
 			},
 		},
+		section_resource_errors: {},
+		chapter_progress: [],
 		generation_status: null,
 		can_generate: true,
 		first_generatable_chapter_id: "1",
@@ -209,6 +229,13 @@ async function installMocks(page: Page) {
 			body: JSON.stringify(branchOverview),
 		});
 	});
+	await page.route("**/api/student/matched-program", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: "null",
+		});
+	});
 	await page.route("**/api/leaf/courses/*", async (route) => {
 		const courseNodeId =
 			route.request().url().split("/").pop() ?? "year_3_course_2";
@@ -216,6 +243,21 @@ async function installMocks(page: Page) {
 			status: 200,
 			contentType: "application/json",
 			body: JSON.stringify(leafPayload(courseNodeId)),
+		});
+	});
+	await page.route("**/api/forest/**", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				course: leafPayload("year_3_course_2").course,
+				chapter: leafPayload("year_3_course_2").sections[0],
+				quiz: null,
+				latest_attempt: null,
+				progress: null,
+				next_unlocked_chapter_id: null,
+				next_course_id: null,
+			}),
 		});
 	});
 }
@@ -228,19 +270,24 @@ test("branch opens current courses and explains locked courses", async ({
 
 	await expect(page.getByRole("heading", { name: "你的路径" })).toBeVisible();
 	await page
-		.getByRole("button", { name: /大三第 3 门课程：锁定课程，未开放/ })
+		.getByRole("button", {
+			name: /大三第 3 门课程（自选课程）：锁定课程，未开放/,
+		})
 		.click();
 	await expect(page.getByRole("status")).toHaveText(
 		"「锁定课程」还未开放，先完成前面的课程。",
 	);
 	await expect(page).toHaveURL(/\/branch$/);
 
-	await page
-		.getByRole("button", { name: /大三第 2 门课程：当前课程，进行中/ })
-		.click();
+	const currentCourseButton = page.getByRole("button", {
+		name: /大三第 2 门课程（自选课程）：当前课程，进行中/,
+	});
+	await currentCourseButton.click();
+	await expect(currentCourseButton).toHaveAttribute("aria-pressed", "true");
+	await currentCourseButton.click();
 	await expect(page).toHaveURL(/\/leaf\/year_3_course_2$/);
 	await expect(
-		page.getByRole("heading", { name: "AI Agent 开发" }),
+		page.getByRole("heading", { name: "AI Agent 开发", level: 1 }),
 	).toBeVisible();
 });
 
@@ -251,14 +298,14 @@ test("leaf renders generated resources and opens AI draft", async ({
 	await page.goto("/leaf/year_3_course_2");
 
 	await expect(
-		page.getByRole("heading", { name: "AI Agent 开发" }),
+		page.getByRole("heading", { name: "AI Agent 开发", level: 1 }),
 	).toBeVisible();
 	await expect(
-		page.getByRole("heading", { name: "学习目标", exact: true }),
+		page.getByRole("heading", { name: "1.1 学习目标", exact: true }),
 	).toBeVisible();
 	await expect(page.getByText("正文内容")).toBeVisible();
-	await expect(page.getByText("视频资源暂时不可用")).toBeVisible();
-	await expect(page.getByText("动画暂时不可用")).toBeVisible();
+	await expect(page.getByText("视频生成失败")).toBeVisible();
+	await expect(page.getByText("动画生成失败")).toBeVisible();
 
 	await page.getByRole("button", { name: "收起章节导航" }).click();
 	await expect(
@@ -271,7 +318,7 @@ test("leaf renders generated resources and opens AI draft", async ({
 
 	await page.goto("/leaf/year_3_course_2");
 	await expect(
-		page.getByRole("heading", { name: "AI Agent 开发" }),
+		page.getByRole("heading", { name: "AI Agent 开发", level: 1 }),
 	).toBeVisible();
 	await page.getByRole("button", { name: "让 AI 生成本章内容" }).click();
 	await expect(page.getByTestId("global-ai-widget-shell")).toBeVisible();

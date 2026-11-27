@@ -291,7 +291,26 @@ def _plain_html_text(text: str) -> str:
 
 def _persist_outline(user_id: str, outline: dict) -> None:
     with Session(get_engine()) as db_session:
-        upsert_user_course_knowledge_outline(db_session, user_id, outline)
+        from app.services.course_knowledge_service import (
+            SECTION_GENERATED_ASSET_KEYS,
+            _outline_sections_signature,
+            get_user_course_knowledge_outline,
+        )
+        from app.services.student_lock import lock_student
+
+        lock_student(db_session, user_id)
+        current = get_user_course_knowledge_outline(
+            db_session, user_id, outline.get("course_id", "")
+        )
+        if current is None or _outline_sections_signature(
+            current
+        ) != _outline_sections_signature(outline):
+            raise ValueError("课程大纲已更新，请重新生成学习资源")
+        merged = dict(current)
+        for key in (*SECTION_GENERATED_ASSET_KEYS, "section_resource_errors"):
+            if key in outline:
+                merged[key] = {**current.get(key, {}), **outline[key]}
+        upsert_user_course_knowledge_outline(db_session, user_id, merged, commit=False)
         from sqlmodel import select
 
         from app.models import ChapterWeakness

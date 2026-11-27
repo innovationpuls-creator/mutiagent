@@ -8,7 +8,7 @@ import {
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GlobalAiWidget } from "../components/onboarding/GlobalAiWidget";
-import { AiWidgetProvider } from "../context/AiWidgetContext";
+import { AiWidgetProvider } from "../contexts/AiWidgetContext";
 import { AuthProvider } from "../contexts/AuthContext";
 import { SproutPage } from "./SproutPage";
 
@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 describe("SproutPage", () => {
-	it("shows the center input after the intro and waits for the user to expand it on first login", async () => {
+	it("shows the homepage immediately and opens AI only on demand", async () => {
 		vi.stubGlobal("scrollTo", vi.fn());
 		const sessionStorageGetItem = vi.fn(() => null);
 		const sessionStorageRemoveItem = vi.fn();
@@ -76,40 +76,19 @@ describe("SproutPage", () => {
 			</AuthProvider>,
 		);
 
-		await waitFor(
-			() => {
-				expect(
-					screen.getByText("在开启旅程之前，想先听听你的声音。"),
-				).toBeTruthy();
-			},
-			{ timeout: 12000 },
+		expect(screen.getByText("Sprout Hero")).toBeTruthy();
+		expect(
+			document.querySelector('[data-sprout-init-overlay="true"]'),
+		).toBeNull();
+		fireEvent.click(
+			await screen.findByRole("button", { name: "打开 AI 学习助手" }),
 		);
-
-		let centerInputCard: Element | null = null;
-		await waitFor(
-			() => {
-				centerInputCard = document.querySelector(".card.initial");
-				expect(centerInputCard).toBeTruthy();
-			},
-			{ timeout: 4000 },
+		await waitFor(() =>
+			expect(screen.getByLabelText("AI 基础画像对话")).toBeTruthy(),
 		);
-
-		expect(screen.getByText("在开启旅程之前，想先听听你的声音。")).toBeTruthy();
-
-		fireEvent.click(centerInputCard as Element);
-
-		await waitFor(() => {
-			expect(screen.getByLabelText("AI 基础画像对话")).toBeTruthy();
-		});
-
-		expect(sessionStorageRemoveItem).not.toHaveBeenCalled();
-
 		fireEvent.click(screen.getByRole("button", { name: "收起 AI 对话" }));
-
-		await waitFor(() => {
-			expect(sessionStorageRemoveItem).toHaveBeenCalledWith(
-				"mutiagent-sprout-init-overlay",
-			);
-		});
-	}, 22000);
+		expect(sessionStorageRemoveItem).not.toHaveBeenCalledWith(
+			"mutiagent-sprout-init-overlay",
+		);
+	});
 });

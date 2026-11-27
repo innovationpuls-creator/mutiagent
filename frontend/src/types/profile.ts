@@ -51,6 +51,7 @@ export interface TodayLearning {
 }
 
 export interface ProfileDashboardData {
+	hasCompleteProfile?: boolean;
 	profile: UserProfile;
 	profileCompleteness: number;
 	profileSummaryText: string;

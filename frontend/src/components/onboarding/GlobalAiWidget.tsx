@@ -1,12 +1,11 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect } from "react";
-import { useAiWidget } from "../../context/AiWidgetContext";
+import { useAiWidget } from "../../contexts/AiWidgetContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { AiGreetingInput } from "./AiGreetingInput";
 
 const CENTER_INPUT_OFFSET =
 	"min(25vh, calc(var(--space-120) + var(--space-96)))";
-const SPROUT_INIT_OVERLAY_KEY = "mutiagent-sprout-init-overlay";
 type ExpandedLayout = "centered" | "docked";
 
 function getExpandedLayout(): ExpandedLayout {
@@ -22,21 +21,6 @@ function getCurrentUrl(): URL | null {
 	}
 
 	return new URL(window.location.href);
-}
-
-function hasPendingSproutInitOverlay(): boolean {
-	if (typeof window === "undefined") {
-		return false;
-	}
-
-	try {
-		return (
-			window.sessionStorage.getItem(SPROUT_INIT_OVERLAY_KEY) === "1" ||
-			document.querySelector('[data-sprout-init-overlay="true"]') !== null
-		);
-	} catch {
-		return document.querySelector('[data-sprout-init-overlay="true"]') !== null;
-	}
 }
 
 export function GlobalAiWidget() {
@@ -76,15 +60,6 @@ export function GlobalAiWidget() {
 			return;
 		}
 
-		if (hasPendingSproutInitOverlay()) {
-			return;
-		}
-
-		if (url.pathname === "/sprout") {
-			setWidgetState("CENTER_INPUT");
-			return;
-		}
-
 		setWidgetState("WIDGET");
 	}, [clearPendingMessage, setWidgetState, token, widgetState]);
 
@@ -118,6 +93,8 @@ export function GlobalAiWidget() {
 				{widgetState !== "HIDDEN" && token && (
 					<motion.div
 						data-testid="global-ai-widget-shell"
+						className="student-ai-shell"
+						data-widget-state={widgetState}
 						initial={reduceMotion ? false : { opacity: 0, y: 40 }}
 						animate={{ opacity: 1, y: 0 }}
 						exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 40 }}

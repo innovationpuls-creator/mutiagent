@@ -2892,6 +2892,13 @@ def test_data_structure_course_outline_and_markdown_use_bound_textbook_evidence(
         }
     }
 
+    from app.services.learning_path_service import upsert_year_learning_path
+
+    with Session(engine) as session:
+        upsert_year_learning_path(
+            session, "user-1", "year_3", "数据结构", year_learning_paths["year_3"]
+        )
+
     class CourseLlm:
         pass
 

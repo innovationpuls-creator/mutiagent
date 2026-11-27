@@ -10,6 +10,15 @@ import type {
 } from "../types/forest";
 import { API_BASE_URL, notifyAuthInvalidFromError, readApiError } from "./http";
 
+export class ForestSubmissionError extends Error {
+	constructor(
+		message: string,
+		public status: number,
+	) {
+		super(message);
+	}
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object";
 }
@@ -59,8 +68,9 @@ async function readForestError(
 ): Promise<Error> {
 	const error = await readApiError(response);
 	notifyAuthInvalidFromError(response.status, error);
-	return new Error(
+	return new ForestSubmissionError(
 		(typeof error?.detail === "string" ? error.detail : null) ?? fallback,
+		response.status,
 	);
 }
 
@@ -196,7 +206,8 @@ export async function submitForestQuizAttemptStream(
 	);
 	if (!response.ok) throw await readForestError(response, "测验提交失败");
 	const reader = response.body?.getReader();
-	if (!reader) return;
+	if (!reader) throw new Error("未收到提交结果，请查询本次提交");
+	let receivedDone = false;
 	const decoder = new TextDecoder();
 	let buffer = "";
 	while (true) {
@@ -227,6 +238,7 @@ export async function submitForestQuizAttemptStream(
 					message: typeof data.message === "string" ? data.message : undefined,
 				});
 			} else if (eventName === "done") {
+				receivedDone = true;
 				onEvent({
 					event: "done",
 					doneData: data as unknown as ForestSubmitStreamDonePayload,
@@ -235,11 +247,36 @@ export async function submitForestQuizAttemptStream(
 				onEvent({
 					event: "error",
 					message:
-						typeof data.message === "string"
-							? data.message
-							: "测验提交时发生错误",
+						typeof data.message === "string" ? data.message : "测验提交失败",
 				});
+				throw new ForestSubmissionError(
+					typeof data.message === "string" ? data.message : "测验提交失败",
+					typeof data.status_code === "number" ? data.status_code : 500,
+				);
 			}
 		}
 	}
+	if (!receivedDone) throw new Error("连接已中断，尚未确认提交结果");
+}
+
+export async function fetchForestSubmission(
+	token: string,
+	quizId: string,
+	submissionId: string,
+): Promise<ForestSubmitStreamDonePayload | null> {
+	const response = await fetch(
+		`${API_BASE_URL}/api/forest/quizzes/${encodeURIComponent(quizId)}/submissions/${encodeURIComponent(submissionId)}`,
+		{ headers: { Authorization: `Bearer ${token}` } },
+	);
+	if (response.status === 404) return null;
+	if (!response.ok) throw await readForestError(response, "提交结果查询失败");
+	const data = await response.json();
+	if (
+		!isRecord(data) ||
+		!isRecord(data.attempt) ||
+		!Array.isArray(data.weaknesses) ||
+		!isRecord(data.canopy_overview)
+	)
+		throw new Error("提交结果格式不正确，请重新查询");
+	return data as unknown as ForestSubmitStreamDonePayload;
 }

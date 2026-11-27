@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { useAiWidget } from "../../context/AiWidgetContext";
+import { useAiWidget } from "../../contexts/AiWidgetContext";
 import { buildCourseOutlineDraft } from "../../onboarding/learningPathFlow";
 import { DURATION_INSTANT, motionTokens } from "../../styles/motion-tokens";
 
