@@ -74,6 +74,8 @@ export function errorEventFromGatewayError(error: GatewayError): SsePayload {
 
 export interface SseWriter {
 	send(name: SseEventName, payload?: SsePayload): void;
+	/** Forward already-formatted SSE bytes (legacy bridge). */
+	sendRaw(frames: string): void;
 	readonly closed: boolean;
 	readonly signal: AbortSignal;
 }
@@ -111,6 +113,7 @@ export function createSseResponse(
 			};
 			const writer: SseWriter = {
 				send: (name, payload) => write(formatSseEvent(name, payload)),
+				sendRaw: (frames) => write(frames),
 				get closed() {
 					return closed;
 				},

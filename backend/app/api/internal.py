@@ -4,11 +4,13 @@ import hmac
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, select
-from starlette.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
+from starlette.responses import JSONResponse, StreamingResponse
 
 from app.model_config_schemas import (
     OAuthCredentialPayload,
@@ -16,9 +18,28 @@ from app.model_config_schemas import (
     UsageRecordPayload,
 )
 from app.models import User
+from app.services import chat_context_service as chat_service
 from app.services import model_config_service as model_service
 
 INTERNAL_TOKEN_HEADER = "X-Internal-Token"
+
+
+class TurnPayload(BaseModel):
+    user_uid: str = Field(min_length=1)
+    user_message: str = Field(min_length=1, max_length=4000)
+    image_attachment: str | None = None
+    assistant_message: str | None = None
+    session_state_patch: dict | None = None
+
+
+class StudentProfilePayload(BaseModel):
+    profile_data: dict
+
+
+class LegacyStreamPayload(BaseModel):
+    user_uid: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=4000)
+    image_attachment: str | None = None
 
 
 def create_internal_router(engine: Engine, internal_token: str | None) -> APIRouter:  # noqa: C901
@@ -135,5 +156,95 @@ def create_internal_router(engine: Engine, internal_token: str | None) -> APIRou
                 raise HTTPException(status_code=404, detail="用户不存在")
             row = model_service.record_usage(session, user_uid, payload)
             return {"usage_id": row.usage_id}
+
+    def _require_user(session: Session, user_uid: str) -> None:
+        if session.exec(select(User).where(User.uid == user_uid)).first() is None:
+            raise HTTPException(status_code=404, detail="用户不存在")
+
+    @router.get("/chat/sessions/{session_id}/context")
+    def chat_context(session_id: str, user_uid: str) -> JSONResponse:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            try:
+                context = chat_service.build_chat_context(session, session_id, user_uid)
+            except chat_service.SessionNotFoundError:
+                raise HTTPException(status_code=404, detail="会话不存在") from None
+        return JSONResponse(content=jsonable_encoder(context))
+
+    @router.post("/chat/sessions/{session_id}/turn")
+    def chat_turn(session_id: str, payload: TurnPayload) -> dict:
+        with Session(engine) as session:
+            try:
+                return chat_service.persist_turn(
+                    session,
+                    session_id,
+                    payload.user_uid,
+                    user_message=payload.user_message,
+                    image_attachment=payload.image_attachment,
+                    assistant_message=payload.assistant_message,
+                    session_state_patch=payload.session_state_patch,
+                )
+            except chat_service.SessionNotFoundError:
+                raise HTTPException(status_code=404, detail="会话不存在") from None
+
+    @router.put("/students/{user_uid}/profile")
+    def put_student_profile(user_uid: str, payload: StudentProfilePayload) -> dict:
+        profile = payload.profile_data
+        if profile.get("type") not in {"collecting", "basic_profile"}:
+            raise HTTPException(status_code=422, detail="画像类型无效")
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            return chat_service.save_student_profile(session, user_uid, profile)
+
+    @router.get("/students/{user_uid}/learning-overview")
+    def learning_overview(user_uid: str) -> JSONResponse:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            overview = chat_service.build_learning_overview(session, user_uid)
+        return JSONResponse(content=jsonable_encoder(overview))
+
+    @router.post("/chat/sessions/{session_id}/legacy-stream")
+    async def legacy_stream(
+        session_id: str, payload: LegacyStreamPayload
+    ) -> StreamingResponse:
+        """Transitional bridge (until M5-M7): run the pre-migration orchestration for
+        turns that need a not-yet-migrated agent. Same SSE frames as the old route."""
+        from app.api.orchestration import _stream_chat_events
+        from app.schemas import ChatMessageRequest
+
+        def _check(session: Session) -> None:
+            _require_user(session, payload.user_uid)
+            try:
+                chat_service.load_owned_session_row(
+                    session, session_id, payload.user_uid
+                )
+            except chat_service.SessionNotFoundError:
+                raise HTTPException(status_code=404, detail="会话不存在") from None
+
+        with Session(engine) as session:
+            await run_in_threadpool(_check, session)
+
+        request_payload = ChatMessageRequest(
+            session_id=session_id,
+            message=payload.message,
+            image_attachment=payload.image_attachment,
+        )
+
+        async def frames():
+            with Session(engine) as session:
+                async for frame in _stream_chat_events(
+                    session_id=session_id,
+                    user_uid=payload.user_uid,
+                    user_message=payload.message,
+                    db_session=session,
+                    payload=request_payload,
+                ):
+                    yield frame
+
+        return StreamingResponse(
+            frames(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     return router

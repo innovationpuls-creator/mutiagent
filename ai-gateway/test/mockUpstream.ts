@@ -13,6 +13,8 @@ export interface MockUpstream {
 	/** Next responses by status; default 200 text. */
 	script: Array<number>;
 	reply: string;
+	/** Scripted 200 replies consumed in order: plain text or one tool call. */
+	queue: Array<{ text: string } | { tool: string; args: Record<string, unknown> }>;
 	close(): Promise<void>;
 }
 
@@ -23,6 +25,7 @@ export async function startMockUpstream(): Promise<MockUpstream> {
 		requests: [],
 		script: [],
 		reply: "OK",
+		queue: [],
 		close: async () => {},
 	};
 	const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -44,7 +47,16 @@ export async function startMockUpstream(): Promise<MockUpstream> {
 			res.writeHead(200, { "content-type": "text/event-stream" });
 			const send = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 			const base = { id: "c1", object: "chat.completion.chunk", created: 1, model: body.model };
-			if (wantsTool) {
+			const scripted = state.queue.shift();
+			if (scripted && "tool" in scripted) {
+				send({ ...base, choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: `call_${state.requests.length}`, type: "function", function: { name: scripted.tool, arguments: JSON.stringify(scripted.args) } }] }, finish_reason: null }] });
+				send({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } });
+			} else if (scripted) {
+				for (const piece of scripted.text.match(/.{1,6}/gs) ?? [""]) {
+					send({ ...base, choices: [{ index: 0, delta: { role: "assistant", content: piece }, finish_reason: null }] });
+				}
+				send({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 } });
+			} else if (wantsTool) {
 				send({ ...base, choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "ping", arguments: '{"value":1}' } }] }, finish_reason: null }] });
 				send({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } });
 			} else {

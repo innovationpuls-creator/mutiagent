@@ -129,3 +129,57 @@
 - Playwright e2e 未运行（新增的登录后拉取模型配置请求在 e2e 的 `**/api/**` 路由 mock 下返回形状不符时已被忽略，分析上不影响）。
 - 管理端知识库「翻译/搜书」的引导挂接留到 M8（该链路本里程碑仍走旧后端）。
 - 真实厂商 OAuth（含自动回调）、`prefers-reduced-motion` 的浏览器实机切换未单独实测。
+
+## M4：主对话图骨架、入口分流、Supervisor 路由与画像采集
+
+状态：**已完成并提交**（AC-1~7 通过；模型侧均为脚本化 mock 上游，见「未验证项」）
+
+### 实现要点与偏差（2026-11-27）
+| 项 | 结论 |
+|---|---|
+| 切流 | `POST /api/chat/message` 由网关接管（同路径、同鉴权、同 SSE 协议）：Vite 代理 `^/api/(ai(/\|$)\|chat/message(\?\|$))` 与 Nginx `location = /api/chat/message` 指向 `ai-gateway:8100`；`/api/chat/start`、`GET /api/chat/sessions/{id}` 仍在 Python。会话不存在/越权仍是 HTTP 404（流开始前预检），401/422 与旧路由语义一致 |
+| 主图 | `@langchain/langgraph` `StateGraph`：`entry → supervisor → profile_agent \| legacy_bridge \| finalize`；节点流转全部用 `Command({goto, update})`；事件统一经 `config.writer` 写出，由路由转成 SSE 帧。`@langchain/langgraph@1.7.5`、`@earendil-works/pi-agent-core@1.6.1` |
+| 入口分流 | 仅两种显式协议直通旧流水线：消息含 `[LEAF_RESOURCE_GENERATION]`、或 `session_state.pending_leaf_regeneration` 存在（旧会话里的 `[LEAF_REGEN_PENDING]` 标记由 Python 在读取时转成该字段）。**三个关键词拦截器不再经过主路径** |
+| 3 阶段门禁 | `gatedToolNames()` 为纯函数：A 无完整画像（仅 `delegate_profile_agent`）；B 有画像无路径（+`delegate_learning_path_intake`、`get_student_progress_summary`）；C 有路径（+`get_learning_path`、`get_course_outline`、`delegate_course_knowledge`，有大纲再加 `delegate_course_resources`）。`collecting` 画像即使残留路径数据也不解锁后续阶段。模型即使幻觉调用未下发的工具，也只会得到「工具不存在」错误，不会越权 |
+| 画像 Agent | `pi-agent-core` `Agent` + 两个工具 `ask_profile_question` / `save_student_profile`。落库对象全部由 `profileContract.ts` 确定性拼装（16 字段、`question_box`、`defaulted_fields`、`text`/`summary_text` 一致），模型只提供业务字段；单测里复刻了前端 `pickProfile` 校验 |
+| 校验与自纠 | 保存时校验：年级 ∈ 大一~大四、16 字段非空非「未知」、核心字段（年级/专业/学习阶段/近期目标/每周时间/学习方式）不得标为默认、`use_defaults` 必须由学生本轮明确要求（`allowsDefaultFill`）；失败返回 `isError` 并由 Pi 循环自纠，**最多 2 次**，超出后走确定性兜底卡片（不报错、不落库非法年级）。`ask_profile_question` 若带入非法年级，会把年级清空并强制改为年级追问卡 |
+| 会话状态 | 迁移 `0008_conversation_session_state`（JSONB，非空，默认 `{}`）；读取时「显式 `session_state` 优先，否则回退旧约定」（`learning_path_intake` 取最近一条、`pending_leaf_regeneration` 从最近 AI 文本标记解析），旧会话无需迁移数据。M4 只写入 `pending_profile_followup`；`learning_path_intake` / `pending_leaf_regeneration` 的显式写入分别留给 M5 / M7 |
+| 内部接口 | `GET /internal/chat/sessions/{id}/context`（归属校验、历史去除结构化条目、未消化薄弱点拼接保留）、`POST …/turn`（先完整写入，失败则仅存用户消息；可带 `session_state` 补丁，`null` 删键）、`PUT /internal/students/{uid}/profile`（保留“改画像即清大纲”不变量）、`GET …/learning-overview`；另加过渡接口 `POST …/legacy-stream` |
+| 持久化顺序 | `finalize` 节点先 `persistTurn` 再发 `message_completed` / `session_completed`；整体写入失败时只发 `error`，并兜底只存用户消息（不写空助手消息）。实测：收到 `message_completed` 的瞬间，库里已有 2 条消息 |
+| 未配置模型 | 在 supervisor 之前解析「对话与画像」槽位；未配置则发 SSE `error`（`MODEL_NOT_CONFIGURED`，`action=open_model_settings`），**什么都不写**（包括用户消息，避免重试后重复），不请求上游 |
+| 模型运行时 | `ModelRuntime.agentStream()`：为 Agent 提供按场景候选链回退的 `streamFn`——仅在**尚未输出任何内容**时回退（避免用户看到半截答案接另一个模型）；每次尝试都上报用量；OAuth 失败转 `MODEL_OAUTH_EXPIRED`。Agent 循环硬上限 8 轮 |
+| 偏差 1 | Pi 1.6.1 自带 `@earendil-works/pi-schema`（`obj/str/arr/opt…`）作为工具参数 Schema（M1 已依赖），**未引入** `@sinclair/typebox`；能力等价 |
+| 偏差 2 | **过渡桥接（M5–M7 前）**：尚未迁移的委派（`delegate_learning_path_intake` / `delegate_course_knowledge` / `delegate_course_resources`）与显式资源协议，把整轮交给 Python 旧流水线（`legacy-stream`，网关原样转发 SSE 帧、本轮不再自己落库）。这些轮次仍使用服务端全局 LLM 配置，**不走个人模型、不会返回 428**；旧流水线里的关键词拦截器也只在这些轮次内可达，待 M9 随旧代码一并删除 |
+| 偏差 3 | 画像采集用「单问题卡片」（`question_box`，字段标准选项来自预设，模型不得自编）；旧版分阶段 `question_form`（多题表单）不再产出，`question_form` 恒为 `null`（前端契约未强制该字段） |
+| 偏差 4 | 画像首次完成后自动流转到课程草案智能体（文档 3.3 末句）依赖 M5，未启用；完成卡片的「进入学习路径草案智能体」按钮仍由前端触发下一轮 |
+| 偏差 5 | Python 旧 `POST /api/chat/message` 与 `ChatContextLoader`/各 Handler 暂留（桥接复用），M9 清理 |
+| 其他 | 图片附件仅在所选模型声明支持图片输入时才传给模型；`deploy` 侧新增 Nginx 精确匹配 location |
+
+### 完成节点
+| 日期 | 节点 | 证据 |
+|---|---|---|
+| 2026-11-27 | Python：迁移 0008 + 4 个内部接口 + 桥接接口 + 上下文/落库服务 | `ruff check`/`format` 通过；新增 `tests/test_internal_chat_api.py` 12 项；迁移 head 断言更新并校验列非空默认 `{}` |
+| 2026-11-27 | 网关：`src/chat/{profileContract,agentRunner,profileAgent,supervisor,graph,routes}.ts`、`ModelRuntime.agentStream`、`BackendClient` 扩展 | `tsc --noEmit` 与 `npm run build` 通过；`vitest` 9 文件 **73** 个通过（M3 末 40；新增 `chat.test.ts` 22、`profileContract.test.ts` 6 等） |
+| 2026-11-27 | 切流配置 | Vite 代理；Nginx 模板与 `test_nginx_config.sh` 断言已更新（见「未验证项」） |
+| 2026-11-27 | 全量回归 | 后端 `pytest` **965** 通过（含主仓 LLM 环境变量）；前端 `vitest` 55 文件 **321** 通过；`biome`（vite.config.ts）通过 |
+
+### 验收清单实测结果（2026-11-27）
+联调环境：独立 schema `m4_acceptance`（`alembic upgrade head` 实跑 0008，测完已删除）+ Python 8000 + 网关 8100（真实 `server.ts`）+ **脚本化 mock OpenAI 兼容上游** 9100（按队列返回文本或指定工具调用，并记录每次请求的工具清单）+ Vite 5173 + 内置浏览器。每个账号经真实 `/api/model-config` 配置了指向 mock 的个人模型。
+
+| 编号 | 结果 | 实测证据 |
+|---|---|---|
+| AC-1 | 通过 | 无画像新账号发“直接帮我生成大纲和学习路径”：上游收到的工具清单 **仅** `['delegate_profile_agent']`；单测另验证幻觉调用越阶段工具只得到错误结果，不触发桥接 |
+| AC-2 | 通过 | 3 轮采集（“我大三”→“软件工程”→补齐）：第 1 轮 `collecting`，第 2 轮合并出 年级=大三/专业=软件工程 并带「找工作/考研/提升能力…」选项卡，第 3 轮落库 `basic_profile`（16 字段、`stage=generated`、`message_completed.full_text == summary_text`、`session_state` 追问标记被清除）。**浏览器**：单选卡片正常渲染（“已确认 年级 大三 / 专业 软件工程”+ 选项按钮「有基础」等）；整页刷新后首页仍显示画像完成度 12%、软件工程/大三与待回答的问题；最终轮生成「画像完成 · 进入学习路径草案智能体」卡片 |
+| AC-3 | 通过 | “我研二，软件工程，想学 AI”：库内 `current_grade` 为空（未落非法年级）、专业保留、卡片文案点名「研二」并提示只支持大一到大四、选项为 大一~大四+其他，SSE 无 `error`；另测“保存时年级=研二 → 被工具拒绝 → 模型改调追问”：上游共 3 次调用、最终 `collecting`、无报错；单测覆盖“连续 3 次非法保存后确定性兜底” |
+| AC-4 | 通过 | “直接按默认帮我生成画像”：2 次模型调用（委派+保存）完成落库，`defaulted_fields` = 次要字段 8 项（`has_clear_goal`、`learning_pace_preference`、`content_preference`、`need_guidance`、`strengths`、`weaknesses`、`long_term_goal`、`constraints`），核心字段（专业等）不在其中；单测另验证“学生没要求默认却传 `use_defaults`”与“核心字段标记为默认”均被拒绝 |
+| AC-5 | 通过 | 已有路径+大纲的账号问“下个月我主要要学哪几门课？”：下发工具含 `get_learning_path`、`delegate_course_resources`；模型调用只读工具后，**库内真实路径文本**作为工具结果回到模型，SSE 推送 `data_update(learning_path_loaded, years=[year_3])`；进度工具同样验证。无任何关键词表参与。**说明**：由 mock 模型被脚本化为“调用该工具”，验证的是门禁、取数与回传链路，不评价真实模型的判断力 |
+| AC-6 | 通过 | 读库时点：收到 `message_completed` 的瞬间 `GET /api/chat/sessions/{id}` 已含 2 条消息；刷新带 `session_id` 的页面，历史用户消息与「画像完成」结构化卡片挂在对应助手消息下；单测验证整体写入失败时无完成事件且仅兜底用户消息 |
+| AC-7 | 通过 | 旧形态会话（`session_state` 默认 `{}`，`messages` 内夹带 `learning_path_intake`）继续对话 200、消息 5 条且 intake 保留、给模型的历史不含 intake（4 条=系统+历史 2+本轮 1）；新会话 200；Python 单测覆盖“显式 `session_state` 优先于旧约定”“旧 `[LEAF_REGEN_PENDING]` 标记转显式字段” |
+| 附加 | 通过 | 显式 `[LEAF_RESOURCE_GENERATION]` 走桥接（上游模型 0 次调用、SSE 来自 Python 旧流水线）；未知会话 404、无令牌 401（`AUTH_INVALID`）；未配置模型账号：只得到 `MODEL_NOT_CONFIGURED` 错误事件、模型 0 次调用、库内 0 行；`chat_profile` 用量已按次写入 `user_model_usage_log`；首选模型 503 时回退到备用模型（单测） |
+
+### 未验证项 / 已知遗留
+- **真实模型**：所有对话轮次的“模型”均为脚本化 mock（验证了工具门禁、校验自纠、落库契约与流式链路），**未**用真实厂商模型评估提示词质量、工具调用遵循度与多轮采集体验；真实模型下的自纠次数/兜底触发率需要后续观察。
+- **Nginx**：本机无 Docker，`nginx -t` 与容器级用例未跑；`test_nginx_config.sh` 中的静态 Python 断言（含新增 `location = /api/chat/message`）已通过。
+- **桥接路径**：只验证了“显式协议→旧流水线→SSE 原样转发”，未用真实 LLM 跑完整的课程草案/大纲/资源生成（这些在 M5–M7 迁移时重测）。
+- 回退只在“尚未输出任何内容”时发生，流到一半的上游失败不会换模型（有意设计）。
+- Playwright e2e 未运行；浏览器里的 Vite HMR WebSocket 报错来自内置浏览器环境，与功能无关。

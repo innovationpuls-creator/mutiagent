@@ -311,6 +311,14 @@ for https_server in (domain_server,):
     assert "proxy_pass http://$ai_gateway_upstream;" in ai_gateway
     assert "proxy_set_header X-Request-ID $request_id_header;" in ai_gateway
 
+    chat_message = directive_block(https_server, r"location\s+=\s+/api/chat/message")
+    assert re.search(
+        r"if\s*\(-f\s+\$maintenance_marker\)\s*\{\s*return 503;\s*\}", chat_message
+    )
+    assert "set $ai_gateway_upstream ai-gateway:8100;" in chat_message
+    assert "proxy_pass http://$ai_gateway_upstream;" in chat_message
+    assert "proxy_set_header X-Request-ID $request_id_header;" in chat_message
+
     internal = directive_block(https_server, r"location\s+\^~\s+/internal/")
     assert "return 404;" in internal
     assert "proxy_pass" not in internal

@@ -1,9 +1,16 @@
 import { SignJWT } from "jose";
-import type { BackendClient, UsageReport, UserAuthStatus } from "../src/backendClient.js";
+import type {
+	BackendClient,
+	ChatContext,
+	LearningOverview,
+	TurnPayload,
+	UsageReport,
+	UserAuthStatus,
+} from "../src/backendClient.js";
 import type { RuntimeConfig } from "../src/models/types.js";
 import { createApp } from "../src/app.js";
 import { type GatewayConfig, loadConfig } from "../src/config.js";
-import { internalServiceUnavailable } from "../src/errors.js";
+import { BackendBusinessError, internalServiceUnavailable } from "../src/errors.js";
 
 export const JWT_SECRET = "test-jwt-secret";
 export const INTERNAL_TOKEN = "test-internal-token";
@@ -22,6 +29,14 @@ export interface FakeBackend extends BackendClient {
 	runtimeConfigs: Map<string, RuntimeConfig>;
 	usage: Array<{ userUid: string; usage: UsageReport }>;
 	savedCredentials: Array<{ userUid: string; providerId: string; credential: unknown }>;
+	contexts: Map<string, ChatContext>;
+	turns: Array<{ sessionId: string; userUid: string; turn: TurnPayload }>;
+	profiles: Array<{ userUid: string; profile: Record<string, unknown> }>;
+	overviews: Map<string, LearningOverview>;
+	/** Raw SSE text returned by the legacy bridge, if a test scripts one. */
+	legacyFrames: string | null;
+	legacyCalls: Array<{ sessionId: string; userUid: string; message: string }>;
+	order: string[];
 }
 
 export function fakeBackend(): FakeBackend {
@@ -32,6 +47,39 @@ export function fakeBackend(): FakeBackend {
 		runtimeConfigs: new Map(),
 		usage: [],
 		savedCredentials: [],
+		contexts: new Map(),
+		turns: [],
+		profiles: [],
+		overviews: new Map(),
+		legacyFrames: null,
+		legacyCalls: [],
+		order: [],
+		async getChatContext(sessionId, userUid) {
+			backend.calls.push(`context:${sessionId}`);
+			const context = backend.contexts.get(`${userUid}:${sessionId}`);
+			if (!context) throw new BackendBusinessError(404, "会话不存在");
+			return structuredClone(context);
+		},
+		async persistTurn(sessionId, userUid, turn) {
+			backend.order.push("persist");
+			backend.turns.push({ sessionId, userUid, turn });
+			return { persisted: turn.assistant_message ? "full" : "user_only" };
+		},
+		async putStudentProfile(userUid, profile) {
+			backend.order.push("profile");
+			backend.profiles.push({ userUid, profile });
+		},
+		async getLearningOverview(userUid) {
+			backend.calls.push(`overview:${userUid}`);
+			const overview = backend.overviews.get(userUid);
+			if (!overview) throw new Error(`no overview for ${userUid}`);
+			return overview;
+		},
+		async openLegacyStream(sessionId, userUid, body) {
+			backend.calls.push(`legacy:${sessionId}`);
+			backend.legacyCalls.push({ sessionId, userUid, message: body.message });
+			return new Response(backend.legacyFrames ?? "", { status: 200 });
+		},
 		async getModelRuntimeConfig(uid) {
 			backend.calls.push(`runtime:${uid}`);
 			if (backend.down) throw internalServiceUnavailable();

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, Column, Index, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Index, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -250,6 +250,12 @@ class ConversationSession(SQLModel, table=True):
     session_id: str = Field(primary_key=True)
     user_uid: str = Field(foreign_key="user.uid", index=True)
     messages: list = Field(default_factory=list, sa_column=Column(_jsonb))
+    # Explicit structured state (learning_path_intake, pending_leaf_regeneration,
+    # pending_profile_followup); legacy sessions keep these inside `messages`.
+    session_state: dict = Field(
+        default_factory=dict,
+        sa_column=Column(_jsonb, nullable=False, server_default=text("'{}'::jsonb")),
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

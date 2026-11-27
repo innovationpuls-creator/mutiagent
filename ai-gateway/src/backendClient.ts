@@ -39,8 +39,65 @@ export interface UsageReport {
 	error_code?: string | null;
 }
 
+export interface HistoryMessage {
+	role: "user" | "assistant";
+	content: string;
+}
+
+export interface ChatContext {
+	session_id: string;
+	user_uid: string;
+	history: HistoryMessage[];
+	session_state: Record<string, unknown>;
+	profile: Record<string, unknown> | null;
+	has_complete_profile: boolean;
+	year_learning_paths: Record<string, unknown> | null;
+	latest_grade_year: string | null;
+	course_knowledge: Record<string, unknown> | null;
+}
+
+export interface TurnPayload {
+	user_message: string;
+	image_attachment?: string | null;
+	assistant_message?: string | null;
+	session_state_patch?: Record<string, unknown> | null;
+}
+
+export interface ProgressSnapshot {
+	grade_year: string;
+	total_courses: number;
+	completed_courses: number;
+	current_course_id: string;
+	current_course_title: string;
+	current_progress_state: string;
+	next_course_id: string;
+	next_course_title: string;
+}
+
+export interface LearningOverview {
+	has_paths: boolean;
+	has_outline: boolean;
+	latest_grade_year: string | null;
+	current_course_id: string | null;
+	progress: ProgressSnapshot[];
+	path_text: string;
+	outline_text: string;
+	next_step_text: string;
+}
+
 export interface BackendClient {
 	getInternalHealth(): Promise<BackendHealth>;
+	getChatContext(sessionId: string, userUid: string): Promise<ChatContext>;
+	persistTurn(sessionId: string, userUid: string, turn: TurnPayload): Promise<{ persisted: string }>;
+	putStudentProfile(userUid: string, profileData: Record<string, unknown>): Promise<void>;
+	getLearningOverview(userUid: string): Promise<LearningOverview>;
+	/** Transitional bridge (M4-M7): raw SSE response of the pre-migration orchestration. */
+	openLegacyStream(
+		sessionId: string,
+		userUid: string,
+		body: { message: string; image_attachment?: string | null },
+		signal?: AbortSignal,
+	): Promise<Response>;
 	getUserAuthStatus(userUid: string): Promise<UserAuthStatus>;
 	getModelRuntimeConfig(userUid: string): Promise<RuntimeConfig>;
 	oauthRefreshLock(
@@ -90,6 +147,19 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 		path: string,
 		init: { method?: string; body?: unknown } = {},
 	): Promise<T> {
+		const response = await rawRequest(path, init);
+		try {
+			return (await response.json()) as T;
+		} catch {
+			logger.warn(`python_backend_invalid_json path=${path}`);
+			throw internalServiceUnavailable();
+		}
+	}
+
+	async function rawRequest(
+		path: string,
+		init: { method?: string; body?: unknown; timeoutMs?: number; signal?: AbortSignal } = {},
+	): Promise<Response> {
 		const headers: Record<string, string> = {
 			Accept: "application/json",
 			[INTERNAL_TOKEN_HEADER]: internalToken,
@@ -104,7 +174,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 				method: init.method ?? "GET",
 				headers,
 				body: init.body === undefined ? undefined : JSON.stringify(init.body),
-				signal: AbortSignal.timeout(timeoutMs),
+				signal: init.signal ?? AbortSignal.timeout(init.timeoutMs ?? timeoutMs),
 			});
 		} catch (error) {
 			const reason = error instanceof Error ? error.name : "unknown";
@@ -124,16 +194,35 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 		if (!response.ok) {
 			throw new BackendBusinessError(response.status, await readDetail(response));
 		}
-		try {
-			return (await response.json()) as T;
-		} catch {
-			logger.warn(`python_backend_invalid_json path=${path}`);
-			throw internalServiceUnavailable();
-		}
+		return response;
 	}
 
 	return {
 		getInternalHealth: () => request<BackendHealth>("/internal/health"),
+		getChatContext: (sessionId, userUid) =>
+			request<ChatContext>(
+				`/internal/chat/sessions/${encodeURIComponent(sessionId)}/context?user_uid=${encodeURIComponent(userUid)}`,
+			),
+		persistTurn: (sessionId, userUid, turn) =>
+			request<{ persisted: string }>(
+				`/internal/chat/sessions/${encodeURIComponent(sessionId)}/turn`,
+				{ method: "POST", body: { user_uid: userUid, ...turn } },
+			),
+		async putStudentProfile(userUid, profileData) {
+			await request(`/internal/students/${encodeURIComponent(userUid)}/profile`, {
+				method: "PUT",
+				body: { profile_data: profileData },
+			});
+		},
+		getLearningOverview: (userUid) =>
+			request<LearningOverview>(`/internal/students/${encodeURIComponent(userUid)}/learning-overview`),
+		// A turn can legitimately run for minutes; the signal (client disconnect) bounds it.
+		openLegacyStream: (sessionId, userUid, body, signal) =>
+			rawRequest(`/internal/chat/sessions/${encodeURIComponent(sessionId)}/legacy-stream`, {
+				method: "POST",
+				body: { user_uid: userUid, ...body },
+				signal: signal ?? AbortSignal.timeout(15 * 60_000),
+			}),
 		getModelRuntimeConfig: (userUid) =>
 			request<RuntimeConfig>(
 				`/internal/users/${encodeURIComponent(userUid)}/model-runtime-config`,

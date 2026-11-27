@@ -5,6 +5,7 @@ import type { BackendClient } from "./backendClient.js";
 import { SERVICE_NAME, type GatewayConfig } from "./config.js";
 import { BackendBusinessError, GatewayError } from "./errors.js";
 import { requireInternalToken } from "./internalAuth.js";
+import { chatRoutes } from "./chat/routes.js";
 import { OAuthSessions } from "./models/oauth.js";
 import { internalModelRoutes, modelRoutes } from "./models/routes.js";
 import { ModelRuntime } from "./models/runtime.js";
@@ -74,6 +75,18 @@ export function createApp({ config, backend, logSink = stdoutSink, builtinOverri
 	app.route(
 		"/api/ai",
 		modelRoutes({ jwtSecret: config.jwtSecret, backend, runtime: modelRuntime, oauth, builtinOverride }),
+	);
+
+	// Takes over POST /api/chat/message from Python (M4); /start and /sessions stay there.
+	app.route(
+		"/api/chat",
+		chatRoutes({
+			jwtSecret: config.jwtSecret,
+			backend,
+			runtime: modelRuntime,
+			logger,
+			heartbeatMs: config.sseHeartbeatMs,
+		}),
 	);
 
 	app.onError((error, c) => {

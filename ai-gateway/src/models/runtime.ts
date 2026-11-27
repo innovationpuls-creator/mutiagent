@@ -1,10 +1,15 @@
 import {
+	type Api,
 	type AssistantMessage,
+	type AssistantMessageEventStream,
+	createAssistantMessageEventStream,
 	type Context,
 	type CredentialStore,
 	type Model,
 	type MutableModels,
 	type Provider,
+	type SimpleStreamOptions,
+	type TranscriptContext,
 	getSupportedThinkingLevels,
 } from "@earendil-works/pi-ai";
 import type { BackendClient, UsageReport } from "../backendClient.js";
@@ -45,6 +50,19 @@ export interface SceneResult {
 }
 
 export type FailureKind = "oauth" | "fallback" | "fatal";
+
+/** `Agent`-compatible stream function plus the model it should start from. */
+export interface AgentStreamHandle {
+	model: Model<Api>;
+	streamFn: (
+		model: Model<Api>,
+		context: TranscriptContext,
+		options?: SimpleStreamOptions,
+	) => AssistantMessageEventStream;
+	resolved: ResolvedScene;
+	/** Set when the last attempt of a stream failed; lets the caller raise a typed error. */
+	lastFailure?: { kind: FailureKind; code: string; provider: string; message: string };
+}
 
 const TRANSIENT = /timeout|timed out|etimedout|econnreset|econnrefused|enotfound|fetch failed|network|overloaded|socket hang up/i;
 const OAUTH_HINT = /oauth|refresh|invalid_grant|token (has )?expired|unauthori[sz]ed/i;
@@ -194,5 +212,125 @@ export class ModelRuntime {
 			if (failure.kind === "fatal") throw upstreamModelError(`模型调用失败：${lastError.slice(0, 200)}`);
 		}
 		throw upstreamModelError(`所有候选模型均不可用：${lastError.slice(0, 200)}`);
+	}
+
+	/**
+	 * Streaming counterpart of `complete` for Pi's agent loop. The returned `streamFn`
+	 * ignores the model the loop passes in: it walks the scene's candidate chain and
+	 * only falls back while nothing has been streamed yet (so the client never sees a
+	 * half answer from one model followed by another). Usage is reported per attempt.
+	 */
+	async agentStream(userUid: string, scene: Scene): Promise<AgentStreamHandle> {
+		const { entry, resolved } = await this.resolve(userUid, scene);
+		const usable = resolved.targets
+			.map((ref) => ({ ref, model: entry.models.getModel(ref.provider_id, ref.model_id) }))
+			.filter((candidate): candidate is { ref: ModelRef; model: Model<Api> } => candidate.model !== undefined);
+		const first = usable[0];
+		if (!first) throw upstreamModelError("没有可用的模型");
+		const hasFallback = usable.length > 1;
+
+		const handle: AgentStreamHandle = { model: first.model, streamFn: undefined as never, resolved };
+		const streamFn: AgentStreamHandle["streamFn"] = (_model, context, options) => {
+			const outer = createAssistantMessageEventStream();
+			void (async () => {
+				let lastError = "没有可用的模型";
+				for (const [index, candidate] of usable.entries()) {
+					const provider = entry.config.providers.find((p) => p.provider_id === candidate.ref.provider_id);
+					const opts = resolved.options;
+					const startedAt = performance.now();
+					const source = entry.models.streamSimple(candidate.model, context as unknown as Context, {
+						...options,
+						reasoning: pickReasoning(candidate.model as never, resolved.thinkingLevel),
+						temperature: opts.temperature ?? undefined,
+						maxTokens: opts.max_tokens ?? undefined,
+						timeoutMs: opts.timeout_seconds ? opts.timeout_seconds * 1000 : undefined,
+						maxRetries: opts.max_retries ?? (hasFallback ? 0 : undefined),
+						cacheRetention: opts.cache_retention ?? undefined,
+					});
+					const iterator = source[Symbol.asyncIterator]();
+					const head = await iterator.next();
+					const startsWithError = !head.done && head.value.type === "error";
+					let failure: ReturnType<typeof classifyFailure> | undefined;
+					let finalMessage: AssistantMessage | undefined;
+					if (startsWithError) {
+						finalMessage = await source.result();
+						failure = classifyFailure(finalMessage.errorMessage ?? "", provider);
+						lastError = finalMessage.errorMessage ?? lastError;
+					}
+					const canFallBack = failure?.kind === "fallback" && index < usable.length - 1;
+					if (startsWithError && canFallBack) {
+						this.reportAgentAttempt(userUid, scene, candidate.ref, resolved, finalMessage!, startedAt, failure);
+						continue;
+					}
+					// Forward everything from here on (including a terminal error).
+					if (!head.done) outer.push(head.value);
+					for (let step = await iterator.next(); !step.done; step = await iterator.next()) {
+						outer.push(step.value);
+					}
+					finalMessage = await source.result();
+					const finalFailure =
+						finalMessage.stopReason === "error" || finalMessage.stopReason === "aborted"
+							? (failure ?? classifyFailure(finalMessage.errorMessage ?? "", provider))
+							: undefined;
+					this.reportAgentAttempt(userUid, scene, candidate.ref, resolved, finalMessage, startedAt, finalFailure);
+					handle.lastFailure = finalFailure
+						? {
+								...finalFailure,
+								provider: candidate.ref.provider_id,
+								message: finalMessage.errorMessage ?? "",
+							}
+						: undefined;
+					outer.end(finalMessage);
+					return;
+				}
+				handle.lastFailure = { kind: "fallback", code: "ALL_CANDIDATES_FAILED", provider: "", message: lastError };
+				outer.push({ type: "error", name: "all_candidates_failed" } as never);
+				outer.end({
+					role: "assistant",
+					content: [],
+					stopReason: "error",
+					errorMessage: `所有候选模型均不可用：${lastError.slice(0, 200)}`,
+				} as unknown as AssistantMessage);
+			})().catch((error: unknown) => {
+				outer.push({ type: "error", name: "stream_failed" } as never);
+				outer.end({
+					role: "assistant",
+					content: [],
+					stopReason: "error",
+					errorMessage: error instanceof Error ? error.message : String(error),
+				} as unknown as AssistantMessage);
+			});
+			return outer;
+		};
+		handle.streamFn = streamFn;
+		return handle;
+	}
+
+	private reportAgentAttempt(
+		userUid: string,
+		scene: Scene,
+		ref: ModelRef,
+		resolved: ResolvedScene,
+		message: AssistantMessage,
+		startedAt: number,
+		failure: { kind: FailureKind; code: string } | undefined,
+	): void {
+		const usage = message.usage;
+		this.report(userUid, {
+			request_id: getRequestId() ?? null,
+			scene,
+			provider_id: ref.provider_id,
+			model_id: ref.model_id,
+			thinking_level: resolved.thinkingLevel,
+			input_tokens: usage?.input ?? 0,
+			output_tokens: usage?.output ?? 0,
+			cache_read_tokens: usage?.cacheRead ?? 0,
+			cache_write_tokens: usage?.cacheWrite ?? 0,
+			reasoning_tokens: usage?.reasoning ?? 0,
+			estimated_cost_usd: usage?.cost?.total ?? 0,
+			latency_ms: Math.round(performance.now() - startedAt),
+			success: !failure,
+			error_code: failure?.code ?? null,
+		});
 	}
 }
