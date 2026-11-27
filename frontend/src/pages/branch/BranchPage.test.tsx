@@ -37,8 +37,8 @@ vi.mock("../../api/profile", () => ({
 		fetchProfileDashboardMock(...args),
 }));
 
-vi.mock("../../api/teacherProgram", () => ({
-	teacherProgramApi: {
+vi.mock("../../api/adminProgram", () => ({
+	adminProgramApi: {
 		getMatchedProgram: (...args: unknown[]) => getMatchedProgramMock(...args),
 	},
 }));
@@ -1497,9 +1497,9 @@ describe("BranchPage", () => {
 		};
 		getMatchedProgramMock.mockResolvedValue({
 			program_id: "program-1",
-			teacher_uid: "teacher-1",
-			teacher_name: "测试教师",
-			teacher_identifier: "teacher@example.com",
+			admin_uid: "admin-1",
+			admin_name: "测试管理员",
+			admin_identifier: "admin@example.com",
 			school: "南山大学",
 			major: "软件工程",
 			class_name: "一班",
@@ -1563,7 +1563,7 @@ describe("BranchPage", () => {
 		});
 	});
 
-	it("renders source labels for self-selected and teacher-program courses", async () => {
+	it("renders source labels for self-selected and custom-program courses", async () => {
 		fetchProfileDashboardMock.mockResolvedValue({
 			profile: {
 				currentGrade: "大一",
@@ -1649,15 +1649,15 @@ describe("BranchPage", () => {
 		});
 		getMatchedProgramMock.mockResolvedValue({
 			program_id: "program-1",
-			teacher_uid: "teacher-1",
-			teacher_name: "测试教师",
-			teacher_identifier: "teacher@example.com",
+			admin_uid: "admin-1",
+			admin_name: "测试管理员",
+			admin_identifier: "admin@example.com",
 			school: "南山大学",
 			major: "软件工程",
 			class_name: "一班",
 			courses: [
 				{
-					course_node_id: "teacher_course_1",
+					course_node_id: "program_course_1",
 					course_or_chapter_theme: "C++ 高级编程",
 					course_goal: "补充学校培养方案课程",
 					status: "locked",
@@ -1731,7 +1731,7 @@ describe("BranchPage", () => {
 		expect(screen.getByText("人培课程")).toBeTruthy();
 	});
 
-	it("loads teacher-program courses from the student teacher binding", async () => {
+	it("loads custom-program courses from the student cohort binding", async () => {
 		fetchProfileDashboardMock.mockResolvedValue({
 			profile: {
 				currentGrade: "大一",
@@ -1817,15 +1817,15 @@ describe("BranchPage", () => {
 		});
 		getMatchedProgramMock.mockResolvedValue({
 			program_id: "program-1",
-			teacher_uid: "teacher-1",
-			teacher_name: "测试教师",
-			teacher_identifier: "teacher@example.com",
+			admin_uid: "admin-1",
+			admin_name: "测试管理员",
+			admin_identifier: "admin@example.com",
 			school: "南山大学",
 			major: "软件工程",
 			class_name: "一班",
 			courses: [
 				{
-					course_node_id: "teacher_course_1",
+					course_node_id: "program_course_1",
 					course_or_chapter_theme: "C++ 高级编程",
 					course_goal: "补充学校培养方案课程",
 					status: "locked",
@@ -1877,17 +1877,17 @@ describe("BranchPage", () => {
 			expect(screen.getByText("C++ 高级编程")).toBeTruthy();
 		});
 
-		let teacherProgramCourseButton = screen.getByRole("button", {
+		let programCourseButton = screen.getByRole("button", {
 			name: /^大一第 2 门课程（人培课程）：C\+\+ 高级编程，进行中$/,
 		});
-		fireEvent.click(teacherProgramCourseButton);
-		teacherProgramCourseButton = await screen.findByRole("button", {
+		fireEvent.click(programCourseButton);
+		programCourseButton = await screen.findByRole("button", {
 			name: /^大一第 2 门课程（人培课程）：C\+\+ 高级编程，进行中$/,
 		});
-		fireEvent.click(teacherProgramCourseButton);
+		fireEvent.click(programCourseButton);
 		await waitFor(() =>
 			expect(screen.getByTestId("location").textContent).toBe(
-				"/leaf/teacher_course_1",
+				"/leaf/program_course_1",
 			),
 		);
 	});

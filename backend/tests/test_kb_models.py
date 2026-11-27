@@ -29,7 +29,6 @@ def test_create_and_query_textbook(db_session: Session):
             "chapters": [{"chapter_number": 1, "title": "第一章", "sections": []}]
         },
         ingestion_status="completed",
-        embedding=[0.1, 0.2, 0.3],
     )
     db_session.add(textbook)
     db_session.commit()
@@ -38,7 +37,8 @@ def test_create_and_query_textbook(db_session: Session):
     assert textbook.title == "测试教材"
     assert textbook.tags == ["测试", "Python"]
     assert textbook.outline["chapters"][0]["title"] == "第一章"
-    assert textbook.embedding == [0.1, 0.2, 0.3]
+    assert textbook.ingestion_status == "completed"
+    assert not hasattr(textbook, "embedding")
 
 
 def test_create_and_query_section_content(db_session: Session):

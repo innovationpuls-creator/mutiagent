@@ -403,8 +403,6 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 		return () => {
 			alive = false;
 		};
-		// scope is a stable ref from useAnimate; only its mutable current is read.
-		// biome-ignore lint/correctness/useExhaustiveDependencies: adding scope.current would not subscribe the effect to ref mutations.
 	}, [animate, setStageIndex, reduceMotion, scope.current]);
 
 	/* ── SVG 路径计算 ── */

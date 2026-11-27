@@ -1,6 +1,6 @@
 import type { AuthUser } from "../types/auth";
+import type { CultivationProgram } from "./adminProgram";
 import { API_BASE_URL, notifyAuthInvalidFromError, readApiError } from "./http";
-import type { CultivationProgram } from "./teacherProgram";
 
 export interface DataOverview {
 	accounts: Record<string, number>;
@@ -16,7 +16,7 @@ export interface DataCohort {
 	student_count: number;
 	admin_count: number;
 	has_program: boolean;
-	program_teacher_name: string | null;
+	program_admin_name: string | null;
 	program_updated_at: string | null;
 }
 

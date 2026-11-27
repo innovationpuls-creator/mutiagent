@@ -227,6 +227,41 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	"/api/admin/program": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Read Program */
+		get: operations["read_program_api_admin_program_get"];
+		/** Save Program */
+		put: operations["save_program_api_admin_program_put"];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/admin/program/publish": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Publish Program */
+		post: operations["publish_program_api_admin_program_publish_post"];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	"/api/admin/data/overview": {
 		parameters: {
 			query?: never;
@@ -308,41 +343,6 @@ export interface paths {
 		post?: never;
 		/** Delete Cohort Program */
 		delete: operations["delete_cohort_program_api_admin_data_cohorts__school___major___class_name__program_delete"];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/teacher/program": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** Read Program */
-		get: operations["read_program_api_teacher_program_get"];
-		/** Save Program */
-		put: operations["save_program_api_teacher_program_put"];
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/teacher/program/publish": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Publish Program */
-		post: operations["publish_program_api_teacher_program_publish_post"];
-		delete?: never;
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -1290,12 +1290,12 @@ export interface components {
 		CultivationProgramRead: {
 			/** Program Id */
 			program_id: string;
-			/** Teacher Uid */
-			teacher_uid: string;
-			/** Teacher Name */
-			teacher_name: string;
-			/** Teacher Identifier */
-			teacher_identifier: string;
+			/** Admin Uid */
+			admin_uid: string;
+			/** Admin Name */
+			admin_name: string;
+			/** Admin Identifier */
+			admin_identifier: string;
 			/** School */
 			school: string;
 			/** Major */
@@ -1341,8 +1341,8 @@ export interface components {
 			admin_count: number;
 			/** Has Program */
 			has_program: boolean;
-			/** Program Teacher Name */
-			program_teacher_name?: string | null;
+			/** Program Admin Name */
+			program_admin_name?: string | null;
 			/** Program Updated At */
 			program_updated_at?: string | null;
 		};
@@ -3094,6 +3094,94 @@ export interface operations {
 			};
 		};
 	};
+	read_program_api_admin_program_get: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json":
+						| components["schemas"]["CultivationProgramRead"]
+						| null;
+				};
+			};
+		};
+	};
+	save_program_api_admin_program_put: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": components["schemas"]["CultivationProgramSaveRequest"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["CultivationProgramRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	publish_program_api_admin_program_publish_post: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": components["schemas"]["CultivationProgramSaveRequest"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["CultivationProgramRead"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
 	overview_api_admin_data_overview_get: {
 		parameters: {
 			query?: never;
@@ -3233,94 +3321,6 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content?: never;
-			};
-			/** @description Validation Error */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["HTTPValidationError"];
-				};
-			};
-		};
-	};
-	read_program_api_teacher_program_get: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Successful Response */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json":
-						| components["schemas"]["CultivationProgramRead"]
-						| null;
-				};
-			};
-		};
-	};
-	save_program_api_teacher_program_put: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["CultivationProgramSaveRequest"];
-			};
-		};
-		responses: {
-			/** @description Successful Response */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["CultivationProgramRead"];
-				};
-			};
-			/** @description Validation Error */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["HTTPValidationError"];
-				};
-			};
-		};
-	};
-	publish_program_api_teacher_program_publish_post: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["CultivationProgramSaveRequest"];
-			};
-		};
-		responses: {
-			/** @description Successful Response */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["CultivationProgramRead"];
-				};
 			};
 			/** @description Validation Error */
 			422: {

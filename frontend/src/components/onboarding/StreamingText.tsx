@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import type { MessageStatus } from "../../types/chat";
 import { MarkdownRenderer } from "../markdown";
 import { SkeletonBlock } from "./SkeletonBlock";

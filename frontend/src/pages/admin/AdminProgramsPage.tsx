@@ -1,8 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { adminDataApi } from "../../api/adminData";
-import { teacherProgramApi } from "../../api/teacherProgram";
+import { adminProgramApi } from "../../api/adminProgram";
 import type {
 	GraphEdge,
 	GraphNode,
@@ -10,242 +9,206 @@ import type {
 import { OrganicCanvas } from "../../components/graph/OrganicCanvas";
 import { useAuth } from "../../contexts/AuthContext";
 import type { BranchCourseNode } from "../../types/branch";
-import { BreathingLoader } from "./components/BreathingLoader";
 import { ProgramDetailDrawer } from "./components/ProgramDetailDrawer";
 import type { ProgramScope } from "./components/ProgramScopePanel";
 import { ProgramScopePanel } from "./components/ProgramScopePanel";
 import { ProgramTreeTable } from "./components/ProgramTreeTable";
 import type { SemesterStatItem } from "./components/SemesterBarChart";
 import { SemesterBarChart } from "./components/SemesterBarChart";
-import "./teacher.css";
+import "./admin-programs.css";
 
-export type TeacherPageState = "empty" | "loading" | "editor" | "error";
+export type ProgramPageState = "empty" | "editor" | "error";
 
-const MOCK_TEACHER_COURSES: BranchCourseNode[] = [
+const MAX_PROGRAM_JSON_BYTES = 2 * 1024 * 1024;
+const VALID_STATUSES = new Set<BranchCourseNode["status"]>([
+	"completed",
+	"current",
+	"locked",
+]);
+
+const PROGRAM_JSON_TEMPLATE: BranchCourseNode[] = [
 	{
-		course_node_id: "math_1",
-		course_or_chapter_theme: "高等数学 I",
-		course_goal: "掌握微积分基本计算与极限理论",
+		course_node_id: "course_1",
+		course_or_chapter_theme: "示例课程",
+		course_goal: "填写该课程的教学目标",
 		status: "locked",
 		has_outline: false,
-		is_custom: false,
-		time_arrangement: { semester_scope: "1", duration: "64学时/4学分" },
-		key_points: ["极限与连续", "导数与微分", "一元函数积分学"],
-		difficult_points: ["微分中值定理证明", "不定积分换元法"],
-		acceptance_criteria: ["完成所有课后习题", "期末卷面成绩达标"],
-	},
-	{
-		course_node_id: "python_1",
-		course_or_chapter_theme: "Python 程序设计",
-		course_goal: "学习编程基础，掌握基本控制流与数据结构",
-		status: "locked",
-		has_outline: false,
-		is_custom: false,
-		time_arrangement: { semester_scope: "2", duration: "48学时/3学分" },
-		key_points: ["数据类型", "条件与循环", "函数与模块"],
-		difficult_points: ["递归函数调用", "文件异常处理"],
-		acceptance_criteria: ["独立编写期末大作业", "实验报告合格"],
-	},
-	{
-		course_node_id: "algebra_1",
-		course_or_chapter_theme: "线性代数",
-		course_goal: "掌握矩阵论、行列式与线性空间变换",
-		status: "locked",
-		has_outline: false,
-		is_custom: false,
-		time_arrangement: { semester_scope: "3", duration: "48学时/3学分" },
-		key_points: ["行列式计算", "矩阵特征值", "线性方程组通解"],
-		difficult_points: ["二次型正定性证明", "正交变换矩阵"],
-		acceptance_criteria: ["通过期末统一闭卷笔试"],
-	},
-	{
-		course_node_id: "ds_1",
-		course_or_chapter_theme: "数据结构",
-		course_goal: "掌握常用线性及非线性数据结构的实现与算法复杂度分析",
-		status: "locked",
-		has_outline: false,
-		is_custom: false,
-		prerequisite_ids: ["python_1"],
-		time_arrangement: { semester_scope: "4", duration: "64学时/4学分" },
-		key_points: ["链表与栈", "二叉树与哈夫曼编码", "图的深度优先遍历"],
-		difficult_points: ["AVL树旋转", "Dijkstra 最短路径算法"],
-		acceptance_criteria: ["通过在线 OJ 测试", "编写课程大作业"],
-	},
-	{
-		course_node_id: "comp_org_1",
-		course_or_chapter_theme: "计算机组成原理",
-		course_goal: "了解微型计算机内部硬件架构与运算器、控制器基本工作流程",
-		status: "locked",
-		has_outline: false,
-		is_custom: false,
-		time_arrangement: { semester_scope: "5", duration: "64学时/4学分" },
-		key_points: ["补码加减运算", "Cache 命中机制", "CPU 指令周期寻址"],
-		difficult_points: ["微程序控制器微指令设计", "流水线冒险规避"],
-		acceptance_criteria: ["期末设计 CPU 微控制器实验通过"],
-	},
-	{
-		course_node_id: "os_1",
-		course_or_chapter_theme: "操作系统",
-		course_goal: "理解进程调度、死锁避免、虚拟内存页替换以及文件系统实现",
-		status: "locked",
-		has_outline: false,
-		is_custom: false,
-		prerequisite_ids: ["ds_1"],
-		time_arrangement: { semester_scope: "6", duration: "64学时/4学分" },
-		key_points: ["多线程同步信号量", "银行家算法", "虚拟内存页表置换"],
-		difficult_points: ["生产者消费者PV操作实现", "磁盘调度与索引节点"],
-		acceptance_criteria: ["完成进程调度模拟器代码验收"],
-	},
-	{
-		course_node_id: "se_1",
-		course_or_chapter_theme: "软件工程",
-		course_goal: "掌握传统与敏捷项目管理研发流程与 UML 统一建模语言",
-		status: "locked",
-		has_outline: false,
-		is_custom: false,
-		time_arrangement: { semester_scope: "7", duration: "48学时/3学分" },
-		key_points: ["需求工程规约", "软件测试策略", "敏捷 Sprint 迭代规划"],
-		difficult_points: ["用例图与时序图设计", "设计模式实战应用"],
-		acceptance_criteria: ["按小组编写并答辩完整软件工程项目文档"],
-	},
-	{
-		course_node_id: "grad_intern_1",
-		course_or_chapter_theme: "毕业实习",
-		course_goal: "进入企业进行软件研发工程实习，完成实习周记与总结报告",
-		status: "locked",
-		has_outline: false,
-		is_custom: false,
-		time_arrangement: { semester_scope: "8", duration: "128学时/8学分" },
-		key_points: ["行业研发体系认知", "团队协同开发", "生产环境部署规范"],
-		difficult_points: ["真实生产环境 Bug 线上排查与处理"],
-		acceptance_criteria: ["提交企业盖章实习证明及 10 篇实习周记"],
+		is_custom: true,
+		prerequisite_ids: [],
+		time_arrangement: {
+			semester_scope: "1",
+			duration: "48学时/3学分",
+			pace_reason: "可选：说明开课先修顺序",
+		},
+		key_points: ["核心知识点 1"],
+		difficult_points: ["难点说明 1"],
+		acceptance_criteria: ["验收标准 1"],
 	},
 ];
 
-export const motionTokens = {
+const motionTokens = {
 	lazy: { duration: 0.42, ease: [0.33, 1, 0.68, 1] },
 } as const;
 
-function validateFile(file: File): { ok: boolean; error?: string } {
-	const validExtensions = [
-		".pdf",
-		".docx",
-		".doc",
-		".txt",
-		".png",
-		".jpg",
-		".jpeg",
-	];
-	const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
-	if (!validExtensions.includes(ext)) {
-		return {
-			ok: false,
-			error:
-				"不支持的文件类型。仅支持 PDF, DOCX, DOC, TXT, PNG, JPG, JPEG 格式",
-		};
-	}
-	if (file.size > 20 * 1024 * 1024) {
-		return { ok: false, error: "文件大小超出20MB上限" };
-	}
-	return { ok: true };
+function asStringArray(value: unknown): string[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	return value
+		.filter((item): item is string => typeof item === "string")
+		.map((item) => item.trim())
+		.filter(Boolean);
 }
 
-interface UploadZoneProps {
-	onSuccess: () => void;
-	onError: (error: string) => void;
+function normalizeImportedCourse(
+	raw: unknown,
+	index: number,
+): BranchCourseNode {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+		throw new Error(`第 ${index + 1} 项不是有效的课程对象`);
+	}
+	const item = raw as Record<string, unknown>;
+	const id =
+		typeof item.course_node_id === "string" ? item.course_node_id.trim() : "";
+	const theme =
+		typeof item.course_or_chapter_theme === "string"
+			? item.course_or_chapter_theme.trim()
+			: "";
+	if (!id || !theme) {
+		throw new Error(
+			`第 ${index + 1} 项缺少必填字段 course_node_id 或 course_or_chapter_theme`,
+		);
+	}
+	const rawTime =
+		item.time_arrangement &&
+		typeof item.time_arrangement === "object" &&
+		!Array.isArray(item.time_arrangement)
+			? (item.time_arrangement as Record<string, unknown>)
+			: null;
+	const semesterScope =
+		rawTime && typeof rawTime.semester_scope === "string"
+			? rawTime.semester_scope.trim() || "1"
+			: "1";
+	const duration =
+		rawTime && typeof rawTime.duration === "string"
+			? rawTime.duration.trim()
+			: "";
+	const paceReason =
+		rawTime && typeof rawTime.pace_reason === "string"
+			? rawTime.pace_reason.trim()
+			: undefined;
+	const statusCandidate = item.status as BranchCourseNode["status"];
+	const status = VALID_STATUSES.has(statusCandidate)
+		? statusCandidate
+		: "locked";
+
+	return {
+		course_node_id: id,
+		course_or_chapter_theme: theme,
+		course_goal: typeof item.course_goal === "string" ? item.course_goal : "",
+		status,
+		has_outline: Boolean(item.has_outline),
+		is_custom: true,
+		prerequisite_ids: asStringArray(item.prerequisite_ids),
+		time_arrangement: {
+			semester_scope: semesterScope,
+			duration,
+			...(paceReason ? { pace_reason: paceReason } : {}),
+		},
+		key_points: asStringArray(item.key_points),
+		difficult_points: asStringArray(item.difficult_points),
+		acceptance_criteria: asStringArray(item.acceptance_criteria),
+	};
 }
 
-export function UploadZone({ onSuccess, onError }: UploadZoneProps) {
-	const fileInputRef = useRef<HTMLInputElement>(null);
-	const [isDragActive, setIsDragActive] = useState(false);
-
-	const processFile = (file: File) => {
-		const check = validateFile(file);
-		if (!check.ok) {
-			onError(check.error || "文件验证失败");
-		} else {
-			onSuccess();
-		}
-	};
-
-	const handleDrag = (e: React.DragEvent) => {
-		e.preventDefault();
-		e.stopPropagation();
-		if (e.type === "dragenter" || e.type === "dragover") {
-			setIsDragActive(true);
-		} else if (e.type === "dragleave") {
-			setIsDragActive(false);
-		}
-	};
-
-	const handleDrop = (e: React.DragEvent) => {
-		e.preventDefault();
-		e.stopPropagation();
-		setIsDragActive(false);
-		if (e.dataTransfer.files?.[0]) {
-			processFile(e.dataTransfer.files[0]);
-		}
-	};
-
-	const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-		e.preventDefault();
-		if (e.target.files?.[0]) {
-			processFile(e.target.files[0]);
-		}
-	};
-
-	const handleClick = () => {
-		fileInputRef.current?.click();
-	};
-
-	return (
-		<>
-			<input
-				ref={fileInputRef}
-				type="file"
-				className="file-input-hidden"
-				onChange={handleChange}
-				accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg"
-			/>
-			<button
-				type="button"
-				className={`upload-zone ${isDragActive ? "drag-active" : ""}`}
-				onDragEnter={handleDrag}
-				onDragOver={handleDrag}
-				onDragLeave={handleDrag}
-				onDrop={handleDrop}
-				onClick={handleClick}
-				data-testid="dropzone"
-			>
-				<div className="upload-icon">
-					<svg
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="1.5"
-						aria-hidden="true"
-					>
-						<path
-							d="M12 16V8M12 8L9 11M12 8L15 11M20 16.5C20 18.98 17.98 21 15.5 21H8.5C6.02 21 4 18.98 4 16.5C4 14.37 5.48 12.59 7.47 12.11C8.01 7.55 11.89 4 16.5 4C18.43 4 20.14 4.62 21.5 5.67C23.16 6.94 24 9.17 24 11.5C24 13.9 22.38 15.96 20 16.5Z"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-						/>
-					</svg>
-				</div>
-				<p className="upload-title">拖拽或点击上传培养方案文档</p>
-				<p className="upload-hint">
-					支持 PDF, DOCX, DOC, TXT, PNG, JPG, JPEG 格式，文件大小不超过 20MB
-				</p>
-			</button>
-		</>
+export function parseProgramCoursesJson(rawText: string): BranchCourseNode[] {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(rawText);
+	} catch {
+		throw new Error("文件内容不是合法的 JSON 格式");
+	}
+	const rawList = Array.isArray(parsed)
+		? parsed
+		: parsed &&
+				typeof parsed === "object" &&
+				"courses" in parsed &&
+				Array.isArray((parsed as { courses?: unknown }).courses)
+			? (parsed as { courses: unknown[] }).courses
+			: null;
+	if (!rawList) {
+		throw new Error("JSON 根节点必须是课程数组或包含 courses 数组的对象");
+	}
+	if (rawList.length === 0) {
+		throw new Error("JSON 中的课程列表不能为空");
+	}
+	const courses = rawList.map((item, index) =>
+		normalizeImportedCourse(item, index),
 	);
+	const seenIds = new Set<string>();
+	for (const course of courses) {
+		if (seenIds.has(course.course_node_id)) {
+			throw new Error(`存在重复的课程编号：${course.course_node_id}`);
+		}
+		seenIds.add(course.course_node_id);
+	}
+	return courses;
+}
+
+function createNextCourseNode(
+	existingCourses: BranchCourseNode[],
+): BranchCourseNode {
+	const existingIds = new Set(existingCourses.map((c) => c.course_node_id));
+	let counter = existingCourses.length + 1;
+	while (existingIds.has(`course_${counter}`)) {
+		counter += 1;
+	}
+	return {
+		course_node_id: `course_${counter}`,
+		course_or_chapter_theme: `新课程 ${counter}`,
+		course_goal: "",
+		status: "locked",
+		has_outline: false,
+		is_custom: true,
+		time_arrangement: {
+			semester_scope: "1",
+			duration: "48学时/3学分",
+		},
+		key_points: [],
+		difficult_points: [],
+		acceptance_criteria: [],
+	};
+}
+
+function readJsonFileText(file: File): Promise<string> {
+	if (typeof file.text === "function") {
+		return file.text();
+	}
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () =>
+			resolve(typeof reader.result === "string" ? reader.result : "");
+		reader.onerror = () => reject(new Error("读取 JSON 文件失败"));
+		reader.readAsText(file, "utf-8");
+	});
+}
+
+function downloadJsonFile(filename: string, data: unknown): void {
+	const json = JSON.stringify(data, null, 2);
+	const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+	const url = URL.createObjectURL(blob);
+	const anchor = document.createElement("a");
+	anchor.href = url;
+	anchor.download = filename;
+	document.body.append(anchor);
+	anchor.click();
+	anchor.remove();
+	URL.revokeObjectURL(url);
 }
 
 export function AdminProgramsPage() {
 	const { user, token } = useAuth();
-	const _navigate = useNavigate();
 	const reduceMotion = useReducedMotion();
-	const [pageState, setPageState] = useState<TeacherPageState>("empty");
+	const fileInputRef = useRef<HTMLInputElement>(null);
+	const [pageState, setPageState] = useState<ProgramPageState>("empty");
 	const [courses, setCourses] = useState<BranchCourseNode[]>([]);
 	const [activeCourseId, setActiveCourseId] = useState<string | null>(null);
 	const [fileError, setFileError] = useState<string | null>(null);
@@ -258,7 +221,6 @@ export function AdminProgramsPage() {
 		major: "",
 		className: "",
 	});
-
 	const [activeTab, setActiveTab] = useState<"editor" | "graph">("editor");
 
 	useEffect(() => {
@@ -376,8 +338,8 @@ export function AdminProgramsPage() {
 			.catch(() => {
 				if (!cancelled) setProgramScopeOptions([]);
 			});
-		teacherProgramApi
-			.getTeacherProgram(token)
+		adminProgramApi
+			.getProgram(token)
 			.then((program) => {
 				if (cancelled || !program) return;
 				setCourses(
@@ -404,18 +366,77 @@ export function AdminProgramsPage() {
 		};
 	}, [token]);
 
-	const handleUploadSuccess = () => {
-		setPageState("loading");
+	const showToast = (message: string, duration = 1800) => {
+		setToastMessage(message);
+		setTimeout(() => {
+			setToastMessage(null);
+		}, duration);
 	};
 
-	const handleUploadError = (err: string) => {
-		setFileError(err);
-		setPageState("error");
+	const handleImportFile = async (file: File) => {
+		const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+		if (ext !== ".json") {
+			setFileError("仅支持导入 .json 格式的培养方案文件");
+			setPageState("error");
+			return;
+		}
+		if (file.size > MAX_PROGRAM_JSON_BYTES) {
+			setFileError("JSON 文件大小不能超过 2MB");
+			setPageState("error");
+			return;
+		}
+		try {
+			const text = await readJsonFileText(file);
+			const imported = parseProgramCoursesJson(text);
+			setCourses(imported);
+			setActiveCourseId(null);
+			setFileError(null);
+			setPageState("editor");
+			showToast(`已导入 ${imported.length} 门课程`);
+		} catch (error) {
+			setFileError(error instanceof Error ? error.message : "JSON 导入失败");
+			setPageState("error");
+		}
 	};
 
-	const handleLoaderFinished = () => {
-		setCourses(MOCK_TEACHER_COURSES);
+	const handleJsonFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+		const file = event.target.files?.[0];
+		event.target.value = "";
+		if (file) {
+			void handleImportFile(file);
+		}
+	};
+
+	const handleAddCourse = () => {
+		const nextCourse = createNextCourseNode(courses);
+		setCourses((prev) => [...prev, nextCourse]);
+		setActiveCourseId(nextCourse.course_node_id);
+		setActiveTab("editor");
+		setFileError(null);
 		setPageState("editor");
+	};
+
+	const handleDeleteCourse = (courseNodeId: string) => {
+		setCourses((prev) => {
+			const remaining = prev.filter((c) => c.course_node_id !== courseNodeId);
+			if (remaining.length === 0) {
+				setPageState("empty");
+			}
+			return remaining;
+		});
+		setActiveCourseId(null);
+	};
+
+	const handleExportJson = () => {
+		downloadJsonFile("cultivation-program.json", courses);
+		showToast("已导出 JSON 文件");
+	};
+
+	const handleDownloadTemplate = () => {
+		downloadJsonFile(
+			"cultivation-program-template.json",
+			PROGRAM_JSON_TEMPLATE,
+		);
 	};
 
 	const handleSave = async () => {
@@ -425,10 +446,7 @@ export function AdminProgramsPage() {
 			className: programScope.className.trim(),
 		};
 		if (!scope.school || !scope.major || !scope.className) {
-			setToastMessage("请填写学校、专业、班级；这些值必须和学生账号完全一致");
-			setTimeout(() => {
-				setToastMessage(null);
-			}, 1800);
+			showToast("请填写学校、专业、班级；这些值必须和学生账号完全一致");
 			return;
 		}
 		const publishedCourses = courses.map((course) => ({
@@ -438,31 +456,21 @@ export function AdminProgramsPage() {
 		setCourses(publishedCourses);
 		if (token) {
 			try {
-				await teacherProgramApi.publishTeacherProgram(
-					token,
-					publishedCourses,
-					scope,
-				);
+				await adminProgramApi.publishProgram(token, publishedCourses, scope);
 			} catch (programError) {
-				setToastMessage(
+				showToast(
 					programError instanceof Error
 						? programError.message
 						: "人培方案发布失败",
 				);
-				setTimeout(() => {
-					setToastMessage(null);
-				}, 1800);
 				return;
 			}
 		}
-		setToastMessage("人培方案已成功发布并对齐！");
-		setTimeout(() => {
-			setToastMessage(null);
-		}, 1500);
+		showToast("人培方案已成功发布并对齐！", 1500);
 	};
 
-	const handleReimport = () => {
-		if (window.confirm("确定要重新导入培养方案吗？当前所有修改将被覆盖。")) {
+	const handleReset = () => {
+		if (window.confirm("确定要清空当前培养方案吗？当前未发布修改将被覆盖。")) {
 			setCourses([]);
 			setActiveCourseId(null);
 			setPageState("empty");
@@ -471,23 +479,21 @@ export function AdminProgramsPage() {
 
 	const renderContent = () => {
 		switch (pageState) {
-			case "loading":
-				return <BreathingLoader onFinished={handleLoaderFinished} />;
 			case "error":
 				return (
 					<div className="error-panel">
 						<div className="error-icon">✕</div>
-						<h3 className="error-title">文件解析失败</h3>
+						<h3 className="error-title">JSON 导入失败</h3>
 						<p className="error-message">{fileError}</p>
 						<button
 							type="button"
 							className="btn btn-secondary"
 							onClick={() => {
 								setFileError(null);
-								setPageState("empty");
+								setPageState(courses.length > 0 ? "editor" : "empty");
 							}}
 						>
-							重新上传
+							返回
 						</button>
 					</div>
 				);
@@ -537,16 +543,51 @@ export function AdminProgramsPage() {
 				);
 			default:
 				return (
-					<UploadZone
-						onSuccess={handleUploadSuccess}
-						onError={handleUploadError}
-					/>
+					<div className="program-import-card">
+						<h3 className="program-import-title">创建或导入培养方案</h3>
+						<p className="program-import-hint">
+							支持手动逐门添加编辑课程，或导入符合系统 JSON
+							结构的培养方案文件（.json，不超过 2MB）。
+						</p>
+						<div className="program-import-actions">
+							<button
+								type="button"
+								className="btn btn-primary"
+								onClick={handleAddCourse}
+							>
+								手动添加课程
+							</button>
+							<button
+								type="button"
+								className="btn btn-secondary"
+								onClick={() => fileInputRef.current?.click()}
+							>
+								导入 JSON
+							</button>
+							<button
+								type="button"
+								className="btn btn-secondary"
+								onClick={handleDownloadTemplate}
+							>
+								下载 JSON 模板
+							</button>
+						</div>
+					</div>
 				);
 		}
 	};
 
 	return (
 		<>
+			<input
+				ref={fileInputRef}
+				type="file"
+				className="file-input-hidden"
+				accept=".json,application/json"
+				data-testid="json-file-input"
+				onChange={handleJsonFileChange}
+			/>
+
 			<header className="admin-header">
 				<div>
 					<p className="admin-kicker">curriculum</p>
@@ -558,9 +599,30 @@ export function AdminProgramsPage() {
 							<button
 								type="button"
 								className="admin-secondary-action"
-								onClick={handleReimport}
+								onClick={handleAddCourse}
 							>
-								重新导入
+								添加课程
+							</button>
+							<button
+								type="button"
+								className="admin-secondary-action"
+								onClick={() => fileInputRef.current?.click()}
+							>
+								导入 JSON
+							</button>
+							<button
+								type="button"
+								className="admin-secondary-action"
+								onClick={handleExportJson}
+							>
+								导出 JSON
+							</button>
+							<button
+								type="button"
+								className="admin-secondary-action"
+								onClick={handleReset}
+							>
+								清空方案
 							</button>
 							<button
 								type="button"
@@ -582,21 +644,21 @@ export function AdminProgramsPage() {
 
 			{courses.length > 0 && pageState === "editor" ? (
 				<div
-					className="teacher-nav-tabs"
+					className="program-nav-tabs"
 					role="tablist"
 					aria-label="人培方案视图"
 					style={{ alignSelf: "start" }}
 				>
 					<button
 						type="button"
-						className={`teacher-tab ${activeTab === "editor" ? "tab-active" : ""}`}
+						className={`program-tab ${activeTab === "editor" ? "tab-active" : ""}`}
 						onClick={() => setActiveTab("editor")}
 					>
 						大纲对齐编辑
 					</button>
 					<button
 						type="button"
-						className={`teacher-tab ${activeTab === "graph" ? "tab-active" : ""}`}
+						className={`program-tab ${activeTab === "graph" ? "tab-active" : ""}`}
 						onClick={() => setActiveTab("graph")}
 					>
 						方案依赖图谱
@@ -613,6 +675,7 @@ export function AdminProgramsPage() {
 							courses.find((c) => c.course_node_id === activeCourseId) || null
 						}
 						onClose={() => setActiveCourseId(null)}
+						onDeleteCourse={handleDeleteCourse}
 						onUpdateCourse={(updated) => {
 							setCourses((prev) =>
 								prev.map((c) =>

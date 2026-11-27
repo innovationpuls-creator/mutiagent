@@ -1,6 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
-import React from "react";
 import {
 	actionHintVariants,
 	breathingGlowVariants,

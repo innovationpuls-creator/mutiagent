@@ -41,7 +41,7 @@ def test_empty_schema_upgrades_to_alembic_head(tmp_path: Path) -> None:
     assert table_names == set(SQLModel.metadata.tables) | {"alembic_version"}
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0005_quiz_submission_recovery"
+        assert revision.scalar_one() == "0006_admin_program_drop_embed"
 
 
 def test_alembic_prefers_database_url_environment(
@@ -63,7 +63,7 @@ def test_alembic_prefers_database_url_environment(
     engine = create_engine(database_url)
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0005_quiz_submission_recovery"
+        assert revision.scalar_one() == "0006_admin_program_drop_embed"
 
 
 def test_programmatic_alembic_config_precedes_database_url_environment(
@@ -85,7 +85,7 @@ def test_programmatic_alembic_config_precedes_database_url_environment(
     engine = create_engine(database_url)
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0005_quiz_submission_recovery"
+        assert revision.scalar_one() == "0006_admin_program_drop_embed"
 
 
 def test_ingestion_job_lease_migration_preserves_existing_job(
@@ -350,3 +350,87 @@ def test_production_create_app_does_not_run_startup_ddl(
     monkeypatch.setattr("app.main.assert_schema_at_head", lambda _engine: None)
 
     create_app(database_url=database_url, settings=_production_settings(database_url))
+
+
+def test_admin_program_drop_embed_migration_upgrades_legacy_columns(
+    tmp_path: Path,
+) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    from app.migration_state import assert_schema_at_head
+
+    database_url = postgresql_test_url(tmp_path, "alembic-admin-program-drop-embed")
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+    command.upgrade(config, "0005_quiz_submission_recovery")
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE textbook ADD COLUMN embedding FLOAT[]"))
+        connection.execute(
+            text(
+                "ALTER TABLE cultivationprogram RENAME COLUMN admin_uid TO teacher_uid"
+            )
+        )
+        connection.execute(text("DROP INDEX IF EXISTS idx_cultivation_program_admin"))
+        connection.execute(text("DROP INDEX IF EXISTS ix_cultivationprogram_admin_uid"))
+        connection.execute(
+            text(
+                "CREATE INDEX idx_cultivation_program_teacher "
+                "ON cultivationprogram (teacher_uid)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX ix_cultivationprogram_teacher_uid "
+                "ON cultivationprogram (teacher_uid)"
+            )
+        )
+        connection.execute(
+            text(
+                "ALTER TABLE cultivationprogram "
+                "RENAME CONSTRAINT cultivationprogram_admin_uid_fkey "
+                "TO cultivationprogram_teacher_uid_fkey"
+            )
+        )
+        connection.execute(
+            text(
+                'INSERT INTO "user" (uid, username, identifier, role, school, '
+                "major, class_name, provider, is_active, created_at, updated_at) "
+                "VALUES ('legacy-teacher', '教师', 'legacy-teacher@example.com', "
+                "'teacher', '南山', '软工', '一班', 'password', true, "
+                "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO cultivationprogram (program_id, teacher_uid, "
+                "school, major, class_name, courses, created_at, updated_at) "
+                "VALUES ('prog-1', 'legacy-teacher', '南山', '软工', '一班', "
+                "'[]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+
+    command.upgrade(config, "head")
+    assert_schema_at_head(engine)
+
+    insp = inspect(engine)
+    assert "embedding" not in {c["name"] for c in insp.get_columns("textbook")}
+    program_cols = {c["name"] for c in insp.get_columns("cultivationprogram")}
+    assert "admin_uid" in program_cols
+    assert "teacher_uid" not in program_cols
+    program_indexes = {idx["name"] for idx in insp.get_indexes("cultivationprogram")}
+    assert "idx_cultivation_program_admin" in program_indexes
+    assert "ix_cultivationprogram_admin_uid" in program_indexes
+    assert "idx_cultivation_program_teacher" not in program_indexes
+    assert "ix_cultivationprogram_teacher_uid" not in program_indexes
+    with engine.connect() as connection:
+        role = connection.execute(
+            text("SELECT role FROM \"user\" WHERE uid = 'legacy-teacher'")
+        ).scalar_one()
+        owner_uid = connection.execute(
+            text("SELECT admin_uid FROM cultivationprogram WHERE program_id = 'prog-1'")
+        ).scalar_one()
+    assert role == "admin"
+    assert owner_uid == "legacy-teacher"

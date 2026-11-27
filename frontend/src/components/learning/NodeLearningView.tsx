@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
-import React, { useEffect, useState } from "react";
-import { breathingGlowVariants, whisperVariants } from "../../lib/motion";
+import { useEffect, useState } from "react";
+import { breathingGlowVariants } from "../../lib/motion";
 import { EditorialMarkdown } from "./EditorialMarkdown";
 import "../../styles/node-learning-view.css";
 

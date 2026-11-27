@@ -318,7 +318,7 @@ def delete_user_learning_data(session: Session, uid: str) -> None:
             session.delete(row)
 
     programs = session.exec(
-        select(CultivationProgram).where(CultivationProgram.teacher_uid == uid)
+        select(CultivationProgram).where(CultivationProgram.admin_uid == uid)
     ).all()
     for program in programs:
         session.delete(program)

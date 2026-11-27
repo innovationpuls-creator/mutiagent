@@ -60,7 +60,7 @@ def auth_header(auth_response: dict) -> dict:
 def course_payload() -> list[dict]:
     return [
         {
-            "course_node_id": "teacher_course_1",
+            "course_node_id": "program_course_1",
             "course_or_chapter_theme": "C++ 高级编程",
             "course_goal": "补充学校培养方案课程",
             "status": "locked",
@@ -70,17 +70,17 @@ def course_payload() -> list[dict]:
     ]
 
 
-def test_teacher_program_publish_is_unique_per_cohort_and_student_matches(
+def test_admin_program_publish_is_unique_per_cohort_and_student_matches(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = make_client(tmp_path, monkeypatch)
-    teacher = register(client, "teacher-program@example.com", "admin")
-    other_teacher = register(client, "teacher-program-2@example.com", "admin")
+    owner = register(client, "admin-program@example.com", "admin")
+    other_admin = register(client, "admin-program-2@example.com", "admin")
     student = register(client, "student-program@example.com", "student")
 
     publish_response = client.post(
-        "/api/teacher/program/publish",
-        headers=auth_header(teacher),
+        "/api/admin/program/publish",
+        headers=auth_header(owner),
         json={"courses": course_payload()},
     )
     assert publish_response.status_code == 200
@@ -88,11 +88,11 @@ def test_teacher_program_publish_is_unique_per_cohort_and_student_matches(
     assert body["school"] == "南山大学"
     assert body["major"] == "软件工程"
     assert body["class_name"] == "一班"
-    assert body["courses"][0]["course_node_id"] == "teacher_course_1"
+    assert body["courses"][0]["course_node_id"] == "program_course_1"
 
     conflict_response = client.post(
-        "/api/teacher/program/publish",
-        headers=auth_header(other_teacher),
+        "/api/admin/program/publish",
+        headers=auth_header(other_admin),
         json={"courses": course_payload()},
     )
     assert conflict_response.status_code == 409
@@ -102,21 +102,21 @@ def test_teacher_program_publish_is_unique_per_cohort_and_student_matches(
         "/api/student/matched-program", headers=auth_header(student)
     )
     assert matched_response.status_code == 200
-    assert matched_response.json()["teacher_uid"] == teacher["user"]["uid"]
+    assert matched_response.json()["admin_uid"] == owner["user"]["uid"]
 
 
 def test_student_matching_requires_exact_school_major_and_class_name(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = make_client(tmp_path, monkeypatch)
-    teacher = register(client, "exact-teacher@example.com", "admin", class_name="一班")
+    owner = register(client, "exact-admin@example.com", "admin", class_name="一班")
     student = register(
         client, "exact-student@example.com", "student", class_name="二班"
     )
 
     publish_response = client.post(
-        "/api/teacher/program/publish",
-        headers=auth_header(teacher),
+        "/api/admin/program/publish",
+        headers=auth_header(owner),
         json={"courses": course_payload()},
     )
     assert publish_response.status_code == 200
@@ -141,7 +141,7 @@ def test_admin_can_publish_program_for_selected_cohort(
     )
 
     publish_response = client.post(
-        "/api/teacher/program/publish",
+        "/api/admin/program/publish",
         headers={"Authorization": f"Bearer {admin_token}"},
         json={
             "school": "南山大学",
@@ -161,7 +161,7 @@ def test_admin_can_publish_program_for_selected_cohort(
         "/api/student/matched-program", headers=auth_header(student)
     )
     assert matched_response.status_code == 200
-    assert matched_response.json()["teacher_identifier"] == "13297540721"
+    assert matched_response.json()["admin_identifier"] == "13297540721"
 
 
 def test_student_matching_without_cohort_returns_no_program(

@@ -1,5 +1,5 @@
 import { type HTMLMotionProps, motion } from "framer-motion";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost";
 
@@ -33,7 +33,7 @@ export function Button({
 					: { scale: 1.02, boxShadow: "0 8px 24px oklch(82% 0.08 60 / 0.4)" }
 			}
 			whileTap={disabled || loading ? undefined : { scale: 0.98 }}
-			{...(buttonProps as any)}
+			{...buttonProps}
 		>
 			{icon ? (
 				<span className="button-icon" aria-hidden="true">

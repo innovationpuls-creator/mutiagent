@@ -2993,7 +2993,10 @@ test("reuses the same session after profile completion instead of creating a new
 	expect(ctaBtn).toBeTruthy();
 	expect(ctaBtn?.textContent).toContain("进入学习路径草案智能体");
 
-	fireEvent.click(ctaBtn!);
+	if (!ctaBtn) {
+		throw new Error("Expected CTA button");
+	}
+	fireEvent.click(ctaBtn);
 
 	const draftInput = screen.getByPlaceholderText(
 		"输入你的学习情况...",

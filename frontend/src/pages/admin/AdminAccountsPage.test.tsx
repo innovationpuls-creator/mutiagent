@@ -27,10 +27,10 @@ const adminAccount: AuthUser = {
 	last_login_at: null,
 };
 
-const teacherAccount: AuthUser = {
-	uid: "teacher-1",
-	username: "王教师",
-	identifier: "teacher@example.com",
+const managedAccount: AuthUser = {
+	uid: "member-1",
+	username: "王管理员",
+	identifier: "member@example.com",
 	role: "admin",
 	school: "南山大学",
 	major: "软件工程",
@@ -78,13 +78,13 @@ describe("AdminAccountsPage", () => {
 		stubStoredAuth();
 		const adminApi: AdminAccountApi = {
 			listAccounts: vi.fn().mockResolvedValue([adminAccount]),
-			createAccount: vi.fn().mockResolvedValue(teacherAccount),
+			createAccount: vi.fn().mockResolvedValue(managedAccount),
 			updateAccount: vi
 				.fn()
 				.mockResolvedValueOnce({
-					...teacherAccount,
-					username: "王教师二号",
-					identifier: "teacher-2@example.com",
+					...managedAccount,
+					username: "王管理员二号",
+					identifier: "member-2@example.com",
 					role: "student",
 					is_active: true,
 					school: "南山大学",
@@ -92,9 +92,9 @@ describe("AdminAccountsPage", () => {
 					class_name: "一班",
 				})
 				.mockResolvedValueOnce({
-					...teacherAccount,
-					username: "王教师二号",
-					identifier: "teacher-2@example.com",
+					...managedAccount,
+					username: "王管理员二号",
+					identifier: "member-2@example.com",
 					role: "student",
 					is_active: false,
 					school: "南山大学",
@@ -121,13 +121,13 @@ describe("AdminAccountsPage", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "新增账号" }));
 		fireEvent.change(screen.getByLabelText("用户名"), {
-			target: { value: "王教师" },
+			target: { value: "王管理员" },
 		});
 		fireEvent.change(screen.getByLabelText("登录标识"), {
-			target: { value: "teacher@example.com" },
+			target: { value: "member@example.com" },
 		});
 		fireEvent.change(screen.getByLabelText("密码"), {
-			target: { value: "teacher-password-123" },
+			target: { value: "member-password-123" },
 		});
 		fireEvent.change(screen.getByLabelText("学校"), {
 			target: { value: "南山大学" },
@@ -146,36 +146,36 @@ describe("AdminAccountsPage", () => {
 
 		await waitFor(() => {
 			expect(adminApi.createAccount).toHaveBeenCalledWith("token-1", {
-				username: "王教师",
-				identifier: "teacher@example.com",
-				password: "teacher-password-123",
+				username: "王管理员",
+				identifier: "member@example.com",
+				password: "member-password-123",
 				role: "admin",
 				is_active: true,
 				school: "南山大学",
 				major: "软件工程",
 				class_name: "一班",
 			});
-			expect(screen.getByText("王教师")).toBeTruthy();
+			expect(screen.getByText("王管理员")).toBeTruthy();
 		});
 
 		fireEvent.change(screen.getByLabelText("查询账号"), {
-			target: { value: "teacher@example.com" },
+			target: { value: "member@example.com" },
 		});
 
 		const list = screen.getByRole("region", { name: "账号列表" });
-		expect(within(list).getByText("王教师")).toBeTruthy();
+		expect(within(list).getByText("王管理员")).toBeTruthy();
 		expect(within(list).queryByText("admin")).toBeNull();
 
 		fireEvent.change(screen.getByLabelText("查询账号"), {
 			target: { value: "" },
 		});
 
-		fireEvent.click(screen.getByRole("button", { name: "编辑 王教师" }));
+		fireEvent.click(screen.getByRole("button", { name: "编辑 王管理员" }));
 		fireEvent.change(screen.getByLabelText("用户名"), {
-			target: { value: "王教师二号" },
+			target: { value: "王管理员二号" },
 		});
 		fireEvent.change(screen.getByLabelText("登录标识"), {
-			target: { value: "teacher-2@example.com" },
+			target: { value: "member-2@example.com" },
 		});
 		const editRoleSelects = screen.getAllByLabelText("角色");
 		fireEvent.change(editRoleSelects[editRoleSelects.length - 1], {
@@ -186,10 +186,10 @@ describe("AdminAccountsPage", () => {
 		await waitFor(() => {
 			expect(adminApi.updateAccount).toHaveBeenCalledWith(
 				"token-1",
-				"teacher-1",
+				"member-1",
 				{
-					username: "王教师二号",
-					identifier: "teacher-2@example.com",
+					username: "王管理员二号",
+					identifier: "member-2@example.com",
 					role: "student",
 					is_active: true,
 					school: "南山大学",
@@ -197,22 +197,25 @@ describe("AdminAccountsPage", () => {
 					class_name: "一班",
 				},
 			);
-			expect(screen.getByText("王教师二号")).toBeTruthy();
+			expect(screen.getByText("王管理员二号")).toBeTruthy();
 		});
 
 		const enabledStatusButton = screen
 			.getAllByRole("button", { name: "启用" })
 			.find((button) => !button.hasAttribute("disabled"));
 		expect(enabledStatusButton).toBeTruthy();
-		fireEvent.click(enabledStatusButton!);
+		if (!enabledStatusButton) {
+			throw new Error("Expected enabled status toggle button");
+		}
+		fireEvent.click(enabledStatusButton);
 
 		await waitFor(() => {
 			expect(adminApi.updateAccount).toHaveBeenLastCalledWith(
 				"token-1",
-				"teacher-1",
+				"member-1",
 				{
-					username: "王教师二号",
-					identifier: "teacher-2@example.com",
+					username: "王管理员二号",
+					identifier: "member-2@example.com",
 					role: "student",
 					is_active: false,
 					school: "南山大学",
@@ -222,15 +225,15 @@ describe("AdminAccountsPage", () => {
 			);
 		});
 
-		fireEvent.click(screen.getByRole("button", { name: "删除 王教师二号" }));
+		fireEvent.click(screen.getByRole("button", { name: "删除 王管理员二号" }));
 		fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
 
 		await waitFor(() => {
 			expect(adminApi.deleteAccount).toHaveBeenCalledWith(
 				"token-1",
-				"teacher-1",
+				"member-1",
 			);
-			expect(screen.queryByText("王教师二号")).toBeNull();
+			expect(screen.queryByText("王管理员二号")).toBeNull();
 		});
 	});
 });

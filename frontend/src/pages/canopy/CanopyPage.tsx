@@ -128,7 +128,7 @@ function milestoneState(milestones: CanopyMilestone[], index: number): string {
 		return "locked";
 	}
 	const nextMilestone = milestones[index + 1];
-	return !nextMilestone || !nextMilestone.reached ? "active" : "reached";
+	return !nextMilestone?.reached ? "active" : "reached";
 }
 
 export function CanopyPage() {

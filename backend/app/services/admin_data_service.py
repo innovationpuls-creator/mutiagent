@@ -33,7 +33,7 @@ def get_data_overview(session: Session) -> DataOverviewResponse:
     for role, count in session.exec(
         select(User.role, func.count(User.uid)).group_by(User.role)
     ).all():
-        category = "admin" if role in {"admin", "teacher"} else "student"
+        category = "admin" if role == "admin" else "student"
         accounts[category] += int(count)
 
     cohort_scopes = (
@@ -66,8 +66,8 @@ def get_data_overview(session: Session) -> DataOverviewResponse:
 
 
 def list_data_cohorts(session: Session) -> list[DataCohortRead]:
-    teacher = aliased(User)
-    is_program_manager = User.role.in_(("admin", "teacher"))
+    program_admin = aliased(User)
+    is_program_manager = User.role == "admin"
     student_count = func.coalesce(func.sum(case((is_program_manager, 0), else_=1)), 0)
     admin_count = func.coalesce(func.sum(case((is_program_manager, 1), else_=0)), 0)
     cohort_rows = session.exec(
@@ -79,7 +79,7 @@ def list_data_cohorts(session: Session) -> list[DataCohortRead]:
             admin_count,
             CultivationProgram.program_id,
             CultivationProgram.updated_at,
-            teacher.username,
+            program_admin.username,
         )
         .select_from(User)
         .outerjoin(
@@ -90,7 +90,7 @@ def list_data_cohorts(session: Session) -> list[DataCohortRead]:
                 CultivationProgram.class_name == User.class_name,
             ),
         )
-        .outerjoin(teacher, teacher.uid == CultivationProgram.teacher_uid)
+        .outerjoin(program_admin, program_admin.uid == CultivationProgram.admin_uid)
         .where(
             func.trim(User.school) != "",
             func.trim(User.major) != "",
@@ -102,7 +102,7 @@ def list_data_cohorts(session: Session) -> list[DataCohortRead]:
             User.class_name,
             CultivationProgram.program_id,
             CultivationProgram.updated_at,
-            teacher.username,
+            program_admin.username,
         )
         .order_by(User.school, User.major, User.class_name)
     ).all()
@@ -115,7 +115,7 @@ def list_data_cohorts(session: Session) -> list[DataCohortRead]:
         admin_count_value,
         program_id,
         program_updated_at,
-        teacher_name,
+        admin_name,
     ) in cohort_rows:
         rows.append(
             DataCohortRead(
@@ -125,7 +125,7 @@ def list_data_cohorts(session: Session) -> list[DataCohortRead]:
                 student_count=int(student_count_value),
                 admin_count=int(admin_count_value),
                 has_program=program_id is not None,
-                program_teacher_name=teacher_name if program_id is not None else None,
+                program_admin_name=admin_name if program_id is not None else None,
                 program_updated_at=(
                     program_updated_at if program_id is not None else None
                 ),
@@ -137,10 +137,10 @@ def list_data_cohorts(session: Session) -> list[DataCohortRead]:
 def list_data_programs(session: Session):
     program_rows = session.exec(
         select(CultivationProgram, User)
-        .outerjoin(User, User.uid == CultivationProgram.teacher_uid)
+        .outerjoin(User, User.uid == CultivationProgram.admin_uid)
         .order_by(CultivationProgram.updated_at.desc())
     ).all()
-    return [to_program_read(program, teacher) for program, teacher in program_rows]
+    return [to_program_read(program, admin) for program, admin in program_rows]
 
 
 def read_user_learning_data(session: Session, uid: str) -> UserLearningDataRead:

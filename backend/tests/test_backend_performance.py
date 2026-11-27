@@ -24,11 +24,7 @@ def engine(tmp_path):
     engine.dispose()
 
 
-def test_search_skips_embeddings_and_preserves_ranking(engine, monkeypatch):
-    def unexpected():
-        pytest.fail("unsupported hybrid search must not request embeddings")
-
-    monkeypatch.setattr(kb, "get_embeddings_client", unexpected)
+def test_search_published_textbooks_preserves_ranking(engine):
     with Session(engine) as session:
         for key, title, tags, published in (
             ("title", "Python", [], True),
@@ -46,32 +42,9 @@ def test_search_skips_embeddings_and_preserves_ranking(engine, monkeypatch):
             )
         session.commit()
         assert [
-            row.textbook_id for row in kb.hybrid_search_textbooks(session, "python", 10)
+            row.textbook_id
+            for row in kb.search_published_textbooks(session, "python", 10)
         ] == ["tags", "title"]
-
-
-def test_hybrid_failure_preserves_callers_transaction(engine, monkeypatch):
-    class Embeddings:
-        def embed_query(self, _query):
-            return [0.0, 1.0]
-
-    monkeypatch.setattr(kb, "_supports_hybrid_search", lambda _session: True)
-    monkeypatch.setattr(kb, "get_embeddings_client", lambda: Embeddings())
-    with Session(engine) as session:
-        session.add(
-            Textbook(
-                textbook_id="book",
-                source_id="source",
-                title="Python",
-                student_availability_status="published",
-            )
-        )
-        session.commit()
-        session.add(KnowledgeGap(gap_id="pending", normalized_topic="pending"))
-        assert kb.hybrid_search_textbooks(session, "Python")[0].textbook_id == "book"
-        session.commit()
-    with Session(engine) as session:
-        assert session.get(KnowledgeGap, "pending") is not None
 
 
 def test_two_workers_claim_distinct_jobs_before_first_commit(engine):

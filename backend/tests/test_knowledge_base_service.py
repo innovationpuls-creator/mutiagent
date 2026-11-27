@@ -745,22 +745,23 @@ def test_run_knowledge_base_agent_checks_source_duplicates_in_one_query(
     ]
 
 
-def test_hybrid_search_textbooks_falls_back_cleanly(
+def test_search_published_textbooks_matches_title(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine = _knowledge_engine(tmp_path)
     run_schema_upgrades(engine)
     SQLModel.metadata.create_all(engine)
 
-    textbook = _textbook(textbook_id="textbook-hybrid", title="FastAPI 高性能开发")
+    textbook = _textbook(textbook_id="textbook-match", title="FastAPI 高性能开发")
     textbook.student_availability_status = "published"
 
     with Session(engine) as session:
         session.add(textbook)
         session.commit()
 
-        results = knowledge_base_service.hybrid_search_textbooks(session, "FastAPI", 10)
+        results = knowledge_base_service.search_published_textbooks(
+            session, "FastAPI", 10
+        )
 
     assert results
     assert results[0].title == "FastAPI 高性能开发"

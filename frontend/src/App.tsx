@@ -38,11 +38,6 @@ const MainLayout = lazy(() =>
 		}),
 	),
 );
-const IcebreakerFlow = lazy(() =>
-	import("./components/learning/IcebreakerFlow").then(
-		({ IcebreakerFlow: Component }) => ({ default: Component }),
-	),
-);
 const AdminAccountsPage = lazy(() =>
 	import("./pages/admin/AdminAccountsPage").then(
 		({ AdminAccountsPage: Component }) => ({ default: Component }),
@@ -74,11 +69,6 @@ const CanopyPage = lazy(() =>
 	import("./pages/canopy/CanopyPage").then(({ CanopyPage: Component }) => ({
 		default: Component,
 	})),
-);
-const ScratchpadCanvas = lazy(() =>
-	import("./pages/canvas/ScratchpadCanvas").then(
-		({ ScratchpadCanvas: Component }) => ({ default: Component }),
-	),
 );
 const ForestQuizPage = lazy(() =>
 	import("./pages/forest/ForestQuizPage").then(
@@ -155,8 +145,6 @@ function AnimatedRoutes() {
 		"/leaf",
 		"/forest",
 		"/canopy",
-		"/canvas",
-		"/teacher",
 		"/admin",
 	].some(
 		(path) =>
@@ -181,7 +169,6 @@ function AnimatedRoutes() {
 				<Suspense fallback={<RouteLoadingFallback />}>
 					<Routes location={location}>
 						<Route path="/login" element={<AuthPage />} />
-						<Route path="/onboarding" element={<IcebreakerFlow />} />
 
 						<Route element={<ProtectedRoute />}>
 							<Route element={<RoleRoute allowedRoles={["admin"]} />}>
@@ -200,10 +187,6 @@ function AnimatedRoutes() {
 										element={<AdminKnowledgeBasePage />}
 									/>
 								</Route>
-								<Route
-									path="/teacher"
-									element={<Navigate replace to="/admin/programs" />}
-								/>
 							</Route>
 
 							<Route element={<RoleRoute allowedRoles={["student"]} />}>
@@ -224,7 +207,6 @@ function AnimatedRoutes() {
 										element={<ForestQuizPage />}
 									/>
 									<Route path="/canopy" element={<CanopyPage />} />
-									<Route path="/canvas" element={<ScratchpadCanvas />} />
 								</Route>
 							</Route>
 						</Route>
@@ -256,8 +238,7 @@ function AppGlobalAiWidget() {
 
 function AppFilingLink() {
 	const { pathname } = useLocation();
-	if (/^\/(sprout|branch|leaf|forest|canopy|canvas)(\/|$)/.test(pathname))
-		return null;
+	if (/^\/(sprout|branch|leaf|forest|canopy)(\/|$)/.test(pathname)) return null;
 	return <IcpFilingLink />;
 }
 

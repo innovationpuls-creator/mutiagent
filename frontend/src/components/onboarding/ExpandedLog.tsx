@@ -1,8 +1,8 @@
 import { motion } from "framer-motion";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import styled from "styled-components";
 import type { AgentRunStep, ThoughtChunkEntry } from "../../types/chat";
-import { formatStepKind, formatStepTitle } from "./stepLabels";
+import { formatStepTitle } from "./stepLabels";
 
 interface ExpandedLogProps {
 	steps: AgentRunStep[];
@@ -40,11 +40,6 @@ function getStepContextDetails(step: AgentRunStep): string[] {
 	if (step.dependsOn && step.dependsOn.length > 0)
 		details.push(`依赖 ${step.dependsOn.join(" / ")}`);
 	return details;
-}
-
-function getKindLabel(step: AgentRunStep): string {
-	if (step.kind === "agent") return "智能体";
-	return formatStepKind(step);
 }
 
 function ThoughtStream({ entries }: { entries: ThoughtChunkEntry[] }) {

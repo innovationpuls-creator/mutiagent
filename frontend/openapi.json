@@ -495,6 +495,124 @@
 				}
 			}
 		},
+		"/api/admin/program": {
+			"get": {
+				"tags": ["admin"],
+				"summary": "Read Program",
+				"operationId": "read_program_api_admin_program_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"anyOf": [
+										{
+											"$ref": "#/components/schemas/CultivationProgramRead"
+										},
+										{
+											"type": "null"
+										}
+									],
+									"title": "Response Read Program Api Admin Program Get"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			},
+			"put": {
+				"tags": ["admin"],
+				"summary": "Save Program",
+				"operationId": "save_program_api_admin_program_put",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CultivationProgramSaveRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/CultivationProgramRead"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			}
+		},
+		"/api/admin/program/publish": {
+			"post": {
+				"tags": ["admin"],
+				"summary": "Publish Program",
+				"operationId": "publish_program_api_admin_program_publish_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CultivationProgramSaveRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/CultivationProgramRead"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			}
+		},
 		"/api/admin/data/overview": {
 			"get": {
 				"tags": ["admin-data"],
@@ -710,124 +828,6 @@
 						}
 					}
 				}
-			}
-		},
-		"/api/teacher/program": {
-			"get": {
-				"tags": ["teacher"],
-				"summary": "Read Program",
-				"operationId": "read_program_api_teacher_program_get",
-				"responses": {
-					"200": {
-						"description": "Successful Response",
-						"content": {
-							"application/json": {
-								"schema": {
-									"anyOf": [
-										{
-											"$ref": "#/components/schemas/CultivationProgramRead"
-										},
-										{
-											"type": "null"
-										}
-									],
-									"title": "Response Read Program Api Teacher Program Get"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"HTTPBearer": []
-					}
-				]
-			},
-			"put": {
-				"tags": ["teacher"],
-				"summary": "Save Program",
-				"operationId": "save_program_api_teacher_program_put",
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/CultivationProgramSaveRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "Successful Response",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/CultivationProgramRead"
-								}
-							}
-						}
-					},
-					"422": {
-						"description": "Validation Error",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/HTTPValidationError"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"HTTPBearer": []
-					}
-				]
-			}
-		},
-		"/api/teacher/program/publish": {
-			"post": {
-				"tags": ["teacher"],
-				"summary": "Publish Program",
-				"operationId": "publish_program_api_teacher_program_publish_post",
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/CultivationProgramSaveRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "Successful Response",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/CultivationProgramRead"
-								}
-							}
-						}
-					},
-					"422": {
-						"description": "Validation Error",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/HTTPValidationError"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"HTTPBearer": []
-					}
-				]
 			}
 		},
 		"/api/student/matched-program": {
@@ -3247,17 +3247,17 @@
 						"type": "string",
 						"title": "Program Id"
 					},
-					"teacher_uid": {
+					"admin_uid": {
 						"type": "string",
-						"title": "Teacher Uid"
+						"title": "Admin Uid"
 					},
-					"teacher_name": {
+					"admin_name": {
 						"type": "string",
-						"title": "Teacher Name"
+						"title": "Admin Name"
 					},
-					"teacher_identifier": {
+					"admin_identifier": {
 						"type": "string",
-						"title": "Teacher Identifier"
+						"title": "Admin Identifier"
 					},
 					"school": {
 						"type": "string",
@@ -3300,9 +3300,9 @@
 				"type": "object",
 				"required": [
 					"program_id",
-					"teacher_uid",
-					"teacher_name",
-					"teacher_identifier",
+					"admin_uid",
+					"admin_name",
+					"admin_identifier",
 					"school",
 					"major",
 					"class_name",
@@ -3387,7 +3387,7 @@
 						"type": "boolean",
 						"title": "Has Program"
 					},
-					"program_teacher_name": {
+					"program_admin_name": {
 						"anyOf": [
 							{
 								"type": "string"
@@ -3396,7 +3396,7 @@
 								"type": "null"
 							}
 						],
-						"title": "Program Teacher Name"
+						"title": "Program Admin Name"
 					},
 					"program_updated_at": {
 						"anyOf": [

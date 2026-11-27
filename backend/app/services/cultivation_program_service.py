@@ -11,13 +11,13 @@ from app.schemas import CultivationProgramRead
 
 
 def to_program_read(
-    program: CultivationProgram, teacher: User | None
+    program: CultivationProgram, admin: User | None
 ) -> CultivationProgramRead:
     return CultivationProgramRead(
         program_id=program.program_id,
-        teacher_uid=program.teacher_uid,
-        teacher_name=teacher.username if teacher else "",
-        teacher_identifier=teacher.identifier if teacher else "",
+        admin_uid=program.admin_uid,
+        admin_name=admin.username if admin else "",
+        admin_identifier=admin.identifier if admin else "",
         school=program.school,
         major=program.major,
         class_name=program.class_name,
@@ -27,29 +27,29 @@ def to_program_read(
     )
 
 
-def get_program_for_teacher(
-    session: Session, teacher: User
+def get_program_for_admin(
+    session: Session, admin: User
 ) -> CultivationProgramRead | None:
-    _require_program_manager(teacher)
+    _require_program_manager(admin)
     program = session.exec(
-        select(CultivationProgram).where(CultivationProgram.teacher_uid == teacher.uid)
+        select(CultivationProgram).where(CultivationProgram.admin_uid == admin.uid)
     ).first()
     if program is None:
         return None
-    return to_program_read(program, teacher)
+    return to_program_read(program, admin)
 
 
-def save_program_for_teacher(
+def save_program_for_admin(
     session: Session,
-    teacher: User,
+    admin: User,
     courses: list[dict],
     school: str | None = None,
     major: str | None = None,
     class_name: str | None = None,
 ) -> CultivationProgramRead:
-    _require_program_manager(teacher)
+    _require_program_manager(admin)
     program_school, program_major, program_class_name = _resolve_cohort(
-        teacher, school, major, class_name
+        admin, school, major, class_name
     )
     now = datetime.now(timezone.utc)
     program = session.exec(
@@ -59,7 +59,7 @@ def save_program_for_teacher(
             CultivationProgram.class_name == program_class_name,
         )
     ).first()
-    if program is not None and program.teacher_uid != teacher.uid:
+    if program is not None and program.admin_uid != admin.uid:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="该学校、专业、班级已有已发布人培方案",
@@ -67,7 +67,7 @@ def save_program_for_teacher(
     if program is None:
         program = CultivationProgram(
             program_id=str(uuid4()),
-            teacher_uid=teacher.uid,
+            admin_uid=admin.uid,
             school=program_school,
             major=program_major,
             class_name=program_class_name,
@@ -84,27 +84,27 @@ def save_program_for_teacher(
     session.add(program)
     session.commit()
     session.refresh(program)
-    return to_program_read(program, teacher)
+    return to_program_read(program, admin)
 
 
-def publish_program_for_teacher(
+def publish_program_for_admin(
     session: Session,
-    teacher: User,
+    admin: User,
     courses: list[dict],
     school: str | None = None,
     major: str | None = None,
     class_name: str | None = None,
 ) -> CultivationProgramRead:
-    _require_program_manager(teacher)
+    _require_program_manager(admin)
     program_school, program_major, program_class_name = _resolve_cohort(
-        teacher, school, major, class_name
+        admin, school, major, class_name
     )
     existing = session.exec(
         select(CultivationProgram).where(
             CultivationProgram.school == program_school,
             CultivationProgram.major == program_major,
             CultivationProgram.class_name == program_class_name,
-            CultivationProgram.teacher_uid != teacher.uid,
+            CultivationProgram.admin_uid != admin.uid,
         )
     ).first()
     if existing is not None:
@@ -113,8 +113,8 @@ def publish_program_for_teacher(
             detail="该学校、专业、班级已有已发布人培方案",
         )
 
-    read = save_program_for_teacher(
-        session, teacher, courses, program_school, program_major, program_class_name
+    read = save_program_for_admin(
+        session, admin, courses, program_school, program_major, program_class_name
     )
     program = session.get(CultivationProgram, read.program_id)
     if program is None:
@@ -126,7 +126,7 @@ def publish_program_for_teacher(
     session.add(program)
     session.commit()
     session.refresh(program)
-    return to_program_read(program, teacher)
+    return to_program_read(program, admin)
 
 
 def get_matched_program_for_student(
@@ -148,8 +148,8 @@ def get_matched_program_for_student(
     ).first()
     if program is None:
         return None
-    teacher = session.get(User, program.teacher_uid)
-    return to_program_read(program, teacher)
+    admin = session.get(User, program.admin_uid)
+    return to_program_read(program, admin)
 
 
 def delete_program_for_cohort(

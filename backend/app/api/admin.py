@@ -13,6 +13,8 @@ from app.schemas import (
     AdminAccountImportRequest,
     AdminAccountImportResponse,
     AdminAccountUpdateRequest,
+    CultivationProgramRead,
+    CultivationProgramSaveRequest,
     UserRead,
 )
 from app.services.admin_account_service import (
@@ -23,6 +25,11 @@ from app.services.admin_account_service import (
     import_accounts,
     list_accounts,
     update_account,
+)
+from app.services.cultivation_program_service import (
+    get_program_for_admin,
+    publish_program_for_admin,
+    save_program_for_admin,
 )
 
 SessionDependency = Callable[[], Generator[Session, None, None]]
@@ -35,6 +42,49 @@ def require_admin_user(current_user: User) -> User:
             detail="需要管理员权限",
         )
     return current_user
+
+
+def _register_program_routes(
+    router: APIRouter,
+    require_admin: Callable[..., User],
+    session_dependency: SessionDependency,
+) -> None:
+    @router.get("/program", response_model=CultivationProgramRead | None)
+    def read_program(
+        current_user: User = Depends(require_admin),
+        session: Session = Depends(session_dependency),
+    ) -> CultivationProgramRead | None:
+        return get_program_for_admin(session, current_user)
+
+    @router.put("/program", response_model=CultivationProgramRead)
+    def save_program(
+        payload: CultivationProgramSaveRequest,
+        current_user: User = Depends(require_admin),
+        session: Session = Depends(session_dependency),
+    ) -> CultivationProgramRead:
+        return save_program_for_admin(
+            session,
+            current_user,
+            payload.courses,
+            payload.school,
+            payload.major,
+            payload.class_name,
+        )
+
+    @router.post("/program/publish", response_model=CultivationProgramRead)
+    def publish_program(
+        payload: CultivationProgramSaveRequest,
+        current_user: User = Depends(require_admin),
+        session: Session = Depends(session_dependency),
+    ) -> CultivationProgramRead:
+        return publish_program_for_admin(
+            session,
+            current_user,
+            payload.courses,
+            payload.school,
+            payload.major,
+            payload.class_name,
+        )
 
 
 def create_admin_router(session_dependency: SessionDependency) -> APIRouter:
@@ -106,4 +156,5 @@ def create_admin_router(session_dependency: SessionDependency) -> APIRouter:
         delete_account(session, uid, current_user)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
+    _register_program_routes(router, require_admin, session_dependency)
     return router

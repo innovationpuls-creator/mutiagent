@@ -66,12 +66,13 @@ def run_schema_upgrades(engine: Engine) -> None:
             _upgrade_textbook_section_content_original_column(connection, inspector)
             _recalculate_knowledge_gap_follow_counts(connection, inspector)
             _upgrade_user_role_column(connection, inspector)
-            _migrate_teachers_to_admins(connection, inspector)
+            _normalize_legacy_user_roles(connection, inspector)
             _upgrade_user_cohort_columns(connection, inspector)
+            _upgrade_cultivation_program_admin_column(connection, inspector)
             _upgrade_course_knowledge_outline_table(connection, inspector)
             _upgrade_profile_json_storage(connection, inspector)
             _drop_removed_agent_conversation_table(connection, inspector)
-            _upgrade_textbook_embedding_column(connection, inspector)
+            _drop_removed_textbook_embedding_column(connection, inspector)
         finally:
             event.remove(connection, "after_cursor_execute", invalidate_after_ddl)
 
@@ -605,7 +606,7 @@ def _upgrade_user_role_column(
     connection.execute(text('CREATE INDEX IF NOT EXISTS ix_user_role ON "user" (role)'))
 
 
-def _migrate_teachers_to_admins(
+def _normalize_legacy_user_roles(
     connection: Any, inspector: Inspector | None = None
 ) -> None:
     inspector = inspector or inspect(connection)
@@ -614,6 +615,57 @@ def _migrate_teachers_to_admins(
     connection.execute(
         text("UPDATE \"user\" SET role = 'admin' WHERE role = 'teacher';")
     )
+
+
+def _upgrade_cultivation_program_admin_column(
+    connection: Any, inspector: Inspector | None = None
+) -> None:
+    inspector = inspector or inspect(connection)
+    if not inspector.has_table("cultivationprogram"):
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("cultivationprogram")}
+    if "teacher_uid" in columns and "admin_uid" not in columns:
+        connection.execute(
+            text(
+                "ALTER TABLE cultivationprogram RENAME COLUMN teacher_uid TO admin_uid"
+            )
+        )
+        inspector.clear_cache()
+
+    indexes = {index["name"] for index in inspector.get_indexes("cultivationprogram")}
+    if "idx_cultivation_program_teacher" in indexes:
+        connection.execute(text("DROP INDEX IF EXISTS idx_cultivation_program_teacher"))
+    if "ix_cultivationprogram_teacher_uid" in indexes:
+        connection.execute(
+            text("DROP INDEX IF EXISTS ix_cultivationprogram_teacher_uid")
+        )
+    if "idx_cultivation_program_admin" not in indexes:
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_cultivation_program_admin "
+                "ON cultivationprogram (admin_uid)"
+            )
+        )
+    if "ix_cultivationprogram_admin_uid" not in indexes:
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_cultivationprogram_admin_uid "
+                "ON cultivationprogram (admin_uid)"
+            )
+        )
+    if connection.dialect.name == "postgresql":
+        fk_names = {
+            fk["name"] for fk in inspector.get_foreign_keys("cultivationprogram")
+        }
+        if "cultivationprogram_teacher_uid_fkey" in fk_names:
+            connection.execute(
+                text(
+                    "ALTER TABLE cultivationprogram "
+                    "RENAME CONSTRAINT cultivationprogram_teacher_uid_fkey "
+                    "TO cultivationprogram_admin_uid_fkey"
+                )
+            )
 
 
 def _upgrade_user_cohort_columns(
@@ -859,7 +911,7 @@ def _legacy_key_topics(course_node: dict[str, Any]) -> list[str]:
     return topics
 
 
-def _upgrade_textbook_embedding_column(
+def _drop_removed_textbook_embedding_column(
     connection: Any, inspector: Inspector | None = None
 ) -> None:
     inspector = inspector or inspect(connection)
@@ -867,7 +919,7 @@ def _upgrade_textbook_embedding_column(
         return
 
     columns = {column["name"] for column in inspector.get_columns("textbook")}
-    if "embedding" in columns:
+    if "embedding" not in columns:
         return
 
-    connection.execute(text("ALTER TABLE textbook ADD COLUMN embedding FLOAT[]"))
+    connection.execute(text("ALTER TABLE textbook DROP COLUMN embedding"))

@@ -28,10 +28,7 @@ function normalizeUser(user: AuthUser): AuthUser {
 		major: typeof user.major === "string" ? user.major : "",
 		class_name: typeof user.class_name === "string" ? user.class_name : "",
 	};
-	const role =
-		(normalized.role as string) === "teacher" || normalized.role === "admin"
-			? "admin"
-			: "student";
+	const role = normalized.role === "admin" ? "admin" : "student";
 	return { ...normalized, role };
 }
 

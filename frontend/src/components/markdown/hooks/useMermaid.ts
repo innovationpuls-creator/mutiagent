@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+type MermaidInstance = typeof import("mermaid").default;
+
 export function useMermaid(enabled = true) {
 	const [isLoaded, setIsLoaded] = useState(false);
-	const mermaidRef = useRef<any>(null);
+	const mermaidRef = useRef<MermaidInstance | null>(null);
 
 	useEffect(() => {
 		if (!enabled) return;
 		let active = true;
 
 		import("mermaid").then((module) => {
-			const m = (module.default || module) as any;
+			const m = module.default ?? (module as unknown as MermaidInstance);
 			m.initialize({
 				startOnLoad: false,
 				theme: "default",

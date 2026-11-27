@@ -45,7 +45,7 @@ export function hasCompleteBasicProfileRecord(
 	profile: Record<string, unknown> | null,
 	requiredKeys: readonly string[],
 ): boolean {
-	if (!profile || profile.type !== "basic_profile") return false;
+	if (profile?.type !== "basic_profile") return false;
 	const confirmedInfo = profile.confirmed_info;
 	if (!confirmedInfo || typeof confirmedInfo !== "object") return false;
 	if (
@@ -60,6 +60,6 @@ export function hasCompleteBasicProfileRecord(
 export function hasCompleteBasicProfileSessionMessage(
 	profile: SessionMessage | null | undefined,
 ): boolean {
-	if (!profile || profile.type !== "basic_profile") return false;
+	if (profile?.type !== "basic_profile") return false;
 	return isSupportedProfileCurrentGrade(profile.confirmed_info.current_grade);
 }

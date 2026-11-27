@@ -1,5 +1,5 @@
 import type { BranchCourseNode, BranchOverview } from "../types/branch";
-export function normalizeTeacherProgramCourses(
+export function normalizeProgramCourses(
 	rawCourses: unknown,
 ): BranchCourseNode[] {
 	if (!Array.isArray(rawCourses)) return [];
@@ -23,7 +23,7 @@ export function normalizeTeacherProgramCourses(
 		}));
 }
 
-export function mergeTeacherProgramCourses(
+export function mergeProgramCourses(
 	overview: BranchOverview,
 	presetCourses: BranchCourseNode[],
 ) {

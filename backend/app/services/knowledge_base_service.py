@@ -17,8 +17,7 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import uuid4
 
-from langchain_openai import OpenAIEmbeddings
-from sqlalchemy import func, or_, text
+from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
 from app.core.observability import get_request_id
@@ -1053,7 +1052,7 @@ def publish_textbook(session: Session, textbook_id: str) -> Textbook:
 def get_published_textbook_context_for_topic(
     session: Session, topic: str, student_goal_summary: str = ""
 ) -> dict:
-    matched = hybrid_search_textbooks(session, topic, limit=15)
+    matched = search_published_textbooks(session, topic, limit=15)
     matched_by_id = {textbook.textbook_id: textbook for textbook in matched}
     published_textbooks = session.exec(
         select(Textbook)
@@ -1551,119 +1550,10 @@ def _source_textbook_ids(value: object) -> list[str]:
     return list(dict.fromkeys(textbook_ids))
 
 
-def get_embeddings_client() -> OpenAIEmbeddings:
-    base_url = os.getenv("LLM_BASE_URL")
-    api_key = os.getenv("LLM_API_KEY")
-    model = os.getenv("LLM_EMBEDDING_MODEL", "text-embedding-v2")
-    return OpenAIEmbeddings(
-        base_url=base_url,
-        api_key=api_key,
-        model=model,
-    )
-
-
-def _supports_hybrid_search(session: Session) -> bool:
-    if session.get_bind().dialect.name != "postgresql":
-        return False
-    supported = session.execute(
-        text("""
-        SELECT EXISTS (
-            SELECT 1 FROM pg_attribute a
-            JOIN pg_type t ON t.oid = a.atttypid
-            WHERE a.attrelid = to_regclass('textbook')
-              AND a.attname = 'embedding' AND NOT a.attisdropped
-              AND t.typname = 'vector'
-              AND EXISTS (SELECT 1 FROM pg_operator op
-                          WHERE op.oprname = '<=>' AND op.oprleft = t.oid
-                            AND op.oprright = t.oid AND pg_operator_is_visible(op.oid))
-              AND EXISTS (SELECT 1 FROM pg_ts_config cfg
-                          WHERE cfg.cfgname = 'chinese'
-                            AND pg_ts_config_is_visible(cfg.oid))
-        )
-    """)
-    ).scalar_one()
-    return (
-        bool(supported)
-        and session.exec(
-            select(Textbook.textbook_id)
-            .where(
-                Textbook.embedding.is_not(None),
-                Textbook.student_availability_status == "published",
-            )
-            .limit(1)
-        ).first()
-        is not None
-    )
-
-
-def hybrid_search_textbooks(
+def search_published_textbooks(
     session: Session, query: str, limit: int = 15
 ) -> list[Textbook]:
-    # Only search published textbooks
-    if not _supports_hybrid_search(session):
-        return _matching_textbooks(session, query, limit)
-    try:
-        embeddings = get_embeddings_client()
-        query_vector = embeddings.embed_query(query)
-
-        # RRF Hybrid Search: cosine distance embedding <=> :vector + tsvector match
-        sql = text("""
-            WITH vector_search AS (
-                SELECT textbook_id,
-                       ROW_NUMBER() OVER (
-                           ORDER BY embedding <=> CAST(:vector AS vector)
-                       ) as rank
-                FROM textbook
-                WHERE embedding IS NOT NULL
-                  AND student_availability_status = 'published'
-                LIMIT 30
-            ),
-            fts_search AS (
-                SELECT textbook_id,
-                       ROW_NUMBER() OVER (
-                           ORDER BY ts_rank(
-                               to_tsvector(
-                                   'chinese',
-                                   title || ' ' || tags::text
-                               ),
-                               plainto_tsquery('chinese', :query)
-                           ) DESC
-                       ) as rank
-                FROM textbook
-                WHERE to_tsvector(
-                          'chinese',
-                          title || ' ' || tags::text
-                      ) @@ plainto_tsquery('chinese', :query)
-                  AND student_availability_status = 'published'
-                LIMIT 30
-            )
-            SELECT COALESCE(v.textbook_id, f.textbook_id) as textbook_id,
-                   (1.0 / (60.0 + COALESCE(v.rank, 100)) +
-                    1.0 / (60.0 + COALESCE(f.rank, 100))) as rrf_score
-            FROM vector_search v
-            FULL OUTER JOIN fts_search f ON v.textbook_id = f.textbook_id
-            ORDER BY rrf_score DESC
-            LIMIT :limit
-        """)
-        with session.begin_nested():
-            res = session.execute(
-                sql, {"vector": query_vector, "query": query, "limit": limit}
-            ).all()
-        ids = [r[0] for r in res]
-        if not ids:
-            return []
-        # Retrieve instances in RRF order
-        tbs = session.exec(select(Textbook).where(Textbook.textbook_id.in_(ids))).all()
-        tb_map = {tb.textbook_id: tb for tb in tbs}
-        return [tb_map[t_id] for t_id in ids if t_id in tb_map]
-    except Exception as e:
-        logger.info("Hybrid search fallback to simple matching: %s", e)
-
-    return _matching_textbooks(session, query, limit)
-
-
-def _matching_textbooks(session: Session, query: str, limit: int) -> list[Textbook]:
-    # Fallback: simple string matching (e.g., pgvector extension not available)
+    """Match published textbooks by title and tags."""
     stmt = select(Textbook.textbook_id, Textbook.title, Textbook.tags).where(
         Textbook.student_availability_status == "published"
     )

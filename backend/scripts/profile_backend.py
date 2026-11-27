@@ -18,7 +18,6 @@ from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
 from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -311,39 +310,15 @@ def main():  # noqa: C901
         if "search" in selected:
             from app.services import knowledge_base_service as kb
 
-            class Embeddings:
-                def embed_query(self, _query):
-                    return [0.0, 1.0]
-
             def search():
                 with Session(engine) as session:
-                    with patch.object(
-                        kb, "get_embeddings_client", return_value=Embeddings()
-                    ):
-                        try:
-                            return len(
-                                kb.hybrid_search_textbooks(session, "Python", 15)
-                            )
-                        except Exception as error:
-                            return {"error": type(error).__name__}
+                    return [
+                        row.textbook_id
+                        for row in kb.search_published_textbooks(session, "Python", 15)
+                    ]
 
             record("search", search)
-            cases["search"]["result"] = search()
-
-            def matching():
-                with Session(engine) as session:
-                    with patch.object(
-                        kb,
-                        "get_embeddings_client",
-                        side_effect=RuntimeError("offline unsupported"),
-                    ):
-                        return [
-                            row.textbook_id
-                            for row in kb.hybrid_search_textbooks(session, "Python", 15)
-                        ]
-
-            record("search_matching", matching)
-            cases["search_matching"]["result"] = matching()
+            cases["search"]["result"] = len(search())
         if "parser" in selected:
             from app.services.document_parser_service import (
                 convert_textbook_source_to_markdown,

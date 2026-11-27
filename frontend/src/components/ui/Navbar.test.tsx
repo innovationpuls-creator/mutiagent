@@ -69,7 +69,7 @@ vi.mock("framer-motion", async () => {
 	};
 });
 
-describe("Navbar teacher program import removal", () => {
+describe("Navbar program import removal", () => {
 	let store: Record<string, string>;
 
 	afterEach(() => {
@@ -78,7 +78,7 @@ describe("Navbar teacher program import removal", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("does not show manual teacher program import in the avatar menu", async () => {
+	it("does not show manual program import in the avatar menu", async () => {
 		store = {
 			"mutiagent-auth": JSON.stringify({
 				token: "token-1",

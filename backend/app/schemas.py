@@ -234,9 +234,9 @@ class AdminAccountImportResponse(BaseModel):
 
 class CultivationProgramRead(BaseModel):
     program_id: str
-    teacher_uid: str
-    teacher_name: str
-    teacher_identifier: str
+    admin_uid: str
+    admin_name: str
+    admin_identifier: str
     school: str
     major: str
     class_name: str
@@ -266,7 +266,7 @@ class DataCohortRead(BaseModel):
     student_count: int
     admin_count: int
     has_program: bool
-    program_teacher_name: str | None = None
+    program_admin_name: str | None = None
     program_updated_at: datetime | None = None
 
 

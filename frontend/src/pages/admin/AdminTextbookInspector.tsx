@@ -67,7 +67,7 @@ function formatOutlineSummary(outline: unknown) {
 
 export function AdminTextbookInspector({
 	selectedTextbook,
-	selectedTextbookSections,
+	selectedTextbookSections: _selectedTextbookSections,
 	isBusy,
 	onPublishSelected,
 	onUnpublishSelected,

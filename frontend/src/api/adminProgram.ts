@@ -3,9 +3,9 @@ import { API_BASE_URL, notifyAuthInvalidFromError, readApiError } from "./http";
 
 export interface CultivationProgram {
 	program_id: string;
-	teacher_uid: string;
-	teacher_name: string;
-	teacher_identifier: string;
+	admin_uid: string;
+	admin_name: string;
+	admin_identifier: string;
 	school: string;
 	major: string;
 	class_name: string;
@@ -56,31 +56,31 @@ async function requestProgram<TResponse>(
 	return (await response.json()) as TResponse;
 }
 
-export const teacherProgramApi = {
-	getTeacherProgram(token: string) {
+export const adminProgramApi = {
+	getProgram(token: string) {
 		return requestProgram<CultivationProgram | null>(
 			token,
-			"/api/teacher/program",
+			"/api/admin/program",
 		);
 	},
-	saveTeacherProgram(
+	saveProgram(
 		token: string,
 		courses: BranchCourseNode[],
 		scope?: ProgramScopePayload,
 	) {
-		return requestProgram<CultivationProgram>(token, "/api/teacher/program", {
+		return requestProgram<CultivationProgram>(token, "/api/admin/program", {
 			method: "PUT",
 			body: JSON.stringify(programBody(courses, scope)),
 		});
 	},
-	publishTeacherProgram(
+	publishProgram(
 		token: string,
 		courses: BranchCourseNode[],
 		scope?: ProgramScopePayload,
 	) {
 		return requestProgram<CultivationProgram>(
 			token,
-			"/api/teacher/program/publish",
+			"/api/admin/program/publish",
 			{
 				method: "POST",
 				body: JSON.stringify(programBody(courses, scope)),

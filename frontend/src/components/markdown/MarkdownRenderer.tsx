@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import type { Components } from "react-markdown";
+import type { Components, Options } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
@@ -349,8 +349,8 @@ export function MarkdownRenderer({
 	const { highlight } = usePrism(enableSyntaxHighlight);
 	const { renderDiagram } = useMermaid(enableMermaid);
 
-	const rehypePlugins = enableMath
-		? [[rehypeKatex, { throwOnError: false, output: "html" }] as const]
+	const rehypePlugins: Options["rehypePlugins"] = enableMath
+		? [[rehypeKatex, { throwOnError: false, output: "html" }]]
 		: [];
 
 	const enhancedComponents: Components = {
@@ -377,7 +377,7 @@ export function MarkdownRenderer({
 		<div className={`markdown-renderer ${variantClass} ${className}`.trim()}>
 			<ReactMarkdown
 				remarkPlugins={[remarkGfm, remarkMath]}
-				rehypePlugins={rehypePlugins as any}
+				rehypePlugins={rehypePlugins}
 				components={enhancedComponents}
 			>
 				{content}

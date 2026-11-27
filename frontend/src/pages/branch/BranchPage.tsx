@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-	mergeTeacherProgramCourses,
-	normalizeTeacherProgramCourses,
+	mergeProgramCourses,
+	normalizeProgramCourses,
 } from "../../lib/studentCourses";
 import "../../components/home/BlankPage.css";
 import "./branch.css";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { adminProgramApi } from "../../api/adminProgram";
 import { fetchBranchOverview } from "../../api/branch";
 import { fetchProfileDashboard } from "../../api/profile";
-import { teacherProgramApi } from "../../api/teacherProgram";
 import { PathInitOverlay } from "../../components/onboarding/PathInitOverlay";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { useAuth } from "../../contexts/AuthContext";
@@ -1100,13 +1100,13 @@ export function BranchPage() {
 				const [nextOverview, dashboard, matchedProgram] = await Promise.all([
 					fetchBranchOverview(token),
 					fetchProfileDashboard(token),
-					teacherProgramApi.getMatchedProgram(token),
+					adminProgramApi.getMatchedProgram(token),
 				]);
 
-				const teacherProgramCourses = matchedProgram
-					? normalizeTeacherProgramCourses(matchedProgram.courses)
+				const programCourses = matchedProgram
+					? normalizeProgramCourses(matchedProgram.courses)
 					: [];
-				mergeTeacherProgramCourses(nextOverview, teacherProgramCourses);
+				mergeProgramCourses(nextOverview, programCourses);
 
 				if (!isMountedRef.current || options?.shouldIgnore?.()) {
 					return;

@@ -6,7 +6,13 @@
 		"useIgnoreFile": false
 	},
 	"files": {
-		"includes": ["**", "!!**/dist", "!!**/.impeccable"]
+		"includes": [
+			"**",
+			"!!**/dist",
+			"!!**/.impeccable",
+			"!!**/test-results",
+			"!!**/playwright-report"
+		]
 	},
 	"formatter": {
 		"enabled": true,

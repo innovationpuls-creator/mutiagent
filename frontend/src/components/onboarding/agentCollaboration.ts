@@ -45,9 +45,7 @@ function pickNodeStatus(
 }
 
 function latestSummary(steps: AgentRunStep[], fallback: string): string {
-	const latest = [...steps]
-		.reverse()
-		.find((step) => step.summary && step.summary.trim());
+	const latest = [...steps].reverse().find((step) => step.summary?.trim());
 	return latest?.summary?.trim() ?? fallback;
 }
 

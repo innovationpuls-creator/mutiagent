@@ -107,7 +107,7 @@ class _OverviewSession:
         sql = str(statement).lower()
         self.statements.append(sql)
         if "group by" in sql:
-            return _Result([("student", 2), ("admin", 1), ("teacher", 1)])
+            return _Result([("student", 2), ("admin", 2)])
         return _Result([], scalar=7)
 
 
@@ -146,16 +146,16 @@ class _CohortSession:
                         "一班",
                         2,
                         1,
-                        "teacher-1",
+                        "admin-1",
                         datetime(2026, 7, 26, tzinfo=timezone.utc),
-                        "教师",
+                        "管理员",
                     )
                 ]
             )
         if "join" in sql:
             program = SimpleNamespace(
                 program_id="program-1",
-                teacher_uid="teacher-1",
+                admin_uid="admin-1",
                 school="南山大学",
                 major="软件工程",
                 class_name="一班",
@@ -163,14 +163,14 @@ class _CohortSession:
                 published_at=None,
                 updated_at=datetime(2026, 7, 26, tzinfo=timezone.utc),
             )
-            teacher = SimpleNamespace(username="教师", identifier="teacher@example.com")
-            return _Result([(program, teacher)])
+            admin = SimpleNamespace(username="管理员", identifier="admin@example.com")
+            return _Result([(program, admin)])
         if "cultivationprogram" in sql:
             return _Result(
                 [
                     SimpleNamespace(
                         program_id="program-1",
-                        teacher_uid="teacher-1",
+                        admin_uid="admin-1",
                         school="南山大学",
                         major="软件工程",
                         class_name="一班",
@@ -193,27 +193,27 @@ class _CohortSession:
 
     def get(self, *_args):  # type: ignore[no-untyped-def]
         self.get_calls.append("get")
-        return SimpleNamespace(username="教师")
+        return SimpleNamespace(username="管理员")
 
 
-def test_data_cohorts_avoids_per_program_teacher_lookups() -> None:
+def test_data_cohorts_avoids_per_program_admin_lookups() -> None:
     session = _CohortSession()
 
     cohorts = list_data_cohorts(session)  # type: ignore[arg-type]
 
     assert session.get_calls == []
-    assert cohorts[0].program_teacher_name == "教师"
+    assert cohorts[0].program_admin_name == "管理员"
     assert cohorts[0].student_count == 2
     assert cohorts[0].admin_count == 1
 
 
-def test_data_programs_avoids_per_program_teacher_lookups() -> None:
+def test_data_programs_avoids_per_program_admin_lookups() -> None:
     session = _CohortSession()
 
     programs = list_data_programs(session)  # type: ignore[arg-type]
 
     assert session.get_calls == []
-    assert programs[0].teacher_name == "教师"
+    assert programs[0].admin_name == "管理员"
 
 
 def test_admin_data_aggregates_and_joined_program_reads_run_on_postgresql(
@@ -224,18 +224,18 @@ def test_admin_data_aggregates_and_joined_program_reads_run_on_postgresql(
     engine = create_engine(postgresql_test_url(tmp_path, "admin-data-aggregates"))
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
-        teacher = User(
-            uid="teacher-1",
-            username="教师",
-            identifier="teacher@example.com",
-            role="teacher",
+        admin = User(
+            uid="admin-1",
+            username="管理员",
+            identifier="admin@example.com",
+            role="admin",
             school="南山大学",
             major="软件工程",
             class_name="一班",
         )
         session.add_all(
             [
-                teacher,
+                admin,
                 User(
                     uid="student-1",
                     username="学生甲",
@@ -266,7 +266,7 @@ def test_admin_data_aggregates_and_joined_program_reads_run_on_postgresql(
         session.add(
             CultivationProgram(
                 program_id="program-1",
-                teacher_uid=teacher.uid,
+                admin_uid=admin.uid,
                 school="南山大学",
                 major="软件工程",
                 class_name="一班",
@@ -285,8 +285,8 @@ def test_admin_data_aggregates_and_joined_program_reads_run_on_postgresql(
     assert len(cohorts) == 1
     assert cohorts[0].student_count == 2
     assert cohorts[0].admin_count == 1
-    assert cohorts[0].program_teacher_name == "教师"
-    assert programs[0].teacher_name == "教师"
+    assert cohorts[0].program_admin_name == "管理员"
+    assert programs[0].admin_name == "管理员"
 
 
 def test_worker_heartbeat_upsert_and_staleness_boundary() -> None:

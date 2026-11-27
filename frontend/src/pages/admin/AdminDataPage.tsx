@@ -10,7 +10,7 @@ import {
 	adminDataApi as defaultAdminDataApi,
 	type UserLearningData,
 } from "../../api/adminData";
-import type { CultivationProgram } from "../../api/teacherProgram";
+import type { CultivationProgram } from "../../api/adminProgram";
 import { useAuth } from "../../contexts/AuthContext";
 import type { AuthUser } from "../../types/auth";
 import "./admin.css";
@@ -53,7 +53,7 @@ export function AdminDataPage({
 	adminApi = defaultAdminApi,
 	adminDataApi = defaultAdminDataApi,
 }: AdminDataPageProps) {
-	const { token, user } = useAuth();
+	const { token } = useAuth();
 	const [activeTab, setActiveTab] = useState<DataTab>("overview");
 	const [overview, setOverview] = useState<DataOverview | null>(null);
 	const [cohorts, setCohorts] = useState<DataCohort[]>([]);
@@ -135,7 +135,7 @@ export function AdminDataPage({
 					program.school,
 					program.major,
 					program.class_name,
-				) || program.teacher_name.includes(text),
+				) || program.admin_name.includes(text),
 		);
 	}, [programs, query]);
 
@@ -316,7 +316,7 @@ function CohortPanel({
 					<span>{cohort.admin_count}</span>
 					<span>
 						{cohort.has_program
-							? (cohort.program_teacher_name ?? "已发布")
+							? (cohort.program_admin_name ?? "已发布")
 							: "暂无"}
 					</span>
 					<button
@@ -348,7 +348,7 @@ function ProgramPanel({ programs }: { programs: CultivationProgram[] }) {
 					<span>{program.school}</span>
 					<span>{program.major}</span>
 					<span>{program.class_name}</span>
-					<span>{program.teacher_name}</span>
+					<span>{program.admin_name}</span>
 					<span>{program.courses.length}</span>
 					<span>
 						{program.published_at

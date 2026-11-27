@@ -31,13 +31,6 @@ interface NodeSize {
 	height: number;
 }
 
-interface LayoutNode extends GraphNode {
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-}
-
 export function OrganicCanvas({ nodes, edges }: OrganicCanvasProps) {
 	// 1. First Pass: Store actual DOM sizes reported by ResizeObserver
 	const [nodeSizes, setNodeSizes] = useState<Record<string, NodeSize>>({});

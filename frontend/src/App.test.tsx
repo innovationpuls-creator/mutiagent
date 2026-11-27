@@ -250,4 +250,14 @@ describe("App routing", () => {
 			expect(screen.queryByText("Branch Page")).toBeNull();
 		});
 	});
+
+	it("redirects removed onboarding and canvas routes back to login", async () => {
+		stubStoredAuth(false);
+		window.history.replaceState({}, "", "/onboarding");
+		renderApp();
+
+		await waitFor(() => {
+			expect(screen.getByText("Auth Page")).toBeTruthy();
+		});
+	});
 });

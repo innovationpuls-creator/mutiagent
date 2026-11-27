@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { adminProgramApi } from "../api/adminProgram";
 import { fetchBranchOverview } from "../api/branch";
 import { fetchLeafCourse } from "../api/leaf";
-import { teacherProgramApi } from "../api/teacherProgram";
 import { useAuth } from "../contexts/AuthContext";
 import {
-	mergeTeacherProgramCourses,
-	normalizeTeacherProgramCourses,
+	mergeProgramCourses,
+	normalizeProgramCourses,
 } from "../lib/studentCourses";
 import type { BranchOverview } from "../types/branch";
 import type { LeafCourseResponse } from "../types/leaf";
@@ -28,14 +28,11 @@ export function StudentCoursesPage({ mode }: { mode: "learn" | "quiz" }) {
 		setError(null);
 		Promise.all([
 			fetchBranchOverview(token),
-			teacherProgramApi.getMatchedProgram(token),
+			adminProgramApi.getMatchedProgram(token),
 		])
 			.then(([data, program]) => {
 				if (cancelled) return;
-				mergeTeacherProgramCourses(
-					data,
-					normalizeTeacherProgramCourses(program?.courses),
-				);
+				mergeProgramCourses(data, normalizeProgramCourses(program?.courses));
 				setOverview(data);
 			})
 			.catch((e) => {

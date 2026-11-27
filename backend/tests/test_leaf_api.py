@@ -275,7 +275,7 @@ def test_leaf_course_returns_matched_published_program_course(
     student_token, _ = _register(client, "leaf-program-student@example.com")
 
     publish_response = client.post(
-        "/api/teacher/program/publish",
+        "/api/admin/program/publish",
         headers={"Authorization": f"Bearer {admin_response.json()['access_token']}"},
         json={
             "courses": [

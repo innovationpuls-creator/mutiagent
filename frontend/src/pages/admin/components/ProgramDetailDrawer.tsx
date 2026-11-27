@@ -179,12 +179,14 @@ interface ProgramDetailDrawerProps {
 	course: BranchCourseNode | null;
 	onClose: () => void;
 	onUpdateCourse: (updated: BranchCourseNode) => void;
+	onDeleteCourse?: (courseNodeId: string) => void;
 }
 
 export function ProgramDetailDrawer({
 	course,
 	onClose,
 	onUpdateCourse,
+	onDeleteCourse,
 }: ProgramDetailDrawerProps) {
 	const reduceMotion = useReducedMotion();
 	const titleRef = useRef<HTMLHeadingElement>(null);
@@ -221,14 +223,25 @@ export function ProgramDetailDrawer({
 					>
 						编辑课程大纲
 					</h2>
-					<button
-						type="button"
-						className="drawer-close-btn"
-						onClick={onClose}
-						aria-label="关闭课程大纲抽屉"
-					>
-						✕
-					</button>
+					<div className="drawer-header-actions">
+						{onDeleteCourse ? (
+							<button
+								type="button"
+								className="drawer-delete-btn"
+								onClick={() => onDeleteCourse(course.course_node_id)}
+							>
+								删除课程
+							</button>
+						) : null}
+						<button
+							type="button"
+							className="drawer-close-btn"
+							onClick={onClose}
+							aria-label="关闭课程大纲抽屉"
+						>
+							✕
+						</button>
+					</div>
 				</div>
 				<div className="drawer-body">
 					<DrawerForm course={course} onUpdateCourse={onUpdateCourse} />

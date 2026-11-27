@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, Column, Float, Index, UniqueConstraint
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy import CheckConstraint, Column, Index, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
 _jsonb = JSONB(none_as_null=False)
@@ -93,12 +93,12 @@ class CultivationProgram(SQLModel, table=True):
         UniqueConstraint(
             "school", "major", "class_name", name="uq_cultivation_program_cohort"
         ),
-        Index("idx_cultivation_program_teacher", "teacher_uid"),
+        Index("idx_cultivation_program_admin", "admin_uid"),
         Index("idx_cultivation_program_cohort", "school", "major", "class_name"),
     )
 
     program_id: str = Field(primary_key=True, max_length=64)
-    teacher_uid: str = Field(foreign_key="user.uid", index=True)
+    admin_uid: str = Field(foreign_key="user.uid", index=True)
     school: str = Field(index=True, max_length=128)
     major: str = Field(index=True, max_length=128)
     class_name: str = Field(index=True, max_length=128)
@@ -337,7 +337,6 @@ class Textbook(SQLModel, table=True):
     published_at: datetime | None = Field(default=None)
     unpublished_at: datetime | None = Field(default=None)
     archived_at: datetime | None = Field(default=None)
-    embedding: list[float] | None = Field(default=None, sa_column=Column(ARRAY(Float)))
 
 
 class TextbookSectionContent(SQLModel, table=True):

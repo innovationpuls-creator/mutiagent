@@ -5,14 +5,14 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from app.models import Textbook
 from app.schema_upgrades import run_schema_upgrades
-from app.services.knowledge_base_service import hybrid_search_textbooks
+from app.services.knowledge_base_service import search_published_textbooks
 from tests.postgres import postgresql_test_url
 
 
 @pytest.fixture
 def db_session(tmp_path):
     engine = create_engine(
-        postgresql_test_url(tmp_path, "test_hybrid"),
+        postgresql_test_url(tmp_path, "test_search"),
     )
     run_schema_upgrades(engine)
     SQLModel.metadata.create_all(engine)
@@ -20,7 +20,7 @@ def db_session(tmp_path):
         yield session
 
 
-def test_hybrid_search_textbooks(db_session: Session):
+def test_search_published_textbooks(db_session: Session):
     tb1 = Textbook(
         textbook_id="tb_1",
         source_id="src_1",
@@ -41,6 +41,6 @@ def test_hybrid_search_textbooks(db_session: Session):
     db_session.add(tb2)
     db_session.commit()
 
-    results = hybrid_search_textbooks(db_session, "FastAPI", limit=10)
+    results = search_published_textbooks(db_session, "FastAPI", limit=10)
     assert len(results) >= 1
     assert results[0].title == "FastAPI 高性能开发"

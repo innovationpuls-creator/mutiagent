@@ -15,7 +15,6 @@ from app.api.learning_path import create_learning_path_router
 from app.api.orchestration import create_orchestration_router
 from app.api.profile import create_profile_router
 from app.api.student import create_student_router
-from app.api.teacher import create_teacher_router
 from app.core.config import DEFAULT_JWT_SECRET, AppSettings, load_settings
 from app.core.observability import RequestIdMiddleware, configure_json_logging
 from app.core.security import configure_jwt
@@ -73,7 +72,6 @@ def create_app(
     )
     app.include_router(create_admin_router(create_session_dependency(engine)))
     app.include_router(create_admin_data_router(create_session_dependency(engine)))
-    app.include_router(create_teacher_router(create_session_dependency(engine)))
     app.include_router(create_student_router(create_session_dependency(engine)))
     app.include_router(create_orchestration_router(create_session_dependency(engine)))
     app.include_router(create_profile_router(create_session_dependency(engine)))
