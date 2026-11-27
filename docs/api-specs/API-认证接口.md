@@ -1,6 +1,6 @@
 # 认证接口 (Auth API)
 
-> 💡 关于 Chat 对话、路径规划、章节精读、测验及学情管理等业务接口，请参考 [业务接口文档](file:///Users/torch/torch/opt/mutiagent/docs/api-specs/API-业务接口.md)。
+> 💡 关于 Chat 对话、路径规划、章节精读、测验及学情管理等业务接口，请参考 [业务接口文档](./API-业务接口.md)。
 
 Base URL: `/api/auth`
 uv run uvicorn app.main:app --port 8000 --reload
@@ -15,13 +15,14 @@ uv run uvicorn app.main:app --port 8000 --reload
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `username` | string | 是 | 用户名，1-64 字符 |
-| `identifier` | string | 是 | 登录标识（邮箱），3-128 字符，全局唯一 |
+| `identifier` | string | 是 | 登录标识（邮箱或 11 位中国大陆手机号），3-128 字符，全局唯一 |
 | `password` | string | 是 | 密码，6-128 字符 |
 | `confirm_password` | string | 是 | 确认密码，须与 password 一致 |
-| `role` | string | 否 | 用户角色，支持 student / teacher / admin，默认为 "student" |
 | `school` | string | 是 | 学校名称，1-128 字符 |
 | `major` | string | 是 | 专业名称，1-128 字符 |
-| `class_name` | string | 是 | 班级名称，1-128 字符 |
+| `class_name` | string | 是 | 班级名称，1-128 字符（不得与 `identifier` 相同） |
+
+> 公开注册请求模型（`RegisterRequest`）禁止额外字段（`extra="forbid"`），后端固定创建 `role = "student"` 的学生账号；`admin` 账号由管理员通过 `/api/admin/accounts` 维护（现行系统角色仅包含 `student` 与 `admin`）。
 
 **响应** `201 Created`
 
@@ -99,7 +100,7 @@ uv run uvicorn app.main:app --port 8000 --reload
 
 ## 3. POST /oauth/mock — OAuth 模拟登录
 
-开发阶段用的模拟 OAuth 登录，接受 QQ/学习通 provider。
+开发与测试环境用的模拟 OAuth 登录（仅 `APP_ENV != "production"` 时挂载，生产环境不开放），接受 QQ/学习通 provider。
 
 **请求体** `application/json`
 

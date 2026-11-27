@@ -165,7 +165,6 @@ flowchart TB
 | **数据** | PostgreSQL 18、SQLModel、Pydantic、Alembic；数据持久化、结构校验与迁移。 |
 | **接口协作** | 从后端导出 OpenAPI，生成前端 TypeScript 类型。 |
 | **部署** | Docker Compose、Nginx；迁移、备份、证书管理、健康检查与回滚脚本。 |
-| **桌面端** | Electron 与内置 PostgreSQL，提供 Windows 便携版打包流程。 |
 | **验证** | pytest、Vitest、Playwright；Ruff、Biome 与 GitHub Actions。 |
 
 <br />
@@ -177,7 +176,6 @@ flowchart TB
 | **在线访问** | [onetree.chat](https://onetree.chat) |
 | **本地开发** | 按以下步骤启动数据库、后端与前端。 |
 | **服务器部署** | [Docker 生产部署指南](./docs/deployment/docker-production.md)，覆盖初始化、迁移、更新、证书与回滚。 |
-| **Windows 桌面端** | [使用说明](./desktop/resources/使用说明.md) · [便携版构建工作流](./.github/workflows/windows-portable.yml) |
 
 本地开发需要 **Node.js 22、Python 3.11+、uv、PostgreSQL 18**，以及 OpenAI-compatible 模型服务的 API 地址、密钥与模型名称。
 
@@ -281,7 +279,7 @@ npm run dev
 
 **部署运行**
 
-[生产部署指南](./docs/deployment/docker-production.md) · [Windows 使用说明](./desktop/resources/使用说明.md)
+[生产部署指南](./docs/deployment/docker-production.md)
 
 **参与开发**
 
@@ -294,7 +292,6 @@ npm run dev
 mutiagent/
 ├── frontend/     React 学生端与管理端
 ├── backend/      FastAPI、Agent 编排、业务服务与后台任务
-├── desktop/      Windows 桌面端与打包配置
 ├── deploy/       容器、Nginx、迁移、备份与部署脚本
 ├── docs/         架构、API、数据库与设计文档
 └── .github/      自动化验证与构建工作流

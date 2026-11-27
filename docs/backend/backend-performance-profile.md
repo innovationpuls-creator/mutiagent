@@ -194,7 +194,7 @@ uv run --no-sync ruff format --check app scripts tests
 - Ruff check、format check 与 git diff --check 通过。保留已有 Starlette TestClient 的弃用 warning。
 - HTTP/OpenAPI、SSE 事件、评分阈值和权限边界保持；未新增 pgvector、向量入库、排序规则或多进程部署。
 - 真实 LLM/embedding、可用 pgvector 混合排序、真实教材及生产负载未验证；这些环境未在本次测试中模拟成成功结果。
-- 本次未提交、推送或部署。上文原始报告内容保留，临时 PostgreSQL 和基线副本在交付前清理；本地原始 profile 作为复测证据保留。
+- 本次未提交、推送或部署。上文原始报告内容保留，临时 PostgreSQL、基线副本与本地原始 profile 产物在后续清理中移除，核心采样数值保留于本报告与 JSON 文件。
 
 ## 2026-10-04 当前工作树全套后端测试剖析
 
@@ -207,7 +207,7 @@ uv run --no-sync ruff format --check app scripts tests
 - 测试数据库是本轮新建的 loopback 临时 PostgreSQL 实例，结束后已停止并移除；没有使用项目的 `mutiagent` 数据库。LLM 配置为不可达的本地离线地址，LangSmith tracing 关闭。
 - `cProfile` 记录 **119,026,973 次调用（115,198,284 次 primitive calls），139.860 秒**。`pstats` 从原始文件导出累计时间、自身时间和调用次数排名。
 - 当时 `backend/app` 的 83 个 Python 文件中，有 81 个出现在 profile；`backend/migrations` 的 5 个文件全部出现。未执行到的 app 文件是 `app/export_openapi.py` 与 `app/workers/__main__.py`。共得到 1,507 条 app/migration 函数记录；这表示测试实际触达范围，不代表所有语句或分支都执行过。
-- 主线程原始 profile、全部 pstats 文本、仅后端函数 JSON 排名和 pytest 日志保存在本机忽略目录 `backend/.codex-artifacts/backend-performance/current-suite-20261004/`：[原始 `.prof`](../../backend/.codex-artifacts/backend-performance/current-suite-20261004/backend-test-suite.prof)、[完整 pstats 文本](../../backend/.codex-artifacts/backend-performance/current-suite-20261004/pstats-report.txt)、[后端函数 JSON 排名](../../backend/.codex-artifacts/backend-performance/current-suite-20261004/pstats-backend.json)、`profile-summary.json`、`pytest-profile.log`。JSON 含全部观测到的函数行及累计/自身排名，可用 `pstats.Stats` 重新排序 `.prof`。
+- 主线程原始 profile、全部 pstats 文本、仅后端函数 JSON 排名和 pytest 日志采样时写入本地临时目录 `backend/.codex-artifacts/backend-performance/current-suite-20261004/`（二进制 `.prof` 与本地日志产物已不随仓库保留）。
 
 ### 当前测试负载中的后端累计耗时
 
@@ -261,7 +261,8 @@ uv run --no-sync python scripts/profile_test_suite.py \
 - HTTP 基准装配项目原有知识库路由、权限依赖、RequestIdMiddleware 和健康路由，使用真实 JWT 与数据库查询；数据为一位无密码管理员、一项已准入来源，教材与缺口初始为空。装配及首轮预热不计入比较。
 - Agent 每批 10 路 HTTP SSE，搜索替身等待 50 ms、返回空结果；前后各五批。上传为 1/10/100 MiB 固定合成 bytes、PDF 文件名，前后各五次，文件写入本轮临时目录；没有实际 PDF 解析或外部网络调用。
 - HTTP 表格开启 cProfile 与 tracemalloc，报告 wall time；cProfile 只覆盖主线程，移入线程池的 CPU 调用不保证被记录，不能据此推断 CPU 提速。Python 峰值不是 RSS，也不包括采样前创建的原始上传 payload。
-- 机器可读结果：[第二轮 JSON](backend-performance-results-20261004-round2.json)。原始 `.prof`、pstats、采样 JSON、测试日志与源码摘要位于本机忽略目录 `backend/.codex-artifacts/backend-performance/round2-20261004/`；代码与数据快照不上传。
+- 机器可读结果：[第二轮 JSON](backend-performance-results-20261004-round2.json)（采样时的原始 `.prof` 与本地日志产物已不随仓库保留，代码与数据快照不上传）。
+- 原始摘要、可复跑脚本说明见下文，二进制 `.prof` 与临时目录已在清理中移除。
 
 ### 知识库 Agent
 
@@ -340,7 +341,7 @@ uv run --no-sync ruff format --check app scripts tests
 - 三个 fixture 文件前后三批全部通过，每批 **205 passed**；最终完整后端 **917 passed，112.51 秒**，保留原有一条 Starlette TestClient 弃用 warning。
 - Ruff check、format check 与 git diff --check 通过；HTTP/OpenAPI、权限及业务模型没有变化。
 - 真实搜索模型、实际网络传输、真实教材解析、生产流量和部署环境仍未验证，合成输入与线程池响应性结果不外推为这些环境的性能收益。
-- 未提交、推送或部署。临时数据库、源码副本和上传样本在交付前清理；可复跑脚本、原始 profile、源码摘要及重建 patch 作为本地证据保留。
+- 未提交、推送或部署。临时数据库、源码副本、上传样本与本地原始 `.prof`/patch 产物已在后续清理中移除；可复跑脚本位于 `backend/scripts/`，机器可读基准保留于两份性能 JSON 中。
 
 ## 2026-10-07 提交前整理与验证
 

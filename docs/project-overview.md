@@ -1,14 +1,16 @@
 # OneTree 项目现状
 
-> 源码核对日期：2026-07-15。本文用于新成员快速建立仓库地图；具体字段和行为以代码、测试和生成的 OpenAPI 为准。
+> 源码核对日期：2026-11-26。本文用于新成员快速建立仓库地图；具体字段和行为以代码、测试和生成的 OpenAPI 为准。
 
 ## 产品闭环
 
-OneTree 面向学生提供个性化学习路径：用户登录后通过破冰对话建立画像，系统生成课程草案和按年学习路径；进入课程后生成小节文档、视频和 HTML 动画资源；Forest 页面负责章节测验、批改、薄弱点和 AI 辅导；Canopy 展示成长结果。管理端负责培养方案、账户、学习数据和知识库。
+OneTree 面向学生提供个性化学习路径：用户登录后进入学习首页，可继续当前课程或主动完善画像；系统生成课程草案和按年学习路径；进入课程后生成小节文档、视频和 HTML 动画资源；Forest 页面负责章节测验、批改、薄弱点和 AI 辅导；Canopy 展示成长结果。管理端负责培养方案、账户、学习数据和知识库。
 
 ```mermaid
 flowchart LR
-  A[登录] --> B[画像对话]
+  A[登录] --> Home[学习首页]
+  Home --> B[主动完善画像]
+  Home --> E
   B --> C[课程草案]
   C --> D[按年学习路径]
   D --> E[课程大纲]
@@ -29,7 +31,7 @@ flowchart LR
 | `backend/app/services/` | 业务服务和持久化协调 | 知识库、画像、路径、课程、测验 |
 | `backend/app/orchestration/` | LangGraph 单轮编排 | Supervisor、7 个 Worker、规则、事件和恢复 |
 | `backend/app/workers/` | 独立后台任务 | 教材知识库整理任务 |
-| `backend/app/models.py` | SQLModel 数据模型 | PostgreSQL 生产、SQLite 测试 |
+| `backend/app/models.py` | SQLModel 数据模型 | PostgreSQL 18 生产与独立隔离 schema 测试 |
 | `deploy/` | 生产运行面 | Docker Compose、Nginx、迁移、备份、证书、smoke |
 
 ## Agent 编排
@@ -46,9 +48,9 @@ flowchart LR
 
 成森页支持手动生成累计 AI 成长报告：后端汇总真实学习记录，模型按需读取只读证据并生成结构化总结，页面支持来源展开、课程跳转和重新生成。该流程复用 Worker 模型，不新增 LangGraph Worker 或报告数据表。接口与统计口径见 [成长报告接口](api-specs/API-成长报告.md)。
 
-学生端页面路由定义在 `frontend/src/App.tsx`：`/onboarding`、`/sprout`、`/branch`、`/leaf/:courseNodeId`、`/forest/:courseNodeId`、`/canopy`、`/canvas`。管理端路由包括 `/admin/programs`、`/admin/accounts`、`/admin/data` 和 `/admin/knowledge-base`。
+学生端页面路由定义在 `frontend/src/App.tsx`：`/onboarding`、`/sprout`、`/branch`、`/leaf`、`/leaf/:courseNodeId`、`/forest`、`/forest/:courseNodeId`、`/canopy`、`/canvas`。管理端路由包括 `/admin/programs`、`/admin/accounts`、`/admin/data` 和 `/admin/knowledge-base`（`/teacher` 仅重定向至 `/admin/programs`）。
 
-后端路由由 `backend/app/main.py` 装配，按 `auth`、`orchestration`、`profile`、`learning_path`、`branch`、`leaf`、`forest`、`student`、`teacher`、`admin`、`admin_data`、`knowledge_base` 和 `health` 分组。字段示例以 `docs/api-specs/` 与 `frontend/openapi.json` 为准。
+后端路由由 `backend/app/main.py` 装配，按 `auth`、`orchestration`、`profile`、`learning_path`、`branch`（含成长报告流式接口）、`leaf`、`forest`、`student`、`teacher`（供 `admin` 维护培养方案的历史兼容前缀）、`admin`、`admin_data`、`knowledge_base` 和 `health` 分组。字段示例以 `docs/api-specs/` 与 `frontend/openapi.json` 为准。
 
 ## 本地开发与验证
 
@@ -78,4 +80,10 @@ cd frontend && npm run e2e
 - 修改 API schema 后在 `frontend/` 运行 `npm run gen:api`，并检查 `frontend/openapi.json` 与 `frontend/src/types/api.ts`。
 - 修改编排节点、事件或资源契约时同步更新 [`docs/backend/backend-tech-stack.md`](backend/backend-tech-stack.md) 和 [`docs/backend/agent逻辑.md`](backend/agent逻辑.md)。
 - 修改数据库模型或迁移时同步更新 [`docs/database/数据库表结构.md`](database/数据库表结构.md)。
-- 历史验收、方案和实验资料保留在 `docs/superpowers/`，不把计划内容当作当前实现。
+
+
+## 学生登录后的关键流程
+
+登录后进入 `/sprout` 学习首页，以当前课程的“继续学习”为主任务。五阶段名称保留，对应学习首页、学习路径、课程学习、章节测验、学习成长。`/leaf` 为课程目录，`/forest` 为课程和章节测验入口；阅读页按用户与课程保存本机阅读位置，优先采用有效的 URL `section_id`。画像由学生点击完善，详情可从个人菜单打开。
+
+测验草稿使用本机 IndexedDB，按用户、课程、章节、测验、题目版本隔离，覆盖选择、代码和图片答案。提交快照与 UUID 支持断流后的结果确认；刷新不自动重新发送。详细交互约定见 [学生关键流程](ui-design/11-学生关键流程.md)。
