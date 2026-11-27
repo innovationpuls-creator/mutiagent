@@ -9,7 +9,6 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from hashlib import sha1
 from ipaddress import ip_address
-from json import loads
 from time import monotonic
 from typing import Any, TypeVar
 from urllib.error import HTTPError, URLError
@@ -32,12 +31,16 @@ from app.models import (
     TextbookExtensionResource,
     TextbookSectionContent,
 )
-from app.orchestration.llm import get_search_worker_llm, get_translation_llm
 from app.schemas import (
     KnowledgeBaseAgentGapHit,
     KnowledgeBaseAgentResponse,
     KnowledgeBaseAgentTextbookHit,
     KnowledgeBaseSourceResult,
+)
+from app.services.ai_gateway_client import (
+    AiGatewayError,
+    AiGatewayUnavailableError,
+    call_gateway_ai,
 )
 from app.services.document_parser_service import (
     DocumentParseError,
@@ -408,6 +411,7 @@ def _ensure_section_original_content(section: TextbookSectionContent) -> None:
 def create_knowledge_base_ingestion_job(
     session: Session,
     textbook_id: str,
+    triggered_by_uid: str | None = None,
 ) -> KnowledgeBaseIngestionJob:
     textbook = session.get(Textbook, textbook_id)
     if textbook is None:
@@ -421,6 +425,7 @@ def create_knowledge_base_ingestion_job(
         job_type="agent_organize",
         status="queued",
         request_id=get_request_id(),
+        triggered_by_uid=triggered_by_uid,
     )
     session.add(job)
     session.commit()
@@ -443,6 +448,7 @@ def get_queued_knowledge_base_ingestion_job(
 def confirm_textbook_source_result(
     session: Session,
     source_result: KnowledgeBaseSourceResult,
+    triggered_by_uid: str | None = None,
 ) -> tuple[Textbook, KnowledgeBaseIngestionJob]:
     sources = list_admitted_knowledge_sources(session)
     if not sources:
@@ -471,7 +477,9 @@ def confirm_textbook_source_result(
     session.add(textbook)
     session.commit()
     session.refresh(textbook)
-    job = create_knowledge_base_ingestion_job(session, textbook.textbook_id)
+    job = create_knowledge_base_ingestion_job(
+        session, textbook.textbook_id, triggered_by_uid
+    )
     return textbook, job
 
 
@@ -484,6 +492,7 @@ def create_uploaded_textbook(
     tags: list[str],
     file_name: str,
     file_bytes: bytes,
+    triggered_by_uid: str | None = None,
 ) -> tuple[Textbook, KnowledgeBaseIngestionJob]:
     sources = list_admitted_knowledge_sources(session)
     if not sources:
@@ -523,7 +532,9 @@ def create_uploaded_textbook(
     session.add(textbook)
     session.commit()
     session.refresh(textbook)
-    job = create_knowledge_base_ingestion_job(session, textbook.textbook_id)
+    job = create_knowledge_base_ingestion_job(
+        session, textbook.textbook_id, triggered_by_uid
+    )
     return textbook, job
 
 
@@ -601,7 +612,9 @@ def fail_knowledge_base_ingestion_job(
     return job
 
 
-def translate_section_content_to_zh(content: str, source_language: str = "") -> str:
+def translate_section_content_to_zh(
+    content: str, source_language: str = "", user_uid: str | None = None
+) -> str:
     """Translate parsed English textbook text section by section.
 
     MarkItDown remains the only source of textbook structure and source text.
@@ -618,41 +631,37 @@ def translate_section_content_to_zh(content: str, source_language: str = "") -> 
         original_content,
         _TRANSLATION_CHUNK_CHAR_LIMIT,
     ):
-        translated = _translate_text_chunk_to_zh(chunk)
+        translated = _translate_text_chunk_to_zh(chunk, user_uid)
         if not translated or not _contains_cjk_text(translated):
             return original_content
         translated_chunks.append(translated)
     return "\n\n".join(translated_chunks).strip()
 
 
-def _translate_text_chunk_to_zh(content: str) -> str:
-    prompt = (
-        "请把下面教材小节原文片段翻译成简体中文。"
-        "必须忠实保留原文含义、代码、公式、列表和 Markdown 结构；"
-        "不得新增原文没有的知识点，不得写摘要，不得解释翻译过程。"
-        "\n\n教材小节原文片段：\n"
-        f"{content}"
-    )
-    translated = ""
+def _translate_text_chunk_to_zh(content: str, user_uid: str | None = None) -> str:
+    """Translate one chunk on the triggering admin's own model (via the TS gateway)."""
+    if not user_uid:
+        raise ValueError("缺少触发管理员身份，无法使用其个人模型翻译。")
     for attempt_index in range(max(1, _TRANSLATION_CHUNK_MAX_ATTEMPTS)):
         try:
-            response = get_translation_llm().invoke(prompt)
-            translated = getattr(response, "content", "")
-            break
-        except Exception as exc:
-            logger.warning(
-                "Textbook section translation failed on attempt %s: %s",
-                attempt_index + 1,
-                exc,
+            result = call_gateway_ai(
+                "/internal/ai/kb/translate-chunk",
+                {"user_uid": user_uid, "content": content},
             )
-    else:
+        except AiGatewayError as exc:
+            if exc.status in (401, 403, 422, 428):
+                # Not configured / capability / auth: retrying cannot help.
+                raise ValueError(exc.detail) from exc
+            logger.warning("Translation attempt %s failed: %s", attempt_index + 1, exc)
+            continue
+        except AiGatewayUnavailableError as exc:
+            logger.warning("Translation attempt %s failed: %s", attempt_index + 1, exc)
+            continue
+        translated = result.get("translated")
+        if isinstance(translated, str) and _contains_cjk_text(translated.strip()):
+            return translated.strip()
         return ""
-    if not isinstance(translated, str):
-        return ""
-    translated = translated.strip()
-    if not translated or not _contains_cjk_text(translated):
-        return ""
-    return translated
+    return ""
 
 
 def _split_translation_chunks(content: str, chunk_char_limit: int) -> list[str]:
@@ -916,6 +925,7 @@ def _section_content_by_section_id_for_ingestion(
 def _translate_english_sections_concurrently(
     sections_to_translate: list[tuple[str, str]],
     source_language: str,
+    user_uid: str | None = None,
 ) -> dict[str, str]:
     max_workers = max(
         1,
@@ -928,6 +938,7 @@ def _translate_english_sections_concurrently(
             translate_section_content_to_zh,
             original_content,
             source_language,
+            user_uid,
         ): section_id
         for section_id, original_content in sections_to_translate
     }
@@ -996,6 +1007,7 @@ def run_textbook_source_ingestion_for_textbook(
 def queue_textbook_source_ingestion_for_textbook(
     session: Session,
     textbook_id: str,
+    triggered_by_uid: str | None = None,
 ) -> KnowledgeBaseIngestionJob:
     textbook = session.get(Textbook, textbook_id)
     if textbook is None:
@@ -1011,7 +1023,9 @@ def queue_textbook_source_ingestion_for_textbook(
     ).first()
     if active_job is not None and active_job.status == "running":
         raise ValueError("教材整理任务正在运行。")
-    return active_job or create_knowledge_base_ingestion_job(session, textbook_id)
+    return active_job or create_knowledge_base_ingestion_job(
+        session, textbook_id, triggered_by_uid
+    )
 
 
 def publish_textbook(session: Session, textbook_id: str) -> Textbook:
@@ -1625,14 +1639,16 @@ def search_admin_textbooks(
 
 
 def search_real_textbook_sources(
-    topic: str, limit: int = _SOURCE_RESULT_LIMIT
+    topic: str,
+    limit: int = _SOURCE_RESULT_LIMIT,
+    user_uid: str | None = None,
 ) -> list[KnowledgeBaseSourceResult]:
     if limit <= 0:
         return []
 
     raw_results = [
         *_search_known_open_textbook_sources(topic),
-        *_search_real_textbook_sources_with_llm(topic, limit),
+        *_search_real_textbook_sources_with_llm(topic, limit, user_uid),
     ]
     source_results: list[KnowledgeBaseSourceResult] = []
     seen_urls: set[str] = set()
@@ -1681,33 +1697,20 @@ def _search_known_open_textbook_sources(topic: str) -> list[dict[str, object]]:
 
 
 def _search_real_textbook_sources_with_llm(
-    topic: str, limit: int
+    topic: str, limit: int, user_uid: str | None = None
 ) -> list[dict[str, object]]:
-    prompt = (
-        "你是知识库教材来源搜索智能体。请联网搜索真实、可访问、适合作为教材来源的材料。"
-        "只返回 JSON 数组，不要 Markdown，不要解释。"
-        "数组每个对象字段必须是：title, original_title, language, source_url, "
-        "source_type, provider_name, description, tags, parseability_score, "
-        "parseability_reason, topic_summary。"
-        "source_type 只能是 pdf 或 html。"
-        "source_url 必须是真实教材页面或 PDF 地址，"
-        "禁止 example.com、占位链接、无来源链接。"
-        f"\n主题：{topic.strip()}"
-        f"\n最多返回：{limit}"
+    """Candidate sources from the admin's own model; URLs are verified later."""
+    if not user_uid:
+        return []
+    # MODEL_NOT_CONFIGURED and friends propagate so the admin page can guide to setup.
+    result = call_gateway_ai(
+        "/internal/ai/kb/search-textbook-sources",
+        {"user_uid": user_uid, "topic": topic.strip(), "limit": limit},
     )
-    try:
-        response = get_search_worker_llm().invoke(prompt)
-        content = getattr(response, "content", "")
-        if not isinstance(content, str):
-            return []
-        payload = loads(_extract_json_array(content))
-    except Exception as exc:
-        logger.warning("Real textbook source search failed: %s", exc)
+    candidates = result.get("candidates")
+    if not isinstance(candidates, list):
         return []
-
-    if not isinstance(payload, list):
-        return []
-    return [item for item in payload if isinstance(item, dict)]
+    return [item for item in candidates if isinstance(item, dict)]
 
 
 def _extract_json_array(content: str) -> str:
@@ -2031,7 +2034,7 @@ def _knowledge_base_counts(session: Session) -> dict[str, int]:
 
 
 def stream_knowledge_base_agent_events(
-    session: Session | SessionFactory, message: str
+    session: Session | SessionFactory, message: str, user_uid: str | None = None
 ) -> Generator[dict[str, object], None, None]:
     query = message.strip()
     yield _agent_stream_event(
@@ -2057,7 +2060,9 @@ def stream_knowledge_base_agent_events(
         "source_search_started",
         "正在联网查找真实教材来源。",
     )
-    source_results = search_real_textbook_sources(query, limit=_SOURCE_RESULT_LIMIT)
+    source_results = search_real_textbook_sources(
+        query, limit=_SOURCE_RESULT_LIMIT, user_uid=user_uid
+    )
     yield _agent_stream_event(
         "source_search_completed",
         "真实教材来源查找完成。",

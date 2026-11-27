@@ -474,6 +474,7 @@ class KnowledgeBaseIngestionJob(SQLModel, table=True):
     lease_expires_at: datetime | None = Field(default=None)
     worker_id: str | None = Field(default=None, max_length=64)
     request_id: str | None = Field(default=None, max_length=128)
+    triggered_by_uid: str | None = Field(default=None, max_length=64)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: datetime | None = Field(default=None)

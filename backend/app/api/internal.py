@@ -19,9 +19,9 @@ from app.model_config_schemas import (
 )
 from app.models import User
 from app.services import chat_context_service as chat_service
+from app.services import forest_ai_service, outline_service, resource_service
 from app.services import learning_path_runtime_service as path_service
 from app.services import model_config_service as model_service
-from app.services import outline_service, resource_service
 
 INTERNAL_TOKEN_HEADER = "X-Internal-Token"
 
@@ -67,6 +67,21 @@ class ComposeOutlinePayload(BaseModel):
 class SaveOutlinesPayload(BaseModel):
     path_fingerprints: dict[str, str]
     outlines: list[dict] = Field(min_length=1)
+
+
+class ReportEvidencePayload(BaseModel):
+    tool: str
+    evidence_id: str
+
+
+class ReportValidatePayload(BaseModel):
+    narrative: dict
+    details: dict[str, str] = Field(default_factory=dict)
+
+
+class QuizMaterialPayload(BaseModel):
+    course_node_id: str
+    chapter_id: str
 
 
 class PreparePayload(BaseModel):
@@ -480,6 +495,57 @@ def create_internal_router(engine: Engine, internal_token: str | None) -> APIRou
                 payload.failure,
             ),
         )
+
+    @router.get("/forest/chapters/{course_node_id}/{chapter_id}/material")
+    def forest_chapter_material(
+        course_node_id: str, chapter_id: str, user_uid: str, quiz_id: str | None = None
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: forest_ai_service.forest_material(
+                s, user_uid, course_node_id, chapter_id, quiz_id
+            ),
+        )
+
+    @router.get("/canopy/{user_uid}/report-context")
+    def canopy_report_context(user_uid: str) -> dict:
+        return _resource_call(
+            user_uid, lambda s: forest_ai_service.report_context(s, user_uid)
+        )
+
+    @router.post("/canopy/{user_uid}/report-evidence")
+    def canopy_report_evidence(user_uid: str, payload: ReportEvidencePayload) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: forest_ai_service.report_evidence(
+                s, user_uid, payload.tool, payload.evidence_id
+            ),
+        )
+
+    @router.post("/canopy/{user_uid}/report-validate")
+    def canopy_report_validate(user_uid: str, payload: ReportValidatePayload) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: forest_ai_service.report_validate(
+                s, user_uid, payload.narrative, payload.details
+            ),
+        )
+
+    @router.post("/students/{user_uid}/quiz-material")
+    def quiz_material(user_uid: str, payload: QuizMaterialPayload) -> dict:
+        from app.services.forest_service import read_forest_quiz_session
+
+        def _run(s: Session) -> dict:
+            quiz_session = read_forest_quiz_session(
+                s, user_uid, payload.course_node_id, payload.chapter_id
+            )
+            if quiz_session.progress.state == "locked":
+                raise HTTPException(status_code=403, detail="章节尚未解锁")
+            return forest_ai_service.quiz_generation_material(
+                s, user_uid, payload.course_node_id, quiz_session.chapter
+            )
+
+        return _resource_call(user_uid, _run)
 
     @router.post("/chat/sessions/{session_id}/legacy-stream")
     async def legacy_stream(

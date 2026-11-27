@@ -319,6 +319,12 @@ for https_server in (domain_server,):
     assert "proxy_pass http://$ai_gateway_upstream;" in chat_message
     assert "proxy_set_header X-Request-ID $request_id_header;" in chat_message
 
+    for stream_path in (r"/api/forest/ai/stream", r"/api/branch/canopy/report/stream"):
+        stream = directive_block(https_server, r"location\s+=\s+" + stream_path)
+        assert "set $ai_gateway_upstream ai-gateway:8100;" in stream
+        assert "proxy_pass http://$ai_gateway_upstream;" in stream
+        assert "proxy_buffering off;" in stream
+
     internal = directive_block(https_server, r"location\s+\^~\s+/internal/")
     assert "return 404;" in internal
     assert "proxy_pass" not in internal

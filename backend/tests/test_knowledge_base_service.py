@@ -154,7 +154,7 @@ def test_search_real_textbook_sources_rejects_non_textbook_urls(
     monkeypatch.setattr(
         knowledge_base_service,
         "_search_real_textbook_sources_with_llm",
-        lambda topic, limit: raw_results,
+        lambda topic, limit, user_uid=None: raw_results,
     )
     monkeypatch.setattr(
         knowledge_base_service, "_is_safe_textbook_url", lambda url: True
@@ -211,7 +211,7 @@ def test_search_real_textbook_sources_rejects_unparseable_reachable_url(
     monkeypatch.setattr(
         knowledge_base_service,
         "_search_real_textbook_sources_with_llm",
-        lambda topic, limit: raw_results,
+        lambda topic, limit, user_uid=None: raw_results,
     )
     monkeypatch.setattr(
         knowledge_base_service, "_is_safe_textbook_url", lambda url: True
@@ -251,7 +251,7 @@ def test_search_real_textbook_sources_uses_known_open_textbook_when_llm_is_empty
     monkeypatch.setattr(
         knowledge_base_service,
         "_search_real_textbook_sources_with_llm",
-        lambda topic, limit: [],
+        lambda topic, limit, user_uid=None: [],
     )
     monkeypatch.setattr(
         knowledge_base_service, "_is_safe_textbook_url", lambda url: True
@@ -388,7 +388,7 @@ def test_search_real_textbook_sources_rejects_agent_development_docs(
     monkeypatch.setattr(
         knowledge_base_service,
         "_search_real_textbook_sources_with_llm",
-        lambda topic, limit: raw_results,
+        lambda topic, limit, user_uid=None: raw_results,
     )
     monkeypatch.setattr(
         knowledge_base_service, "_is_safe_textbook_url", lambda url: True
@@ -453,7 +453,7 @@ def test_search_real_textbook_sources_returns_five_known_open_textbooks(
     monkeypatch.setattr(
         knowledge_base_service,
         "_search_real_textbook_sources_with_llm",
-        lambda topic, limit: [],
+        lambda topic, limit, user_uid=None: [],
     )
     monkeypatch.setattr(
         knowledge_base_service, "_is_safe_textbook_url", lambda url: True
@@ -525,7 +525,7 @@ def test_search_real_textbook_sources_skips_parse_errors(
     monkeypatch.setattr(
         knowledge_base_service,
         "_search_real_textbook_sources_with_llm",
-        lambda topic, limit: raw_results,
+        lambda topic, limit, user_uid=None: raw_results,
     )
     monkeypatch.setattr(
         knowledge_base_service, "_is_safe_textbook_url", lambda url: True
@@ -604,7 +604,7 @@ def test_run_knowledge_base_agent_source_search_does_not_create_textbook(
     monkeypatch.setattr(
         knowledge_base_service,
         "search_real_textbook_sources",
-        lambda topic, limit=5: [source_result],
+        lambda topic, limit=5, user_uid=None: [source_result],
     )
 
     with Session(engine) as session:
@@ -628,7 +628,7 @@ def test_knowledge_base_agent_context_uses_aggregate_counts(
     monkeypatch.setattr(
         knowledge_base_service,
         "search_real_textbook_sources",
-        lambda topic, limit=5: [],
+        lambda topic, limit=5, user_uid=None: [],
     )
     statements: list[str] = []
 
@@ -711,7 +711,7 @@ def test_run_knowledge_base_agent_checks_source_duplicates_in_one_query(
     monkeypatch.setattr(
         knowledge_base_service,
         "search_real_textbook_sources",
-        lambda topic, limit=5: source_results,
+        lambda topic, limit=5, user_uid=None: source_results,
     )
     duplicate_check_statements: list[str] = []
 

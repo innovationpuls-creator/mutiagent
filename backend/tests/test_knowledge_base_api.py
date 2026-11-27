@@ -556,7 +556,7 @@ def test_agent_returns_real_textbook_sources_without_creating_textbook(
 
     monkeypatch.setattr(
         "app.services.knowledge_base_service.search_real_textbook_sources",
-        lambda topic, limit=5: [
+        lambda topic, limit=5, user_uid=None: [
             app_schemas.KnowledgeBaseSourceResult(
                 source_result_id="source-result-ods-python",
                 title="Open Data Structures",
@@ -630,7 +630,7 @@ def test_agent_returns_source_results_when_local_textbook_is_missing(
 
     monkeypatch.setattr(
         "app.services.knowledge_base_service.search_real_textbook_sources",
-        lambda topic, limit=5: [
+        lambda topic, limit=5, user_uid=None: [
             app_schemas.KnowledgeBaseSourceResult(
                 source_result_id="source-result-ods-python",
                 title="Open Data Structures",

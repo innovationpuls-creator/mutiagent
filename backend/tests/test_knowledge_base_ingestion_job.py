@@ -259,104 +259,95 @@ def test_run_textbook_source_ingestion_fills_outline_and_sections(
     assert stored.outline["chapters"][0]["sections"][0]["section_id"] == "sec_1_1"
 
 
-def test_translate_section_content_to_zh_translates_english_section(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class FakeResponse:
-        content = "数组是一种用于按索引存储元素的数据结构。"
-
-    class FakeLlm:
-        def invoke(self, prompt: str) -> FakeResponse:
-            assert "Arrays store elements by index." in prompt
-            return FakeResponse()
-
+def _gateway(monkeypatch, handler):
     monkeypatch.setattr(
-        "app.services.knowledge_base_service.get_translation_llm",
-        lambda: FakeLlm(),
+        "app.services.knowledge_base_service.call_gateway_ai",
+        lambda path, body, timeout=240: handler(path, body),
     )
 
+
+def test_translate_section_content_to_zh_translates_english_section(monkeypatch):
+    seen: list[dict] = []
+
+    def handler(path, body):
+        assert path == "/internal/ai/kb/translate-chunk"
+        seen.append(body)
+        return {"translated": "数组是一种用于按索引存储元素的数据结构。"}
+
+    _gateway(monkeypatch, handler)
     translated = translate_section_content_to_zh(
-        "Arrays store elements by index.",
-        "en",
+        "Arrays store elements by index.", "en", "admin-1"
     )
-
     assert translated == "数组是一种用于按索引存储元素的数据结构。"
+    # The triggering admin's own identity is what reaches the gateway.
+    assert seen[0]["user_uid"] == "admin-1"
 
 
-def test_translate_section_content_to_zh_returns_original_when_translation_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class FailingLlm:
-        def invoke(self, _prompt: str) -> None:
-            raise TimeoutError("translation timed out")
+def test_translate_requires_a_triggering_admin(monkeypatch):
+    _gateway(monkeypatch, lambda *_: {"translated": "不应被调用的中文"})
+    with pytest.raises(ValueError, match="触发管理员"):
+        translate_section_content_to_zh("Arrays store values.", "en")
 
-    monkeypatch.setattr(
-        "app.services.knowledge_base_service.get_translation_llm",
-        lambda: FailingLlm(),
-    )
 
+def test_translate_returns_original_when_gateway_keeps_failing(monkeypatch):
+    from app.services.ai_gateway_client import AiGatewayUnavailableError
+
+    def handler(*_):
+        raise AiGatewayUnavailableError("TimeoutError")
+
+    _gateway(monkeypatch, handler)
     content = "Arrays store elements by index."
+    assert translate_section_content_to_zh(content, "en", "admin-1") == content
 
-    assert translate_section_content_to_zh(content, "en") == content
+
+def test_translate_surfaces_unconfigured_model(monkeypatch):
+    from app.services.ai_gateway_client import AiGatewayError
+
+    def handler(*_):
+        raise AiGatewayError(428, "请先配置模型", "MODEL_NOT_CONFIGURED")
+
+    _gateway(monkeypatch, handler)
+    with pytest.raises(ValueError, match="请先配置模型"):
+        translate_section_content_to_zh("Arrays store values.", "en", "admin-1")
 
 
-def test_translate_section_content_to_zh_splits_long_english_section(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_translate_section_content_to_zh_splits_long_english_section(monkeypatch):
     import app.services.knowledge_base_service as service_module
 
-    prompts: list[str] = []
+    bodies: list[dict] = []
 
-    class FakeResponse:
-        def __init__(self, content: str) -> None:
-            self.content = content
-
-    class FakeLlm:
-        def invoke(self, prompt: str) -> FakeResponse:
-            prompts.append(prompt)
-            if "Arrays store values." in prompt:
-                return FakeResponse("数组存储值。")
-            return FakeResponse("链表连接节点。")
+    def handler(_path, body):
+        bodies.append(body)
+        if "Arrays store values." in body["content"]:
+            return {"translated": "数组存储值。"}
+        return {"translated": "链表连接节点。"}
 
     monkeypatch.setattr(service_module, "_TRANSLATION_CHUNK_CHAR_LIMIT", 40)
-    monkeypatch.setattr(
-        "app.services.knowledge_base_service.get_translation_llm",
-        lambda: FakeLlm(),
-    )
-
+    _gateway(monkeypatch, handler)
     translated = translate_section_content_to_zh(
-        "Arrays store values.\n\nLinked lists connect nodes.",
-        "en",
+        "Arrays store values.\n\nLinked lists connect nodes.", "en", "admin-1"
     )
-
     assert translated == "数组存储值。\n\n链表连接节点。"
-    assert len(prompts) == 2
+    assert len(bodies) == 2
 
 
-def test_translate_section_content_to_zh_retries_timed_out_chunk(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_translate_section_content_to_zh_retries_timed_out_chunk(monkeypatch):
+    from app.services.ai_gateway_client import AiGatewayUnavailableError
+
     attempts = 0
 
-    class FakeResponse:
-        content = "数组存储值。"
+    def handler(*_):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise AiGatewayUnavailableError("TimeoutError")
+        return {"translated": "数组存储值。"}
 
-    class FlakyLlm:
-        def invoke(self, _prompt: str) -> FakeResponse:
-            nonlocal attempts
-            attempts += 1
-            if attempts == 1:
-                raise TimeoutError("translation timed out")
-            return FakeResponse()
-
-    monkeypatch.setattr(
-        "app.services.knowledge_base_service.get_translation_llm",
-        lambda: FlakyLlm(),
+    _gateway(monkeypatch, handler)
+    assert (
+        translate_section_content_to_zh("Arrays store values.", "en", "admin-1")
+        == "数组存储值。"
     )
-
-    translated = translate_section_content_to_zh("Arrays store values.", "en")
-
-    assert translated == "数组存储值。"
     assert attempts == 2
 
 

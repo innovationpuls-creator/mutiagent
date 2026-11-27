@@ -6,6 +6,7 @@ import { SERVICE_NAME, type GatewayConfig } from "./config.js";
 import { BackendBusinessError, GatewayError } from "./errors.js";
 import { requireInternalToken } from "./internalAuth.js";
 import { chatRoutes } from "./chat/routes.js";
+import { aiStreamRoutes, internalAiRoutes } from "./ai/routes.js";
 import { OAuthSessions } from "./models/oauth.js";
 import { internalModelRoutes, modelRoutes } from "./models/routes.js";
 import { ModelRuntime } from "./models/runtime.js";
@@ -72,6 +73,7 @@ export function createApp({ config, backend, logSink = stdoutSink, builtinOverri
 	app.use("/internal/*", requireInternalToken(config.internalApiToken));
 	app.get("/internal/health", (c) => c.json({ status: "ok" }));
 	app.route("/internal", internalModelRoutes({ runtime: modelRuntime, builtinOverride }));
+	app.route("/internal/ai", internalAiRoutes({ runtime: modelRuntime }));
 	app.route(
 		"/api/ai",
 		modelRoutes({ jwtSecret: config.jwtSecret, backend, runtime: modelRuntime, oauth, builtinOverride }),
@@ -81,6 +83,18 @@ export function createApp({ config, backend, logSink = stdoutSink, builtinOverri
 	app.route(
 		"/api/chat",
 		chatRoutes({
+			jwtSecret: config.jwtSecret,
+			backend,
+			runtime: modelRuntime,
+			logger,
+			heartbeatMs: config.sseHeartbeatMs,
+		}),
+	);
+
+	// M8: Forest AI answers and the growth report stream are orchestrated here too.
+	app.route(
+		"/api",
+		aiStreamRoutes({
 			jwtSecret: config.jwtSecret,
 			backend,
 			runtime: modelRuntime,

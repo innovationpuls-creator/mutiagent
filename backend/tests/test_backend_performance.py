@@ -4,7 +4,6 @@ import asyncio
 import threading
 from datetime import datetime, timezone
 
-import httpx
 import pytest
 from sqlalchemy import event
 from sqlmodel import Session, SQLModel
@@ -103,78 +102,6 @@ def test_two_workers_claim_distinct_jobs_before_first_commit(engine):
     assert not errors
     assert not thread.is_alive()
     assert results[0].job_id != second.job_id
-
-
-def test_35_report_streams_release_connections_during_model_wait(tmp_path, monkeypatch):
-    from app.core.security import create_access_token
-    from app.main import create_app
-
-    app = create_app(database_url=postgresql_test_url(tmp_path, "report-concurrency"))
-    engine = get_engine()
-    with Session(engine) as session:
-        session.add(
-            User(uid="concurrent", username="Concurrent", identifier="concurrent")
-        )
-        session.commit()
-    token = create_access_token({"sub": "concurrent"})
-
-    async def exercise():
-        ready, release = asyncio.Event(), asyncio.Event()
-        arrivals = 0
-
-        class Model:
-            def with_structured_output(self, schema):
-                class Structured:
-                    async def ainvoke(self, _messages):
-                        nonlocal arrivals
-                        if schema.__name__ == "EvidenceSelection":
-                            arrivals += 1
-                            if arrivals == 35:
-                                ready.set()
-                            await release.wait()
-                            return {"requests": []}
-                        return {
-                            "overview": "等待建立学习记录",
-                            "strengths": [],
-                            "improvements": [],
-                            "actions": [],
-                        }
-
-                return Structured()
-
-        monkeypatch.setattr("app.api.branch.get_worker_llm", lambda: Model())
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            tasks = [
-                asyncio.create_task(
-                    client.post(
-                        "/api/branch/canopy/report/stream",
-                        headers={"Authorization": f"Bearer {token}"},
-                    )
-                )
-                for _ in range(35)
-            ]
-            try:
-                await asyncio.wait_for(ready.wait(), 15)
-                assert engine.pool.checkedout() == 0
-                health = await asyncio.wait_for(client.get("/api/health/ready"), 2)
-                assert health.status_code == 200
-            finally:
-                release.set()
-                responses = await asyncio.gather(*tasks)
-            assert all(
-                response.status_code == 200
-                and "report_completed" in response.text
-                and "report_error" not in response.text
-                for response in responses
-            )
-            assert engine.pool.checkedout() == 0
-
-    try:
-        asyncio.run(exercise())
-    finally:
-        engine.dispose()
 
 
 def test_current_upgrade_skips_jsonb_alter_and_unchanged_follow_counts(engine):

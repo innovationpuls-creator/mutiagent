@@ -4,6 +4,7 @@ import asyncio
 import builtins
 import io
 import threading
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -64,7 +65,7 @@ def test_factory_events_release_connections_and_preserve_payloads(engine, monkey
         session.add(KnowledgeGap(gap_id="gap", normalized_topic="Topic"))
         session.commit()
 
-    def search(_query, limit=5):
+    def search(_query, limit=5, user_uid=None):
         return [
             KnowledgeBaseSourceResult(
                 source_result_id="result",
@@ -150,7 +151,9 @@ def test_http_stream_closes_inner_generator(http_app, engine, monkeypatch):
     async def exercise():
         with Session(engine) as session:
             response = route.endpoint(
-                KnowledgeBaseAgentRequest(message="Topic"), None, session
+                KnowledgeBaseAgentRequest(message="Topic"),
+                SimpleNamespace(uid="admin-1"),
+                session,
             )
         await anext(response.body_iterator)
         await response.body_iterator.aclose()
@@ -197,7 +200,7 @@ def test_35_http_agents_release_connections_during_search(
     lock = threading.Lock()
     arrivals = 0
 
-    def search(_query, limit=5):
+    def search(_query, limit=5, user_uid=None):
         nonlocal arrivals
         with lock:
             arrivals += 1

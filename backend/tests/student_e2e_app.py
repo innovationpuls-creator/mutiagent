@@ -84,6 +84,5 @@ def create_student_e2e_app():
     async def grade(*_args, **_kwargs):
         return {"score": 100, "question_results": [], "summary": "通过"}
 
-    forest_api.get_worker_llm = lambda: object()
     forest_api.grade_quiz_answers = grade
     return app

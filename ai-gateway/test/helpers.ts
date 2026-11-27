@@ -62,6 +62,18 @@ export interface FakeBackend extends BackendClient {
 	/** When true the batch save answers 409 (path changed meanwhile). */
 	saveConflict: boolean;
 	resource: FakeResources;
+	forest: {
+		material: { chapter_title: string; sections: Array<{ section_id: string; title: string; markdown: string }>; submitted: boolean };
+		lookups: Array<{ userUid: string; quizId: string | null }>;
+	};
+	report: {
+		summary: string;
+		evidence: Map<string, string>;
+		reads: Array<{ tool: string; id: string }>;
+		validations: Array<{ narrative: any; details: Record<string, string> }>;
+		/** Return an issue string to reject the narrative; undefined accepts it. */
+		reject: (narrative: any, details: Record<string, string>) => string | undefined;
+	};
 }
 
 export interface FakeResources {
@@ -115,6 +127,20 @@ export function fakeBackend(): FakeBackend {
 		composed: [],
 		savedOutlines: [],
 		saveConflict: false,
+		forest: {
+			material: { chapter_title: "进程管理", sections: [{ section_id: "1.1", title: "进程", markdown: "进程是资源分配的基本单位。" }], submitted: false },
+			lookups: [],
+		},
+		report: {
+			summary: '{"stats":{"attempts":1},"evidence":[{"id":"quiz:q1"},{"id":"chapter:c1"}]}',
+			evidence: new Map([
+				["quiz:q1", "第二题循环边界出错"],
+				["chapter:c1", "章节正文"],
+			]),
+			reads: [],
+			validations: [],
+			reject: () => undefined,
+		},
 		resource: {
 			prepareOverride: null,
 			sections: ["1.1", "1.2", "1.3"],
@@ -186,6 +212,28 @@ export function fakeBackend(): FakeBackend {
 			const first = (animations as Array<{ html?: string }>)[0];
 			if (!first?.html?.includes("section-animation")) return { ok: false, issue: "根节点必须包含 section-animation。" };
 			return { ok: true, value: { section_id: sectionId, animations } };
+		},
+		async getForestMaterial(userUid, _course, _chapter, quizId) {
+			backend.forest.lookups.push({ userUid, quizId });
+			return backend.forest.material;
+		},
+		async getReportContext() {
+			return {
+				summary: backend.report.summary,
+				evidence_ids: [...backend.report.evidence.keys()],
+				tools: {},
+				has_attempts: true,
+			};
+		},
+		async readReportEvidence(_uid, tool, id) {
+			backend.report.reads.push({ tool, id });
+			const text = backend.report.evidence.get(id);
+			return text === undefined ? { ok: false, issue: "报告工具请求超出本次证据范围" } : { ok: true, text };
+		},
+		async validateReport(_uid, narrative, details) {
+			backend.report.validations.push({ narrative, details });
+			const issue = backend.report.reject(narrative, details);
+			return issue ? { ok: false, issue } : { ok: true, report: { ...(narrative as object), stats: { attempts: 1 }, evidence: [] } };
 		},
 		async saveSectionResource(_uid, _course, sectionId, body) {
 			const r = backend.resource;

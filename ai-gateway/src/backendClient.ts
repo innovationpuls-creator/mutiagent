@@ -161,6 +161,20 @@ export interface RawProgressSnapshot {
 	next_course_id: string;
 }
 
+export interface ForestMaterial {
+	chapter_title: string;
+	sections: Array<{ section_id: string; title: string; markdown: string }>;
+	/** Server-side truth: the student already has a graded attempt for this quiz. */
+	submitted: boolean;
+}
+
+export interface ReportContextView {
+	summary: string;
+	evidence_ids: string[];
+	tools: Record<string, string>;
+	has_attempts: boolean;
+}
+
 export interface BackendClient {
 	/** Published textbook outlines for a topic; registers a KnowledgeGap when none match. */
 	getTextbookContext(learningTopic: string, studentGoalSummary: string): Promise<TextbookContext>;
@@ -236,6 +250,23 @@ export interface BackendClient {
 		sectionId: string,
 		body: { phase: ResourcePhase; value?: Record<string, unknown> | null; failure?: string },
 	): Promise<void>;
+	getForestMaterial(
+		userUid: string,
+		courseNodeId: string,
+		chapterId: string,
+		quizId: string | null,
+	): Promise<ForestMaterial>;
+	getReportContext(userUid: string): Promise<ReportContextView>;
+	readReportEvidence(
+		userUid: string,
+		tool: string,
+		evidenceId: string,
+	): Promise<{ ok: true; text: string } | { ok: false; issue: string }>;
+	validateReport(
+		userUid: string,
+		narrative: unknown,
+		details: Record<string, string>,
+	): Promise<{ ok: true; report: Record<string, unknown> } | { ok: false; issue: string }>;
 	getInternalHealth(): Promise<BackendHealth>;
 	getChatContext(sessionId: string, userUid: string): Promise<ChatContext>;
 	persistTurn(sessionId: string, userUid: string, turn: TurnPayload): Promise<{ persisted: string }>;
@@ -454,6 +485,24 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 		async saveSectionResource(userUid, courseId, sectionId, body) {
 			await request(`${sectionBase(userUid, courseId, sectionId)}/resources`, { method: "PUT", body });
 		},
+		getForestMaterial: (userUid, courseNodeId, chapterId, quizId) =>
+			request<ForestMaterial>(
+				`/internal/forest/chapters/${encodeURIComponent(courseNodeId)}/${encodeURIComponent(chapterId)}/material?user_uid=${encodeURIComponent(userUid)}${quizId ? `&quiz_id=${encodeURIComponent(quizId)}` : ""}`,
+			),
+		getReportContext: (userUid) =>
+			request<ReportContextView>(`/internal/canopy/${encodeURIComponent(userUid)}/report-context`, { timeoutMs: 30_000 }),
+		readReportEvidence: (userUid, tool, evidenceId) =>
+			request(`/internal/canopy/${encodeURIComponent(userUid)}/report-evidence`, {
+				method: "POST",
+				body: { tool, evidence_id: evidenceId },
+				timeoutMs: 30_000,
+			}),
+		validateReport: (userUid, narrative, details) =>
+			request(`/internal/canopy/${encodeURIComponent(userUid)}/report-validate`, {
+				method: "POST",
+				body: { narrative, details },
+				timeoutMs: 30_000,
+			}),
 		getLearningOverview: (userUid) =>
 			request<LearningOverview>(`/internal/students/${encodeURIComponent(userUid)}/learning-overview`),
 		// A turn can legitimately run for minutes; the signal (client disconnect) bounds it.

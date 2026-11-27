@@ -9,7 +9,7 @@ export default defineConfig({
 	server: {
 		port: 5173,
 		proxy: {
-			"^/api/(ai(/|$)|chat/message(\\?|$))": {
+			"^/api/(ai(/|$)|chat/message(\\?|$)|forest/ai/stream(\\?|$)|branch/canopy/report/stream(\\?|$))": {
 				target: aiGatewayTarget,
 				changeOrigin: true,
 			},

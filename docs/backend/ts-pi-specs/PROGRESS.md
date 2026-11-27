@@ -320,3 +320,46 @@
 - **客户端断开不中止运行**：网关当前不因 SSE 断开而取消生成（与 persist-first 一致，结果仍落库，锁在运行结束后释放）；若要“断开即取消”需另加 abort 传播，本里程碑未做。
 - 文档里“LEAF 隐藏标签”已不被网关使用，但 `chat_context_service` 仍会从旧 `[LEAF_REGEN_PENDING]` 标记构造 pending，`rule_engine` 旧解析器、`legacy-stream` 路由、`progress.bridged`/`raw` chunk 与 `openLegacyStream` 仍在，留给 M9 清理。
 - 前端未在浏览器里复验叶子页刷新（前端无改动，仅验证事件字段契约）；Nginx/Docker 与 Playwright e2e 未运行。
+
+## M8：章节测验、视觉判分、Forest AI、成长报告与知识库 AI 收口
+
+状态：**已完成并提交**（AC-1~5 通过；模型侧为脚本化 mock 上游，见「未验证项」）
+
+### 已确认的决策 / 与文档的偏差（2026-11-27）
+| 项 | 结论 |
+|---|---|
+| 总体切分 | 与 M5–M7 一致：确定性逻辑（数据读取、四条防幻觉校验、事务与恢复）留在 Python；所有模型调用在 TS 网关。Python→网关新增通用调用 `call_gateway_ai / acall_gateway_ai`（内部令牌，网关 HTTP 错误保留 `status/detail/error_code`）。 |
+| 出题 `/internal/ai/quiz/generate` | Python 新增 `POST /internal/students/{uid}/quiz-material`（实为 `forest_ai_service.quiz_generation_material`，供 Forest 路由内部调用）汇总**全部二级小节**的「练习任务/检查标准」（取自 M7 的小节 markdown）与知识点清单。TS `submit_quiz` 工具 + 确定性校验（3 题型齐全、总分严格 100、单选选项/`correct_option_id` 合法、`knowledge_point_ids` ⊆ 本章清单），原地自修 1 次，仍失败 → HTTP 502「出题失败」。**`build_fallback_quiz_questions` 假题逻辑整体删除**；失败不落库、`regenerate` 失败不动旧题。 |
+| 判分 `/internal/ai/quiz/grade` | 单选纯规则（不调模型）；代码题走文本模型；图片题有真实图片 → `quiz_vision` 槽位的视觉模型（模型不支持图片 → 422 `MODEL_CAPABILITY_MISMATCH`；未配置 → 428 `MODEL_NOT_CONFIGURED`，提交不落库、本机草稿可原样重试）；仅文字描述则降级按文字评分（评语里说明未见图片）。三题并发，总分由程序累加，`passed = score > 70`。事务/幂等/恢复快照逻辑未动。 |
+| 场景槽位 | 出题与代码判分用 `course_resources` 槽位（文本）；仅在**真有图片**时用 `quiz_vision`；Forest AI 带图时 `quiz_vision`，否则 `course_resources`（避免没配视觉模型的学生连纯文字答疑都被挡住）。 |
+| Forest AI | 网关接管 `POST /api/forest/ai/stream`（Vite 代理 + Nginx `location =` 已切），事件仍为 `forest_ai_text_chunk / forest_ai_completed / forest_error{message,error_code?}`。**苏格拉底模式由服务端判定**：Python `GET /internal/forest/chapters/{course}/{chapter}/material?user_uid&quiz_id` 返回 `submitted`（该测验是否已有判分尝试），客户端伪造 `grading_result` 无效；无 `quiz_id` 才回落到客户端上下文。挂载只读工具 `read_chapter_learning_material`。 |
+| 偏差：教材原文 | 材料接口只返回本章各小节**讲解正文**（单小节 6000 字、总计 24000 字截断），未附加绑定教材原文片段；多轮追问仅靠请求里的当前题目上下文（请求体本无历史字段）。 |
+| 成长报告 | 网关接管 `POST /api/branch/canopy/report/stream`（路由同上）。Python 提供 `report-context`、`report-evidence`、`report-validate`；Agent 三个只读工具 `read_quiz/read_chapter/read_textbook`，**程序硬限 6 次**，超出作为工具错误回传；`submit_growth_report` 内调用 Python 的**同一套四条校验**（证据 ID 真实且教材须已读、无测验时 strengths 必须为空且优势须引 quiz、建议课程 ID 真实、事实分析数字须有出处），失败回传原地修正（≤2 次），通过后由 Python 组装 `GrowthReport`（只附带实际引用的 evidence）。Python 旧 `/canopy/report/stream` 路由与 `stream_growth_report/generate_narrative` 删除。 |
+| 知识库 AI | 迁移 `0009_kb_job_triggered_by`（`KnowledgeBaseIngestionJob.triggered_by_uid`，可空）；管理员触发的整理/确认/上传/搜书都写入或携带 `admin.uid`。`/internal/ai/kb/translate-chunk`、`/internal/ai/kb/search-textbook-sources` 在 `kb_translate/kb_search` 槽位用**该管理员本人**的模型，用量记在其名下；未配置 → 428，SSE `error` 带 `error_code`。URL 合法性/可解析性核验仍在 Python。 |
+| 删除 | Python 的 `generate_quiz_questions / grade_quiz_answers / stream_forest_ai_response / build_fallback_quiz_questions`（`forest.py` 保留同名**网关代理封装**，便于测试打桩）、`get_translation_llm / get_search_worker_llm` 在知识库服务中的使用。 |
+
+### 完成节点
+- Python：`ai_gateway_client.call_gateway_ai`、迁移 0009、`forest_ai_service.py`（出题材料/章节材料/报告上下文·证据·校验）、`/internal` 5 个新接口、`forest.py` 改走网关、KB 服务与路由透传管理员 uid；删除旧 LLM 路径；改写 4 个旧测试文件，新增 `tests/test_forest_gateway_ai.py`（3 个）。
+- TS：`src/ai/{quiz,kb,forestAi,growthReport,routes}.ts`、`backendClient` 4 个新方法、`app.ts` 挂载 `/internal/ai/*` 与两条公开流；`test/m8.test.ts`（19 个）。
+- 切流：`frontend/vite.config.ts` 代理正则与 `production.conf.template` 两个 `location =`（`proxy_buffering off`）+ `test_nginx_config.sh` 静态断言。
+- 全量：后端 **983 passed**（ruff 干净）；网关 `tsc --noEmit`、`npm run build` 通过，vitest **131 passed**。
+
+### 验收清单实测结果
+真实 Python 后端 + 真实网关 + 脚本化 mock 模型，独立 schema `m8_acceptance`（用后已删除）；章节内容由 M7 流程真实生成。
+
+| AC | 结果 | 证据 |
+|---|---|---|
+| AC-1 | 通过 | 出题：单选/代码/图片各 1 道，分值 30+40+30=100，提示词里带有各叶子小节「练习任务」；模型回 110 分 → HTTP 502「出题失败…（三题分值之和必须严格等于 100（当前 110））」，库里 0 条测验；`regenerate` 失败后旧题 `quiz_version` 不变。 |
+| AC-2 | 通过 | 纯文字作答：{q1:30, q2:35, q3:25}=90 且等于三题之和，模型判分调用仅 2 次（单选未调模型）；断流恢复 GET 返回同一 attempt；同一 `client_submission_id` 重放 0 次新模型调用。有视觉模型的学生提交真实 PNG：该次调用 `model=relay-vision` 且带图，评语含图片内容，总分 60=0+35+25。无视觉模型提交真图：SSE `error` 428「尚未配置可用的个人模型…」，尝试 0 条落库。 |
+| AC-3 | 通过 | 提交前：系统提示为苏格拉底模式（含“严禁直接给出…”），回复走 `forest_ai_text_chunk` → `forest_ai_completed`；判分后（客户端传 `grading_result=null`）服务端识别已提交，提示词切到完整解析、不含苏格拉底指令。 |
+| AC-4 | 通过 | 无测验账号：模型先编造一条引用 `quiz:fake` 的优势 → Python 校验拒绝 → 修正后 `strengths=[]` 完成（共 2 次提交）。有测验账号：阶段 collecting→analyzing→writing；脚本让模型发 8 次读取，网关只放行 6 次（其余作为工具错误），共 10 次模型请求；含无来源数字 999 的首份报告被拒、修正版通过；报告里全部 evidence ID 都在目录内、优势引用 quiz 证据。 |
+| AC-5 | 通过 | 已配置的管理员：搜书经网关走其个人模型（`source_search_completed`，候选 URL 仍由 Python 核验，本机无网络出口故 `result_count=0`）；分段翻译返回中文；用量表里该管理员名下有 `kb_search`、`kb_translate`。未配置的管理员：agent 流 `error_code=MODEL_NOT_CONFIGURED`，翻译抛“尚未配置可用的个人模型…”，且没有发生任何模型调用。 |
+
+### 未验证项 / 已知遗留
+- **真实模型**：全部为脚本化 mock。苏格拉底“不剧透”是否被真实模型遵守、视觉模型是否真能读懂截图、报告写作质量均未评估；live 验证的是提示词/模式切换、工具与校验链路、计费与错误传播。
+- **成长报告前端 `parseReport`** 与展开依据/跳转课程的 UI 未在浏览器验证（前端无改动，仅验证 SSE 事件与 Python `GrowthReport` 模型校验）。
+- **OpenAPI 类型**：删除 Python 的 `/api/branch/canopy/report/stream`（`GrowthReport` 模型原仅由该路由暴露）后，重新生成 `frontend/src/types/api.d.ts` 可能丢失 `GrowthReport` 等类型；当前提交的 `api.d.ts` 未动，M9 清理时需处理。
+- **知识库翻译**：现有入库流程并没有调用 `translate_section_content_to_zh`（它是未接入的辅助函数），本次只把它改成走管理员个人模型并经单测/live 验证，没有新增“入库时自动翻译”。`triggered_by_uid` 已落库并随 worker 的 job 可读。
+- 出题 live 时所选章节没有 `knowledge_point_ids` 清单，ID 子集校验在 live 里是空集合成立，真实校验由 vitest 与 `validateQuiz` 单测覆盖。
+- 管理端知识库页的“引导直达模型配置”仅由后端/SSE 返回 `error_code=MODEL_NOT_CONFIGURED`，前端页面未改、未在浏览器复验。
+- Nginx 容器级用例（需要 Docker）本机未跑，仅静态断言通过；`GET /internal/forest/.../material` 未附教材原文（见偏差）。
