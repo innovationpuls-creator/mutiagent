@@ -494,19 +494,17 @@
 
 ## 6. 培养方案（Student & Admin）
 
-> 说明：历史 `teacher` 角色已合并入 `admin`；以下 `/teacher/program*` 路径保留兼容，实际由 `admin` 权限校验控制访问。
-
 ### 6.1 GET `/student/matched-program` — 学生端匹配培养方案
 获取匹配学生三元组属性 (`school + major + class_name`) 的已发布人培方案。
 
 * **响应参数** `200 OK` (对应 `CultivationProgramRead` 模式，若无匹配则返回 `null`)
 
-### 6.2 GET `/teacher/program` — 管理端读取编辑中培养方案
+### 6.2 GET `/admin/program` — 管理端读取编辑中培养方案
 获取当前管理员名下正在维护的培养方案。
 
 * **响应参数** `200 OK` (对应 `CultivationProgramRead` 模式，若无配置则返回 `null`)
 
-### 6.3 PUT `/teacher/program` — 保存培养方案 (草案)
+### 6.3 PUT `/admin/program` — 保存培养方案 (草案)
 保存配置的课程节点矩阵，不发布给学生。
 
 * **请求体** `application/json` (对应 `CultivationProgramSaveRequest` 模式)
@@ -517,10 +515,10 @@
   | `class_name`| str | 班级名称 |
   | `courses` | list | 课程节点配置数组 |
 
-### 6.4 POST `/teacher/program/publish` — 发布培养方案
+### 6.4 POST `/admin/program/publish` — 发布培养方案
 发布培养方案，使绑定该学段班级的学生可以正式进行画像和路径规划。
 
-* **请求体** 同上 `PUT /teacher/program` (对应 `CultivationProgramSaveRequest` 模式)。
+* **请求体** 同上 `PUT /admin/program` (对应 `CultivationProgramSaveRequest` 模式)。
 
 ---
 

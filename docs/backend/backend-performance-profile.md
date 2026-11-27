@@ -3,6 +3,8 @@
 - **采样日期：** 2026-10-03
 - **用途：** 为后续 AI 优化会话提供当前后端耗时基线和可核查的代码入口。
 
+> 注：本报告为 `2026-10-03` 历史采样记录；后续已移除 `hybrid_search_textbooks`、`textbook.embedding` 及 `_upgrade_textbook_embedding_column`（改由 `search_published_textbooks` 与 Alembic 迁移 `0006_admin_program_drop_embed` 承担），以下历史数据原样保留仅供参考。
+
 ## 结论
 
 这次对后端完整测试套件进行了 `cProfile` 采样。采样覆盖了 892 项测试实际执行到的后端代码，不等于线上全部请求、所有分支或生产 LLM 延迟。

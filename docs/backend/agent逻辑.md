@@ -31,7 +31,7 @@ flowchart TD
 
 - `AuthProvider`（[AuthContext.tsx](../../frontend/src/contexts/AuthContext.tsx)）提供登录态 `token` 与 `user`。
 - `AiWidgetProvider`（[AiWidgetContext.tsx](../../frontend/src/contexts/AiWidgetContext.tsx)）管理全局 AI 面板状态（`HIDDEN` / `CENTER_INPUT` / `PROCESSING` / `EXPANDED` / `WIDGET`）与待发送消息队列（`pendingMessage`）。
-- `AnimatedRoutes` 划分公共入口（`/login`、`/onboarding`）、管理端路由（`/admin/*`，`/teacher` 重定向至 `/admin/programs`）与学生端五阶段工作区（`/sprout`、`/branch`、`/leaf`、`/leaf/:courseNodeId`、`/forest`、`/forest/:courseNodeId`、`/canopy`、`/canvas`）。
+- `AnimatedRoutes` 划分公共入口（`/login`）、管理端路由（`/admin/*`）与学生端五阶段工作区（`/sprout`、`/branch`、`/leaf`、`/leaf/:courseNodeId`、`/forest`、`/forest/:courseNodeId`、`/canopy`）。
 - `GlobalAiWidget` 在 `/login`、`/forest`、`/forest/*`、`/admin/*` 下隐藏；其余页面挂载悬浮 AI 面板。
 
 ### 2.2 学生首页与全局 AI 面板协作

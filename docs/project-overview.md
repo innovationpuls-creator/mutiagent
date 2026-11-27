@@ -24,7 +24,7 @@ flowchart LR
 
 | 目录 | 责任 | 主要入口 |
 |---|---|---|
-| `frontend/src/App.tsx` | 路由、角色门禁、页面宿主 | `/login`、`/onboarding`、学生端和管理端路由 |
+| `frontend/src/App.tsx` | 路由、角色门禁、页面宿主 | `/login`、学生端和管理端路由 |
 | `frontend/src/api/` | 前端 API 客户端 | 认证、路径、课程、测验、知识库等模块 |
 | `backend/app/main.py` | FastAPI 应用装配 | 路由、CORS、请求 ID、数据库初始化 |
 | `backend/app/api/` | HTTP/SSE 路由 | 按认证、路径、课程、Forest、管理端拆分 |
@@ -48,9 +48,9 @@ flowchart LR
 
 成森页支持手动生成累计 AI 成长报告：后端汇总真实学习记录，模型按需读取只读证据并生成结构化总结，页面支持来源展开、课程跳转和重新生成。该流程复用 Worker 模型，不新增 LangGraph Worker 或报告数据表。接口与统计口径见 [成长报告接口](api-specs/API-成长报告.md)。
 
-学生端页面路由定义在 `frontend/src/App.tsx`：`/onboarding`、`/sprout`、`/branch`、`/leaf`、`/leaf/:courseNodeId`、`/forest`、`/forest/:courseNodeId`、`/canopy`、`/canvas`。管理端路由包括 `/admin/programs`、`/admin/accounts`、`/admin/data` 和 `/admin/knowledge-base`（`/teacher` 仅重定向至 `/admin/programs`）。
+学生端页面路由定义在 `frontend/src/App.tsx`：`/sprout`、`/branch`、`/leaf`、`/leaf/:courseNodeId`、`/forest`、`/forest/:courseNodeId`、`/canopy`。管理端路由包括 `/admin/programs`、`/admin/accounts`、`/admin/data` 和 `/admin/knowledge-base`。
 
-后端路由由 `backend/app/main.py` 装配，按 `auth`、`orchestration`、`profile`、`learning_path`、`branch`（含成长报告流式接口）、`leaf`、`forest`、`student`、`teacher`（供 `admin` 维护培养方案的历史兼容前缀）、`admin`、`admin_data`、`knowledge_base` 和 `health` 分组。字段示例以 `docs/api-specs/` 与 `frontend/openapi.json` 为准。
+后端路由由 `backend/app/main.py` 装配，按 `auth`、`orchestration`、`profile`、`learning_path`、`branch`（含成长报告流式接口）、`leaf`、`forest`、`student`、`admin`（含 `/api/admin/program*` 培养方案维护端点）、`admin_data`、`knowledge_base` 和 `health` 分组。字段示例以 `docs/api-specs/` 与 `frontend/openapi.json` 为准。
 
 ## 本地开发与验证
 

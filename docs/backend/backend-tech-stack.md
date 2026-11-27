@@ -56,7 +56,7 @@ Agent 的同步数据库 helper 整段在线程中执行。聊天只在推进 SS
 
 教材上传继续异步分块读取并执行 100 MiB 限额检查；字节拼接在线程池完成，文件落盘、教材与整理任务持久化及响应 DTO 构造在工作线程自己的 Session 中完成。请求 Session 和 UploadFile 不跨线程，教材与任务仍按现有顺序分次提交。
 
-当前教材 embedding 列为 FLOAT[]。检索先检测向量类型、运算符、全文配置和已发布向量；不满足条件时跳过 embedding API，按原字符串评分规则匹配。混合 SQL 使用 savepoint 隔离失败。教材切片使用标题偏移索引，MarkItDown 在转换时导入。统计与证据加载的测量边界见 [性能报告](backend-performance-profile.md)。
+教材检索通过 `search_published_textbooks` 按标题、标签和关键词匹配已发布教材；教材切片使用标题偏移索引，MarkItDown 在转换时导入。历史性能边界见 [性能报告](backend-performance-profile.md)。
 
 ## Agent 系统
 
@@ -104,7 +104,7 @@ Agent 的同步数据库 helper 整段在线程中执行。聊天只在推进 SS
 10. **CourseResourceQuality** (`courseresourcequality`)：章节图文及动画生成质量评分。
 11. **ConversationSession** (`conversationsession`)：会话消息历史持久化记录。
 12. **KnowledgeSource** (`knowledgesource`)：知识库来源与准入审核状态。
-13. **Textbook** (`textbook`)：教材元数据、解析大纲、发布状态与向量列。
+13. **Textbook** (`textbook`)：教材元数据、解析大纲与发布状态。
 14. **TextbookSectionContent** (`textbooksectioncontent`)：教材小节原文与中文内容切片。
 15. **TextbookExtensionResource** (`textbookextensionresource`)：教材小节关联的扩展学习资源。
 16. **KnowledgeGap** (`knowledgegap`)：学生触发的知识缺口记录与补全状态。
@@ -113,7 +113,7 @@ Agent 的同步数据库 helper 整段在线程中执行。聊天只在推进 SS
 19. **KnowledgeBaseIngestionJob** (`knowledgebaseingestionjob`)：知识库后台整理任务（租约、重试、状态）。
 20. **WorkerHeartbeat** (`workerheartbeat`)：后台 Worker 存活心跳记录。
 
-生产环境通过 Alembic 迁移（`0001_production_baseline` ~ `0005_quiz_submission_recovery`）管理结构演进；开发与测试初始化时 `init_db` 会创建当前模型并由 `schema_upgrades.py` 兼容历史结构（如将旧 `teacher` 角色规范为 `admin`、删除旧 `useragentconversation`/`userlearningpath`、升级 JSON 为 JSONB 等）。
+生产环境通过 Alembic 迁移（`0001_production_baseline` ~ `0006_admin_program_drop_embed`）管理结构演进；开发与测试初始化时 `init_db` 会创建当前模型并由 `schema_upgrades.py` 兼容历史结构（如将旧 `teacher` 角色规范为 `admin`、将 `cultivationprogram.teacher_uid` 迁移为 `admin_uid`、清理已废弃的 `textbook.embedding` 列、删除旧 `useragentconversation`/`userlearningpath`、升级 JSON 为 JSONB 等）。
 
 ## API 分组
 
@@ -136,7 +136,7 @@ Agent 的同步数据库 helper 整段在线程中执行。聊天只在推进 SS
 * **繁枝与成长**：`GET /api/branch/canopy`、`GET /api/branch/overview`、`POST /api/branch/canopy/report/stream` (SSE 成长报告)
 * **展叶大纲**：`GET /api/leaf/courses/{course_node_id}`
 * **测验森林**：`GET /api/forest/courses/.../quiz`、`POST /api/forest/courses/.../quiz/generate`、`POST /api/forest/quizzes/{quiz_id}/attempts`、`POST /api/forest/quizzes/{quiz_id}/attempts/stream` (SSE 流式批改)、`GET /api/forest/quizzes/{quiz_id}/submissions/{client_submission_id}` (提交恢复查询)、`POST /api/forest/ai/stream` (AI 答疑)
-* **培养方案（学生与管理端）**：`GET /api/student/matched-program`、`GET/PUT /api/teacher/program`、`POST /api/teacher/program/publish`（`/api/teacher/program*` 仅限 `admin` 调用，保留历史路径兼容）
+* **培养方案（学生与管理端）**：`GET /api/student/matched-program`、`GET/PUT /api/admin/program`、`POST /api/admin/program/publish`
 * **系统管理**：`/api/admin/accounts*`（账号管理与 CSV 导入导出）及 `/api/admin/data*`（学情监控与清理）
 * **教材知识库**：`/api/admin/knowledge-base/*`（管理端来源准入、教材管理/上传/解析/发布、Agent 流式检索、缺口管理、扩展资源）及 `/api/knowledge-base/gaps/{gap_id}/follow`、`/api/knowledge-base/notices*`（学生端缺口关注与提醒）
 
