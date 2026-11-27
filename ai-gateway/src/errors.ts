@@ -82,3 +82,5 @@ export const modelCapabilityMismatch = (detail: string) =>
 	new GatewayError(422, "MODEL_CAPABILITY_MISMATCH", detail);
 export const internalServiceUnavailable = () =>
 	new GatewayError(503, "INTERNAL_SERVICE_UNAVAILABLE", "AI 服务暂时不可用，请稍后重试");
+export const upstreamModelError = (detail: string, status = 502) =>
+	new GatewayError(status, undefined, detail);

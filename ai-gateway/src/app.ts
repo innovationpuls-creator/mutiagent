@@ -5,6 +5,10 @@ import type { BackendClient } from "./backendClient.js";
 import { SERVICE_NAME, type GatewayConfig } from "./config.js";
 import { BackendBusinessError, GatewayError } from "./errors.js";
 import { requireInternalToken } from "./internalAuth.js";
+import { OAuthSessions } from "./models/oauth.js";
+import { internalModelRoutes, modelRoutes } from "./models/routes.js";
+import { ModelRuntime } from "./models/runtime.js";
+import type { Provider } from "@earendil-works/pi-ai";
 import {
 	type LogSink,
 	REQUEST_ID_HEADER,
@@ -18,11 +22,16 @@ export interface AppDeps {
 	config: GatewayConfig;
 	backend: BackendClient;
 	logSink?: LogSink;
+	/** Replaces Pi built-in providers (tests / acceptance harness only). */
+	builtinOverride?: Provider[];
+	runtime?: ModelRuntime;
 }
 
-export function createApp({ config, backend, logSink = stdoutSink }: AppDeps) {
+export function createApp({ config, backend, logSink = stdoutSink, builtinOverride, runtime }: AppDeps) {
 	const app = new Hono<{ Variables: AuthVariables }>();
 	const logger = createLogger(logSink);
+	const modelRuntime = runtime ?? new ModelRuntime({ backend, logger, builtinOverride });
+	const oauth = new OAuthSessions(modelRuntime);
 
 	app.use("*", requestIdMiddleware(logSink));
 	app.use(
@@ -61,10 +70,15 @@ export function createApp({ config, backend, logSink = stdoutSink }: AppDeps) {
 	// Python -> gateway channel (used from M2 on); same constant-time token check.
 	app.use("/internal/*", requireInternalToken(config.internalApiToken));
 	app.get("/internal/health", (c) => c.json({ status: "ok" }));
+	app.route("/internal", internalModelRoutes({ runtime: modelRuntime, builtinOverride }));
+	app.route(
+		"/api/ai",
+		modelRoutes({ jwtSecret: config.jwtSecret, backend, runtime: modelRuntime, oauth, builtinOverride }),
+	);
 
 	app.onError((error, c) => {
 		if (error instanceof GatewayError) {
-			return c.json(error.toBody(), error.status as 401 | 403 | 422 | 428 | 503);
+			return c.json(error.toBody(), error.status as 400 | 401 | 403 | 422 | 428 | 502 | 503);
 		}
 		if (error instanceof BackendBusinessError) {
 			return c.json(

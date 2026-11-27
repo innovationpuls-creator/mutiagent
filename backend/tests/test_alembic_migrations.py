@@ -41,7 +41,7 @@ def test_empty_schema_upgrades_to_alembic_head(tmp_path: Path) -> None:
     assert table_names == set(SQLModel.metadata.tables) | {"alembic_version"}
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0006_admin_program_drop_embed"
+        assert revision.scalar_one() == "0007_personal_pi_model_config"
 
 
 def test_alembic_prefers_database_url_environment(
@@ -63,7 +63,7 @@ def test_alembic_prefers_database_url_environment(
     engine = create_engine(database_url)
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0006_admin_program_drop_embed"
+        assert revision.scalar_one() == "0007_personal_pi_model_config"
 
 
 def test_programmatic_alembic_config_precedes_database_url_environment(
@@ -85,7 +85,7 @@ def test_programmatic_alembic_config_precedes_database_url_environment(
     engine = create_engine(database_url)
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0006_admin_program_drop_embed"
+        assert revision.scalar_one() == "0007_personal_pi_model_config"
 
 
 def test_ingestion_job_lease_migration_preserves_existing_job(

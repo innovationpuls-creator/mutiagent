@@ -1,3 +1,4 @@
+import type { RuntimeConfig } from "./models/types.js";
 import { BackendBusinessError, internalServiceUnavailable } from "./errors.js";
 import { INTERNAL_TOKEN_HEADER } from "./internalAuth.js";
 import { type Logger, REQUEST_ID_HEADER, getRequestId } from "./observability.js";
@@ -14,9 +15,53 @@ export interface BackendHealth {
 	database: string;
 }
 
+export interface OAuthLockResult {
+	outcome: "unchanged" | "refreshed" | "conflict";
+	credential: Record<string, unknown>;
+	refresh_fingerprint: string;
+	expires_at: string | null;
+}
+
+export interface UsageReport {
+	request_id?: string | null;
+	scene: string;
+	provider_id: string;
+	model_id: string;
+	thinking_level?: string | null;
+	input_tokens: number;
+	output_tokens: number;
+	cache_read_tokens: number;
+	cache_write_tokens: number;
+	reasoning_tokens: number;
+	estimated_cost_usd: number;
+	latency_ms: number;
+	success: boolean;
+	error_code?: string | null;
+}
+
 export interface BackendClient {
 	getInternalHealth(): Promise<BackendHealth>;
 	getUserAuthStatus(userUid: string): Promise<UserAuthStatus>;
+	getModelRuntimeConfig(userUid: string): Promise<RuntimeConfig>;
+	oauthRefreshLock(
+		userUid: string,
+		providerId: string,
+		body: {
+			previous_refresh_fingerprint?: string | null;
+			new_credential?: Record<string, unknown> | null;
+			expires_at?: string | null;
+		},
+	): Promise<OAuthLockResult>;
+	saveOAuthCredential(
+		userUid: string,
+		providerId: string,
+		body: {
+			credential: Record<string, unknown>;
+			expires_at?: string | null;
+			account_label?: string | null;
+		},
+	): Promise<void>;
+	postModelUsage(userUid: string, usage: UsageReport): Promise<void>;
 }
 
 export interface BackendClientOptions {
@@ -41,19 +86,24 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 	const { baseUrl, internalToken, timeoutMs, logger } = options;
 	const fetchImpl = options.fetchImpl ?? fetch;
 
-	async function request<T>(path: string): Promise<T> {
+	async function request<T>(
+		path: string,
+		init: { method?: string; body?: unknown } = {},
+	): Promise<T> {
 		const headers: Record<string, string> = {
 			Accept: "application/json",
 			[INTERNAL_TOKEN_HEADER]: internalToken,
 		};
+		if (init.body !== undefined) headers["Content-Type"] = "application/json";
 		const requestId = getRequestId();
 		if (requestId) headers[REQUEST_ID_HEADER] = requestId;
 
 		let response: Response;
 		try {
 			response = await fetchImpl(`${baseUrl}${path}`, {
-				method: "GET",
+				method: init.method ?? "GET",
 				headers,
+				body: init.body === undefined ? undefined : JSON.stringify(init.body),
 				signal: AbortSignal.timeout(timeoutMs),
 			});
 		} catch (error) {
@@ -84,6 +134,27 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
 	return {
 		getInternalHealth: () => request<BackendHealth>("/internal/health"),
+		getModelRuntimeConfig: (userUid) =>
+			request<RuntimeConfig>(
+				`/internal/users/${encodeURIComponent(userUid)}/model-runtime-config`,
+			),
+		oauthRefreshLock: (userUid, providerId, body) =>
+			request<OAuthLockResult>(
+				`/internal/users/${encodeURIComponent(userUid)}/providers/${encodeURIComponent(providerId)}/oauth-refresh-lock`,
+				{ method: "POST", body },
+			),
+		async saveOAuthCredential(userUid, providerId, body) {
+			await request(
+				`/internal/users/${encodeURIComponent(userUid)}/providers/${encodeURIComponent(providerId)}/oauth-credential`,
+				{ method: "PUT", body },
+			);
+		},
+		async postModelUsage(userUid, usage) {
+			await request(
+				`/internal/users/${encodeURIComponent(userUid)}/model-usage`,
+				{ method: "POST", body: usage },
+			);
+		},
 		async getUserAuthStatus(userUid) {
 			const status = await request<UserAuthStatus>(
 				`/internal/users/${encodeURIComponent(userUid)}/auth-status`,
