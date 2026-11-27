@@ -839,6 +839,20 @@ def test_markdown_quality_gate_accepts_clean_structure_without_keywords():
     assert issue is None
 
 
+def test_markdown_quality_gate_rejects_glued_headings():
+    from app.orchestration.agents.course_resources.markdown import (
+        _markdown_quality_issue,
+    )
+
+    markdown = (
+        "# 1.1\n\n## 学习目标\n目标说明。\n\n## 核心概念\n概念说明。\n\n"
+        "## 步骤讲解### 步骤一：标记输入规模\n正文。\n\n## 练习任务\n任务。\n\n## 检查标准\n- [ ] 一\n"
+    )
+    issue = _markdown_quality_issue(markdown, {"title": "t"}, [], [])
+    assert issue is not None
+    assert "粘连" in issue
+
+
 def test_deterministic_animation_html_generates_interactive_glassmorphism():
     from app.orchestration.agents.course_resources.animation import (
         _deterministic_animation_html,

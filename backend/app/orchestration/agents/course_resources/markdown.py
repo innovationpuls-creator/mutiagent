@@ -127,6 +127,12 @@ def _markdown_quality_issue(
         "## 练习任务",
         "## 检查标准",
     )
+    glued_heading = re.search(r"^#{1,6} [^\n]*?#{2,6} ", text, re.MULTILINE)
+    if glued_heading:
+        return (
+            "Markdown 标题与下一级标题粘连在同一行（如“## 步骤讲解### 步骤一”），"
+            "请在每个标题后换行再写内容。"
+        )
     missing_headings = [heading for heading in required_headings if heading not in text]
     if missing_headings:
         return f"Markdown 缺少必备章节：{', '.join(missing_headings)}。"

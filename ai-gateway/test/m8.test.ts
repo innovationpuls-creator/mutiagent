@@ -224,7 +224,9 @@ describe("AC-5 knowledge-base AI", () => {
 		h.primary.queue.push({ text: "数组按索引存储元素。" });
 		const res = await internal("/kb/translate-chunk", { user_uid: CHAT_USER, content: "Arrays store elements by index." });
 		expect(res.json.translated).toBe("数组按索引存储元素。");
-		expect(String(h.primary.requests[0]!.body.messages.at(-1).content)).toContain("Arrays store");
+		const sent = String(h.primary.requests[0]!.body.messages.at(-1).content);
+		expect(sent).toContain("Arrays store");
+		expect(sent).toMatch(/<source>[\s\S]*Arrays store[\s\S]*<\/source>/);
 		await h.app.request("/internal/health", { headers: { "X-Internal-Token": INTERNAL_TOKEN } });
 	});
 	it("returns structured candidates from the search model", async () => {

@@ -448,8 +448,8 @@ export function ForestQuizPage() {
 					if (event.event === "status")
 						setSubmitStatusMessage(event.message ?? "正在提交…");
 					if (event.event === "done" && event.doneData) result = event.doneData;
-					if (event.event === "error")
-						throw new Error(event.message ?? "测验提交失败");
+					// An "error" event is turned into a ForestSubmissionError (with the
+					// HTTP-like status) by submitForestQuizAttemptStream itself.
 				},
 			);
 			if (result && identity === scopeIdentityRef.current) {
@@ -471,7 +471,14 @@ export function ForestQuizPage() {
 					[403, 404, 409].includes(error.status)
 				)
 					setSubmissionInvalid(true);
-				else if (snapshotSaved) await confirmSubmission(pending);
+				else if (
+					error instanceof ForestSubmissionError &&
+					error.status >= 400 &&
+					error.status < 500
+				) {
+					// Rejected before anything was saved (e.g. 428 model not configured):
+					// keep the real message instead of the generic "unconfirmed" one.
+				} else if (snapshotSaved) await confirmSubmission(pending);
 			}
 		} finally {
 			submissionBusyRef.current = false;
