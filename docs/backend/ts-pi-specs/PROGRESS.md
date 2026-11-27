@@ -366,7 +366,7 @@
 
 ## M9：旧架构清退、生产部署适配与全链路回归验收
 
-状态：**已完成并提交**（AC-1~7 全部通过；AC-5 的浏览器 UI 走查与真实模型见「未验证项」）
+状态：**已完成并提交**（AC-1~7 全部通过；真实模型输出与真实视频检索见「未验证项」）
 
 ### 已确认的决策 / 与文档的偏差（2026-11-27）
 | 项 | 结论 |
@@ -394,13 +394,13 @@
 | AC-2 | 通过 | `tsc --noEmit`、`npm run lint`（Biome，0 错误/0 警告）、`npm run build` 通过，vitest **131 passed**。 |
 | AC-3 | 通过 | `gen:api` 无漂移、`tsc`、vitest **321 passed**、`npm run build`、Biome 通过（既有 131 条 Biome warning 为基线，未新增）。 |
 | AC-4 | 通过 | 独立 schema 中：①`alembic upgrade head` 全新库成功（`test_alembic_migrations` 亦过）；②升到 0006 后插入历史用户/画像/会话/KB 任务数据，并还原成 0007 之前的结构，再 `upgrade head` → 0009，历史行全部完整（会话 `session_state` 回填 `{}`、旧消息结构可读、KB 任务 `triggered_by_uid` 为空）；③再执行 `downgrade` 到 0006 与重新 `upgrade head` 均无报错、数据保留。注意 0001 使用 `metadata.create_all`，所以“滚动升级”实际是在 0007–0009 三个增量迁移上演练。 |
-| AC-5 | 通过（见下方范围说明） | 独立 schema `m9_acceptance` + 干净 venv 后端 + 真实网关 `server.ts` + 脚本化 mock 上游，重跑 M4–M8 全部验收脚本：M4 AC-1~7 全过；M5 AC-1~6 全过；M6 AC-2~6 通过，AC-1 脚本断言“只拆 1 段”与种子（两小节各 13000 字）不符而误报 FAIL，实际 4 段（`[0,6314]`/`[6314,13000]` ×2）满足标准，与 M6 记录一致；M7 阶段 A/B/C 全过（视频检索未配置 → 逐节“暂无视频”降级且 composed 不受影响）；M8 AC-1~5 全过。全程后端日志 **0 个 500/Traceback**，各场景用量日志入库（如 chat_profile 10 行）。 |
+| AC-5 | 通过 | **浏览器走查（后补，Vite 5173 + 干净后端 + 真实网关 + 脚本化 mock 上游）**：①新学生在登录页登录 → 进入萌芽首页，对话框模型切换器显示“未配置模型” → 发送消息得到红色错误条“尚未配置可用的个人模型，请先前往[模型配置]完成设置”及“去配置模型”卡片（链接到 `/settings/models`）→ 在页面里新增自定义 Provider（Key 仅回显 `••••0001`）+ 新增模型 `relay-main` → 点“测试连接”探针：文本 ✔ 93 ms、工具调用 ✗（mock 不支持）、视觉未声明 → 选主力模型并“保存配置”（提示下一轮对话立即生效）→ 返回对话，切换器显示 `relay-main`，发送“我大三”后经 Supervisor → 画像智能体，页面出现“基础信息/年级=大三 已确认/采集中”卡片，进度条“生成完成·8 个步骤”。网络面板中登录后所有 `/api/*` 均 200（仅登录页预取的 2 个 401 属未登录状态）、后端日志 0 个 500、`user_model_usage_log` 写入 `chat_profile` 记录。另注：该输入框按 Enter 不发送，需点发送按钮（沿用既有行为，非 M9 改动）。**脚本部分**： | 独立 schema `m9_acceptance` + 干净 venv 后端 + 真实网关 `server.ts` + 脚本化 mock 上游，重跑 M4–M8 全部验收脚本：M4 AC-1~7 全过；M5 AC-1~6 全过；M6 AC-2~6 通过，AC-1 脚本断言“只拆 1 段”与种子（两小节各 13000 字）不符而误报 FAIL，实际 4 段（`[0,6314]`/`[6314,13000]` ×2）满足标准，与 M6 记录一致；M7 阶段 A/B/C 全过（视频检索未配置 → 逐节“暂无视频”降级且 composed 不受影响）；M8 AC-1~5 全过。全程后端日志 **0 个 500/Traceback**，各场景用量日志入库（如 chat_profile 10 行）。 |
 | AC-6 | 通过 | 后补：启动本机 Docker Desktop 后，按 CI 流程实跑：`compose config` OK → `build`（backend/ai-gateway/nginx 镜像）OK → `up postgres` + `run migrate` OK → `up --wait backend worker nginx` 全部 healthy（含 ai-gateway healthy）→ `run --rm smoke` 输出 “CI smoke checks passed” → 经 nginx 访问 `/internal/health` 得 **404**、`/api/ai/health/live` 得 200；网关 `/ready` 200。另在有 Docker 条件下重跑 `test_compose_config`、`test_bootstrap`、`test_nginx_config`（含 nginx 容器 `nginx -t`）、`test_smoke`、`test_deploy_rollback`、`test_deployment_docs` 全过；`test_nginx_config.sh` 因 compose 现要求 `INTERNAL_API_TOKEN`/`MODEL_SECRET_ENCRYPTION_KEY` 而补了测试环境变量。测试栈已 `down -v` 清除。网关生产产物另做过 `node dist/server.js` 实跑。 |
 | AC-7 | 通过 | 四份文档已按最终代码核对更新；`deploy` 文档同步。 |
 
 ### 未验证项 / 已知遗留
 - 未覆盖：真实服务器（腾讯云）上的域名/IP 证书与外网访问，仅在本机 CI 配置（bootstrap 模式 Nginx）下验证。
-- AC-5 的 ①（新学生登录、未配置模型拦截跳转、探针）在 M9 里用 API 层脚本验证（各脚本经真实 `/api/model-config` 配置 mock、未配置时返回 `MODEL_NOT_CONFIGURED`），**浏览器侧的完整 UI 走查沿用 M3/M4 的记录，未在 M9 重新逐步点击**。
+- AC-5 的浏览器走查仅覆盖到阶段 ①②（登录、拦截、配置、探针、画像采集首轮）；阶段 ③~⑧ 的 UI 点击未重做，由 API/SSE 级脚本覆盖（M3–M8 各自也做过相应页面验证）。
 - **所有模型行为均为脚本化 mock，真实模型输出质量、真实 B 站/YouTube 检索未验证**；任何真实上游问题需用真实配置再测。
 - Python 测试数量下降（984→514）为主动删除旧编排测试所致，覆盖由网关测试承接，但并非逐项对应。
 - 前端 131 条 Biome 基线 warning 未处理。
