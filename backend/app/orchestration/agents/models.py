@@ -696,6 +696,18 @@ class SectionItem(BaseModel):
         description="绑定教材小节标题",
     )
     source_content_chars: int = Field(ge=0, description="绑定教材正文字符数")
+    source_chunk_index: int | None = Field(
+        default=None, ge=1, description="超长教材小节被拆分后的分段序号（从 1 开始）"
+    )
+    source_chunk_total: int | None = Field(
+        default=None, ge=2, description="超长教材小节被拆分成的分段总数"
+    )
+    source_char_range: list[int] | None = Field(
+        default=None,
+        min_length=2,
+        max_length=2,
+        description="分段在教材小节正文中的字符区间 [起, 止)",
+    )
 
     @field_validator(
         "section_id", "title", "source_textbook_id", "source_textbook_title"

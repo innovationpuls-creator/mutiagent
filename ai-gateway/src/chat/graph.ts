@@ -6,6 +6,7 @@ import type { AgentStreamHandle, ModelRuntime } from "../models/runtime.js";
 import type { SseEventName, SsePayload } from "../sse.js";
 import { type IntakeDraft, readIntake } from "./intakeContract.js";
 import { runIntakeAgent } from "./intakeAgent.js";
+import { runOutlineAgent } from "./outlineAgent.js";
 import { runPathAgent } from "./pathAgent.js";
 import { runProfileAgent } from "./profileAgent.js";
 import { isCompleteProfile } from "./profileContract.js";
@@ -39,6 +40,7 @@ const ChatState = Annotation.Root({
 	/** Set when a confirmed draft flows into the path node within the same request. */
 	confirmedIntake: Annotation<IntakeDraft | null>({ ...last<IntakeDraft | null>(), default: () => null }),
 	pathGenerated: Annotation<boolean>({ ...last<boolean>(), default: () => false }),
+	outlineGenerated: Annotation<boolean>({ ...last<boolean>(), default: () => false }),
 	/** Retryable failure to surface as an SSE error after the turn is persisted. */
 	failure: Annotation<string | null>({ ...last<string | null>(), default: () => null }),
 });
@@ -123,10 +125,22 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 		if (result.kind === "handoff") {
 			const { handoff } = result;
 			const agent =
-				handoff.kind === "profile_agent" ? "profile_agent" : handoff.kind === "intake" ? "learning_path_intake" : handoff.target;
+				handoff.kind === "profile_agent"
+					? "profile_agent"
+					: handoff.kind === "intake"
+						? "learning_path_intake"
+						: handoff.kind === "outline"
+							? "course_knowledge"
+							: handoff.target;
 			emit("supervisor_plan", { agent, label: AGENT_LABELS[agent] ?? agent, reason: handoff.reason || `调用 ${AGENT_LABELS[agent] ?? agent}` });
 			const goto =
-				handoff.kind === "profile_agent" ? "profile_agent" : handoff.kind === "intake" ? "intake_agent" : "legacy_bridge";
+				handoff.kind === "profile_agent"
+					? "profile_agent"
+					: handoff.kind === "intake"
+						? "intake_agent"
+						: handoff.kind === "outline"
+							? "outline_agent"
+							: "legacy_bridge";
 			return new Command({ goto, update: { handoff } });
 		}
 		return new Command({ goto: "finalize", update: { response: result.text || FALLBACK_ANSWER } });
@@ -251,6 +265,48 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 		});
 	}
 
+	async function outlineAgent(state: State, config: LangGraphRunnableConfig) {
+		const emit = writerOf(config);
+		const stepId = "course-knowledge-agent";
+		const label = "课程大纲智能体";
+		const courseRef = state.handoff?.kind === "outline" ? state.handoff.courseRef : "";
+		emit("agent_calling", { stepId, kind: "agent", agent: "course_knowledge", label, message: "正在生成课程大纲" });
+		pathHandle ??= await deps.runtime.agentStream(deps.userUid, "path_outline");
+		const outcome = await runOutlineAgent({
+			handle: pathHandle,
+			backend: deps.backend,
+			userUid: deps.userUid,
+			courseRef,
+			userText: deps.query,
+			signal: deps.signal,
+			emitProgress: (message) => emit("agent_progress", { stepId, agent: "course_knowledge", message }),
+		});
+		const ok = outcome.kind === "generated";
+		emit("agent_result", {
+			stepId,
+			kind: "agent",
+			agent: "course_knowledge",
+			label,
+			success: ok,
+			summary: ok
+				? outcome.failures.length > 0
+					? `已生成 ${outcome.savedCourseIds.length} 门课程大纲，${outcome.failures.length} 门失败`
+					: "课程大纲已生成"
+				: "课程大纲未生成",
+		});
+		if (ok) {
+			emit("data_update", {
+				update_type: "course_knowledge_generated",
+				label: "课程大纲",
+				grade_year: outcome.gradeYear,
+				course_ids: outcome.savedCourseIds,
+				summary: "课程大纲已保存",
+			});
+		}
+		emit("text_chunk", { chunk: outcome.text });
+		return new Command({ goto: "finalize", update: { response: outcome.text, outlineGenerated: ok } });
+	}
+
 	async function legacyBridge(_state: State, config: LangGraphRunnableConfig) {
 		deps.progress.bridged = true;
 		const response = await deps.backend.openLegacyStream(
@@ -303,17 +359,18 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 			session_id: deps.sessionId,
 			has_profile: state.hasProfile || info.hasProfile,
 			has_paths: info.hasPaths || state.pathGenerated,
-			has_outline: info.hasOutline,
+			has_outline: info.hasOutline || state.outlineGenerated,
 		});
 		return {};
 	}
 
 	return new StateGraph(ChatState)
 		.addNode("entry", entry, { ends: ["supervisor", "legacy_bridge"] })
-		.addNode("supervisor", supervisor, { ends: ["profile_agent", "intake_agent", "legacy_bridge", "finalize"] })
+		.addNode("supervisor", supervisor, { ends: ["profile_agent", "intake_agent", "outline_agent", "legacy_bridge", "finalize"] })
 		.addNode("profile_agent", profileAgent, { ends: ["finalize"] })
 		.addNode("intake_agent", intakeAgent, { ends: ["learning_path_agent", "finalize"] })
 		.addNode("learning_path_agent", learningPathAgent, { ends: ["finalize"] })
+		.addNode("outline_agent", outlineAgent, { ends: ["finalize"] })
 		.addNode("legacy_bridge", legacyBridge)
 		.addNode("finalize", finalize)
 		.addEdge(START, "entry")

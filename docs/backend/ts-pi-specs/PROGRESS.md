@@ -230,3 +230,48 @@
 - 旧 Python 的 `learning_path_intake.py` / `learning_path.py` 及其关键词拦截器仍在仓库中（旧流水线 `legacy-stream` 对 M6/M7 的委派仍会加载它们），按计划在 M9 统一清理；装配函数目前是从旧模块里 import 的私有函数。
 - “画像首次完成后自动流转到课程草案”（M4 遗留）：仍由前端“进入学习路径草案智能体”按钮触发下一轮，主管在 B 阶段会委派草案智能体；未做同轮自动衔接。
 - Nginx/Docker 与 Playwright e2e 未运行（同 M4）。
+
+## M6：课程大纲智能体与教材章节拆分
+
+状态：**已完成并提交**（AC-1~6 通过；模型侧均为脚本化 mock 上游，见「未验证项」）
+
+### 已确认的决策 / 与文档的偏差（2026-11-27）
+| 项 | 结论 |
+|---|---|
+| 节点与流转 | 主图新增 `outline_agent`。`delegate_course_knowledge` 不再走旧流水线桥接，改为带 `course_ref`（课程名称/ID；`__all_current_grade__` 表示本年级全部课程；留空为当前课程）的 `Command({goto: "outline_agent"})`，处理完直接 `finalize`。桥接现只剩 `delegate_course_resources` 与显式资源协议（M7 移除） |
+| 偏差 1：确定性部分留在 Python | 同 M5 原则：骨架构建、教材可见性门禁、文案合规校验、指纹校验与批量保存全部在 Python（`app/services/outline_service.py`，复用旧 `course_knowledge.py` 里已被测试覆盖的私有函数），经 3 个内部接口暴露：`POST /internal/students/{uid}/outline-source-context`、`…/course-outlines/compose`（校验模型命名并装配大纲，422 附中文原因）、`…/course-outlines/batch`（指纹不符 409）。模型侧（命名、并发调度、自纠、进度与部分成功）全部在 TS（`outlineAgent.ts`） |
+| 超长小节自动拆分 | 教材小节正文 >8000 字时拆成多个学生端小节：目标 4000–7000 字/段、硬上限 8000，优先在段落末断开，其次句末，最后才硬切（尾段仍超限则递归再拆）。每段带 `source_chunk_index` / `source_chunk_total` / `source_char_range=[起,止)`，`source_content_chars` 为该段字数。为此 `SectionItem` 新增 3 个可选字段（`extra="forbid"`，必须声明）。章节 ID 仍为 "1"、"1.1"、"1.2"… |
+| 模型只做命名 | 工具 `submit_outline_naming`：`personalization_summary` + 每个 section 的 `title/description/key_knowledge_points`。提示词里给出各 section 的教材来源标题与是否被拆分（“教材小节被拆成 N 个部分，这是第 K 部分”）。后端合规校验 = 旧版英文标题/内部字段检测 + 新增 `sec_*` 正则；不合规的具体原因回给模型，**同工具内自纠 1 次**（`MAX_NAMING_CORRECTIONS`），仍不合规则该课程记为失败 |
+| 并发与进度 | 全年级模式 `mapWithConcurrency`，默认并发 2（`concurrency` 参数可调到 3）；每门课完成/失败后发一条 `agent_progress`（“已完成《X》大纲（2/5）”）。大纲按路径顺序排序后一次 `batch` 保存（单事务，失败整体回滚） |
+| 部分成功 | 成功的课程保存；回复追加“以下课程大纲生成失败：《X》。…可以说“单独补生成《X》大纲”来重试”，`agent_result.success` 仍为 true（摘要写明“N 门失败”）。全部失败则不保存、回复失败提示。仅 `MODEL_OAUTH_EXPIRED` 会整体上抛（所有课程都会同样失败） |
+| 脏写保护 | `source-context` 返回该年级课程身份指纹（sha256），`batch` 在学生锁内逐条比对，不符 → 409，TS 回复“学习路径在生成期间已更新，本次大纲未保存，请重新生成课程大纲。”，不落任何大纲 |
+| 教材可见性门禁 | `source-context` 阶段就校验绑定教材已发布，否则 422（“《X》绑定的教材当前不可用（已下架或未发布），暂时无法生成课程大纲。”）；TS 把它直接作为回复、**不调用任何命名模型**，不发 `error` |
+| 回复文案 | 单课程以“课程大纲已生成：《课程名》”开头（前端卡片按此前缀挂载），全年级为“本年级 N 门课程的章节大纲已生成。”，后接“运用了…教材及内容”清单（取学生端中文章节标题，最多 8 个）。发 `data_update(course_knowledge_generated)`，会话 `has_outline` 本轮即为 true |
+| 模型场景 | 沿用 `path_outline` 槽位 |
+
+### 完成节点
+| 日期 | 节点 | 证据 |
+|---|---|---|
+| 2026-11-27 | Python：`outline_service.py`、`SectionItem` 拆分字段、3 个内部接口 | `ruff check`/`format` 通过；新增 `tests/test_internal_outline_api.py` 7 项（拆分算法含无断点 20000 字、鉴权、13000 字小节拆成 2 段且范围连续、按名称/默认选课、英文标题/`sec_1_1`/缺小节被拒、批量保存+指纹 409、教材下架 422）。测试里连跑 3 次确认无随机性 |
+| 2026-11-27 | 网关：`outlineAgent.ts`、图节点 `outline_agent`、主管 `course_ref` 委派、`BackendClient`/FakeBackend 扩展 | `tsc --noEmit` 与 `npm run build` 通过；`vitest` 11 文件 **98** 个通过（M5 末 86；新增 `outline.test.ts` 12，并把 M4 的“桥接”用例改为 `delegate_course_resources`） |
+| 2026-11-27 | 全量回归 | 后端 `pytest` **977** 通过（M5 末 970 + 新增 7；全量跑时用了 `-p no:logging`，9 个依赖 caplog 的用例因此报错，去掉该参数单独重跑全部通过）；`ruff check`/`format --check` 通过；前端无改动 |
+
+### 验收清单实测结果（2026-11-27）
+联调环境：独立 schema `m6_acceptance`（`alembic upgrade head` 实跑，测完已删除）+ Python 8000 + 网关 8100（真实 `server.ts`）+ 脚本化 mock 上游 9100（命名请求固定延迟 1.5 s，按课程名触发“纠错/失败”行为）。5 本已发布教材，第 1 本两个小节各 13000 字；每个账号经内部接口装配并保存 5 门课程的年级路径，经真实 `/api/model-config` 指向 mock。
+
+| 编号 | 结果 | 实测证据 |
+|---|---|---|
+| AC-1 | 通过 | 13000 字小节落库为 2 段：`source_char_range=[0,6314]` 与 `[6314,13000]`（连续、覆盖全文），`source_content_chars=6314/6686`（均 ≤8000），`source_chunk_index=[1,2]`、`source_chunk_total=2`，标题“第1.1部分的中文讲解/第1.2部分…”；教材两个小节各拆一次共 4 段，章节 ID 为 1、1.1、1.2、2、2.1、2.2。经学生端 `GET /api/chat/sessions/{id}` 读取到同一份大纲（6 个小节、4 个带拆分元数据）。（脚本自带的断言按“只拆 1 个小节”写成 2 段，因种子数据拆了 2 个小节而误报 FAIL，已核对数据本身满足验收标准） |
+| AC-2 | 通过 | mock 第一次提交的标题为“Complexity Analysis & sec_1_1”：回给模型的工具结果为“章节命名未通过，请修正后重新提交：章节 1 的可见文案包含教材内部编号（如 sec_1_1）…”，第 2 次提交中文标题通过；该课程共 2 次命名调用、无 `error` 事件，落库标题全为中文且不含 `sec_`/英文。单测另覆盖“英文标题”单独被拦截及“超出 1 次自纠 → 失败不保存” |
+| AC-3 | 通过 | 5 门课全年级模式：库里 5 条大纲；SSE 里 5 条 `agent_progress`（“已完成《…》大纲（1/5）”…“（5/5）”）；总耗时 **4.6 s**，对比串行仅模型延迟就需 7.5 s（5×1.5 s）；5 次命名调用在 3.0 s 窗口内陆续发起（并发 2：3 个批次）；回复以“本年级 5 门课程的章节大纲已生成。”开头 |
+| AC-4 | 通过 | 第 5 门课命名始终英文：库里只有 1–4 门的 4 条大纲（学生端读取正常）；进度含“《图结构失败课》大纲生成失败（5/5）”；回复结尾“以下课程大纲生成失败：《图结构失败课》。已生成的大纲不受影响，你可以说“单独补生成《图结构失败课》大纲”来重试。”；无 `error` 事件 |
+| AC-5 | 通过 | 生成进行中（约 2.5 s 时）经内部接口修改该年级课程目标（指纹改变）：保存被拒，库里大纲 **0 行**，回复“学习路径在生成期间已更新，本次大纲未保存，请重新生成课程大纲。”，仍正常 `session_completed`。Python 单测另验证 409 与该文案 |
+| AC-6 | 通过 | 把教材置为 `archived` 后请求当前课程大纲：模型调用共 **1 次**（仅主管路由）、命名调用 0 次、大纲 0 行，回复“《数据结构入门与复杂度基础》绑定的教材当前不可用（已下架或未发布），暂时无法生成课程大纲。”，无 `error` 事件 |
+
+### 未验证项 / 已知遗留
+- **真实模型**：全部为脚本化 mock，验证的是工具门禁、合规校验与自纠、并发调度、拆分、保存与流式链路，**未**评估真实模型的中文命名质量、对“不得出现英文教材标题/`sec_*`”的遵循度，以及拆分段之间标题递进是否自然。
+- “单独补生成《XXX》大纲”只验证了文案与 `course_ref=课程名` 的选课路径（后端按名称选课有单测），**未**用 mock 脚本真实跑一遍“失败后补生成成功”的第二轮对话。
+- 文档里“学生直接要求生成教学内容但还没有大纲 → `Command` 跳到 M7 资源子图”未做：M7 尚未开发，当前该请求仍由主管按门禁回答（无大纲时没有 `delegate_course_resources` 工具）；待 M7 衔接。
+- 全年级并发默认 2，未做并发 3 的压测；`mapWithConcurrency` 有单测（峰值=2、耗时明显低于串行）。
+- 旧 Python `course_knowledge.py` 仍在仓库中（`legacy-stream` 对资源协议的桥接仍会加载整个旧编排），其私有函数被 `outline_service.py` 直接 import，按计划在 M9 清理时迁成独立服务模块。
+- Nginx/Docker 与 Playwright e2e 未运行；前端无改动，未在浏览器里重新渲染拆分后的大纲卡片（仅验证了学生端 API 返回）。

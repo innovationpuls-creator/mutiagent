@@ -56,6 +56,36 @@ export interface ChatContext {
 	course_knowledge: Record<string, unknown> | null;
 }
 
+export interface OutlineSkeletonSection {
+	section_id: string;
+	parent_section_id: string | null;
+	depth: number;
+	source_textbook_title?: string;
+	source_section_titles?: string[];
+	source_content_chars?: number;
+	source_chunk_index?: number | null;
+	source_chunk_total?: number | null;
+	source_char_range?: number[] | null;
+	[key: string]: unknown;
+}
+
+export interface OutlineSourceCourse {
+	course_node_id: string;
+	course_name: string;
+	grade_year: string;
+	source_textbook_id: string;
+	source_textbook_title: string;
+	naming_context: Record<string, unknown>;
+	skeleton: OutlineSkeletonSection[];
+}
+
+export interface OutlineSourceContext {
+	grade_year: string;
+	current_course_id: string;
+	path_fingerprints: Record<string, string>;
+	courses: OutlineSourceCourse[];
+}
+
 export interface TurnPayload {
 	user_message: string;
 	image_attachment?: string | null;
@@ -126,6 +156,17 @@ export interface BackendClient {
 		learningTopic: string,
 		pathData: Record<string, unknown>,
 	): Promise<void>;
+	getOutlineSourceContext(userUid: string, courseRef: string): Promise<OutlineSourceContext>;
+	composeOutline(
+		userUid: string,
+		course: OutlineSourceCourse,
+		naming: Record<string, unknown>,
+	): Promise<{ outline: Record<string, unknown> }>;
+	saveOutlines(
+		userUid: string,
+		pathFingerprints: Record<string, string>,
+		outlines: Record<string, unknown>[],
+	): Promise<{ saved_course_ids: string[] }>;
 	getInternalHealth(): Promise<BackendHealth>;
 	getChatContext(sessionId: string, userUid: string): Promise<ChatContext>;
 	persistTurn(sessionId: string, userUid: string, turn: TurnPayload): Promise<{ persisted: string }>;
@@ -282,6 +323,21 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 				{ method: "PUT", body: { learning_topic: learningTopic, path_data: pathData } },
 			);
 		},
+		getOutlineSourceContext: (userUid, courseRef) =>
+			request<OutlineSourceContext>(
+				`/internal/students/${encodeURIComponent(userUid)}/outline-source-context`,
+				{ method: "POST", body: { course_id: courseRef }, timeoutMs: 30_000 },
+			),
+		composeOutline: (userUid, course, naming) =>
+			request<{ outline: Record<string, unknown> }>(
+				`/internal/students/${encodeURIComponent(userUid)}/course-outlines/compose`,
+				{ method: "POST", body: { course, naming } },
+			),
+		saveOutlines: (userUid, pathFingerprints, outlines) =>
+			request<{ saved_course_ids: string[] }>(
+				`/internal/students/${encodeURIComponent(userUid)}/course-outlines/batch`,
+				{ method: "POST", body: { path_fingerprints: pathFingerprints, outlines }, timeoutMs: 60_000 },
+			),
 		getLearningOverview: (userUid) =>
 			request<LearningOverview>(`/internal/students/${encodeURIComponent(userUid)}/learning-overview`),
 		// A turn can legitimately run for minutes; the signal (client disconnect) bounds it.

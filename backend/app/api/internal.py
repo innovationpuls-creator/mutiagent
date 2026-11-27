@@ -21,6 +21,7 @@ from app.models import User
 from app.services import chat_context_service as chat_service
 from app.services import learning_path_runtime_service as path_service
 from app.services import model_config_service as model_service
+from app.services import outline_service
 
 INTERNAL_TOKEN_HEADER = "X-Internal-Token"
 
@@ -52,6 +53,20 @@ class AssemblePathPayload(BaseModel):
 class SaveYearPathPayload(BaseModel):
     learning_topic: str = Field(min_length=1)
     path_data: dict
+
+
+class OutlineSourcePayload(BaseModel):
+    course_id: str = Field(default="", max_length=200)
+
+
+class ComposeOutlinePayload(BaseModel):
+    course: dict
+    naming: dict
+
+
+class SaveOutlinesPayload(BaseModel):
+    path_fingerprints: dict[str, str]
+    outlines: list[dict] = Field(min_length=1)
 
 
 class LegacyStreamPayload(BaseModel):
@@ -276,6 +291,42 @@ def create_internal_router(engine: Engine, internal_token: str | None) -> APIRou
                 session, user_uid, grade_year, payload.learning_topic, payload.path_data
             )
             return {"ok": True, "grade_year": grade_year}
+
+    @router.post("/students/{user_uid}/outline-source-context")
+    def outline_source_context(user_uid: str, payload: OutlineSourcePayload) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            try:
+                return outline_service.source_context(
+                    session, user_uid, payload.course_id
+                )
+            except outline_service.OutlineSourceError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    @router.post("/students/{user_uid}/course-outlines/compose")
+    def compose_course_outline(user_uid: str, payload: ComposeOutlinePayload) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+        try:
+            return {
+                "outline": outline_service.compose_outline(
+                    payload.course, payload.naming
+                )
+            }
+        except (ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    @router.post("/students/{user_uid}/course-outlines/batch")
+    def save_course_outlines(user_uid: str, payload: SaveOutlinesPayload) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            try:
+                saved = outline_service.save_outlines(
+                    session, user_uid, payload.path_fingerprints, payload.outlines
+                )
+            except outline_service.PathChangedError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from None
+            return {"saved_course_ids": saved}
 
     @router.post("/chat/sessions/{session_id}/legacy-stream")
     async def legacy_stream(

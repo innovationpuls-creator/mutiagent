@@ -3,6 +3,7 @@ import type {
 	BackendClient,
 	ChatContext,
 	LearningOverview,
+	OutlineSourceContext,
 	ProtectedCourse,
 	RawProgressSnapshot,
 	TextbookContext,
@@ -48,6 +49,15 @@ export interface FakeBackend extends BackendClient {
 	assembleFailures: string[];
 	assembled: Array<{ gradeYear: string; plan: any }>;
 	savedPaths: Array<{ userUid: string; gradeYear: string; topic: string; path: Record<string, unknown> }>;
+	/** Source context served to the outline agent; a string makes the lookup answer 422 with it. */
+	outlineContext: OutlineSourceContext | string;
+	outlineLookups: string[];
+	/** Course names whose compose should always answer 422 (simulates an unrecoverable failure). */
+	composeAlwaysFail: Set<string>;
+	composed: Array<{ course: string; naming: any }>;
+	savedOutlines: Array<{ pathFingerprints: Record<string, string>; outlines: Record<string, unknown>[] }>;
+	/** When true the batch save answers 409 (path changed meanwhile). */
+	saveConflict: boolean;
 }
 
 export function fakeBackend(): FakeBackend {
@@ -72,6 +82,44 @@ export function fakeBackend(): FakeBackend {
 		assembleFailures: [],
 		assembled: [],
 		savedPaths: [],
+		outlineContext: "请先生成学习路径。",
+		outlineLookups: [],
+		composeAlwaysFail: new Set(),
+		composed: [],
+		savedOutlines: [],
+		saveConflict: false,
+		async getOutlineSourceContext(_userUid, courseRef) {
+			backend.outlineLookups.push(courseRef);
+			if (typeof backend.outlineContext === "string") throw new BackendBusinessError(422, backend.outlineContext);
+			return structuredClone(backend.outlineContext);
+		},
+		async composeOutline(_userUid, course, naming: any) {
+			backend.composed.push({ course: course.course_name, naming });
+			if (backend.composeAlwaysFail.has(course.course_name)) throw new BackendBusinessError(422, "章节命名始终不合规。");
+			const texts = (naming.section_texts ?? {}) as Record<string, any>;
+			const missing = course.skeleton.filter((s) => !texts[s.section_id]).map((s) => s.section_id);
+			if (missing.length > 0) throw new BackendBusinessError(422, `缺少章节文案：${missing.join("、")}`);
+			for (const [id, t] of Object.entries(texts)) {
+				const visible = `${t.title}\n${t.description}\n${(t.key_knowledge_points ?? []).join("\n")}`;
+				if (/sec_\d/i.test(visible)) throw new BackendBusinessError(422, `章节 ${id} 的可见文案包含教材内部编号（如 sec_1_1）。`);
+				if (/[A-Za-z]{4,}/.test(visible)) throw new BackendBusinessError(422, "课程大纲可见文案不能直接暴露英文教材标题。");
+			}
+			return {
+				outline: {
+					course_id: course.course_node_id,
+					course_name: course.course_name,
+					grade_year: course.grade_year,
+					personalization_summary: naming.personalization_summary,
+					sections: course.skeleton.map((s) => ({ ...s, title: texts[s.section_id].title })),
+				},
+			};
+		},
+		async saveOutlines(_userUid, pathFingerprints, outlines) {
+			if (backend.saveConflict) throw new BackendBusinessError(409, "学习路径已更新，请重新生成课程大纲。");
+			backend.order.push("save_outlines");
+			backend.savedOutlines.push({ pathFingerprints, outlines });
+			return { saved_course_ids: outlines.map((o) => String(o.course_id)) };
+		},
 		async getTextbookContext(topic) {
 			backend.textbookLookups.push(topic);
 			backend.order.push("textbooks");

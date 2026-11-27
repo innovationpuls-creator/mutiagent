@@ -12,8 +12,9 @@ export type Stage = "A" | "B" | "C";
 export type Handoff =
 	| { kind: "profile_agent"; reason: string }
 	| { kind: "intake"; reason: string }
-	/** Not migrated yet (M6-M7): the Python legacy pipeline still owns these. */
-	| { kind: "legacy"; target: "course_knowledge" | "course_resources"; reason: string };
+	| { kind: "outline"; courseRef: string; reason: string }
+	/** Not migrated yet (M7): the Python legacy pipeline still owns resource generation. */
+	| { kind: "legacy"; target: "course_resources"; reason: string };
 
 export interface StageInfo {
 	stage: Stage;
@@ -43,6 +44,7 @@ export function gatedToolNames(info: StageInfo): string[] {
 }
 
 const REASON = obj({ reason: opt(str()) });
+const OUTLINE_ARGS = obj({ course_ref: opt(str()), reason: opt(str()) });
 const NO_ARGS = obj({});
 
 const STAGE_HINT: Record<Stage, string> = {
@@ -140,11 +142,21 @@ export async function runSupervisor(input: SupervisorInput): Promise<SupervisorR
 			"委派课程草案智能体：生成/修改/确认课程草案；草案确认后会在同一轮自动生成按年学习路径。学生想规划、调整课程或回应草案时调用。",
 			(reason) => ({ kind: "intake", reason }),
 		),
-		delegate_course_knowledge: delegate(
-			"delegate_course_knowledge",
-			"委派课程大纲智能体：为学生当前课程生成或重新生成课程大纲。",
-			(reason) => ({ kind: "legacy", target: "course_knowledge", reason }),
-		),
+		delegate_course_knowledge: {
+			name: "delegate_course_knowledge",
+			label: "delegate_course_knowledge",
+			description:
+				"委派课程大纲智能体：生成或重新生成课程大纲。course_ref 可填课程名称或课程 ID；学生要“本学年/所有课程”的大纲时填 __all_current_grade__；不填则为学生当前课程。",
+			parameters: OUTLINE_ARGS,
+			async execute(_id, params: any) {
+				handoff = {
+					kind: "outline",
+					courseRef: String(params?.course_ref ?? "").trim(),
+					reason: String(params?.reason ?? "").trim(),
+				};
+				return text("已委派，本轮由对应智能体接手。", { terminate: true });
+			},
+		},
 		delegate_course_resources: delegate(
 			"delegate_course_resources",
 			"委派课程资源智能体：为已有大纲的章节生成教学文档、视频与动画资源。",
