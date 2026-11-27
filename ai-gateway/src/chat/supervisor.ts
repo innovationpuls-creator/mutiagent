@@ -13,8 +13,7 @@ export type Handoff =
 	| { kind: "profile_agent"; reason: string }
 	| { kind: "intake"; reason: string }
 	| { kind: "outline"; courseRef: string; reason: string }
-	/** Not migrated yet (M7): the Python legacy pipeline still owns resource generation. */
-	| { kind: "legacy"; target: "course_resources"; reason: string };
+	| { kind: "resources"; chapterRef: string; reason: string };
 
 export interface StageInfo {
 	stage: Stage;
@@ -45,6 +44,7 @@ export function gatedToolNames(info: StageInfo): string[] {
 
 const REASON = obj({ reason: opt(str()) });
 const OUTLINE_ARGS = obj({ course_ref: opt(str()), reason: opt(str()) });
+const RESOURCE_ARGS = obj({ chapter_section_id: opt(str()), reason: opt(str()) });
 const NO_ARGS = obj({});
 
 const STAGE_HINT: Record<Stage, string> = {
@@ -157,11 +157,21 @@ export async function runSupervisor(input: SupervisorInput): Promise<SupervisorR
 				return text("已委派，本轮由对应智能体接手。", { terminate: true });
 			},
 		},
-		delegate_course_resources: delegate(
-			"delegate_course_resources",
-			"委派课程资源智能体：为已有大纲的章节生成教学文档、视频与动画资源。",
-			(reason) => ({ kind: "legacy", target: "course_resources", reason }),
-		),
+		delegate_course_resources: {
+			name: "delegate_course_resources",
+			label: "delegate_course_resources",
+			description:
+				"委派课程资源智能体：为当前课程已有大纲的一章生成教学文档、视频与动画资源。chapter_section_id 填章节编号（如 1、2）；不填则为当前可生成的章节。",
+			parameters: RESOURCE_ARGS,
+			async execute(_id, params: any) {
+				handoff = {
+					kind: "resources",
+					chapterRef: String(params?.chapter_section_id ?? "").trim(),
+					reason: String(params?.reason ?? "").trim(),
+				};
+				return text("已委派，本轮由对应智能体接手。", { terminate: true });
+			},
+		},
 		get_student_progress_summary: readOnly(
 			"get_student_progress_summary",
 			"查询学习进度",

@@ -1076,8 +1076,20 @@ def get_published_textbook_context_for_topic(
     return {"textbooks": [], "gap_id": gap.gap_id}
 
 
+def _slice_evidence(texts: list[str], char_range: tuple[int, int] | None) -> list[str]:
+    """M6 split sections: evidence is the section's own slice of one source section."""
+    if char_range is None:
+        return texts
+    if len(texts) != 1:
+        raise ValueError("拆分小节只能绑定一个教材小节。")
+    return [texts[0][char_range[0] : char_range[1]]]
+
+
 def get_textbook_evidence_pack(
-    session: Session, textbook_id: str, section_ids: list[str]
+    session: Session,
+    textbook_id: str,
+    section_ids: list[str],
+    char_range: tuple[int, int] | None = None,
 ) -> dict:
     textbook = session.get(Textbook, textbook_id)
     if textbook is None:
@@ -1107,6 +1119,7 @@ def get_textbook_evidence_pack(
         raise ValueError("教材小节必须连续。")
 
     evidence_texts = [_section_available_content(row) for row in ordered_sections]
+    evidence_texts = _slice_evidence(evidence_texts, char_range)
     if any(not text.strip() for text in evidence_texts):
         create_or_update_knowledge_gap(session, textbook_id)
         raise ValueError("证据包为空。")

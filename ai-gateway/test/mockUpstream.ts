@@ -15,6 +15,8 @@ export interface MockUpstream {
 	reply: string;
 	/** Scripted 200 replies consumed in order: plain text or one tool call. */
 	queue: Array<{ text: string } | { tool: string; args: Record<string, unknown> }>;
+	/** Consulted first: lets a test answer by request content when call order is not deterministic. */
+	respond?: (body: Record<string, any>) => { text: string } | { tool: string; args: Record<string, unknown> } | undefined;
 	close(): Promise<void>;
 }
 
@@ -47,7 +49,7 @@ export async function startMockUpstream(): Promise<MockUpstream> {
 			res.writeHead(200, { "content-type": "text/event-stream" });
 			const send = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 			const base = { id: "c1", object: "chat.completion.chunk", created: 1, model: body.model };
-			const scripted = state.queue.shift();
+			const scripted = state.respond?.(body) ?? state.queue.shift();
 			if (scripted && "tool" in scripted) {
 				send({ ...base, choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: `call_${state.requests.length}`, type: "function", function: { name: scripted.tool, arguments: JSON.stringify(scripted.args) } }] }, finish_reason: null }] });
 				send({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } });

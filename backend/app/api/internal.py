@@ -21,7 +21,7 @@ from app.models import User
 from app.services import chat_context_service as chat_service
 from app.services import learning_path_runtime_service as path_service
 from app.services import model_config_service as model_service
-from app.services import outline_service
+from app.services import outline_service, resource_service
 
 INTERNAL_TOKEN_HEADER = "X-Internal-Token"
 
@@ -67,6 +67,35 @@ class ComposeOutlinePayload(BaseModel):
 class SaveOutlinesPayload(BaseModel):
     path_fingerprints: dict[str, str]
     outlines: list[dict] = Field(min_length=1)
+
+
+class PreparePayload(BaseModel):
+    mode: str = "generate"
+
+
+class PromptPayload(BaseModel):
+    issue: str = ""
+    regeneration_focus: str = ""
+    previous_html: str = ""
+
+
+class ValidateMarkdownPayload(BaseModel):
+    raw_output: str
+
+
+class ValidateAnimationPayload(BaseModel):
+    animations: list[dict] = Field(default_factory=list)
+    fallback: bool = False
+
+
+class SectionResourcePayload(BaseModel):
+    phase: str
+    value: dict | None = None
+    failure: str = ""
+
+
+class FinishPayload(BaseModel):
+    succeeded_section_ids: list[str] = Field(default_factory=list)
 
 
 class LegacyStreamPayload(BaseModel):
@@ -327,6 +356,130 @@ def create_internal_router(engine: Engine, internal_token: str | None) -> APIRou
             except outline_service.PathChangedError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from None
             return {"saved_course_ids": saved}
+
+    def _resource_call(user_uid: str, call):
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            try:
+                return call(session)
+            except resource_service.ResourceRequestError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    _RES = "/students/{user_uid}/courses/{course_id}"
+
+    @router.post(_RES + "/chapters/{chapter_id}/generation-prepare")
+    def generation_prepare(
+        user_uid: str, course_id: str, chapter_id: str, payload: PreparePayload
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.prepare_generation(
+                s, user_uid, course_id, chapter_id, payload.mode
+            ),
+        )
+
+    @router.post(_RES + "/chapters/{chapter_id}/generation-finish")
+    def generation_finish(
+        user_uid: str, course_id: str, chapter_id: str, payload: FinishPayload
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.finish_generation(
+                s, user_uid, course_id, chapter_id, payload.succeeded_section_ids
+            ),
+        )
+
+    @router.post(_RES + "/sections/{section_id}/markdown/prompt")
+    def section_markdown_prompt(
+        user_uid: str, course_id: str, section_id: str, payload: PromptPayload
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.markdown_prompt(
+                s,
+                user_uid,
+                course_id,
+                section_id,
+                payload.issue,
+                payload.regeneration_focus,
+            ),
+        )
+
+    @router.post(_RES + "/sections/{section_id}/markdown/validate")
+    def section_markdown_validate(
+        user_uid: str, course_id: str, section_id: str, payload: ValidateMarkdownPayload
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.validate_markdown(
+                s, user_uid, course_id, section_id, payload.raw_output
+            ),
+        )
+
+    @router.post(_RES + "/sections/{section_id}/video/search")
+    async def section_video_search(
+        user_uid: str, course_id: str, section_id: str
+    ) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            try:
+                return await resource_service.search_section_video(
+                    session, user_uid, course_id, section_id
+                )
+            except resource_service.ResourceRequestError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    @router.post(_RES + "/sections/{section_id}/animation/prompt")
+    def section_animation_prompt(
+        user_uid: str, course_id: str, section_id: str, payload: PromptPayload
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.animation_prompt(
+                s,
+                user_uid,
+                course_id,
+                section_id,
+                payload.issue,
+                payload.previous_html,
+            ),
+        )
+
+    @router.post(_RES + "/sections/{section_id}/animation/validate")
+    def section_animation_validate(
+        user_uid: str,
+        course_id: str,
+        section_id: str,
+        payload: ValidateAnimationPayload,
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.validate_animations(
+                s,
+                user_uid,
+                course_id,
+                section_id,
+                payload.animations,
+                fallback=payload.fallback,
+            ),
+        )
+
+    @router.put(_RES + "/sections/{section_id}/resources")
+    def put_section_resources(
+        user_uid: str, course_id: str, section_id: str, payload: SectionResourcePayload
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.save_section_phase(
+                s,
+                user_uid,
+                course_id,
+                section_id,
+                payload.phase,
+                payload.value,
+                payload.failure,
+            ),
+        )
 
     @router.post("/chat/sessions/{session_id}/legacy-stream")
     async def legacy_stream(

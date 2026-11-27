@@ -801,8 +801,16 @@ def _textbook_evidence_pack(outline: dict, section: dict) -> dict:
                     "source_textbook_id": source_textbook_id,
                 },
             )
+            char_range = section.get("source_char_range")
             evidence_pack = get_textbook_evidence_pack(
-                db_session, source_textbook_id, section_ids
+                db_session,
+                source_textbook_id,
+                section_ids,
+                (int(char_range[0]), int(char_range[1]))
+                if section.get("source_chunk_total")
+                and isinstance(char_range, list)
+                and len(char_range) == 2
+                else None,
             )
         except Exception as exc:
             logger.warning(

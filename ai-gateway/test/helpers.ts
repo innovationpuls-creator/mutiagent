@@ -5,6 +5,9 @@ import type {
 	LearningOverview,
 	OutlineSourceContext,
 	ProtectedCourse,
+	ResourcePhase,
+	ResourcePrepare,
+	ResourceSectionInfo,
 	RawProgressSnapshot,
 	TextbookContext,
 	TurnPayload,
@@ -58,6 +61,30 @@ export interface FakeBackend extends BackendClient {
 	savedOutlines: Array<{ pathFingerprints: Record<string, string>; outlines: Record<string, unknown>[] }>;
 	/** When true the batch save answers 409 (path changed meanwhile). */
 	saveConflict: boolean;
+	resource: FakeResources;
+}
+
+export interface FakeResources {
+	/** Overrides prepare outright (refused / needs_focus ...). */
+	prepareOverride: ResourcePrepare | null;
+	sections: string[];
+	locked: boolean;
+	prepares: Array<{ chapterRef: string; mode: string }>;
+	finishes: Array<{ chapterId: string; succeeded: string[] }>;
+	saves: Array<{ sectionId: string; phase: ResourcePhase; value?: unknown; failure?: string; at: number }>;
+	checkpoints: Map<string, Partial<Record<ResourcePhase, string>>>;
+	markdownFocus: string[];
+	validations: Array<{ sectionId: string; markdown: string }>;
+	/** Section ids whose animation (model and template) always fails. */
+	animationBroken: Set<string>;
+	/** Sections whose model animation fails validation but whose template works. */
+	animationNeedsTemplate: Set<string>;
+	videoMode: "available" | "unavailable" | "throws";
+	videoDelayMs: number;
+	videoSpans: Array<{ sectionId: string; start: number; end: number }>;
+	animationSpans: Array<{ sectionId: string; start: number; end: number }>;
+	failSaveOf: { sectionId: string; phase: ResourcePhase } | null;
+	markdownDelayMs: Record<string, number>;
 }
 
 export function fakeBackend(): FakeBackend {
@@ -88,6 +115,88 @@ export function fakeBackend(): FakeBackend {
 		composed: [],
 		savedOutlines: [],
 		saveConflict: false,
+		resource: {
+			prepareOverride: null,
+			sections: ["1.1", "1.2", "1.3"],
+			locked: false,
+			prepares: [],
+			finishes: [],
+			saves: [],
+			checkpoints: new Map(),
+			markdownFocus: [],
+			validations: [],
+			animationBroken: new Set(),
+			animationNeedsTemplate: new Set(),
+			videoMode: "available",
+			videoDelayMs: 40,
+			videoSpans: [],
+			animationSpans: [],
+			failSaveOf: null,
+			markdownDelayMs: {},
+		},
+		async prepareResourceGeneration(_uid, courseId, chapterRef, mode) {
+			const r = backend.resource;
+			r.prepares.push({ chapterRef, mode });
+			if (r.prepareOverride) return structuredClone(r.prepareOverride);
+			if (r.locked) return { status: "busy", message: "这一章正在生成。" };
+			r.locked = true;
+			const sections: ResourceSectionInfo[] = r.sections.map((id) => ({
+				section_id: id,
+				title: `小节 ${id}`,
+				checkpoints: { ...(r.checkpoints.get(id) ?? {}) },
+				has_composed: r.checkpoints.get(id)?.compose === "completed",
+				has_markdown: Boolean(r.checkpoints.get(id)?.markdown),
+			}));
+			return { status: "ready", course_id: courseId, course_name: "课程", chapter_section_id: chapterRef || "1", sections };
+		},
+		async finishResourceGeneration(_uid, _course, chapterId, succeeded) {
+			backend.resource.finishes.push({ chapterId, succeeded });
+			backend.resource.locked = false;
+		},
+		async getMarkdownPrompt(_uid, _course, _sectionId, focus) {
+			backend.resource.markdownFocus.push(focus);
+			await new Promise((r) => setTimeout(r, backend.resource.markdownDelayMs[_sectionId] ?? 0));
+			return { system_prompt: "你是小节教学文档智能体。", query: `请为小节 ${_sectionId} 生成文档。` };
+		},
+		async validateMarkdown(_uid, _course, sectionId, raw) {
+			backend.resource.validations.push({ sectionId, markdown: raw });
+			if (!raw.includes("## 学习目标")) return { ok: false, issue: "缺少“学习目标”标题。" };
+			return { ok: true, value: { section_id: sectionId, markdown: raw } };
+		},
+		async searchSectionVideo(_uid, _course, sectionId) {
+			const r = backend.resource;
+			const start = Date.now();
+			await new Promise((resolve) => setTimeout(resolve, r.videoDelayMs));
+			r.videoSpans.push({ sectionId, start, end: Date.now() });
+			if (r.videoMode === "throws") throw new BackendBusinessError(502, "视频源不可用");
+			if (r.videoMode === "unavailable") return { status: "unavailable", value: { section_id: sectionId, status: "unavailable", videos: [] } };
+			return { status: "available", value: { section_id: sectionId, status: "available", videos: [{ url: "https://example.test/v" }] } };
+		},
+		async getAnimationPrompt(_uid, _course, _sectionId) {
+			return { needed: true, system_prompt: "你是 HTML 动画智能体。", query: "请生成动画。" };
+		},
+		async validateAnimations(_uid, _course, sectionId, animations, fallback) {
+			const r = backend.resource;
+			const start = Date.now();
+			await new Promise((resolve) => setTimeout(resolve, 30));
+			r.animationSpans.push({ sectionId, start, end: Date.now() });
+			if (r.animationBroken.has(sectionId)) return { ok: false, issue: "动画结构不合格。" };
+			if (fallback) return { ok: true, value: { section_id: sectionId, animations: [{ animation_id: "anim_1", html: "<div class='section-animation'>template</div>" }] } };
+			if (r.animationNeedsTemplate.has(sectionId)) return { ok: false, issue: "缺少交互控件。" };
+			const first = (animations as Array<{ html?: string }>)[0];
+			if (!first?.html?.includes("section-animation")) return { ok: false, issue: "根节点必须包含 section-animation。" };
+			return { ok: true, value: { section_id: sectionId, animations } };
+		},
+		async saveSectionResource(_uid, _course, sectionId, body) {
+			const r = backend.resource;
+			if (r.failSaveOf && r.failSaveOf.sectionId === sectionId && r.failSaveOf.phase === body.phase && !body.failure) {
+				throw new BackendBusinessError(500, "存储异常");
+			}
+			r.saves.push({ sectionId, phase: body.phase, value: body.value, failure: body.failure, at: Date.now() });
+			const current = r.checkpoints.get(sectionId) ?? {};
+			current[body.phase] = body.failure ? "failed" : "completed";
+			r.checkpoints.set(sectionId, current);
+		},
 		async getOutlineSourceContext(_userUid, courseRef) {
 			backend.outlineLookups.push(courseRef);
 			if (typeof backend.outlineContext === "string") throw new BackendBusinessError(422, backend.outlineContext);

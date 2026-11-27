@@ -86,6 +86,28 @@ export interface OutlineSourceContext {
 	courses: OutlineSourceCourse[];
 }
 
+export type ResourcePhase = "markdown" | "video" | "animation" | "compose";
+
+export interface ResourceSectionInfo {
+	section_id: string;
+	title: string;
+	checkpoints: Partial<Record<ResourcePhase, string>>;
+	has_composed: boolean;
+	has_markdown: boolean;
+}
+
+export type ResourcePrepare =
+	| { status: "refused"; message: string }
+	| { status: "busy"; message: string }
+	| { status: "needs_focus"; chapter_section_id: string }
+	| {
+			status: "ready";
+			course_id: string;
+			course_name: string;
+			chapter_section_id: string;
+			sections: ResourceSectionInfo[];
+	  };
+
 export interface TurnPayload {
 	user_message: string;
 	image_attachment?: string | null;
@@ -167,6 +189,53 @@ export interface BackendClient {
 		pathFingerprints: Record<string, string>,
 		outlines: Record<string, unknown>[],
 	): Promise<{ saved_course_ids: string[] }>;
+	prepareResourceGeneration(
+		userUid: string,
+		courseId: string,
+		chapterRef: string,
+		mode: string,
+	): Promise<ResourcePrepare>;
+	finishResourceGeneration(
+		userUid: string,
+		courseId: string,
+		chapterId: string,
+		succeededSectionIds: string[],
+	): Promise<void>;
+	getMarkdownPrompt(
+		userUid: string,
+		courseId: string,
+		sectionId: string,
+		regenerationFocus: string,
+	): Promise<{ system_prompt: string; query: string }>;
+	validateMarkdown(
+		userUid: string,
+		courseId: string,
+		sectionId: string,
+		rawOutput: string,
+	): Promise<{ ok: true; value: Record<string, unknown> } | { ok: false; issue: string }>;
+	searchSectionVideo(
+		userUid: string,
+		courseId: string,
+		sectionId: string,
+	): Promise<{ status: "available" | "unavailable"; value: Record<string, unknown> }>;
+	getAnimationPrompt(
+		userUid: string,
+		courseId: string,
+		sectionId: string,
+	): Promise<{ needed: false } | { needed: true; system_prompt: string; query: string }>;
+	validateAnimations(
+		userUid: string,
+		courseId: string,
+		sectionId: string,
+		animations: unknown[],
+		fallback: boolean,
+	): Promise<{ ok: true; value: Record<string, unknown> } | { ok: false; issue: string }>;
+	saveSectionResource(
+		userUid: string,
+		courseId: string,
+		sectionId: string,
+		body: { phase: ResourcePhase; value?: Record<string, unknown> | null; failure?: string },
+	): Promise<void>;
 	getInternalHealth(): Promise<BackendHealth>;
 	getChatContext(sessionId: string, userUid: string): Promise<ChatContext>;
 	persistTurn(sessionId: string, userUid: string, turn: TurnPayload): Promise<{ persisted: string }>;
@@ -219,6 +288,11 @@ async function readDetail(response: Response): Promise<string> {
 	}
 	return `后端请求失败（${response.status}）`;
 }
+
+const courseBase = (userUid: string, courseId: string) =>
+	`/internal/students/${encodeURIComponent(userUid)}/courses/${encodeURIComponent(courseId)}`;
+const sectionBase = (userUid: string, courseId: string, sectionId: string) =>
+	`${courseBase(userUid, courseId)}/sections/${encodeURIComponent(sectionId)}`;
 
 export function createBackendClient(options: BackendClientOptions): BackendClient {
 	const { baseUrl, internalToken, timeoutMs, logger } = options;
@@ -338,6 +412,48 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 				`/internal/students/${encodeURIComponent(userUid)}/course-outlines/batch`,
 				{ method: "POST", body: { path_fingerprints: pathFingerprints, outlines }, timeoutMs: 60_000 },
 			),
+		prepareResourceGeneration: (userUid, courseId, chapterRef, mode) =>
+			request<ResourcePrepare>(
+				`${courseBase(userUid, courseId)}/chapters/${encodeURIComponent(chapterRef || "default")}/generation-prepare`,
+				{ method: "POST", body: { mode } },
+			),
+		async finishResourceGeneration(userUid, courseId, chapterId, succeededSectionIds) {
+			await request(`${courseBase(userUid, courseId)}/chapters/${encodeURIComponent(chapterId)}/generation-finish`, {
+				method: "POST",
+				body: { succeeded_section_ids: succeededSectionIds },
+				timeoutMs: 60_000,
+			});
+		},
+		getMarkdownPrompt: (userUid, courseId, sectionId, regenerationFocus) =>
+			request(`${sectionBase(userUid, courseId, sectionId)}/markdown/prompt`, {
+				method: "POST",
+				body: { regeneration_focus: regenerationFocus },
+			}),
+		validateMarkdown: (userUid, courseId, sectionId, rawOutput) =>
+			request(`${sectionBase(userUid, courseId, sectionId)}/markdown/validate`, {
+				method: "POST",
+				body: { raw_output: rawOutput },
+				timeoutMs: 30_000,
+			}),
+		searchSectionVideo: (userUid, courseId, sectionId) =>
+			request(`${sectionBase(userUid, courseId, sectionId)}/video/search`, {
+				method: "POST",
+				timeoutMs: 120_000,
+			}),
+		getAnimationPrompt: (userUid, courseId, sectionId) =>
+			request(`${sectionBase(userUid, courseId, sectionId)}/animation/prompt`, {
+				method: "POST",
+				body: {},
+			}),
+		validateAnimations: (userUid, courseId, sectionId, animations, fallback) =>
+			request(`${sectionBase(userUid, courseId, sectionId)}/animation/validate`, {
+				method: "POST",
+				body: { animations, fallback },
+				timeoutMs: 30_000,
+			}),
+		async saveSectionResource(userUid, courseId, sectionId, body) {
+			await request(`${sectionBase(userUid, courseId, sectionId)}/resources`, { method: "PUT", body });
+		},
 		getLearningOverview: (userUid) =>
 			request<LearningOverview>(`/internal/students/${encodeURIComponent(userUid)}/learning-overview`),
 		// A turn can legitimately run for minutes; the signal (client disconnect) bounds it.

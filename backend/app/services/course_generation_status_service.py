@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from threading import Lock
+
+# A crashed gateway must not leave a chapter locked forever.
+LOCK_TTL_SECONDS = 30 * 60
 
 
 @dataclass(frozen=True)
@@ -10,6 +14,7 @@ class CourseGenerationStatus:
     course_node_id: str
     chapter_section_id: str
     message: str
+    started_at: float = field(default_factory=time.monotonic)
 
 
 _LOCK = Lock()
@@ -27,7 +32,11 @@ def start_course_generation(
         message="AI 正在生成本章教学内容。",
     )
     with _LOCK:
-        if key in _RUNNING:
+        running = _RUNNING.get(key)
+        if (
+            running is not None
+            and time.monotonic() - running.started_at < LOCK_TTL_SECONDS
+        ):
             raise ValueError("这一章正在生成。")
         _RUNNING[key] = status
     return status

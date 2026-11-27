@@ -301,28 +301,32 @@ describe("AC-6 persistence order and failures", () => {
 });
 
 describe("entry routing", () => {
-	it("routes the explicit leaf-resource protocol to the legacy pipeline, even without a configured model", async () => {
+	it("the explicit leaf-resource protocol skips the supervisor but still needs a configured model", async () => {
 		h.backend.contexts.set(`${UNCONFIGURED_USER}:s-l`, { ...baseContext("s-l"), user_uid: UNCONFIGURED_USER });
-		h.backend.legacyFrames = 'event: message_completed\ndata: {"full_text":"legacy"}\n\n';
 		const res = await h.send(
 			"s-l",
-			"[LEAF_RESOURCE_GENERATION]\ncourse_node_id: c1\nchapter_section_id: s1\nscope: chapter\nmode: generate\n[/LEAF_RESOURCE_GENERATION]",
+			"[LEAF_RESOURCE_GENERATION]\ncourse_node_id: c1\nchapter_section_id: s1\nscope: chapter_sections\nmode: generate\n[/LEAF_RESOURCE_GENERATION]",
 			{ user: UNCONFIGURED_USER },
 		);
-		expect(h.backend.legacyCalls).toHaveLength(1);
-		expect(res.text).toContain("legacy");
+		expect(res.frames.find((f) => f.event === "error")?.data).toMatchObject({ error_code: "MODEL_NOT_CONFIGURED" });
+		// Nothing was gated, locked or written: the chapter lock is never taken without a model.
+		expect(h.backend.resource.prepares).toHaveLength(0);
 		expect(h.backend.turns).toHaveLength(0);
 		expect(h.primary.requests).toHaveLength(0);
 	});
 
-	it("routes a pending leaf regeneration confirmation to the legacy pipeline", async () => {
+	it("a pending regeneration answer goes straight to the resource node without a supervisor call", async () => {
 		h.backend.contexts.set(
 			`${CHAT_USER}:s-r`,
 			baseContext("s-r", { session_state: { pending_leaf_regeneration: { course_node_id: "c1", chapter_section_id: "s1" } } }),
 		);
-		h.backend.legacyFrames = 'event: message_completed\ndata: {"full_text":"ok"}\n\n';
-		await h.send("s-r", "确认重新生成");
-		expect(h.backend.legacyCalls).toEqual([{ sessionId: "s-r", userUid: CHAT_USER, message: "确认重新生成" }]);
+		h.backend.resource.prepareOverride = { status: "refused", message: "只能为当前课程生成教学内容。" };
+		const res = await h.send("s-r", "多讲一些例题");
+		expect(h.backend.resource.prepares).toEqual([{ chapterRef: "s1", mode: "regenerate" }]);
+		expect(h.primary.requests).toHaveLength(0);
+		// The pending marker is consumed even when the request is refused.
+		expect(h.backend.turns[0]!.turn.session_state_patch).toEqual({ pending_leaf_regeneration: null });
+		expect(res.frames.find((f) => f.event === "message_completed")?.data.full_text).toBe("只能为当前课程生成教学内容。");
 	});
 
 	it("keyword-looking messages are NOT intercepted any more", async () => {
@@ -332,19 +336,6 @@ describe("entry routing", () => {
 		await h.send("s-k", "下一步学什么？看看大纲和学习路径");
 		expect(h.backend.legacyCalls).toHaveLength(0);
 		expect(h.primary.requests).toHaveLength(1);
-	});
-
-	it("a not-yet-migrated delegate hands the turn to the legacy pipeline", async () => {
-		h.backend.contexts.set(`${CHAT_USER}:s-i`, pathContext("s-i", true));
-		h.backend.legacyFrames = 'event: message_completed\ndata: {"full_text":"课程大纲"}\n\n';
-		h.primary.queue.push({ tool: "delegate_course_resources", args: { reason: "生成资源" } });
-		const res = await h.send("s-i", "帮我生成教学内容");
-		expect(h.backend.legacyCalls).toHaveLength(1);
-		const plan = res.frames.find((f) => f.event === "supervisor_plan");
-		expect(plan?.data).toMatchObject({ agent: "course_resources" });
-		expect(res.text).toContain("课程大纲");
-		// The legacy pipeline persists its own turn.
-		expect(h.backend.turns).toHaveLength(0);
 	});
 });
 

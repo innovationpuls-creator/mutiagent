@@ -8,6 +8,7 @@ import { type IntakeDraft, readIntake } from "./intakeContract.js";
 import { runIntakeAgent } from "./intakeAgent.js";
 import { runOutlineAgent } from "./outlineAgent.js";
 import { runPathAgent } from "./pathAgent.js";
+import { parseLeafResourceRequest, readPendingRegeneration, runResourceAgent } from "./resourceAgent.js";
 import { runProfileAgent } from "./profileAgent.js";
 import { isCompleteProfile } from "./profileContract.js";
 import { type Handoff, runSupervisor, stageOf } from "./supervisor.js";
@@ -29,6 +30,23 @@ export interface ChatGraphDeps {
 	progress: { bridged: boolean; persisted: boolean };
 }
 
+export interface ChatFailure {
+	agent: string;
+	label: string;
+	message: string;
+	retryAction?: string;
+	extra?: Record<string, unknown>;
+}
+
+export interface ResourceRequest {
+	courseId: string;
+	chapterRef: string;
+	mode: "generate" | "regenerate";
+	focus: string;
+	/** The request came from a pending-regeneration answer, which must be cleared either way. */
+	fromPending: boolean;
+}
+
 const last = <T>() => ({ reducer: (_: T, next: T) => next });
 
 const ChatState = Annotation.Root({
@@ -41,8 +59,9 @@ const ChatState = Annotation.Root({
 	confirmedIntake: Annotation<IntakeDraft | null>({ ...last<IntakeDraft | null>(), default: () => null }),
 	pathGenerated: Annotation<boolean>({ ...last<boolean>(), default: () => false }),
 	outlineGenerated: Annotation<boolean>({ ...last<boolean>(), default: () => false }),
-	/** Retryable failure to surface as an SSE error after the turn is persisted. */
-	failure: Annotation<string | null>({ ...last<string | null>(), default: () => null }),
+	/** Failure to surface as an SSE error after the turn is persisted. */
+	failure: Annotation<ChatFailure | null>({ ...last<ChatFailure | null>(), default: () => null }),
+	resourceRequest: Annotation<ResourceRequest | null>({ ...last<ResourceRequest | null>(), default: () => null }),
 });
 type State = typeof ChatState.State;
 
@@ -69,8 +88,26 @@ function memoryEvent(stepId: string, message: string, success?: boolean): SsePay
 }
 
 /** Only explicit protocol actions skip the supervisor (no keyword interception). */
-export function isExplicitProtocolAction(query: string, sessionState: Record<string, unknown>): boolean {
-	return query.includes(LEAF_RESOURCE_MARKER) || Boolean(sessionState.pending_leaf_regeneration);
+export function explicitResourceRequest(query: string, sessionState: Record<string, unknown>): ResourceRequest | null {
+	const parsed = parseLeafResourceRequest(query);
+	if (parsed) {
+		return {
+			courseId: parsed.courseNodeId,
+			chapterRef: parsed.chapterSectionId,
+			mode: parsed.mode,
+			focus: parsed.mode === "regenerate" ? query : "",
+			fromPending: Boolean(sessionState.pending_leaf_regeneration),
+		};
+	}
+	const pending = readPendingRegeneration(sessionState.pending_leaf_regeneration);
+	if (!pending) return null;
+	return {
+		courseId: pending.course_node_id,
+		chapterRef: pending.chapter_section_id,
+		mode: "regenerate",
+		focus: query,
+		fromPending: true,
+	};
 }
 
 export function buildChatGraph(deps: ChatGraphDeps) {
@@ -82,12 +119,12 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 	async function entry(state: State, config: LangGraphRunnableConfig) {
 		const emit = writerOf(config);
 		const { context } = state;
-		if (isExplicitProtocolAction(deps.query, context.session_state)) {
-			// Resource generation is migrated in M7; until then the legacy pipeline owns it.
-			return new Command({
-				goto: "legacy_bridge",
-				update: { handoff: { kind: "legacy", target: "course_resources", reason: "显式资源生成协议" } satisfies Handoff },
-			});
+		const resourceRequest = explicitResourceRequest(deps.query, context.session_state);
+		if (resourceRequest) {
+			// The button protocol and a pending-regeneration answer skip the supervisor, never a keyword guess.
+			emit("session_started", { session_id: deps.sessionId, query: deps.query });
+			handle = await deps.runtime.agentStream(deps.userUid, "path_outline");
+			return new Command({ goto: "resource_agent", update: { resourceRequest } });
 		}
 		emit("session_started", { session_id: deps.sessionId, query: deps.query });
 		for (const [id, label] of [
@@ -131,7 +168,7 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 						? "learning_path_intake"
 						: handoff.kind === "outline"
 							? "course_knowledge"
-							: handoff.target;
+							: "course_resources";
 			emit("supervisor_plan", { agent, label: AGENT_LABELS[agent] ?? agent, reason: handoff.reason || `调用 ${AGENT_LABELS[agent] ?? agent}` });
 			const goto =
 				handoff.kind === "profile_agent"
@@ -140,8 +177,13 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 						? "intake_agent"
 						: handoff.kind === "outline"
 							? "outline_agent"
-							: "legacy_bridge";
-			return new Command({ goto, update: { handoff } });
+							: "resource_agent";
+			const courseId = String(context.course_knowledge?.course_id ?? "");
+			const resourceRequest: ResourceRequest | null =
+				handoff.kind === "resources"
+					? { courseId, chapterRef: handoff.chapterRef, mode: "generate", focus: "", fromPending: false }
+					: null;
+			return new Command({ goto, update: { handoff, resourceRequest } });
 		}
 		return new Command({ goto: "finalize", update: { response: result.text || FALLBACK_ANSWER } });
 	}
@@ -247,7 +289,13 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 		if (outcome.kind === "failed") {
 			emit("agent_result", { stepId, kind: "agent", agent: "learning_path_agent", label: "学习路径智能体", success: false, summary: "学习路径生成失败" });
 			// The confirmed draft stays in session_state so a retry only re-runs the path node.
-			return new Command({ goto: "finalize", update: { response: outcome.text, failure: outcome.text } });
+			return new Command({
+				goto: "finalize",
+				update: {
+					response: outcome.text,
+					failure: { agent: "learning_path_agent", label: "学习路径智能体", message: outcome.text, retryAction: "retry_learning_path" },
+				},
+			});
 		}
 		emit("data_update", {
 			update_type: "learning_path_generated",
@@ -307,28 +355,68 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 		return new Command({ goto: "finalize", update: { response: outcome.text, outlineGenerated: ok } });
 	}
 
-	async function legacyBridge(_state: State, config: LangGraphRunnableConfig) {
-		deps.progress.bridged = true;
-		const response = await deps.backend.openLegacyStream(
-			deps.sessionId,
-			deps.userUid,
-			{ message: deps.query, image_attachment: deps.imageAttachment },
-			deps.signal,
-		);
-		if (!response.body) return {};
-		const decoder = new TextDecoder();
-		const reader = response.body.getReader();
-		try {
-			for (;;) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				const frames = decoder.decode(value, { stream: true });
-				if (frames) config.writer?.({ kind: "raw", frames } satisfies GraphChunk);
-			}
-		} finally {
-			reader.releaseLock();
+	async function resourceAgent(state: State, config: LangGraphRunnableConfig) {
+		const emit = writerOf(config);
+		const request = state.resourceRequest;
+		const label = "课程资源智能体";
+		if (!request || !request.courseId) {
+			return new Command({
+				goto: "finalize",
+				update: { response: "请先生成课程大纲，再生成教学内容。", statePatch: request?.fromPending ? { pending_leaf_regeneration: null } : null },
+			});
 		}
-		return {};
+		emit("agent_calling", { stepId: "course-resource-agent", kind: "agent", agent: "course_resources", label, message: "正在生成本章教学内容" });
+		pathHandle ??= await deps.runtime.agentStream(deps.userUid, "path_outline");
+		const outcome = await runResourceAgent({
+			handle: pathHandle,
+			backend: deps.backend,
+			userUid: deps.userUid,
+			courseId: request.courseId,
+			chapterRef: request.chapterRef,
+			mode: request.mode,
+			regenerationFocus: request.focus,
+			signal: deps.signal,
+			emit,
+		});
+		const clear = request.fromPending ? { pending_leaf_regeneration: null } : null;
+		emit("agent_result", {
+			stepId: "course-resource-agent",
+			kind: "agent",
+			agent: "course_resources",
+			label,
+			success: outcome.kind === "completed",
+			summary: outcome.kind === "completed" ? "本章教学内容已处理" : "本章教学内容未生成",
+		});
+		if (outcome.kind === "needs_focus") {
+			// A focus question: remember it explicitly instead of hiding a tag in the reply text.
+			const pending = { course_node_id: request.courseId, chapter_section_id: outcome.chapterSectionId, requested_at: new Date().toISOString() };
+			emit("text_chunk", { chunk: outcome.text });
+			return new Command({ goto: "finalize", update: { response: outcome.text, statePatch: { pending_leaf_regeneration: pending } } });
+		}
+		if (outcome.kind === "busy" || outcome.kind === "failed") {
+			const chapter = outcome.kind === "failed" ? outcome.chapterSectionId : request.chapterRef;
+			return new Command({
+				goto: "finalize",
+				update: {
+					response: "",
+					statePatch: clear,
+					failure: {
+						agent: "course_resources",
+						label,
+						message: outcome.text,
+						extra: {
+							course_id: request.courseId,
+							chapter_section_id: chapter,
+							kind: "course_resource_chapter",
+							phase: "generation",
+							status: "error",
+						},
+					},
+				},
+			});
+		}
+		emit("text_chunk", { chunk: outcome.text });
+		return new Command({ goto: "finalize", update: { response: outcome.text, statePatch: clear, outlineGenerated: true } });
 	}
 
 	async function finalize(state: State, config: LangGraphRunnableConfig) {
@@ -345,12 +433,13 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 		const info = stageOf(context);
 		if (state.failure) {
 			emit("error", {
-				agent: "learning_path_agent",
-				label: "学习路径智能体",
-				message: state.failure,
+				agent: state.failure.agent,
+				label: state.failure.label,
+				message: state.failure.message,
 				recoverable: true,
-				retryable: true,
-				retryAction: "retry_learning_path",
+				retryable: Boolean(state.failure.retryAction),
+				...(state.failure.retryAction ? { retryAction: state.failure.retryAction } : {}),
+				...state.failure.extra,
 			});
 			return {};
 		}
@@ -365,16 +454,15 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 	}
 
 	return new StateGraph(ChatState)
-		.addNode("entry", entry, { ends: ["supervisor", "legacy_bridge"] })
-		.addNode("supervisor", supervisor, { ends: ["profile_agent", "intake_agent", "outline_agent", "legacy_bridge", "finalize"] })
+		.addNode("entry", entry, { ends: ["supervisor", "resource_agent"] })
+		.addNode("supervisor", supervisor, { ends: ["profile_agent", "intake_agent", "outline_agent", "resource_agent", "finalize"] })
 		.addNode("profile_agent", profileAgent, { ends: ["finalize"] })
 		.addNode("intake_agent", intakeAgent, { ends: ["learning_path_agent", "finalize"] })
 		.addNode("learning_path_agent", learningPathAgent, { ends: ["finalize"] })
 		.addNode("outline_agent", outlineAgent, { ends: ["finalize"] })
-		.addNode("legacy_bridge", legacyBridge)
+		.addNode("resource_agent", resourceAgent, { ends: ["finalize"] })
 		.addNode("finalize", finalize)
 		.addEdge(START, "entry")
-		.addEdge("legacy_bridge", END)
 		.addEdge("finalize", END)
 		.compile();
 }

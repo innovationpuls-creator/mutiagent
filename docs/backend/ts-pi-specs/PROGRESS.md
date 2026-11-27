@@ -275,3 +275,48 @@
 - 全年级并发默认 2，未做并发 3 的压测；`mapWithConcurrency` 有单测（峰值=2、耗时明显低于串行）。
 - 旧 Python `course_knowledge.py` 仍在仓库中（`legacy-stream` 对资源协议的桥接仍会加载整个旧编排），其私有函数被 `outline_service.py` 直接 import，按计划在 M9 清理时迁成独立服务模块。
 - Nginx/Docker 与 Playwright e2e 未运行；前端无改动，未在浏览器里重新渲染拆分后的大纲卡片（仅验证了学生端 API 返回）。
+
+## M7：小节多模态教学资源生成子图
+
+状态：**已完成并提交**（AC-1~6 通过；模型侧为脚本化 mock 上游，真实视频检索未跑，见「未验证项」）
+
+### 已确认的决策 / 与文档的偏差（2026-11-27）
+| 项 | 结论 |
+|---|---|
+| 节点与流转 | 主图新增 `resource_agent`，**移除 `legacy_bridge`**。叶子页按钮（`[LEAF_RESOURCE_GENERATION]`）在 `entry` 解析后直达 `resource_agent`（不经 Supervisor）；自然语言走 Supervisor 的 `delegate_course_resources(chapter_section_id?)` 再进入同一节点。 |
+| 偏差 1：确定性逻辑留在 Python | 与 M5/M6 一致。教材证据、提示词、校验、检查点落库、章节锁、评分均在 `app/services/resource_service.py`，经 `/internal/students/{uid}/courses/{cid}/…` 暴露（prepare / markdown prompt+validate / video search / animation prompt+validate / `PUT sections/{sid}/resources` / finish）。TS 只做模型循环、并发、进度事件。文档里“prepare 返回教材切片”改为“Python 直接生成带证据的提示词”。 |
+| 单小节流水线 | markdown →（video ∥ animation，`Promise.allSettled`）→ compose，每阶段完成即落库；章节内小节并发默认 2（可配到 3）。第一个小节 compose 后即可在叶子页读到，不必等整章。 |
+| 自纠 | `submit_section_markdown` 经后端校验，最多 2 次同对话内修正；`submit_section_animations` 1 次修正后回退确定性模板动画。 |
+| 偏差 2：视频逐小节降级 | 旧逻辑“至少一半小节有视频否则整章报错”改为**每小节独立降级**：搜不到合格视频 → `status:"unavailable"`、事件 `video_unavailable:true`、compose 里写 `video` 块 `unavailable`，不阻断、不报错。 |
+| 偏差 3：严格 Markdown 校验 | 旧脚手架会把垃圾输出补全成“合格”文档，故 `validate_markdown` 先对**原始模型输出**做正文检查，再走脚手架与质量检查。 |
+| 检查点真正落库 | 旧实现只在内存里存检查点；现存 `section_resource_checkpoints[sec][phase]`（及 `section_resource_errors`），重跑时已完成阶段直接复用（`mode≠regenerate`）。结构变更时这两个键随其它生成物一并清空。 |
+| 偏差 4：部分失败可续跑 | `generate` 仅在**整章所有小节都已 compose** 时才进入“请先告知侧重点”；部分小节失败后再点按钮是续跑。（验收中发现原先 `any` 判定会让失败的章节无法续跑，已改为 `all` 并改了单测。） |
+| 重新生成侧重点 | 存 `session_state.pending_leaf_regeneration {course_node_id, chapter_section_id, requested_at}`，不再用 `[LEAF_REGEN_PENDING]` 隐藏标签；用户下一条消息直接进 `resource_agent`（`mode=regenerate`，消息作 focus），完成后置 `null` 清除。 |
+| 章节锁 | `finish` 在 TS `finally` 中必调；锁加 30 分钟 TTL，网关崩溃不会永久锁章。重复点击返回“这一章正在生成。”。 |
+| 超长拆分小节取证 | `get_textbook_evidence_pack(..., char_range)`：M6 拆出的小节只取各自 `source_char_range` 切片，修复了 >8000 字证据包超限。 |
+| 前端事件契约 | 事件顶层带 `course_id / chapter_section_id / section_id / kind(course_resource_section|course_resource_chapter) / phase / status / stepId / success`；最终 `agent_result success=true, status="completed"` 触发叶子页刷新。前端**无改动**。 |
+| 失败泛化 | `ChatFailure{agent,label,message,retryAction?,extra?}`；`finalize` 先落库再发 `error`。路径智能体同步改用。 |
+
+### 完成节点
+- Python：`resource_service.py`、`/internal` 8 个端点、锁 TTL、证据切片；`tests/test_internal_resources_api.py` 8 个用例。
+- TS：`backendClient` 8 个方法、`resourceAgent.ts`、`supervisor.ts`/`graph.ts` 改造（`legacy_bridge` 删除）、`test/resource.test.ts` 15 个用例；三个过时的 legacy 路由测试已改写。
+- 全量：后端 **984 passed**（ruff check/format 干净）；网关 `tsc --noEmit`、`npm run build` 通过，vitest **112 passed**。
+
+### 验收清单实测结果
+真实 Python 后端 + 真实网关 + 脚本化 mock 模型，独立 Postgres schema `m7_acceptance`（用后已删除），5 本教材、第一章拆成 3 个叶子小节（1.1/1.2/1.3）。
+
+| AC | 结果 | 证据 |
+|---|---|---|
+| AC-1 | 通过 | 按钮路径：无 `supervisor_plan`，库里 `section_composed_markdowns = [1.1,1.2,1.3]`，compose 事件 `{course_id: year_3_course_1, chapter_section_id: 1, section_id: 1.1, kind: course_resource_section, phase: compose, status: completed, success: true}`，终稿“本章教学内容已生成。”；自然语言路径：`supervisor_plan agent=course_resources`，结果同为 3 个小节。 |
+| AC-2 | 通过 | 1.1 的 video 窗口 [0.03s..0.04s] 与 animation 窗口 [0.03s..0.05s] 重叠；mock 把 1.2 延迟 4 s，1.1 compose 事件在 +0.05 s、库里 1.1 已可见（+0.27 s），整个请求 +4.11 s 才结束。 |
+| AC-3 | 通过（变体） | 第 1.2 节 **markdown 阶段**失败（模型只回“只有一句话”）：1.1/1.3 已 compose，1.2 记录 `section_resource_errors{phase: markdown}`、checkpoint=failed；重跑时模型仅被调用 1.2（3 次），1.1/1.3 的 markdown 事件为“文案已有检查点，直接复用”，最终 3 节齐全、错误清除。文档原场景是**动画阶段**失败：该路径由 vitest（resource.test.ts）覆盖，未在 live 里复现。 |
+| AC-4 | 通过（降级路径）| 实机：本环境检索不到合格视频 → 3 节 `video.status=unavailable`，compose 含 `video:unavailable` 块，事件“该小节暂未找到合适教学视频，已平稳跳过”，无 `error`，终稿“本章教学内容已生成。”，请求不失败。“找到视频”路径：后端单测 `test_video_found_is_saved_as_available_and_composed`（打桩 Bilibili 检索）+ 网关 vitest；**未做真实检索**（见下）。 |
+| AC-5 | 通过 | 已生成章节再点“重新生成”：回复“重新生成本章前，请告诉我下一版需要侧重哪里。”，模型调用 **0 次**，回复与历史里**无** `LEAF_REGEN_PENDING`，`session_state.pending_leaf_regeneration = {course_node_id, chapter_section_id: 1, requested_at}`；下一条“多讲一些复杂度的例题”：无 supervisor 调用，该 focus 出现在小节提示词里，pending 键清除，1.1 的 `generated_at` 更新。 |
+| AC-6 | 通过 | (a) 第一次运行中（1.2 延迟）另一会话再点：`error {message:"这一章正在生成。", kind: course_resource_chapter}`，第一次不受影响并完成；(b) 全部小节失败：`error` 事件后立即重试成功；(c) 客户端中途断开：网关继续跑完（先落库），立即新请求被拒“这一章正在生成。”，跑完后下一次请求正常执行——锁已释放。 |
+
+### 未验证项 / 已知遗留
+- **真实模型**：全部为脚本化 mock。模型自写的动画能否通过 Python 严格校验未在 live 里执行（live 走了模板回退；通过校验的路径由单测/vitest 覆盖）。
+- **真实视频检索**：旧检索仅有 DashScope 联网搜 Bilibili（需 `LLM_API_KEY`），本次未使用该付费密钥，故“真的找到视频”只用桩验证；降级是真实走通的。
+- **客户端断开不中止运行**：网关当前不因 SSE 断开而取消生成（与 persist-first 一致，结果仍落库，锁在运行结束后释放）；若要“断开即取消”需另加 abort 传播，本里程碑未做。
+- 文档里“LEAF 隐藏标签”已不被网关使用，但 `chat_context_service` 仍会从旧 `[LEAF_REGEN_PENDING]` 标记构造 pending，`rule_engine` 旧解析器、`legacy-stream` 路由、`progress.bridged`/`raw` chunk 与 `openLegacyStream` 仍在，留给 M9 清理。
+- 前端未在浏览器里复验叶子页刷新（前端无改动，仅验证事件字段契约）；Nginx/Docker 与 Playwright e2e 未运行。
