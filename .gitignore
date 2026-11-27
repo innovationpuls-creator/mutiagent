@@ -3,24 +3,16 @@
 .env.production
 /backups/
 /bin/
-CLAUDE.md
-.superpowers
-docs/superpowers
-opencode.json
 .codex-artifacts
-.codex-logs
 .gemini
 .github/*
 !.github/workflows/
 .github/workflows/*
 !.github/workflows/production.yml
-!.github/workflows/windows-portable.yml
 .kiro/steering
 .qoder
 .mcp.json
-.opencode.json
 .windsurfrules
-.claude
 .vscode
 .cursorrules
 AGENTS.md
@@ -29,10 +21,6 @@ QODER.md
 stitch_exports
 docs/videos
 video-assets
-start.sh
-frpc
-frpc.toml
-.logs
 
 
 backend/.venv/
@@ -47,11 +35,6 @@ frontend/node_modules/
 frontend/dist/
 frontend/test-results/
 frontend/tsconfig.tsbuildinfo
-desktop/node_modules/
-desktop/build/
-desktop/coverage/
-desktop/dist/
-docs/references
 
 .playwright-mcp/
 mutiagent-auth-desktop.png
@@ -60,19 +43,9 @@ mutiagent-auth-desktop.png
 node_modules/
 .vite/
 .stitch/
-.opencode/
 .ruff_cache/
-
-# Word documents folder (locally generated docs)
-/word/
 
 # Local agent configuration and macOS metadata
 .agents/
 .impeccable/
 .DS_Store
-
-# Local planning, task reports, and generated output
-/plan.md
-docs/report-data-inventory.md
-task-1-report.md
-output/
