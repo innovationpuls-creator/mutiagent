@@ -89,7 +89,12 @@ def _alembic_config(engine: Engine) -> Config:
     return config
 
 
-def _matches_current_metadata(engine: Engine, inspector: Inspector) -> bool:
+def _matches_current_metadata(
+    engine: Engine, inspector: Inspector | None = None
+) -> bool:
+    if inspector is None:
+        with engine.connect() as connection:
+            return _matches_current_metadata(engine, inspect(connection))
     return all(
         _table_matches_metadata(engine, inspector, table_name, table)
         for table_name, table in SQLModel.metadata.tables.items()

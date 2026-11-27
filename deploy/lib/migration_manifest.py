@@ -59,7 +59,7 @@ import json
 import os
 
 from alembic.migration import MigrationContext
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 
 from app.migration_state import (
     _matches_current_metadata,
@@ -69,8 +69,9 @@ from app.migration_state import (
 
 engine = create_engine(os.environ["ONETREE_SCHEMA_DATABASE_URL"])
 migrate_to_head(engine)
-if not _matches_current_metadata(engine):
-    raise RuntimeError("迁移后数据库结构与当前 metadata 不一致")
+with engine.connect() as connection:
+    if not _matches_current_metadata(engine, inspect(connection)):
+        raise RuntimeError("迁移后数据库结构与当前 metadata 不一致")
 state = inspect_schema_state(engine)
 revision = None
 if state == "versioned":
