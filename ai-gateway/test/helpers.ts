@@ -3,6 +3,9 @@ import type {
 	BackendClient,
 	ChatContext,
 	LearningOverview,
+	ProtectedCourse,
+	RawProgressSnapshot,
+	TextbookContext,
 	TurnPayload,
 	UsageReport,
 	UserAuthStatus,
@@ -37,6 +40,14 @@ export interface FakeBackend extends BackendClient {
 	legacyFrames: string | null;
 	legacyCalls: Array<{ sessionId: string; userUid: string; message: string }>;
 	order: string[];
+	textbooks: TextbookContext;
+	textbookLookups: string[];
+	protectedCourses: ProtectedCourse[];
+	snapshots: RawProgressSnapshot[];
+	/** When set, assemble answers 422 with this detail (once per entry). */
+	assembleFailures: string[];
+	assembled: Array<{ gradeYear: string; plan: any }>;
+	savedPaths: Array<{ userUid: string; gradeYear: string; topic: string; path: Record<string, unknown> }>;
 }
 
 export function fakeBackend(): FakeBackend {
@@ -54,6 +65,48 @@ export function fakeBackend(): FakeBackend {
 		legacyFrames: null,
 		legacyCalls: [],
 		order: [],
+		textbooks: { textbooks: [], gap_id: null },
+		textbookLookups: [],
+		protectedCourses: [],
+		snapshots: [],
+		assembleFailures: [],
+		assembled: [],
+		savedPaths: [],
+		async getTextbookContext(topic) {
+			backend.textbookLookups.push(topic);
+			backend.order.push("textbooks");
+			return structuredClone(backend.textbooks);
+		},
+		async getProtectedCourses() {
+			return structuredClone(backend.protectedCourses);
+		},
+		async getProgressSnapshots() {
+			return structuredClone(backend.snapshots);
+		},
+		async assembleLearningPath(_userUid, gradeYear, body) {
+			backend.assembled.push({ gradeYear, plan: body.plan });
+			const failure = backend.assembleFailures.shift();
+			if (failure) throw new BackendBusinessError(422, failure);
+			const courses = body.intake_courses as Array<{ title: string; source_textbook_id: string }>;
+			const nodes = courses.map((course, index) => ({
+				course_node_id: `${gradeYear}_course_${index + 1}`,
+				course_or_chapter_theme: course.title,
+				source_textbook_id: course.source_textbook_id,
+			}));
+			const completed = backend.snapshots.find((s) => s.grade_year === gradeYear)?.completed_courses ?? 0;
+			const current = nodes[Math.min(completed, nodes.length - 1)]!;
+			return {
+				path_data: {
+					schema_version: "learning_path.v2.course_node",
+					grade_plans: { [gradeYear]: { course_nodes: nodes } },
+					current_learning_course: { ...current, progress_state: "in_progress", next_action: "先完成需求拆解" },
+				},
+			};
+		},
+		async saveYearLearningPath(userUid, gradeYear, topic, path) {
+			backend.order.push("save_path");
+			backend.savedPaths.push({ userUid, gradeYear, topic, path });
+		},
 		async getChatContext(sessionId, userUid) {
 			backend.calls.push(`context:${sessionId}`);
 			const context = backend.contexts.get(`${userUid}:${sessionId}`);

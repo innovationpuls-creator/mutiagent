@@ -46,7 +46,8 @@ def test_empty_schema_upgrades_to_alembic_head(tmp_path: Path) -> None:
             text(
                 "SELECT is_nullable, column_default "
                 "FROM information_schema.columns "
-                "WHERE table_name = 'conversationsession' "
+                "WHERE table_schema = current_schema() "
+                "AND table_name = 'conversationsession' "
                 "AND column_name = 'session_state'"
             )
         ).one()

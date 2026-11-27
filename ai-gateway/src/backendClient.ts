@@ -85,7 +85,47 @@ export interface LearningOverview {
 	next_step_text: string;
 }
 
+export interface TextbookContext {
+	textbooks: Array<{
+		textbook_id: string;
+		title: string;
+		description?: string;
+		outline_summary: Array<{ section_id: string; title: string }>;
+	}>;
+	gap_id: string | null;
+}
+
+export interface ProtectedCourse {
+	title: string;
+	reason: string;
+}
+
+export interface RawProgressSnapshot {
+	grade_year: string;
+	total_courses: number;
+	completed_courses: number;
+	current_course_id: string;
+	current_progress_state: string;
+	next_course_id: string;
+}
+
 export interface BackendClient {
+	/** Published textbook outlines for a topic; registers a KnowledgeGap when none match. */
+	getTextbookContext(learningTopic: string, studentGoalSummary: string): Promise<TextbookContext>;
+	getProtectedCourses(userUid: string): Promise<ProtectedCourse[]>;
+	getProgressSnapshots(userUid: string): Promise<RawProgressSnapshot[]>;
+	/** Expand the model's lightweight plan into the v2 contract; 422 BackendBusinessError if unusable. */
+	assembleLearningPath(
+		userUid: string,
+		gradeYear: string,
+		body: { profile: Record<string, unknown>; learning_topic: string; plan: unknown; intake_courses: unknown[] },
+	): Promise<{ path_data: Record<string, unknown> }>;
+	saveYearLearningPath(
+		userUid: string,
+		gradeYear: string,
+		learningTopic: string,
+		pathData: Record<string, unknown>,
+	): Promise<void>;
 	getInternalHealth(): Promise<BackendHealth>;
 	getChatContext(sessionId: string, userUid: string): Promise<ChatContext>;
 	persistTurn(sessionId: string, userUid: string, turn: TurnPayload): Promise<{ persisted: string }>;
@@ -145,7 +185,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
 	async function request<T>(
 		path: string,
-		init: { method?: string; body?: unknown } = {},
+		init: { method?: string; body?: unknown; timeoutMs?: number } = {},
 	): Promise<T> {
 		const response = await rawRequest(path, init);
 		try {
@@ -213,6 +253,34 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 				method: "PUT",
 				body: { profile_data: profileData },
 			});
+		},
+		getTextbookContext: (learningTopic, studentGoalSummary) =>
+			request<TextbookContext>("/internal/knowledge-base/textbook-context-for-intake", {
+				method: "POST",
+				body: { learning_topic: learningTopic, student_goal_summary: studentGoalSummary },
+			}),
+		getProtectedCourses: async (userUid) =>
+			(
+				await request<{ courses: ProtectedCourse[] }>(
+					`/internal/students/${encodeURIComponent(userUid)}/protected-courses`,
+				)
+			).courses,
+		getProgressSnapshots: async (userUid) =>
+			(
+				await request<{ snapshots: RawProgressSnapshot[] }>(
+					`/internal/students/${encodeURIComponent(userUid)}/learning-paths/progress-snapshots`,
+				)
+			).snapshots,
+		assembleLearningPath: (userUid, gradeYear, body) =>
+			request(
+				`/internal/students/${encodeURIComponent(userUid)}/learning-paths/${encodeURIComponent(gradeYear)}/assemble`,
+				{ method: "POST", body, timeoutMs: 60_000 },
+			),
+		async saveYearLearningPath(userUid, gradeYear, learningTopic, pathData) {
+			await request(
+				`/internal/students/${encodeURIComponent(userUid)}/learning-paths/${encodeURIComponent(gradeYear)}`,
+				{ method: "PUT", body: { learning_topic: learningTopic, path_data: pathData } },
+			);
 		},
 		getLearningOverview: (userUid) =>
 			request<LearningOverview>(`/internal/students/${encodeURIComponent(userUid)}/learning-overview`),

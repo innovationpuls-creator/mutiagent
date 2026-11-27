@@ -19,6 +19,7 @@ from app.model_config_schemas import (
 )
 from app.models import User
 from app.services import chat_context_service as chat_service
+from app.services import learning_path_runtime_service as path_service
 from app.services import model_config_service as model_service
 
 INTERNAL_TOKEN_HEADER = "X-Internal-Token"
@@ -34,6 +35,23 @@ class TurnPayload(BaseModel):
 
 class StudentProfilePayload(BaseModel):
     profile_data: dict
+
+
+class TextbookContextPayload(BaseModel):
+    learning_topic: str = Field(min_length=1, max_length=200)
+    student_goal_summary: str = Field(default="", max_length=4000)
+
+
+class AssemblePathPayload(BaseModel):
+    profile: dict
+    learning_topic: str = Field(min_length=1)
+    plan: dict
+    intake_courses: list[dict]
+
+
+class SaveYearPathPayload(BaseModel):
+    learning_topic: str = Field(min_length=1)
+    path_data: dict
 
 
 class LegacyStreamPayload(BaseModel):
@@ -202,6 +220,62 @@ def create_internal_router(engine: Engine, internal_token: str | None) -> APIRou
             _require_user(session, user_uid)
             overview = chat_service.build_learning_overview(session, user_uid)
         return JSONResponse(content=jsonable_encoder(overview))
+
+    @router.post("/knowledge-base/textbook-context-for-intake")
+    def textbook_context_for_intake(payload: TextbookContextPayload) -> dict:
+        with Session(engine) as session:
+            return path_service.textbook_context_for_intake(
+                session, payload.learning_topic, payload.student_goal_summary
+            )
+
+    @router.get("/students/{user_uid}/protected-courses")
+    def protected_courses(user_uid: str) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            return {"courses": path_service.protected_courses(session, user_uid)}
+
+    @router.get("/students/{user_uid}/learning-paths/progress-snapshots")
+    def progress_snapshots(user_uid: str) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            return {
+                "snapshots": jsonable_encoder(
+                    path_service.progress_snapshots(session, user_uid)
+                )
+            }
+
+    @router.post("/students/{user_uid}/learning-paths/{grade_year}/assemble")
+    def assemble_learning_path(
+        user_uid: str, grade_year: str, payload: AssemblePathPayload
+    ) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            try:
+                path = path_service.assemble_learning_path(
+                    session,
+                    user_uid,
+                    profile=payload.profile,
+                    grade_year=grade_year,
+                    learning_topic=payload.learning_topic,
+                    plan=payload.plan,
+                    intake_courses=payload.intake_courses,
+                )
+            except (ValueError, KeyError, TypeError) as exc:
+                raise HTTPException(
+                    status_code=422, detail=f"学习路径规划无法装配：{exc}"
+                ) from None
+            return {"path_data": path}
+
+    @router.put("/students/{user_uid}/learning-paths/{grade_year}")
+    def put_year_learning_path(
+        user_uid: str, grade_year: str, payload: SaveYearPathPayload
+    ) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            path_service.save_year_path(
+                session, user_uid, grade_year, payload.learning_topic, payload.path_data
+            )
+            return {"ok": True, "grade_year": grade_year}
 
     @router.post("/chat/sessions/{session_id}/legacy-stream")
     async def legacy_stream(

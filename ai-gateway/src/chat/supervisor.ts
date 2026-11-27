@@ -3,6 +3,7 @@ import { obj, opt, str } from "@earendil-works/pi-schema";
 import type { ChatContext, HistoryMessage, LearningOverview } from "../backendClient.js";
 import type { AgentStreamHandle } from "../models/runtime.js";
 import { runAgent } from "./agentRunner.js";
+import { intakeStatusOf, readIntake } from "./intakeContract.js";
 import { isCompleteProfile } from "./profileContract.js";
 import type { Emit } from "./types.js";
 
@@ -10,8 +11,9 @@ export type Stage = "A" | "B" | "C";
 
 export type Handoff =
 	| { kind: "profile_agent"; reason: string }
-	/** Not migrated yet (M5-M7): the Python legacy pipeline still owns these. */
-	| { kind: "legacy"; target: "learning_path_intake" | "course_knowledge" | "course_resources"; reason: string };
+	| { kind: "intake"; reason: string }
+	/** Not migrated yet (M6-M7): the Python legacy pipeline still owns these. */
+	| { kind: "legacy"; target: "course_knowledge" | "course_resources"; reason: string };
 
 export interface StageInfo {
 	stage: Stage;
@@ -51,6 +53,7 @@ const STAGE_HINT: Record<Stage, string> = {
 
 export function buildSupervisorPrompt(info: StageInfo, context: ChatContext): string {
 	const followup = context.session_state.pending_profile_followup;
+	const intakeStatus = intakeStatusOf(readIntake(context.session_state.learning_path_intake));
 	return [
 		"你是 OneTree 学习平台的「主管智能体」，面向大学生，帮助他们完成画像、学习路径、课程大纲与课程学习。",
 		"原则：",
@@ -59,6 +62,9 @@ export function buildSupervisorPrompt(info: StageInfo, context: ChatContext): st
 		"3. 需要委派智能体时调用对应 delegate_* 工具即可，不要自己代写其产出；调用后本轮由该智能体接手。",
 		"4. 普通学习问答直接回答，简洁、准确、友好，使用简体中文。",
 		`当前阶段：${info.stage}。${STAGE_HINT[info.stage]}`,
+		intakeStatus !== "none"
+			? `注意：当前存在课程草案（状态 ${intakeStatus}）。学生对草案的任何回应——确认、修改、取消或追问某门课——都必须委派 delegate_learning_path_intake，不要自己回答或改动草案。`
+			: "",
 		followup ? `注意：上一轮正在向学生采集画像字段，待回答追问：${JSON.stringify(followup)}。学生若在回答它，请委派画像智能体。` : "",
 	]
 		.filter(Boolean)
@@ -131,8 +137,8 @@ export async function runSupervisor(input: SupervisorInput): Promise<SupervisorR
 		),
 		delegate_learning_path_intake: delegate(
 			"delegate_learning_path_intake",
-			"委派课程草案/学习路径智能体：根据画像生成课程草案并确认后生成按年学习路径。",
-			(reason) => ({ kind: "legacy", target: "learning_path_intake", reason }),
+			"委派课程草案智能体：生成/修改/确认课程草案；草案确认后会在同一轮自动生成按年学习路径。学生想规划、调整课程或回应草案时调用。",
+			(reason) => ({ kind: "intake", reason }),
 		),
 		delegate_course_knowledge: delegate(
 			"delegate_course_knowledge",

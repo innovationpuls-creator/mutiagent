@@ -183,3 +183,50 @@
 - **桥接路径**：只验证了“显式协议→旧流水线→SSE 原样转发”，未用真实 LLM 跑完整的课程草案/大纲/资源生成（这些在 M5–M7 迁移时重测）。
 - 回退只在“尚未输出任何内容”时发生，流到一半的上游失败不会换模型（有意设计）。
 - Playwright e2e 未运行；浏览器里的 Vite HMR WebSocket 报错来自内置浏览器环境，与功能无关。
+
+## M5：课程草案确认与按年学习路径生成
+
+状态：**已完成并提交**（AC-1~6 通过；模型侧均为脚本化 mock 上游，见「未验证项」）
+
+### 已确认的决策 / 与文档的偏差（2026-11-27）
+| 项 | 结论 |
+|---|---|
+| 节点与流转 | 主图新增 `intake_agent`（课程草案）与 `learning_path_agent`（按年路径）。`delegate_learning_path_intake` 不再走旧流水线桥接，改为 `Command({goto: "intake_agent"})`；草案 `confirmed` 时 `Command({goto: "learning_path_agent"})` 同一次 SSE 内无缝跳转，其余状态 `goto: "finalize"`。桥接现只剩 `delegate_course_knowledge` / `delegate_course_resources` / 显式资源协议（M6/M7 移除） |
+| 四态 | `none → draft → risk_pending → confirmed`，存 `session_state.learning_path_intake`（M4 已有的显式字段，读取时仍兼容旧会话“夹在 messages 里的 intake”）。**路径生成成功后清除该字段**（`null` 删键），避免遗留的 `confirmed` 在后续无关对话里被“可以”之类的回复误触发重新生成；生成失败时保留 `confirmed`，重试只需重跑路径节点 |
+| 工具按状态下发 | `propose_or_revise_draft`（所有状态）；`confirm_draft`（draft / risk_pending / confirmed）；`cancel_risk_revision`（仅 risk_pending）；追问直接文字回答，不调用工具、不改状态。主管提示词在存在草案时强制把“确认/修改/取消/追问”都委派给草案智能体。**中文确认/取消/修改关键词表已不在 TS 路径中** |
+| 教材检索 | `propose_or_revise_draft` 两步：先只带 `learning_topic`（可选 `search_topic`）→ 工具内部调 `POST /internal/knowledge-base/textbook-context-for-intake` 取目录摘要返回给模型；再带 `courses` 提交。无匹配教材时由程序确定性回复（修改场景：“原有的课程草稿已为你保留，可继续调整或直接确认原草稿”；首次：引导换方向），登记 `KnowledgeGap`（Python 侧按 `normalized_topic` 去重）并发 `data_update(knowledge_gap_recorded, gap_id)`，**不覆盖/清空草案** |
+| 来源绑定校验 | 纯函数 `validateDraftCourses`：4–8 门、教材 ID 必须在本轮检索目录内、小节 ID 必须属于该教材（1–7 个）。**不再有字符打分兜底**；错误项逐条作为工具错误回给模型，同轮自纠最多 2 次（`MAX_INTAKE_CORRECTIONS`），超出则不落库、回复失败提示并保留原草案。修改草案时“与现有草案完全相同的绑定”被信任（避免改一门课就要重新检索所有教材） |
+| 风险检测 | 纯函数 `detectRisks`：对比 Python `GET /internal/students/{uid}/protected-courses`（已有大纲或已开始/已完成课程），新草案丢掉任何一门 → 强制 `risk_pending`、`requires_second_confirmation=true`、列出 `risk_warnings`。`cancel_risk_revision` 与旧实现一致：回到普通草稿（保留修改后的课程）、清空风险，**不改正式路径**（正式路径只在 confirm 后才写） |
+| 偏差 1：契约装配保留在 Python | 文档把“路径图谱与契约装配器 / 进度延续器”放在 TS。我**没有**在 TS 重写这约 800 行已被大量测试覆盖的确定性逻辑，而是把现有纯函数 (`_build_learning_path_from_plan` / `_apply_existing_progress_to_path` / `_validate_learning_path_contract`) 包成内部接口 `POST /internal/students/{uid}/learning-paths/{grade_year}/assemble`（无 LLM、无副作用）。理由：避免两份实现漂移、契约只有一处事实来源；模型侧（轻量规划 + 自纠）仍完全在 TS。该模块 M9 清理旧 agents 目录时随之搬迁为独立服务模块 |
+| 偏差 2：新增内部接口 | 文档列 4 个，另加 `assemble`（上条）。`PUT /internal/students/{uid}/learning-paths/{grade_year}` 在单事务内 `upsert_year_learning_path` + `delete_user_course_outlines_by_grade_year`，异常回滚 |
+| 路径节点 | 模型只通过工具 `submit_learning_path_plan` 提交轻量规划（学年目标/类型/成果/当前聚焦/下一步 + 与草案一一对应的 `course_specs`）；TS 先本地校验（数量=草案课程数、阶段≥3、知识点≥3、重难点/验收≥1），再调 `assemble`（后端 422 的原因同样回给模型），**共 1 次自纠**（`MAX_PLAN_CORRECTIONS`）。成功后 `saveYearLearningPath` → 摘要文本以“学习路径已生成”开头（前端结构化卡片按此前缀挂载）→ 再 `persistTurn` |
+| 失败处理 | 路径节点两次失败：先落库本轮（用户消息 + 失败提示、草案保持 `confirmed`），再发 SSE `error`（`agent=learning_path_agent`、`retryable=true`、`retryAction="retry_learning_path"`，与旧版前端重试按钮契约一致），不发 `message_completed`。草案节点失败只回复文字、不改状态 |
+| 模型场景 | 草案/路径节点使用 `path_outline` 槽位（对话主管与画像仍用 `chat_profile`）；未配置时按 M2 的“极简模式默认主力模型”回退 |
+| 其他 | 路径节点提示词带各年级进度快照（`GET …/progress-snapshots`），延续逻辑由后端装配器完成；会话 `has_paths` 在本轮生成后立即为 true |
+
+### 完成节点
+| 日期 | 节点 | 证据 |
+|---|---|---|
+| 2026-11-27 | Python：`learning_path_runtime_service.py` + 5 个内部接口（教材上下文/受保护课程/进度快照/装配/单事务保存） | `ruff check`/`format` 通过；新增 `tests/test_internal_learning_path_api.py` 5 项（鉴权、缺口登记、装配+保存+进度延续、数量不一致 422、保存仅清该年级大纲）。顺带把 M4 的迁移列断言收紧到 `current_schema()`（此前依赖库里没有别的 schema） |
+| 2026-11-27 | 网关：`intakeContract.ts`（纯函数）、`intakeAgent.ts`、`pathAgent.ts`、图节点与流转、`BackendClient` 扩展、主管提示词/工具委派更新 | `tsc --noEmit` 与 `npm run build` 通过；`vitest` 10 文件 **86** 个通过（M4 末 73；新增 `intake.test.ts` 13，并把 M4 的“桥接”用例改为仍未迁移的 `delegate_course_knowledge`） |
+| 2026-11-27 | 全量回归 | 后端 `pytest` **970** 通过；`ruff check`/`format --check` 通过；前端无改动（M4 的 321 项测试未重跑） |
+
+### 验收清单实测结果（2026-11-27）
+联调环境：独立 schema `m5_acceptance`（`alembic upgrade head` 实跑，测完已删除）+ Python 8000 + 网关 8100（真实 `server.ts`）+ 脚本化 mock OpenAI 兼容上游 9100 + Vite 5173 + 内置浏览器；数据库里种入真实已发布教材《数据结构教材》（8 个小节）。每个账号经真实 `/api/model-config` 配置指向 mock 的个人模型，画像经内部接口落库。
+
+| 编号 | 结果 | 实测证据 |
+|---|---|---|
+| AC-1 | 通过 | 先生成草案（4 门课，全部绑定 `tb-ds`），再问“第 2 门课会不会太难？为什么排在这里？”：回复直接讲解；草案 JSON 与提问前**逐字相同**、状态仍 `draft`、`useryearlearningpath` 0 行；该轮草案智能体拿到的工具是 `confirm_draft`+`propose_or_revise_draft`（无取消）。单测另验证按状态的工具集合 |
+| AC-2 | 通过 | 模型第 2 次提交把第 2 门课的小节写成伪造的 `ds-999`：后端 mock 日志里回给模型的工具结果为“第 2 门课《线性结构实践》引用了教材「数据结构教材」中不存在的小节 ID：ds-999。小节 ID 必须逐字复制目录中的 section_id。”，第 3 次提交改成真实 `ds-2`，同一个请求内完成（共 4 次模型调用、无 `error` 事件）；落库小节 `[[ds-1],[ds-2],[ds-3],[ds-4]]`。单测另验证“超出 2 次自纠预算 → 不落库、回复失败提示” |
+| AC-3 | 通过 | 已有草案后说“把第 3 门换成量子力学”（知识库无该教材）：`knowledgegap` **0 → 1 行**（`gap-…|量子力学`），草案 JSON 前后逐字相同，回复为“…已加入管理员待办。你原有的课程草稿已为你保留，可以继续调整，或者直接确认原草稿。”，并发出 `data_update(knowledge_gap_recorded, gap_id)`。（同一库里第二次重跑得到同一 `gap_id`、行数仍 1——Python 侧按 `normalized_topic` 去重，符合预期） |
+| AC-4 | 通过 | 账号有课程《操作系统概论》的大纲；新草案没有该课 → `risk_pending`、`risk_warnings=["替换/删除已有课程大纲的课程《操作系统概论》"]`、`requires_second_confirmation=true`；回复“先不改”→ 工具集合含 `cancel_risk_revision`，状态回到 `draft`、警告清空、`useryearlearningpath` 仍 0 行；再次修改回到 `risk_pending`；回复“确认覆盖”→ `confirm_draft` → 同轮生成路径：年级路径 1 行、该年级大纲 0 行 |
+| AC-5 | 通过 | 回复“可以，按这个生成吧”：同一次 SSE 内事件顺序为 `…supervisor_plan(learning_path_intake) → agent_calling/agent_result(learning_path_intake) → agent_calling(learning_path_agent) → agent_result(learning_path_agent) → message_completed → session_completed(has_paths=true)`；库里路径 `schema_version=learning_path.v2.course_node`，含 `grade_plans/knowledge_graph(critical_paths)/resource_generation_contract/dynamic_update_contract/current_learning_course(s)`，节点含 `chapter_nodes/course_node_id/source_*`；课程顺序与草案一致、教材绑定逐门一致；预置的该年级大纲被清空；回复以“学习路径已生成”开头；`GET /api/chat/sessions/{id}` 返回 `year_learning_paths=[year_3]`；`learning_path_intake` 键已清除。**浏览器**：`/branch` 页面渲染该路径（“这一学年共 4 门课程”、4 张课程卡） |
+| AC-6 | 通过 | 把第 1 门课置为已完成后刷新同年级路径：进度快照 `completed_courses=1,next=year_3_course_2`；路径智能体提示词里带有“year_3：共 4 门课程，已完成 1 门”；刷新后 `current_learning_course=year_3_course_2（线性结构实践）`、状态 `in_progress`；浏览器 `/branch`：第 1 门“已完成”、第 2 门“当前焦点”、第 3 门“未开放”。Python 单测另覆盖装配器的进度延续 |
+| 附加 | 通过 | 路径规划被后端拒绝两次：`error{agent=learning_path_agent, retryable=true, retryAction="retry_learning_path"}`，`useryearlearningpath` 0 行，草案仍为 `confirmed`，本轮 4 条消息已落库；用量按场景写入（`chat_profile` 与 `path_outline` 分别计次） |
+
+### 未验证项 / 已知遗留
+- **真实模型**：全部为脚本化 mock，验证的是工具门禁、校验自纠、契约装配、落库与流式链路，**未**评估真实模型选课质量、对 4–8 门数量/绑定规则的遵循度，也没测真实模型在“先检索目录再提交”两步工具协议下的表现。
+- 路径节点的“模型自纠”只覆盖了数量不符与后端 422 两类；真实模型可能出现的其它字段漂移（例如 `difficulty_level` 同义词）由后端装配器已有的规范化兜底，未做针对性真实验证。
+- 旧 Python 的 `learning_path_intake.py` / `learning_path.py` 及其关键词拦截器仍在仓库中（旧流水线 `legacy-stream` 对 M6/M7 的委派仍会加载它们），按计划在 M9 统一清理；装配函数目前是从旧模块里 import 的私有函数。
+- “画像首次完成后自动流转到课程草案”（M4 遗留）：仍由前端“进入学习路径草案智能体”按钮触发下一轮，主管在 B 阶段会委派草案智能体；未做同轮自动衔接。
+- Nginx/Docker 与 Playwright e2e 未运行（同 M4）。

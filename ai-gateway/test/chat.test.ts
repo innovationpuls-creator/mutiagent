@@ -335,14 +335,14 @@ describe("entry routing", () => {
 	});
 
 	it("a not-yet-migrated delegate hands the turn to the legacy pipeline", async () => {
-		h.backend.contexts.set(`${CHAT_USER}:s-i`, baseContext("s-i", { profile: completeProfile(), has_complete_profile: true }));
-		h.backend.legacyFrames = 'event: message_completed\ndata: {"full_text":"路径草案"}\n\n';
-		h.primary.queue.push({ tool: "delegate_learning_path_intake", args: { reason: "生成路径草案" } });
-		const res = await h.send("s-i", "帮我规划学习路径");
+		h.backend.contexts.set(`${CHAT_USER}:s-i`, pathContext("s-i", false));
+		h.backend.legacyFrames = 'event: message_completed\ndata: {"full_text":"课程大纲"}\n\n';
+		h.primary.queue.push({ tool: "delegate_course_knowledge", args: { reason: "生成大纲" } });
+		const res = await h.send("s-i", "帮我生成课程大纲");
 		expect(h.backend.legacyCalls).toHaveLength(1);
 		const plan = res.frames.find((f) => f.event === "supervisor_plan");
-		expect(plan?.data).toMatchObject({ agent: "learning_path_intake" });
-		expect(res.text).toContain("路径草案");
+		expect(plan?.data).toMatchObject({ agent: "course_knowledge" });
+		expect(res.text).toContain("课程大纲");
 		// The legacy pipeline persists its own turn.
 		expect(h.backend.turns).toHaveLength(0);
 	});

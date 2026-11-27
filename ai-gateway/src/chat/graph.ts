@@ -4,6 +4,9 @@ import type { BackendClient, ChatContext, LearningOverview } from "../backendCli
 import type { Logger } from "../observability.js";
 import type { AgentStreamHandle, ModelRuntime } from "../models/runtime.js";
 import type { SseEventName, SsePayload } from "../sse.js";
+import { type IntakeDraft, readIntake } from "./intakeContract.js";
+import { runIntakeAgent } from "./intakeAgent.js";
+import { runPathAgent } from "./pathAgent.js";
 import { runProfileAgent } from "./profileAgent.js";
 import { isCompleteProfile } from "./profileContract.js";
 import { type Handoff, runSupervisor, stageOf } from "./supervisor.js";
@@ -33,6 +36,11 @@ const ChatState = Annotation.Root({
 	statePatch: Annotation<Record<string, unknown> | null>({ ...last<Record<string, unknown> | null>(), default: () => null }),
 	hasProfile: Annotation<boolean>({ ...last<boolean>(), default: () => false }),
 	handoff: Annotation<Handoff | null>({ ...last<Handoff | null>(), default: () => null }),
+	/** Set when a confirmed draft flows into the path node within the same request. */
+	confirmedIntake: Annotation<IntakeDraft | null>({ ...last<IntakeDraft | null>(), default: () => null }),
+	pathGenerated: Annotation<boolean>({ ...last<boolean>(), default: () => false }),
+	/** Retryable failure to surface as an SSE error after the turn is persisted. */
+	failure: Annotation<string | null>({ ...last<string | null>(), default: () => null }),
 });
 type State = typeof ChatState.State;
 
@@ -65,6 +73,7 @@ export function isExplicitProtocolAction(query: string, sessionState: Record<str
 
 export function buildChatGraph(deps: ChatGraphDeps) {
 	let handle: AgentStreamHandle | undefined;
+	let pathHandle: AgentStreamHandle | undefined;
 	let overview: Promise<LearningOverview> | undefined;
 	const getOverview = () => (overview ??= deps.backend.getLearningOverview(deps.userUid));
 
@@ -113,12 +122,12 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 		});
 		if (result.kind === "handoff") {
 			const { handoff } = result;
-			const agent = handoff.kind === "profile_agent" ? "profile_agent" : handoff.target;
+			const agent =
+				handoff.kind === "profile_agent" ? "profile_agent" : handoff.kind === "intake" ? "learning_path_intake" : handoff.target;
 			emit("supervisor_plan", { agent, label: AGENT_LABELS[agent] ?? agent, reason: handoff.reason || `调用 ${AGENT_LABELS[agent] ?? agent}` });
-			return new Command({
-				goto: handoff.kind === "profile_agent" ? "profile_agent" : "legacy_bridge",
-				update: { handoff },
-			});
+			const goto =
+				handoff.kind === "profile_agent" ? "profile_agent" : handoff.kind === "intake" ? "intake_agent" : "legacy_bridge";
+			return new Command({ goto, update: { handoff } });
 		}
 		return new Command({ goto: "finalize", update: { response: result.text || FALLBACK_ANSWER } });
 	}
@@ -151,6 +160,94 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 				statePatch: outcome.statePatch,
 				hasProfile: isCompleteProfile(outcome.profile),
 			},
+		});
+	}
+
+	async function intakeAgent(state: State, config: LangGraphRunnableConfig) {
+		const emit = writerOf(config);
+		const stepId = "learning-path-intake-agent";
+		emit("agent_calling", { stepId, kind: "agent", agent: "learning_path_intake", label: "课程草案智能体", message: "正在处理课程草案" });
+		pathHandle ??= await deps.runtime.agentStream(deps.userUid, "path_outline");
+		const context = state.context;
+		const overviewData = stageOf(context).hasPaths ? await getOverview() : null;
+		const outcome = await runIntakeAgent({
+			handle: pathHandle,
+			backend: deps.backend,
+			userUid: deps.userUid,
+			context,
+			userText: deps.query,
+			imageDataUrl: deps.imageAttachment,
+			pathText: overviewData?.path_text ?? "",
+			signal: deps.signal,
+			emitProgress: (message) => emit("agent_progress", { stepId, agent: "learning_path_intake", message }),
+		});
+		const done = (summary: string, success = true) =>
+			emit("agent_result", { stepId, kind: "agent", agent: "learning_path_intake", label: "课程草案智能体", success, summary });
+
+		if (outcome.kind === "confirmed") {
+			// Same request, no hand-back to the student: draft node -> path node.
+			done("课程草案已确认");
+			return new Command({
+				goto: "learning_path_agent",
+				update: { confirmedIntake: outcome.draft, statePatch: { learning_path_intake: outcome.draft } },
+			});
+		}
+		let patch: Record<string, unknown> | null = null;
+		if (outcome.kind === "proposed" || outcome.kind === "cancelled") {
+			patch = { learning_path_intake: outcome.draft };
+			emit("data_update", {
+				update_type: "learning_path_intake",
+				summary: outcome.draft.status === "risk_pending" ? "课程草案待风险确认" : "课程草案已更新",
+			});
+		}
+		if (outcome.kind === "no_textbook") {
+			emit("data_update", { update_type: "knowledge_gap_recorded", gap_id: outcome.gapId, summary: `已登记知识缺口：${outcome.topic}` });
+		}
+		done(
+			outcome.kind === "proposed" ? "课程草案已生成" : outcome.kind === "failed" ? "课程草案生成失败" : "已回复",
+			outcome.kind !== "failed",
+		);
+		emit("text_chunk", { chunk: outcome.text });
+		return new Command({ goto: "finalize", update: { response: outcome.text, statePatch: patch } });
+	}
+
+	async function learningPathAgent(state: State, config: LangGraphRunnableConfig) {
+		const emit = writerOf(config);
+		const stepId = "learning-path-agent";
+		const intake = state.confirmedIntake ?? readIntake(state.context.session_state.learning_path_intake);
+		if (!intake || intake.status !== "confirmed") {
+			return new Command({ goto: "finalize", update: { response: "请先确认课程草案，再生成正式学习路径。" } });
+		}
+		emit("agent_calling", { stepId, kind: "agent", agent: "learning_path_agent", label: "学习路径智能体", message: "正在生成按年学习路径" });
+		pathHandle ??= await deps.runtime.agentStream(deps.userUid, "path_outline");
+		const outcome = await runPathAgent({
+			handle: pathHandle,
+			backend: deps.backend,
+			userUid: deps.userUid,
+			context: state.context,
+			intake,
+			userText: deps.query,
+			signal: deps.signal,
+			emitProgress: (message) => emit("agent_progress", { stepId, agent: "learning_path_agent", message }),
+		});
+		if (outcome.kind === "failed") {
+			emit("agent_result", { stepId, kind: "agent", agent: "learning_path_agent", label: "学习路径智能体", success: false, summary: "学习路径生成失败" });
+			// The confirmed draft stays in session_state so a retry only re-runs the path node.
+			return new Command({ goto: "finalize", update: { response: outcome.text, failure: outcome.text } });
+		}
+		emit("data_update", {
+			update_type: "learning_path_generated",
+			label: "学习路径",
+			grade_year: outcome.gradeYear,
+			years: [outcome.gradeYear],
+			summary: "学习路径已保存",
+		});
+		emit("agent_result", { stepId, kind: "agent", agent: "learning_path_agent", label: "学习路径智能体", success: true, summary: "学习路径已生成" });
+		emit("text_chunk", { chunk: outcome.text });
+		return new Command({
+			goto: "finalize",
+			// The draft has served its purpose; later edits start a fresh one from the saved path.
+			update: { response: outcome.text, statePatch: { learning_path_intake: null }, pathGenerated: true },
 		});
 	}
 
@@ -190,11 +287,22 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 		});
 		deps.progress.persisted = true;
 		const info = stageOf(context);
+		if (state.failure) {
+			emit("error", {
+				agent: "learning_path_agent",
+				label: "学习路径智能体",
+				message: state.failure,
+				recoverable: true,
+				retryable: true,
+				retryAction: "retry_learning_path",
+			});
+			return {};
+		}
 		emit("message_completed", { full_text: state.response });
 		emit("session_completed", {
 			session_id: deps.sessionId,
 			has_profile: state.hasProfile || info.hasProfile,
-			has_paths: info.hasPaths,
+			has_paths: info.hasPaths || state.pathGenerated,
 			has_outline: info.hasOutline,
 		});
 		return {};
@@ -202,8 +310,10 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 
 	return new StateGraph(ChatState)
 		.addNode("entry", entry, { ends: ["supervisor", "legacy_bridge"] })
-		.addNode("supervisor", supervisor, { ends: ["profile_agent", "legacy_bridge", "finalize"] })
+		.addNode("supervisor", supervisor, { ends: ["profile_agent", "intake_agent", "legacy_bridge", "finalize"] })
 		.addNode("profile_agent", profileAgent, { ends: ["finalize"] })
+		.addNode("intake_agent", intakeAgent, { ends: ["learning_path_agent", "finalize"] })
+		.addNode("learning_path_agent", learningPathAgent, { ends: ["finalize"] })
 		.addNode("legacy_bridge", legacyBridge)
 		.addNode("finalize", finalize)
 		.addEdge(START, "entry")
