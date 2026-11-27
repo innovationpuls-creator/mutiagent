@@ -497,12 +497,20 @@ load_or_generate_secrets() {
     MAINTENANCE_BYPASS_TOKEN="$(
       existing_env_value MAINTENANCE_BYPASS_TOKEN
     )" || return 1
+    # Installs that predate the AI gateway have no gateway secrets yet. Keep them
+    # stable once present (encrypted model credentials depend on the key).
+    INTERNAL_API_TOKEN="$(existing_env_value INTERNAL_API_TOKEN)" \
+      || INTERNAL_API_TOKEN="$(openssl rand -hex 32)"
+    MODEL_SECRET_ENCRYPTION_KEY="$(existing_env_value MODEL_SECRET_ENCRYPTION_KEY)" \
+      || MODEL_SECRET_ENCRYPTION_KEY="$(openssl rand -hex 32)"
     return
   fi
   POSTGRES_MAINTENANCE_PASSWORD="$(openssl rand -hex 32)"
   POSTGRES_APP_PASSWORD="$(openssl rand -hex 32)"
   JWT_SECRET="$(openssl rand -hex 32)"
   MAINTENANCE_BYPASS_TOKEN="$(openssl rand -hex 32)"
+  INTERNAL_API_TOKEN="$(openssl rand -hex 32)"
+  MODEL_SECRET_ENCRYPTION_KEY="$(openssl rand -hex 32)"
 }
 
 write_literal_env_entry() {
@@ -533,6 +541,8 @@ write_production_env() {
     printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
     printf 'TARGET_DATABASE_URL=%s\n' "$TARGET_DATABASE_URL"
     printf 'JWT_SECRET=%s\n' "$JWT_SECRET"
+    printf 'INTERNAL_API_TOKEN=%s\n' "$INTERNAL_API_TOKEN"
+    printf 'MODEL_SECRET_ENCRYPTION_KEY=%s\n' "$MODEL_SECRET_ENCRYPTION_KEY"
     printf 'LLM_BASE_URL=%s\n' "$LLM_BASE_URL"
     write_literal_env_entry LLM_API_KEY "$LLM_API_KEY"
     write_literal_env_entry LLM_MODEL "$LLM_MODEL"
@@ -562,12 +572,14 @@ export_production_environment() {
   export \
     ALLOWED_ORIGINS \
     DATABASE_URL \
+    INTERNAL_API_TOKEN \
     JWT_SECRET \
     LETSENCRYPT_EMAIL \
     LLM_API_KEY \
     LLM_BASE_URL \
     LLM_MODEL \
     MAINTENANCE_BYPASS_TOKEN \
+    MODEL_SECRET_ENCRYPTION_KEY \
     NGINX_CONFIG_MODE \
     POSTGRES_APP_PASSWORD \
     POSTGRES_MAINTENANCE_PASSWORD \

@@ -363,3 +363,44 @@
 - 出题 live 时所选章节没有 `knowledge_point_ids` 清单，ID 子集校验在 live 里是空集合成立，真实校验由 vitest 与 `validateQuiz` 单测覆盖。
 - 管理端知识库页的“引导直达模型配置”仅由后端/SSE 返回 `error_code=MODEL_NOT_CONFIGURED`，前端页面未改、未在浏览器复验。
 - Nginx 容器级用例（需要 Docker）本机未跑，仅静态断言通过；`GET /internal/forest/.../material` 未附教材原文（见偏差）。
+
+## M9：旧架构清退、生产部署适配与全链路回归验收
+
+状态：**已完成并提交**（AC-1~5、7 通过；AC-6 容器部分因本机无 Docker 未能实跑，见「未验证项」）
+
+### 已确认的决策 / 与文档的偏差（2026-11-27）
+| 项 | 结论 |
+|---|---|
+| 旧编排清退 | 删除 `app/orchestration/{graph,llm,events,guards,rule_engine,default_fill,observability,…}`、`agents/{supervisor,profile,learning_path_intake,utils}` 与 `api/chat_handlers.py`；`/internal/.../legacy-stream` 与 `/api/orchestration/*` 中除 `/start`、`/sessions/{id}` 外的路由全部移除。`pyproject.toml`/`uv.lock` 去掉全部 `langchain*`/`langgraph*`。 |
+| 偏差：`app/orchestration/` 保留 | 作为**纯函数辅助包**保留（`contracts`、`grade_contract`、`prompt_budget`、`recovery`、`state`、`agents/{course_knowledge,learning_path,models,prompts,quiz,course_resources/*}`），其中不含任何模型调用/langchain 依赖，仍被 `/internal` 确定性接口复用。 |
+| 偏差：保留 `dashscope` | B 站视频检索仍在 Python（M7 约定），因此保留 `dashscope` 依赖；平台 `LLM_API_KEY`/`LLM_MODEL` 在生产变为**可选**（缺失时视频逐小节降级），bootstrap 仍会提示填写。 |
+| 消息存储 | 会话消息仍是旧 langchain 字典形态 `{"type":"human"\|"ai","data":{…}}`，由 `chat_context_service` 以纯 dict 读写；旧会话数据无需迁移（AC-4 已验证）。 |
+| 生产配置校验 | `core/config.py` 生产环境强制 `INTERNAL_API_TOKEN`、`MODEL_SECRET_ENCRYPTION_KEY`、`AI_GATEWAY_URL`，缺失即拒绝启动。 |
+| 网关 Lint | 采用 Biome（`ai-gateway/biome.json`，关闭 `noExplicitAny`/`noNonNullAssertion`），新增 `npm run lint`。 |
+| 部署面 | 新增 `ai-gateway/Dockerfile`（多阶段、非 root、HEALTHCHECK）；`compose.production.yml`/`compose.ci.yml` 加 `ai-gateway` 服务；`env.production.example`、`bootstrap`、`deploy`、`smoke`、两份 Nginx 模板（`/api/ai/`、`/api/chat/message`、`/api/forest/ai/stream` 转发网关，`/internal/` 对外 404/封闭）同步。 |
+| OpenAPI | 报告类型随旧路由删除移出 schema，改为前端本地类型（`src/api/growthReport.ts`），`gen:api` 无漂移。 |
+| 顺带修复 | `knowledge_base_service._source_textbook_ids` 不递归列表内的嵌套教材 ID，已补递归并加测试。 |
+
+### 完成节点
+- 后端：删除上述旧编排模块与对应测试；`chat_context_service` 内联旧 `rule_engine` 的纯解析（`parse_leaf_regeneration_pending_marker` 等）；`grade_contract` 新增 `is_complete_profile_data`；`state.py` 简化为 `dict`。
+- 网关：删除 `backendClient`/`chat/routes`/`chat/types`/`graph` 中旧桥接死代码与 `test/chat.test.ts`；修 Lint 全部问题；新增 Dockerfile、Biome。
+- 部署：见上；`deploy/tests/*` 静态断言同步。
+- 文档（AC-7）：`docs/backend/agent逻辑.md`、`backend-tech-stack.md`、`docs/project-overview.md`、`docs/database/数据库表结构.md`、`docs/deployment/docker-production.md`（网关服务、必需环境变量、故障定位）。
+
+### 验收清单实测结果
+| 编号 | 结果 | 证据 |
+|---|---|---|
+| AC-1 | 通过 | 依赖清单与 `app/` 内 `grep -ri "langchain\|langgraph"` 无命中；在**不含 langchain 的干净 venv**（`uv sync --frozen --extra test`）中全量 `pytest -q`：**514 passed**；`ruff check app tests`、`ruff format --check` 通过。测试数从 984 降到 514 是因为删除了旧编排的测试（对应能力已迁到 TS 网关，由其 131 项测试覆盖），**不宣称等价覆盖**。 |
+| AC-2 | 通过 | `tsc --noEmit`、`npm run lint`（Biome，0 错误/0 警告）、`npm run build` 通过，vitest **131 passed**。 |
+| AC-3 | 通过 | `gen:api` 无漂移、`tsc`、vitest **321 passed**、`npm run build`、Biome 通过（既有 131 条 Biome warning 为基线，未新增）。 |
+| AC-4 | 通过 | 独立 schema 中：①`alembic upgrade head` 全新库成功（`test_alembic_migrations` 亦过）；②升到 0006 后插入历史用户/画像/会话/KB 任务数据，并还原成 0007 之前的结构，再 `upgrade head` → 0009，历史行全部完整（会话 `session_state` 回填 `{}`、旧消息结构可读、KB 任务 `triggered_by_uid` 为空）；③再执行 `downgrade` 到 0006 与重新 `upgrade head` 均无报错、数据保留。注意 0001 使用 `metadata.create_all`，所以“滚动升级”实际是在 0007–0009 三个增量迁移上演练。 |
+| AC-5 | 通过（见下方范围说明） | 独立 schema `m9_acceptance` + 干净 venv 后端 + 真实网关 `server.ts` + 脚本化 mock 上游，重跑 M4–M8 全部验收脚本：M4 AC-1~7 全过；M5 AC-1~6 全过；M6 AC-2~6 通过，AC-1 脚本断言“只拆 1 段”与种子（两小节各 13000 字）不符而误报 FAIL，实际 4 段（`[0,6314]`/`[6314,13000]` ×2）满足标准，与 M6 记录一致；M7 阶段 A/B/C 全过（视频检索未配置 → 逐节“暂无视频”降级且 composed 不受影响）；M8 AC-1~5 全过。全程后端日志 **0 个 500/Traceback**，各场景用量日志入库（如 chat_profile 10 行）。 |
+| AC-6 | 部分 | 见未验证项。已验证：`deploy/tests/test_nginx_config.sh` 静态断言、`test_deploy_rollback.sh`、`test_smoke.sh`（用 `python` 垫片）、文档测试；网关**生产产物**在临时目录 `npm ci → build → prune --omit=dev → node dist/server.js` 实跑：`/api/ai/health/live`=200、后端不可达时 `/ready`=503、`/internal/health` 无令牌=401。 |
+| AC-7 | 通过 | 四份文档已按最终代码核对更新；`deploy` 文档同步。 |
+
+### 未验证项 / 已知遗留
+- **无 Docker / Compose / Nginx 容器**：`compose.ci.yml` 构建与启动、真实 `deploy/bin/smoke` 对活栈、外网访问 `/internal/health` 的拒绝、`test_bootstrap.sh`、`test_compose_config.sh` 均**未实跑**，只做了静态断言与上面的产物级替代实验。部署到服务器前需在有 Docker 的环境补跑。
+- AC-5 的 ①（新学生登录、未配置模型拦截跳转、探针）在 M9 里用 API 层脚本验证（各脚本经真实 `/api/model-config` 配置 mock、未配置时返回 `MODEL_NOT_CONFIGURED`），**浏览器侧的完整 UI 走查沿用 M3/M4 的记录，未在 M9 重新逐步点击**。
+- **所有模型行为均为脚本化 mock，真实模型输出质量、真实 B 站/YouTube 检索未验证**；任何真实上游问题需用真实配置再测。
+- Python 测试数量下降（984→514）为主动删除旧编排测试所致，覆盖由网关测试承接，但并非逐项对应。
+- 前端 131 条 Biome 基线 warning 未处理。

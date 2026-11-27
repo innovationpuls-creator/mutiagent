@@ -40,9 +40,6 @@ export interface FakeBackend extends BackendClient {
 	turns: Array<{ sessionId: string; userUid: string; turn: TurnPayload }>;
 	profiles: Array<{ userUid: string; profile: Record<string, unknown> }>;
 	overviews: Map<string, LearningOverview>;
-	/** Raw SSE text returned by the legacy bridge, if a test scripts one. */
-	legacyFrames: string | null;
-	legacyCalls: Array<{ sessionId: string; userUid: string; message: string }>;
 	order: string[];
 	textbooks: TextbookContext;
 	textbookLookups: string[];
@@ -111,8 +108,6 @@ export function fakeBackend(): FakeBackend {
 		turns: [],
 		profiles: [],
 		overviews: new Map(),
-		legacyFrames: null,
-		legacyCalls: [],
 		order: [],
 		textbooks: { textbooks: [], gap_id: null },
 		textbookLookups: [],
@@ -332,11 +327,6 @@ export function fakeBackend(): FakeBackend {
 			const overview = backend.overviews.get(userUid);
 			if (!overview) throw new Error(`no overview for ${userUid}`);
 			return overview;
-		},
-		async openLegacyStream(sessionId, userUid, body) {
-			backend.calls.push(`legacy:${sessionId}`);
-			backend.legacyCalls.push({ sessionId, userUid, message: body.message });
-			return new Response(backend.legacyFrames ?? "", { status: 200 });
 		},
 		async getModelRuntimeConfig(uid) {
 			backend.calls.push(`runtime:${uid}`);

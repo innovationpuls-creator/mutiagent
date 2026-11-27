@@ -288,7 +288,7 @@ describe("AC-5 confirm flows into the path node in one request", () => {
 		const error = bad.frames.find((f) => f.event === "error")!;
 		expect(error.data).toMatchObject({ retryable: true, retryAction: "retry_learning_path" });
 		// The user turn is persisted and the confirmed draft survives for a retry.
-		expect((patchOf()?.learning_path_intake as any).status).toBe("confirmed");
+		expect((patchOf()?.learning_path_intake as { status?: string } | undefined)?.status).toBe("confirmed");
 		expect(bad.frames.some((f) => f.event === "message_completed")).toBe(false);
 	});
 

@@ -470,7 +470,7 @@ export function draftFromProfile(profile: Record<string, unknown> | null): Confi
 }
 
 export function isCompleteProfile(profile: Record<string, unknown> | null): boolean {
-	if (!profile || profile.type !== "basic_profile") return false;
+	if (profile?.type !== "basic_profile") return false;
 	const confirmed = profile.confirmed_info;
 	if (!confirmed || typeof confirmed !== "object") return false;
 	const record = confirmed as Record<string, unknown>;

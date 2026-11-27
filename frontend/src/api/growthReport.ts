@@ -1,10 +1,38 @@
-import type { components } from "../types/api";
 import { API_BASE_URL, notifyAuthInvalidFromError, readApiError } from "./http";
 
-export type GrowthReport = components["schemas"]["GrowthReport"];
-export type ReportEvidence = components["schemas"]["ReportEvidence"];
-export type ReportInsight = components["schemas"]["ReportInsight"];
-export type ReportAction = components["schemas"]["ReportAction"];
+// The report stream is served by the TS AI gateway (not part of the Python OpenAPI),
+// so the event payload contract is declared here. It mirrors what the backend's
+// `/internal/canopy/{uid}/report-validate` accepts and returns.
+export interface ReportEvidence {
+	id: string;
+	kind: "path" | "quiz" | "chapter" | "weakness" | "textbook";
+	title: string;
+	detail: string;
+	course_id?: string | null;
+}
+export interface ReportInsight {
+	title: string;
+	body: string;
+	/** Verbatim ids from this report's evidence catalogue. */
+	evidence_ids: string[];
+}
+export interface ReportAction {
+	title: string;
+	body: string;
+	evidence_ids: string[];
+	check: string;
+	course_id?: string | null;
+}
+export interface GrowthReport {
+	overview: string;
+	strengths: ReportInsight[];
+	improvements: ReportInsight[];
+	actions: ReportAction[];
+	generated_at: string;
+	stats: { passed_chapters: number; tested_chapters: number; attempts: number };
+	evidence: ReportEvidence[];
+	coverage: string;
+}
 export type ReportStage = "collecting" | "analyzing" | "writing";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -61,7 +89,7 @@ function parseReport(value: unknown): GrowthReport {
 	) {
 		throw new Error("成长报告数据格式不正确，请重新生成。");
 	}
-	return value as GrowthReport;
+	return value as unknown as GrowthReport;
 }
 
 function handleEvent(

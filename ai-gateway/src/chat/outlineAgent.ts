@@ -1,6 +1,6 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { arr, obj, str } from "@earendil-works/pi-schema";
-import type { BackendClient, OutlineSourceCourse } from "../backendClient.js";
+import type { BackendClient, OutlineSourceContext, OutlineSourceCourse } from "../backendClient.js";
 import { BackendBusinessError, GatewayError } from "../errors.js";
 import type { AgentStreamHandle } from "../models/runtime.js";
 import { runAgent } from "./agentRunner.js";
@@ -202,7 +202,7 @@ export function outlineSummaryText(
 	} else {
 		const name = String(outlines[0]?.course_name ?? "").trim();
 		const summary = String(outlines[0]?.personalization_summary ?? "").trim();
-		head = [`课程大纲已生成：《${name}》`, summary].filter(Boolean).join("，") + "。";
+		head = `${[`课程大纲已生成：《${name}》`, summary].filter(Boolean).join("，")}。`;
 	}
 	const failureText =
 		failures.length > 0
@@ -212,7 +212,7 @@ export function outlineSummaryText(
 }
 
 export async function runOutlineAgent(input: OutlineAgentInput): Promise<OutlineOutcome> {
-	let context;
+	let context: OutlineSourceContext;
 	try {
 		context = await input.backend.getOutlineSourceContext(input.userUid, input.courseRef);
 	} catch (error) {

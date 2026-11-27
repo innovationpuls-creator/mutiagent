@@ -17,7 +17,7 @@ export interface ResolvedScene {
 
 function providerUsable(config: RuntimeConfig, ref: ModelRef): boolean {
 	const provider = config.providers.find((p) => p.provider_id === ref.provider_id);
-	return provider !== undefined && provider.enabled;
+	return provider?.enabled === true;
 }
 
 /**

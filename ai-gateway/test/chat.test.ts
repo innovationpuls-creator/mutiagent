@@ -54,14 +54,13 @@ describe("AC-1 stage tool gating", () => {
 		expect(res.frames.at(-1)?.event).toBe("session_completed");
 	});
 
-	it("a hallucinated out-of-stage tool call is rejected and never reaches the legacy bridge", async () => {
+	it("a hallucinated out-of-stage tool call is rejected", async () => {
 		h.backend.contexts.set(`${CHAT_USER}:s-b`, baseContext("s-b"));
 		h.primary.queue.push(
 			{ tool: "delegate_learning_path_intake", args: {} },
 			{ text: "要先完善画像才能生成路径哦。" },
 		);
 		const res = await h.send("s-b", "直接帮我生成大纲和学习路径");
-		expect(h.backend.legacyCalls).toHaveLength(0);
 		expect(res.frames.find((f) => f.event === "message_completed")?.data.full_text).toContain("画像");
 	});
 });
@@ -230,7 +229,6 @@ describe("AC-5 free-form read-only queries", () => {
 		expect(names(res.frames)).toEqual(expect.arrayContaining(["data_update", "text_chunk"]));
 		expect(res.frames.find((f) => f.event === "data_update" && f.data.update_type === "progress_loaded")).toBeTruthy();
 		expect(res.frames.find((f) => f.event === "message_completed")?.data.full_text).toContain("《操作系统》");
-		expect(h.backend.legacyCalls).toHaveLength(0);
 	});
 
 	it("reads the outline tool too, emitting course_knowledge_loaded", async () => {
@@ -334,7 +332,6 @@ describe("entry routing", () => {
 		h.backend.overviews.set(CHAT_USER, OVERVIEW);
 		h.primary.queue.push({ text: "我来帮你看看。" });
 		await h.send("s-k", "下一步学什么？看看大纲和学习路径");
-		expect(h.backend.legacyCalls).toHaveLength(0);
 		expect(h.primary.requests).toHaveLength(1);
 	});
 });

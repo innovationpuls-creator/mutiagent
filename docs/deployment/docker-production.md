@@ -11,6 +11,7 @@
 - 腾讯云安全组允许公网访问 `80/tcp` 和 `443/tcp`。
 - 本地 `backend/.env` 精确包含当前可用的 `DATABASE_URL`。
 - 本地 PostgreSQL 18 的 `pg_dump`、`pg_restore` 和 `psql` 可用。
+- 生产栈包含 `ai-gateway`（TypeScript/Pi，端口 8100，仅容器网络内可达）。Nginx 把 `/api/ai/`、`/api/chat/message`、`/api/forest/ai/stream` 等 AI 路径转发给它，`/internal/` 对公网封闭。`INTERNAL_API_TOKEN` 与 `MODEL_SECRET_ENCRYPTION_KEY` 由 bootstrap 生成，backend、worker、ai-gateway 必须共用同一份，缺失时后端生产配置校验会拒绝启动。`LLM_API_KEY`/`LLM_MODEL` 现在只用于 Bilibili 视频搜索，留空时视频小节逐节降级为“暂无视频”；聊天等模型由用户在页面“模型配置”里自行填写，平台不再托管。
 
 `onetree.chat` 和 `www.onetree.chat` 尚未完成 ICP 备案时，腾讯云会拦截域名 HTTP 请求。该状态不影响 IP HTTPS 部署，不要在此阶段执行域名证书签发。
 
@@ -198,6 +199,15 @@ docker system df
 不要手工删除正在使用的 Docker volume。备份目录由发布脚本自动轮转为最近 3 份。
 
 ## 13. 常见故障定位
+
+AI 网关异常（对话、出题、报告无响应）：
+
+```bash
+docker compose --env-file /opt/onetree/.env.production -f /opt/onetree/deploy/compose.production.yml ps ai-gateway
+docker compose --env-file /opt/onetree/.env.production -f /opt/onetree/deploy/compose.production.yml logs --tail 200 ai-gateway
+```
+
+`/api/ai/health/live` 表示进程存活；`/api/ai/health/ready` 在后端不可达或内部令牌不一致时返回 503。
 
 Docker 未启动：
 

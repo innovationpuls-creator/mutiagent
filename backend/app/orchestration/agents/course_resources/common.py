@@ -1,25 +1,17 @@
 # ruff: noqa: C901, E501
 from __future__ import annotations
 
-import asyncio
 import copy
 import json
 import logging
 import re
-from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import Any
 
 from sqlmodel import Session
 
 from app.database import get_engine
-from app.orchestration.agents.models import (
-    SectionHtmlAnimationOutput,
-    SectionMarkdownOutput,
-    SectionVideoSearchOutput,
-)
 from app.orchestration.prompt_budget import apply_prompt_budget
-from app.services.course_knowledge_service import upsert_user_course_knowledge_outline
 from app.services.knowledge_base_service import (
     get_textbook_evidence_pack,
     require_student_visible_textbooks,
@@ -28,14 +20,7 @@ from app.services.knowledge_base_service import (
 logger = logging.getLogger(__name__)
 
 # Constants
-_RESOURCE_TIMEOUT_SECONDS = 180.0
-_MARKDOWN_TIMEOUT_SECONDS = 180.0
-_MARKDOWN_SECTION_BODY_ATTEMPTS = 3
-_VIDEO_TIMEOUT_SECONDS = 180.0
-_ANIMATION_TIMEOUT_SECONDS = 180.0
 _VIDEO_METADATA_TIMEOUT_SECONDS = 8.0
-_VIDEO_VERIFIED_QUERY_LIMIT = 6
-_SECTION_CONCURRENCY_LIMIT = 3
 
 SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT = """\
 你是课程 Markdown 教学文档生成智能体。
@@ -65,9 +50,6 @@ SECTION_MARKDOWN_EXPANSION_SYSTEM_PROMPT = """\
 
 _RESOURCE_PLACEHOLDER_PATTERN = re.compile(
     r"<!--\s*(?P<kind>video|animation):id=(?P<id>[A-Za-z0-9_.:-]+)\s*-->"
-)
-_JSON_CODE_BLOCK_PATTERN = re.compile(
-    r"```json\s*(?P<body>.*?)```", re.DOTALL | re.IGNORECASE
 )
 _MARKDOWN_CODE_BLOCK_PATTERN = re.compile(
     r"^```(?:markdown|md)?\s*(?P<body>.*?)```\s*$", re.DOTALL | re.IGNORECASE
@@ -180,38 +162,6 @@ def _profile_summary_for_prompt(profile: dict | None) -> str:
     return "【用户画像摘要】\n" + "\n".join(f"- {p}" for p in parts)
 
 
-def _chapter_resource_error_event(
-    message: str,
-    *,
-    course_id: str,
-    chapter_section_id: str,
-    phase: str,
-    step_id: str | None = None,
-    agent: str | None = None,
-    label: str | None = None,
-    section_ids: list[str] | None = None,
-) -> dict:
-    event: dict[str, Any] = {
-        "event": "error",
-        "message": message,
-        "recoverable": True,
-        "course_id": course_id,
-        "chapter_section_id": chapter_section_id,
-        "kind": "course_resource_chapter",
-        "phase": phase,
-        "status": "error",
-    }
-    if step_id:
-        event["stepId"] = step_id
-    if agent:
-        event["agent"] = agent
-    if label:
-        event["label"] = label
-    if section_ids:
-        event["section_ids"] = section_ids
-    return event
-
-
 def _extract_brief_ids_from_markdown(markdown: str, kind: str) -> list[str]:
     ids: list[str] = []
     for match in _RESOURCE_PLACEHOLDER_PATTERN.finditer(markdown):
@@ -229,26 +179,6 @@ def _extract_recommendation_reason(markdown: str) -> tuple[str, str]:
     reason = match.group("reason").strip()
     cleaned = markdown[: match.start()].rstrip() + markdown[match.end() :]
     return cleaned.strip(), reason
-
-
-async def _run_with_retries(
-    action: Callable[[], Awaitable[dict]],
-    *,
-    fallback: dict,
-    attempts: int = 3,
-) -> dict:
-    for attempt in range(attempts):
-        try:
-            return await action()
-        except Exception as exc:
-            if attempt + 1 >= attempts:
-                logger.warning(
-                    "Resource action failed after %s attempts: %s: %r",
-                    attempts,
-                    type(exc).__name__,
-                    exc,
-                )
-    return fallback
 
 
 def _extract_json_object_text(text: str) -> str:
@@ -279,280 +209,6 @@ def _plain_markdown_text(text: str) -> str:
     return clean_text
 
 
-def _plain_html_text(text: str) -> str:
-    clean_text = text.strip()
-    match = re.match(
-        r"^```(?:html)?\s*(?P<body>.*?)```\s*$", clean_text, re.DOTALL | re.IGNORECASE
-    )
-    if match:
-        return match.group("body").strip()
-    return clean_text
-
-
-def _persist_outline(user_id: str, outline: dict) -> None:
-    with Session(get_engine()) as db_session:
-        from app.services.course_knowledge_service import (
-            SECTION_GENERATED_ASSET_KEYS,
-            _outline_sections_signature,
-            get_user_course_knowledge_outline,
-        )
-        from app.services.student_lock import lock_student
-
-        lock_student(db_session, user_id)
-        current = get_user_course_knowledge_outline(
-            db_session, user_id, outline.get("course_id", "")
-        )
-        if current is None or _outline_sections_signature(
-            current
-        ) != _outline_sections_signature(outline):
-            raise ValueError("课程大纲已更新，请重新生成学习资源")
-        merged = dict(current)
-        for key in (*SECTION_GENERATED_ASSET_KEYS, "section_resource_errors"):
-            if key in outline:
-                merged[key] = {**current.get(key, {}), **outline[key]}
-        upsert_user_course_knowledge_outline(db_session, user_id, merged, commit=False)
-        from sqlmodel import select
-
-        from app.models import ChapterWeakness
-
-        course_id = outline.get("course_id", "")
-        if course_id:
-            stmt = select(ChapterWeakness).where(
-                ChapterWeakness.user_uid == user_id,
-                ChapterWeakness.course_node_id == course_id,
-                ChapterWeakness.consumed.is_(False),
-            )
-            unconsumed = db_session.exec(stmt).all()
-            for w in unconsumed:
-                w.consumed = True
-                db_session.add(w)
-            db_session.commit()
-    logger.info(
-        "Course resource outline persisted for user %s, course %s",
-        user_id,
-        outline.get("course_id", ""),
-    )
-
-
-def _resource_payload_from_query(query: str) -> dict:
-    _prefix, separator, raw_payload = query.partition("输入：")
-    if not separator:
-        return {}
-    try:
-        payload = json.loads(raw_payload)
-        return payload if isinstance(payload, dict) else {}
-    except Exception:
-        return {}
-
-
-def _section_markdown_data_from_plain_text(text: str, query: str) -> dict:
-    markdown = _plain_markdown_text(text)
-    payload = _resource_payload_from_query(query)
-    section = payload.get("target_section")
-    section_data = section if isinstance(section, dict) else {}
-    section_id = _clean_text(section_data.get("section_id"))
-    parent_section_id = section_data.get("parent_section_id")
-    parent_id = parent_section_id if isinstance(parent_section_id, str) else None
-    title = _clean_text(section_data.get("title")) or section_id
-
-    video_briefs = _generated_markdown_video_briefs(section_data)
-    for index, video_id in enumerate(
-        _extract_brief_ids_from_markdown(markdown, "video")
-    ):
-        if index < len(video_briefs):
-            video_briefs[index]["video_id"] = video_id
-
-    animation_briefs = _generated_markdown_animation_briefs(section_data)
-    for index, animation_id in enumerate(
-        _extract_brief_ids_from_markdown(markdown, "animation")
-    ):
-        if index < len(animation_briefs):
-            animation_briefs[index]["animation_id"] = animation_id
-
-    return {
-        "section_id": section_id,
-        "parent_section_id": parent_id,
-        "title": title,
-        "markdown": markdown,
-        "source_references": _source_references_for_section(section_data),
-        "video_briefs": video_briefs,
-        "animation_briefs": animation_briefs,
-    }
-
-
-def _section_animation_data_from_plain_text(text: str, query: str) -> dict:
-    html_text = _plain_html_text(text)
-    payload = _resource_payload_from_query(query)
-    section = payload.get("target_section")
-    section_data = section if isinstance(section, dict) else {}
-    section_id = _clean_text(section_data.get("section_id"))
-    animation_briefs = payload.get("animation_briefs")
-    if not isinstance(animation_briefs, list):
-        animation_briefs = []
-
-    animations = []
-    for brief in animation_briefs:
-        if not isinstance(brief, dict):
-            continue
-        animation_id = _clean_text(brief.get("animation_id"))
-        if not animation_id:
-            continue
-        animations.append(
-            {
-                "animation_id": animation_id,
-                "title": _clean_text(brief.get("title")),
-                "html": html_text,
-            }
-        )
-    return {
-        "section_id": section_id,
-        "animations": animations,
-    }
-
-
-def _normalize_section_markdown_output(output: object, query: str) -> dict:
-    data = dict(output) if isinstance(output, dict) else {}
-    payload = _resource_payload_from_query(query)
-    section = payload.get("target_section")
-    section_data = section if isinstance(section, dict) else {}
-    if not _clean_text(data.get("section_id")):
-        data["section_id"] = _clean_text(section_data.get("section_id"))
-
-    data["markdown"] = _plain_markdown_text(_clean_text(data.get("markdown")))
-    data["source_references"] = (
-        data.get("source_references")
-        if isinstance(data.get("source_references"), list)
-        else _source_references_for_section(section_data)
-    )
-    data["video_briefs"] = _normalize_markdown_video_briefs(
-        section_data, data.get("video_briefs")
-    )
-    data["animation_briefs"] = _normalize_markdown_animation_briefs(
-        section_data, data.get("animation_briefs")
-    )
-
-    return data
-
-
-def _normalize_section_video_output(output: object, query: str) -> dict:
-    data = dict(output) if isinstance(output, dict) else {}
-    if not _clean_text(data.get("section_id")):
-        try:
-            args = json.loads(query)
-            data["section_id"] = _clean_text(args.get("section_id", ""))
-        except Exception:
-            pass
-
-    video_links = data.get("video_links")
-    normalized_links: list[dict] = []
-    if isinstance(video_links, list):
-        for item in video_links:
-            if not isinstance(item, dict):
-                continue
-            brief_id = _clean_text(item.get("video_id") or item.get("brief_id"))
-            url = _clean_text(item.get("url"))
-            title = _clean_text(item.get("title"))
-            if brief_id and url:
-                normalized_links.append(
-                    {"brief_id": brief_id, "url": url, "title": title}
-                )
-    data["video_links"] = normalized_links
-
-    return data
-
-
-def _normalize_section_animation_output(output: object, query: str) -> dict:
-    data = dict(output) if isinstance(output, dict) else {}
-    if not _clean_text(data.get("section_id")):
-        try:
-            args = json.loads(query)
-            data["section_id"] = _clean_text(args.get("section_id", ""))
-        except Exception:
-            pass
-
-    animations = data.get("animations")
-    normalized_animations: list[dict] = []
-    if isinstance(animations, list):
-        for item in animations:
-            if not isinstance(item, dict):
-                continue
-            animation_id = _clean_text(item.get("animation_id"))
-            title = _clean_text(item.get("title"))
-            html_val = _plain_html_text(_clean_text(item.get("html")))
-            if animation_id and html_val:
-                normalized_animations.append(
-                    {"animation_id": animation_id, "title": title, "html": html_val}
-                )
-    data["animations"] = normalized_animations
-
-    return data
-
-
-def _normalize_resource_chain_output(
-    output: object, output_schema: Any, query: str
-) -> dict:
-    if output_schema is SectionMarkdownOutput:
-        return _normalize_section_markdown_output(output, query)
-    if output_schema is SectionVideoSearchOutput:
-        return _normalize_section_video_output(output, query)
-    if output_schema is SectionHtmlAnimationOutput:
-        return _normalize_section_animation_output(output, query)
-    return dict(output) if isinstance(output, dict) else {}
-
-
-async def _invoke_resource_chain(
-    chain: Any,
-    query: str,
-    output_schema: Any,
-    *,
-    timeout_seconds: float = _RESOURCE_TIMEOUT_SECONDS,
-) -> dict:
-    output = await asyncio.wait_for(
-        chain.ainvoke({"query": query}),
-        timeout=timeout_seconds,
-    )
-    if hasattr(output, "content"):
-        output = output.content
-    if hasattr(output, "model_dump"):
-        return output.model_dump()
-    if isinstance(output, str):
-        text = output.strip()
-        json_text = _extract_json_object_text(text)
-        if json_text:
-            output = json.loads(json_text)
-        elif output_schema is SectionMarkdownOutput:
-            output = _section_markdown_data_from_plain_text(text, query)
-        elif output_schema is SectionHtmlAnimationOutput:
-            output = _section_animation_data_from_plain_text(text, query)
-        else:
-            output = json.loads(text)
-    return _normalize_resource_chain_output(output, output_schema, query)
-
-
-async def _invoke_markdown_expansion_chain(
-    chain: Any,
-    query: str,
-    *,
-    timeout_seconds: float = _MARKDOWN_TIMEOUT_SECONDS,
-) -> str:
-    output = await asyncio.wait_for(
-        chain.ainvoke({"query": query}),
-        timeout=timeout_seconds,
-    )
-    if hasattr(output, "content"):
-        output = output.content
-    return _plain_markdown_text(_clean_text(output))
-
-
-def _tool_args(state: dict[str, Any], explicit_args: dict | None) -> dict:
-    if explicit_args is not None:
-        return explicit_args
-    from app.orchestration.agents.utils import extract_last_tool_call_args
-
-    args = extract_last_tool_call_args(state)
-    return args if isinstance(args, dict) else {}
-
-
 def _section_title(outline: dict, section: dict) -> str:
     title = _clean_text(section.get("title"))
     if title:
@@ -576,33 +232,6 @@ def _section_by_id(outline: dict, section_id: str) -> dict | None:
         if _clean_text(s.get("section_id")) == section_id:
             return s
     return None
-
-
-def _source_references_for_section(section: dict) -> list[dict]:
-    textbook_id = _clean_text(section.get("source_textbook_id"))
-    textbook_title = _clean_text(section.get("source_textbook_title"))
-    section_ids = _text_items(section.get("source_section_ids"))
-    section_titles = _text_items(section.get("source_section_titles"))
-    content_chars = int(section.get("source_content_chars") or 0)
-    if not textbook_id and not textbook_title and not section_ids:
-        return []
-
-    references: list[dict] = []
-    for index, section_id in enumerate(section_ids or [""]):
-        section_title = section_titles[index] if index < len(section_titles) else ""
-        references.append(
-            {
-                "textbook_id": textbook_id,
-                "textbook_title": textbook_title,
-                "section_id": section_id,
-                "section_title": section_title,
-                "evidence_summary": (
-                    f"依据教材《{textbook_title}》中 {section_id} {section_title} 的正文内容生成。"
-                ).strip(),
-                "content_char_count": content_chars,
-            }
-        )
-    return references
 
 
 def _parent_section(outline: dict, section: dict) -> dict | None:
@@ -836,69 +465,6 @@ def _textbook_evidence_pack(outline: dict, section: dict) -> dict:
     }
 
 
-def _current_learning_course_context(state: dict[str, Any], outline: dict) -> dict:
-    year_learning_paths = state.get("year_learning_paths")
-    if not isinstance(year_learning_paths, dict):
-        return {}
-    grade_year = _clean_text(outline.get("grade_year"))
-    course_id = _clean_text(outline.get("course_id"))
-    path = year_learning_paths.get(grade_year)
-    if not isinstance(path, dict):
-        return {}
-    current = path.get("current_learning_course")
-    if isinstance(current, dict) and current.get("course_node_id") == course_id:
-        return current
-    return {}
-
-
-def _markdown_input(state: dict[str, Any], outline: dict, section: dict) -> str:
-    context = _resource_context(state, outline, section)
-    payload = {
-        **context,
-        "parent_section": _parent_section(outline, section),
-        "target_section": section,
-        "video_briefs": [],
-        "animation_briefs": [],
-    }
-    instruction = (
-        "请基于输入大纲、关联学习路径与用户画像，为此小节生成完整的 Markdown 教学设计初稿。"
-        "必须严格采用 JSON 输出格式。\n\n"
-        "教材证据包是本节唯一的正文事实来源，必须优先依据其中的 evidence_text、sections、total_chars 生成内容。\n"
-        "不要只根据章节标题写摘要式内容，也不要脱离教材正文自行补充事实。\n\n"
-        "字段约定：\n"
-        "- section_id: 小节ID字符串 (必须等于输入中的 target_section.section_id)\n"
-        "- source_references: 数组。每条必须来自 textbook_evidence_pack.sections 或 target_section.source_* 字段，包含教材 ID、小节 ID、标题和证据摘要。\n"
-        "- markdown: 完整教学文档正文，不是预习材料、导读、摘要、课前预览或课程宣传页；必须包含教材来源引用。\n"
-        "- video_briefs: 数组。每个元素必须包含 video_id、title、target_markdown_heading、target_paragraph_summary、search_terms、purpose。target_paragraph_summary 必须说明视频服务哪一段正文，search_terms 至少 3 个且来自教材正文、目标小节或正文段落。\n"
-        "- animation_briefs: 数组。每个元素必须包含 animation_id、title、target_markdown_heading、target_paragraph_summary、concept、simulation_type、visual_elements、visual_model、timeline、layout、motion、interaction、success_check、placement_hint。\n"
-        "- animation_briefs 是 HTML 动画智能体的完整施工图。visual_model.entities 必须列出真实可视对象，visual_model.relations 必须列出对象关系，timeline 必须列出分步展示动作；链表等数据结构必须规划成结构模拟，不得规划成文字说明动画。\n\n"
-        "教学内容必备章节格式：\n"
-        "## 学习目标\n(写出明确的学习与能力目标，建议使用有序列表)\n\n"
-        "## 核心概念\n(讲解核心概念，配有通俗的比喻或表格说明)\n\n"
-        "## 步骤讲解\n(详细的推演或实现步骤。必须包含 Markdown 表格或 fenced code block 作为核心教学支架)\n\n"
-        "## 练习任务\n(为了实现学习目标，设计的一个独立实践任务。提示：请在此章节正文开头前放置视频/动画占位符)\n\n"
-        "## 检查标准\n(提供自测和交付验收单，必须提供至少 4 条 `- [ ]` 的清单格式)\n\n"
-        "## 来源\n(列出教材名、教材小节 ID 和小节标题)\n\n"
-        "关于占位符要求：\n"
-        "你必须在正文适当的位置写入视频占位符 `<!-- video:id=xxx -->` 引导学生观看；"
-        "并在练习任务前写入交互动效占位符 `<!-- animation:id=yyy -->` 引导实践。"
-        "占位符中引用的 id 必须与 video_briefs 或 animation_briefs 中的定义完全一致。"
-    )
-
-    profile = state.get("profile")
-    profile_summary = _profile_summary_for_prompt(profile)
-    return _resource_query_with_prompt_budget(
-        instruction,
-        payload,
-        phase="markdown",
-        protected_fragments=[
-            _clean_text(section.get("source_textbook_id")),
-            "、".join(_text_items(section.get("source_section_ids"))),
-        ],
-        extra_text=profile_summary,
-    )
-
-
 def _chapter_learning_sequence(outline: dict, root_section: dict | None) -> list[str]:
     if not isinstance(root_section, dict):
         return []
@@ -1094,16 +660,6 @@ def _normalize_markdown_heading_line(line: str) -> str:
         return replacement + (f"\n{suffix}" if suffix else "")
 
     return ""
-
-
-def _merge_course_resource_data(
-    outline: dict, field_name: str, values: dict[str, dict]
-) -> dict:
-    merged = {**outline}
-    existing = dict(merged.get(field_name) or {})
-    existing.update(values)
-    merged[field_name] = existing
-    return merged
 
 
 def _brief_by_id(briefs: object, id_field: str) -> dict[str, dict]:
@@ -1465,51 +1021,6 @@ def _normalize_markdown_step_blocks(markdown: str) -> str:
     return markdown
 
 
-def _normalize_markdown_video_briefs(section: dict, video_briefs: object) -> list[dict]:
-    normalized: list[dict] = []
-    if isinstance(video_briefs, list):
-        for brief in video_briefs:
-            if hasattr(brief, "model_dump"):
-                brief_data = brief.model_dump()
-            elif isinstance(brief, dict):
-                brief_data = dict(brief)
-            else:
-                continue
-            video_id = _clean_text(brief_data.get("video_id"))
-            title = _clean_text(brief_data.get("title"))
-            purpose = _clean_text(brief_data.get("purpose"))
-            target_markdown_heading = _clean_text(
-                brief_data.get("target_markdown_heading")
-            )
-            target_paragraph_summary = _clean_text(
-                brief_data.get("target_paragraph_summary")
-            )
-            search_terms = _text_items(brief_data.get("search_terms"))
-            if (
-                video_id
-                and title
-                and target_markdown_heading
-                and target_paragraph_summary
-                and len(search_terms) >= 3
-                and purpose
-            ):
-                normalized.append(
-                    {
-                        "video_id": video_id,
-                        "title": title,
-                        "target_markdown_heading": target_markdown_heading,
-                        "target_paragraph_summary": target_paragraph_summary,
-                        "search_terms": search_terms,
-                        "purpose": purpose,
-                    }
-                )
-
-    if normalized:
-        return normalized
-
-    return _generated_markdown_video_briefs(section)
-
-
 def _normalize_markdown_animation_briefs(
     section: dict, animation_briefs: object
 ) -> list[dict]:
@@ -1639,41 +1150,6 @@ def _normalize_markdown_animation_briefs(
     return _generated_markdown_animation_briefs(section)
 
 
-def _generated_markdown_video_briefs(section: dict) -> list[dict]:
-    title = (
-        _clean_text(section.get("title"))
-        or _clean_text(section.get("section_id"))
-        or "本节"
-    )
-    source_titles = _text_items(section.get("source_section_titles"))
-    knowledge_points = _text_items(section.get("key_knowledge_points"))
-    joined_terms = "".join([title, *source_titles, *knowledge_points])
-    if "链表" in joined_terms:
-        return [
-            {
-                "video_id": "video_1",
-                "title": f"{title}节点与指针讲解视频",
-                "target_markdown_heading": "核心概念",
-                "target_paragraph_summary": "解释单链表节点由 data 和 next 组成，next 指向下一个节点。",
-                "search_terms": ["单链表", "节点", "next 指针", "链式存储"],
-                "purpose": f"辅助理解「{title}」中节点、data 域、next 指针、头指针与尾节点 None 如何共同构成线性结构。",
-            }
-        ]
-    focus_terms = source_titles[:3] or knowledge_points[:3] or [title]
-    focus = "、".join(focus_terms)
-    primary_title = focus_terms[0] if focus_terms else title
-    return [
-        {
-            "video_id": "video_1",
-            "title": f"{primary_title}专项讲解视频",
-            "target_markdown_heading": "核心概念",
-            "target_paragraph_summary": f"解释「{title}」中{focus}的关键概念与练习任务关系。",
-            "search_terms": (focus_terms + [title, "教学讲解", "实践任务"])[:3],
-            "purpose": f"帮助学习者围绕「{title}」理解{focus}，并把本节内容落到可验收任务。",
-        }
-    ]
-
-
 def _generated_markdown_animation_briefs(section: dict) -> list[dict]:
     title = (
         _clean_text(section.get("title"))
@@ -1794,17 +1270,3 @@ def _generated_markdown_animation_briefs(section: dict) -> list[dict]:
             "placement_hint": "练习任务之前。",
         }
     ]
-
-
-def _generated_markdown_seed_data(section: dict) -> dict:
-    section_id = _clean_text(section.get("section_id"))
-    title = _clean_text(section.get("title")) or section_id
-    return {
-        "section_id": section_id,
-        "parent_section_id": section.get("parent_section_id"),
-        "title": title,
-        "markdown": "",
-        "source_references": _source_references_for_section(section),
-        "video_briefs": _generated_markdown_video_briefs(section),
-        "animation_briefs": _generated_markdown_animation_briefs(section),
-    }

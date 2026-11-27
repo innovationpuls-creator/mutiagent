@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type FakeBackend, INTERNAL_TOKEN, fakeBackend, makeApp, signToken } from "./helpers.js";
+import { INTERNAL_TOKEN, fakeBackend, makeApp, signToken } from "./helpers.js";
 
 const REQUEST_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const USER = "00000000-0000-0000-0000-000000000001";
@@ -138,4 +138,3 @@ describe("/internal guard", () => {
 	});
 });
 
-export type { FakeBackend };

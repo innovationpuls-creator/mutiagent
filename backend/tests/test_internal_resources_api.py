@@ -278,7 +278,6 @@ def test_failed_phase_records_a_retryable_error_and_keeps_other_phases(
 
 def test_video_found_is_saved_as_available_and_composed(outlined, monkeypatch) -> None:
     """AC-4 (found path): a verified Bilibili hit becomes an `available` video block."""
-    import app.orchestration.agents.course_resources as cr_pkg
 
     class _Source:
         url = "https://www.bilibili.com/video/BV1xx411c7mD"
@@ -289,8 +288,8 @@ def test_video_found_is_saved_as_available_and_composed(outlined, monkeypatch) -
     async def fake_verify(_url):
         return {"status": "ok", "title": "时间复杂度入门讲解"}
 
-    monkeypatch.setattr(cr_pkg, "_search_aliyun_bilibili_sources", fake_search)
-    monkeypatch.setattr(cr_pkg, "_verify_bilibili_video_metadata", fake_verify)
+    monkeypatch.setattr(video_mod, "_search_aliyun_bilibili_sources", fake_search)
+    monkeypatch.setattr(video_mod, "_verify_bilibili_video_metadata", fake_verify)
 
     client, course_id, leaves = outlined
     sid = leaves[0]
@@ -313,3 +312,23 @@ def test_video_found_is_saved_as_available_and_composed(outlined, monkeypatch) -
     ).json()["value"]
     _save(client, course_id, sid, "animation", anim).raise_for_status()
     assert _save(client, course_id, sid, "compose").status_code == 200
+
+
+def test_unpublished_source_textbook_blocks_generation(outlined, ctx) -> None:  # noqa: F811
+    """The resource gate mirrors the outline gate: an unpublished source book
+    refuses generation instead of writing content from it."""
+    from sqlmodel import Session
+
+    from app.models import Textbook
+
+    client, course_id, _ = outlined
+    _, engine, _ = ctx
+    with Session(engine) as session:
+        for index in range(1, 6):
+            book = session.get(Textbook, f"textbook-{index}")
+            book.student_availability_status = "archived"
+            session.add(book)
+        session.commit()
+    refused = _prepare(client, course_id).json()
+    assert refused["status"] == "refused"
+    assert refused["message"] == "教材未发布。"

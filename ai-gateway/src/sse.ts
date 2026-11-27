@@ -74,7 +74,7 @@ export function errorEventFromGatewayError(error: GatewayError): SsePayload {
 
 export interface SseWriter {
 	send(name: SseEventName, payload?: SsePayload): void;
-	/** Forward already-formatted SSE bytes (legacy bridge). */
+	/** Forward already-formatted SSE frames (used by the AI stream routes). */
 	sendRaw(frames: string): void;
 	readonly closed: boolean;
 	readonly signal: AbortSignal;

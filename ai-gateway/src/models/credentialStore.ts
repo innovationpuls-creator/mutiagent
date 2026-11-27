@@ -80,7 +80,7 @@ export function createBackendCredentialStore(
 					if (!(error instanceof BackendBusinessError && error.status === 404)) throw error;
 				}
 				const next = await fn(current ? toCredential(current) : undefined);
-				if (!next || next.type !== "oauth") return current ? toCredential(current) : undefined;
+				if (next?.type !== "oauth") return current ? toCredential(current) : undefined;
 				const { type: _type, ...plain } = next;
 				if (current) {
 					const result = await backend.oauthRefreshLock(userUid, providerId, {

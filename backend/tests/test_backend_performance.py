@@ -1,6 +1,5 @@
 """Regression contracts for database lifetime and bounded work."""
 
-import asyncio
 import threading
 from datetime import datetime, timezone
 
@@ -8,7 +7,7 @@ import pytest
 from sqlalchemy import event
 from sqlmodel import Session, SQLModel
 
-from app.database import build_engine, get_engine
+from app.database import build_engine
 from app.models import KnowledgeBaseIngestionJob, KnowledgeGap, Textbook, User
 from app.services import knowledge_base_service as kb
 from app.workers.knowledge_base_worker import claim_next_ingestion_job
@@ -208,61 +207,3 @@ def test_report_counts_all_history_but_loads_recent_evidence(engine):
         assert quizzes[0].id == "quiz:quiz-39"
         assert quizzes[-1].id == "quiz:quiz-10"
         assert all("首次 40 分，最近 80 分" in item.detail for item in quizzes)
-
-
-def test_chat_releases_connection_and_persists_before_completion(engine, monkeypatch):
-    from app.api.orchestration import _stream_chat_events
-    from app.database import request_engine_context
-    from app.models import ConversationSession
-    from app.services.conversation_session_service import load_or_create_session
-
-    with Session(engine) as session:
-        session.add(User(uid="chat", username="Chat", identifier="chat"))
-        session.commit()
-        load_or_create_session(session, "chat-session", "chat")
-
-    async def fake_events(_state):
-        assert get_engine() is engine
-        assert engine.pool.checkedout() == 0
-        await asyncio.sleep(0.01)
-        yield {"event": "message_completed", "full_text": "回复"}
-        yield {"event": "session_completed", "session_id": "chat-session"}
-
-    monkeypatch.setattr(
-        "app.api.orchestration.stream_orchestration_events", fake_events
-    )
-
-    async def exercise():
-        previous = request_engine_context.get()
-        with Session(engine) as session:
-            async for message in _stream_chat_events(
-                "chat-session", "chat", "你好", session
-            ):
-                if "event: message_completed" in message:
-                    with Session(engine) as reader:
-                        row = reader.get(ConversationSession, "chat-session")
-                        assert [item["type"] for item in row.messages] == [
-                            "human",
-                            "ai",
-                        ]
-        assert request_engine_context.get() is previous
-        assert engine.pool.checkedout() == 0
-
-    asyncio.run(exercise())
-
-
-def test_chat_stream_can_be_closed_by_another_task(engine):
-    from app.api.orchestration import _stream_chat_events
-    from app.database import request_engine_context
-
-    async def exercise():
-        previous = request_engine_context.get()
-        with Session(engine) as session:
-            iterator = _stream_chat_events("unused", "unused", "你好", session)
-            assert "session_started" in await anext(iterator)
-            assert request_engine_context.get() is previous
-            await asyncio.create_task(iterator.aclose())
-            assert request_engine_context.get() is previous
-        assert engine.pool.checkedout() == 0
-
-    asyncio.run(exercise())

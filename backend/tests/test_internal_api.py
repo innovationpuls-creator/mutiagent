@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -173,8 +174,9 @@ def production_environ(database_url: str) -> dict[str, str]:
         "APP_ENV": "production",
         "DATABASE_URL": database_url,
         "JWT_SECRET": "internal-test-jwt-secret",
-        "LLM_API_KEY": "internal-test-llm-api-key",
-        "LLM_MODEL": "internal-test-llm-model",
+        "INTERNAL_API_TOKEN": "test-production-internal-token",
+        "AI_GATEWAY_URL": "http://ai-gateway:8100",
+        "MODEL_SECRET_ENCRYPTION_KEY": "test-production-model-secret-key",
         "ALLOWED_ORIGINS": "https://onetree.chat",
     }
 
@@ -186,6 +188,10 @@ def make_production_client(tmp_path: Path, internal_token: str | None) -> TestCl
     if internal_token is not None:
         environ["INTERNAL_API_TOKEN"] = internal_token
     settings = load_settings(environ)
+    if internal_token is None:
+        # Production refuses to load without a token; the app itself must still fail
+        # closed if settings are ever built without one.
+        settings = replace(settings, internal_api_token=None)
     return TestClient(create_app(database_url=database_url, settings=settings))
 
 

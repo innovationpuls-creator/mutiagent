@@ -12,6 +12,8 @@ export APP_ENV=production
 export POSTGRES_MAINTENANCE_PASSWORD=compose-test-maintenance-password
 export POSTGRES_APP_PASSWORD=compose-test-app-password
 export JWT_SECRET=compose-test-jwt-secret
+export INTERNAL_API_TOKEN=compose-test-internal-token
+export MODEL_SECRET_ENCRYPTION_KEY=compose-test-model-secret-key
 export LLM_API_KEY=compose-test-llm-api-key
 export LLM_MODEL=compose-test-llm-model
 export LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
@@ -33,7 +35,8 @@ python3 - \
   "$CONFIG_FILE" \
   "$REPO_ROOT/.gitignore" \
   "$REPO_ROOT/backend/Dockerfile" \
-  "$CI_CONFIG_FILE" <<'PY'
+  "$CI_CONFIG_FILE" \
+  "$REPO_ROOT/ai-gateway/Dockerfile" <<'PY'
 from __future__ import annotations
 
 import json
@@ -44,6 +47,7 @@ config = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 gitignore_lines = set(Path(sys.argv[2]).read_text(encoding="utf-8").splitlines())
 backend_dockerfile = Path(sys.argv[3]).read_text(encoding="utf-8")
 ci_config = json.loads(Path(sys.argv[4]).read_text(encoding="utf-8"))
+gateway_dockerfile = Path(sys.argv[5]).read_text(encoding="utf-8")
 services = config["services"]
 ci_services = ci_config["services"]
 
@@ -54,6 +58,7 @@ assert "uv==0.8.22" in backend_dockerfile
 
 expected_services = {
     "nginx",
+    "ai-gateway",
     "backend",
     "worker",
     "postgres",
@@ -85,9 +90,17 @@ assert sorted(published_ports) == [
     ("nginx", 443, 443),
 ], published_ports
 assert "ports" not in services["backend"]
+assert "ports" not in services["ai-gateway"]
 assert "ports" not in services["postgres"]
 
-for service_name in ("nginx", "backend", "worker", "postgres", "certbot"):
+for service_name in (
+    "nginx",
+    "ai-gateway",
+    "backend",
+    "worker",
+    "postgres",
+    "certbot",
+):
     assert services[service_name]["restart"] == "unless-stopped", service_name
 
 for service_name, service in services.items():
@@ -140,6 +153,37 @@ assert services["smoke"]["environment"]["MAINTENANCE_BYPASS_TOKEN"] == (
 assert services["smoke"]["environment"]["NGINX_CONFIG_MODE"] == "production-ip"
 assert services["smoke"]["depends_on"]["worker"]["condition"] == "service_started"
 
+gateway = services["ai-gateway"]
+assert gateway["image"] == "onetree-ai-gateway:production"
+assert gateway["build"]["dockerfile"] == "ai-gateway/Dockerfile"
+assert gateway["logging"]["options"]["tag"] == "onetree-ai-gateway"
+assert gateway["depends_on"]["backend"]["condition"] == "service_healthy"
+assert "/api/ai/health/ready" in " ".join(gateway["healthcheck"]["test"])
+assert gateway["environment"]["PYTHON_BACKEND_URL"] == "http://backend:8000"
+for key, value in {
+    "APP_ENV": "production",
+    "JWT_SECRET": "compose-test-jwt-secret",
+    "INTERNAL_API_TOKEN": "compose-test-internal-token",
+    "ALLOWED_ORIGINS": "https://onetree.chat,https://www.onetree.chat",
+}.items():
+    assert gateway["environment"][key] == value, key
+assert services["nginx"]["depends_on"]["ai-gateway"]["condition"] == "service_healthy"
+for service_name in ("backend", "worker"):
+    environment = services[service_name]["environment"]
+    assert environment["AI_GATEWAY_URL"] == "http://ai-gateway:8100", service_name
+    assert environment["INTERNAL_API_TOKEN"] == "compose-test-internal-token"
+    assert environment["MODEL_SECRET_ENCRYPTION_KEY"] == (
+        "compose-test-model-secret-key"
+    )
+assert ci_services["ai-gateway"]["environment"]["INTERNAL_API_TOKEN"] == (
+    ci_services["backend"]["environment"]["INTERNAL_API_TOKEN"]
+)
+assert "FROM node:22" in gateway_dockerfile or "node:22" in gateway_dockerfile
+assert "USER node" in gateway_dockerfile
+assert "HEALTHCHECK" in gateway_dockerfile
+assert "/api/ai/health/live" in gateway_dockerfile
+assert gateway_dockerfile.count("FROM ") >= 2
+
 upload_dir = services["backend"]["environment"]["KNOWLEDGE_BASE_UPLOAD_DIR"]
 upload_volume_target = str(Path(upload_dir).parent)
 for service_name in ("backend", "worker", "backup", "restore"):
@@ -169,3 +213,12 @@ if env -u MAINTENANCE_BYPASS_TOKEN \
   printf '%s\n' 'missing MAINTENANCE_BYPASS_TOKEN was accepted' >&2
   exit 1
 fi
+
+for required_variable in INTERNAL_API_TOKEN MODEL_SECRET_ENCRYPTION_KEY; do
+  if env -u "$required_variable" \
+    docker compose --profile operations -f "$COMPOSE_FILE" config \
+    >/dev/null 2>&1; then
+    printf 'missing %s was accepted\n' "$required_variable" >&2
+    exit 1
+  fi
+done

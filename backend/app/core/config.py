@@ -23,6 +23,7 @@ class AppSettings:
     internal_api_token: str | None = None
     model_secret_encryption_key: str | None = None
     ai_gateway_url: str = DEFAULT_AI_GATEWAY_URL
+    ai_gateway_url_configured: bool = False
 
     @property
     def is_production(self) -> bool:
@@ -53,6 +54,7 @@ def load_settings(environ: Mapping[str, str] | None = None) -> AppSettings:
         ai_gateway_url=(
             _optional_value(values, "AI_GATEWAY_URL") or DEFAULT_AI_GATEWAY_URL
         ).rstrip("/"),
+        ai_gateway_url_configured=bool(_optional_value(values, "AI_GATEWAY_URL")),
     )
     if settings.is_production:
         _validate_production_settings(settings)
@@ -69,15 +71,21 @@ def _parse_allowed_origins(raw_value: str) -> tuple[str, ...]:
 
 
 def _validate_production_settings(settings: AppSettings) -> None:
+    # Model credentials are per-user now (stored encrypted and used by the AI
+    # gateway); LLM_API_KEY / LLM_MODEL only feed the optional platform video
+    # search and are no longer required.
     required_values = {
         "DATABASE_URL": settings.database_url,
         "JWT_SECRET": settings.jwt_secret,
-        "LLM_API_KEY": settings.llm_api_key,
-        "LLM_MODEL": settings.llm_model,
         "ALLOWED_ORIGINS": settings.allowed_origins,
+        "INTERNAL_API_TOKEN": settings.internal_api_token,
+        "AI_GATEWAY_URL": settings.ai_gateway_url_configured,
+        "MODEL_SECRET_ENCRYPTION_KEY": settings.model_secret_encryption_key,
     }
     for key, value in required_values.items():
         if not value:
             raise ValueError(f"生产环境缺少 {key}")
     if settings.jwt_secret == DEFAULT_JWT_SECRET:
         raise ValueError("生产环境不能使用默认 JWT_SECRET")
+    if settings.internal_api_token == DEFAULT_INTERNAL_API_TOKEN:
+        raise ValueError("生产环境不能使用默认 INTERNAL_API_TOKEN")

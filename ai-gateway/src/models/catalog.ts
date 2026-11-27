@@ -23,7 +23,12 @@ export interface CatalogProvider {
 
 let cached: Provider[] | undefined;
 
-export function listCatalog(providers: Provider[] = (cached ??= builtinProviders())): CatalogProvider[] {
+function cachedProviders(): Provider[] {
+	cached ??= builtinProviders();
+	return cached;
+}
+
+export function listCatalog(providers: Provider[] = cachedProviders()): CatalogProvider[] {
 	return providers.map((provider) => ({
 		id: provider.id,
 		name: provider.name ?? provider.id,
@@ -51,7 +56,7 @@ export function listCatalog(providers: Provider[] = (cached ??= builtinProviders
 
 export function builtinCapabilities(
 	refs: Array<{ provider_id: string; model_id: string }>,
-	providers: Provider[] = (cached ??= builtinProviders()),
+	providers: Provider[] = cachedProviders(),
 ): Record<string, { vision: boolean; tools: boolean; reasoning: boolean }> {
 	const result: Record<string, { vision: boolean; tools: boolean; reasoning: boolean }> = {};
 	for (const ref of refs) {

@@ -181,6 +181,60 @@ if (
     fail "deep readiness response"
 fi
 
+ai_live_response="$(
+    curl "${curl_common[@]}" \
+        --header "@${maintenance_header_file}" \
+        --connect-to "$https_connect" \
+        "${https_url}/api/ai/health/live"
+)" || fail "ai gateway liveness request"
+if ! printf '%s' "$ai_live_response" | python -c '
+import json
+import sys
+
+payload = json.load(sys.stdin)
+if not isinstance(payload, dict) or payload.get("status") != "ok":
+    raise SystemExit(1)
+' 2>/dev/null; then
+    fail "ai gateway liveness response"
+fi
+
+ai_ready_response="$(
+    curl "${curl_common[@]}" \
+        --header "@${maintenance_header_file}" \
+        --connect-to "$https_connect" \
+        "${https_url}/api/ai/health/ready"
+)" || fail "ai gateway readiness request"
+if ! printf '%s' "$ai_ready_response" | python -c '
+import json
+import sys
+
+payload = json.load(sys.stdin)
+if (
+    not isinstance(payload, dict)
+    or payload.get("status") != "ok"
+    or payload.get("backend") != "connected"
+):
+    raise SystemExit(1)
+' 2>/dev/null; then
+    fail "ai gateway readiness response"
+fi
+
+internal_status="$(
+    curl \
+        --silent \
+        --show-error \
+        --connect-timeout 5 \
+        --max-time 15 \
+        --output /dev/null \
+        --write-out '%{http_code}' \
+        --header "@${maintenance_header_file}" \
+        --connect-to "$https_connect" \
+        "${https_url}/internal/health"
+)" || fail "internal exposure request"
+if [[ "$internal_status" != "404" ]]; then
+    fail "internal endpoints must not be reachable from outside"
+fi
+
 if ! curl "${curl_common[@]}" \
     --output /dev/null \
     --header "@${maintenance_header_file}" \

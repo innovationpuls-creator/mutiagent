@@ -14,13 +14,7 @@ from app.orchestration.agents.course_resources.common import (
 
 logger = logging.getLogger(__name__)
 
-_BILIBILI_BVID_PATTERN = re.compile(r"\b(BV[0-9A-Za-z]{10})\b")
 _BILIBILI_VIDEO_PATH_PATTERN = re.compile(r"^/video/(BV[0-9A-Za-z]{10})$")
-
-
-def _is_bilibili_search_placeholder_title(title: str) -> bool:
-    cleaned = _clean_text(title)
-    return cleaned.startswith("Bilibili 搜索结果 BV")
 
 
 def _bilibili_bvid_from_url(url: str) -> str:
@@ -126,71 +120,3 @@ async def _verify_bilibili_video_page(
     if not metadata_text:
         return {"status": "error", "reason": "视频平台页面缺少可校验标题。"}
     return {"status": "ok", "text": metadata_text, "title": title or page_title}
-
-
-async def _search_bilibili_video_results(query: str) -> list[dict]:
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-        ),
-        "Referer": "https://www.bilibili.com/",
-    }
-    return await _search_bilibili_video_page_results(query, headers)
-
-
-async def _search_bilibili_video_page_results(
-    query: str, headers: dict[str, str]
-) -> list[dict]:
-    try:
-        async with httpx.AsyncClient(
-            timeout=_VIDEO_METADATA_TIMEOUT_SECONDS, follow_redirects=True
-        ) as client:
-            response = await client.get(
-                "https://search.bilibili.com/video",
-                params={"keyword": query},
-                headers=headers,
-            )
-            response.raise_for_status()
-            page_text = response.text
-    except Exception as exc:
-        logger.warning(
-            "Bilibili search request failed query=%s error_type=%s error=%s",
-            query,
-            type(exc).__name__,
-            exc,
-        )
-        return []
-
-    logger.warning(
-        "Bilibili search response received query=%s status_code=%s",
-        query,
-        response.status_code,
-    )
-    raw_bvids = _BILIBILI_BVID_PATTERN.findall(page_text)
-    logger.warning(
-        "Bilibili search parse query=%s raw_result_count=%s",
-        query,
-        len(raw_bvids),
-    )
-    bvids: list[str] = []
-    for bvid in raw_bvids:
-        if bvid not in bvids:
-            bvids.append(bvid)
-        if len(bvids) >= 12:
-            break
-    results = [
-        {
-            "title": f"Bilibili 搜索结果 {bvid}",
-            "url": f"https://www.bilibili.com/video/{bvid}",
-            "cover_url": "",
-            "source": "Bilibili",
-        }
-        for bvid in bvids
-    ]
-    logger.warning(
-        "Bilibili search parse query=%s parsed_result_count=%s",
-        query,
-        len(results),
-    )
-    return results

@@ -265,7 +265,7 @@ assert (
     in production_ip_https
 )
 
-for https_server in (domain_server,):
+for https_server in (domain_server, production_ip_https):
     assert_security_headers(https_server, "response_request_id")
     assert "proxy_hide_header X-Request-ID;" in https_server
     assert "proxy_intercept_errors on;" in https_server
@@ -302,28 +302,22 @@ for https_server in (domain_server,):
     assert "proxy_pass http://backend:8000;" in upload
     assert "proxy_set_header X-Request-ID $request_id_header;" in upload
 
-    ai_gateway = directive_block(https_server, r"location\s+\^~\s+/api/ai/")
-    assert re.search(
-        r"if\s*\(-f\s+\$maintenance_marker\)\s*\{\s*return 503;\s*\}", ai_gateway
-    )
-    assert "resolver 127.0.0.11 ipv6=off valid=10s;" in ai_gateway
-    assert "set $ai_gateway_upstream ai-gateway:8100;" in ai_gateway
-    assert "proxy_pass http://$ai_gateway_upstream;" in ai_gateway
-    assert "proxy_set_header X-Request-ID $request_id_header;" in ai_gateway
-
-    chat_message = directive_block(https_server, r"location\s+=\s+/api/chat/message")
-    assert re.search(
-        r"if\s*\(-f\s+\$maintenance_marker\)\s*\{\s*return 503;\s*\}", chat_message
-    )
-    assert "set $ai_gateway_upstream ai-gateway:8100;" in chat_message
-    assert "proxy_pass http://$ai_gateway_upstream;" in chat_message
-    assert "proxy_set_header X-Request-ID $request_id_header;" in chat_message
-
-    for stream_path in (r"/api/forest/ai/stream", r"/api/branch/canopy/report/stream"):
-        stream = directive_block(https_server, r"location\s+=\s+" + stream_path)
-        assert "set $ai_gateway_upstream ai-gateway:8100;" in stream
-        assert "proxy_pass http://$ai_gateway_upstream;" in stream
-        assert "proxy_buffering off;" in stream
+    for gateway_location in (
+        r"\^~\s+/api/ai/",
+        r"=\s+/api/chat/message",
+        r"=\s+/api/forest/ai/stream",
+        r"=\s+/api/branch/canopy/report/stream",
+    ):
+        gateway = directive_block(https_server, r"location\s+" + gateway_location)
+        assert re.search(
+            r"if\s*\(-f\s+\$maintenance_marker\)\s*\{\s*return 503;\s*\}", gateway
+        ), gateway_location
+        assert "resolver 127.0.0.11 ipv6=off valid=10s;" in gateway
+        assert "set $ai_gateway_upstream ai-gateway:8100;" in gateway
+        assert "proxy_pass http://$ai_gateway_upstream;" in gateway
+        assert "proxy_set_header X-Request-ID $request_id_header;" in gateway
+        assert "proxy_buffering off;" in gateway
+        assert "proxy_read_timeout 300s;" in gateway
 
     internal = directive_block(https_server, r"location\s+\^~\s+/internal/")
     assert "return 404;" in internal

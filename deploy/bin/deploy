@@ -7,10 +7,12 @@ source "$ONETREE_ROOT/deploy/lib/common.sh"
 
 ONETREE_BACKEND_IMAGE="onetree-backend:production"
 ONETREE_NGINX_IMAGE="onetree-nginx:production"
+ONETREE_GATEWAY_IMAGE="onetree-ai-gateway:production"
 
 previous_commit=""
 previous_backend_image=""
 previous_nginx_image=""
+previous_gateway_image=""
 backup_id=""
 migration_executed=0
 maintenance_entered=0
@@ -40,6 +42,10 @@ recover_failed_deploy() {
   fi
   if [[ "$recovery_ready" -eq 1 && -n "$previous_nginx_image" ]]; then
     restore_image_tag "$previous_nginx_image" "$ONETREE_NGINX_IMAGE" \
+      || recovery_ready=0
+  fi
+  if [[ "$recovery_ready" -eq 1 && -n "$previous_gateway_image" ]]; then
+    restore_image_tag "$previous_gateway_image" "$ONETREE_GATEWAY_IMAGE" \
       || recovery_ready=0
   fi
   if [[ "$recovery_ready" -eq 1 && "$migration_executed" -eq 1 ]]; then
@@ -81,6 +87,8 @@ previous_commit="$(git rev-parse HEAD)"
 checked_out_commit="$previous_commit"
 previous_backend_image="$(current_image_id "$ONETREE_BACKEND_IMAGE")"
 previous_nginx_image="$(current_image_id "$ONETREE_NGINX_IMAGE")"
+# The first deploy that introduces the gateway has no previous image to restore.
+previous_gateway_image="$(current_image_id "$ONETREE_GATEWAY_IMAGE" 2>/dev/null || true)"
 
 trap 'handle_deploy_exit "$?"' EXIT
 trap 'exit 130' INT

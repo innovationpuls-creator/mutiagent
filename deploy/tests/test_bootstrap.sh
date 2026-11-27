@@ -584,6 +584,8 @@ expected_keys = {
     "DATABASE_URL",
     "TARGET_DATABASE_URL",
     "JWT_SECRET",
+    "INTERNAL_API_TOKEN",
+    "MODEL_SECRET_ENCRYPTION_KEY",
     "LLM_BASE_URL",
     "LLM_API_KEY",
     "LLM_MODEL",
@@ -644,6 +646,8 @@ generated_keys = (
     "POSTGRES_APP_PASSWORD",
     "JWT_SECRET",
     "MAINTENANCE_BYPASS_TOKEN",
+    "INTERNAL_API_TOKEN",
+    "MODEL_SECRET_ENCRYPTION_KEY",
 )
 generated_values = [entries[key] for key in generated_keys]
 assert len(set(generated_values)) == len(generated_values)
@@ -675,7 +679,9 @@ env \
   -u ALLOWED_ORIGINS \
   -u DEBIAN_MIRROR \
   -u DEBIAN_SECURITY_MIRROR \
+  -u INTERNAL_API_TOKEN \
   -u JWT_SECRET \
+  -u MODEL_SECRET_ENCRYPTION_KEY \
   -u LLM_API_KEY \
   -u LLM_BASE_URL \
   -u LLM_MODEL \
@@ -701,7 +707,9 @@ env \
   -u ALLOWED_ORIGINS \
   -u DEBIAN_MIRROR \
   -u DEBIAN_SECURITY_MIRROR \
+  -u INTERNAL_API_TOKEN \
   -u JWT_SECRET \
+  -u MODEL_SECRET_ENCRYPTION_KEY \
   -u LLM_API_KEY \
   -u LLM_BASE_URL \
   -u LLM_MODEL \
@@ -961,6 +969,8 @@ keys = (
     "POSTGRES_APP_PASSWORD",
     "JWT_SECRET",
     "MAINTENANCE_BYPASS_TOKEN",
+    "INTERNAL_API_TOKEN",
+    "MODEL_SECRET_ENCRYPTION_KEY",
 )
 Path(sys.argv[2]).write_text(
     json.dumps({key: entries[key] for key in keys}, sort_keys=True),

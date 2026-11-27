@@ -9,8 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, select
-from starlette.concurrency import run_in_threadpool
-from starlette.responses import JSONResponse, StreamingResponse
+from starlette.responses import JSONResponse
 
 from app.model_config_schemas import (
     OAuthCredentialPayload,
@@ -111,12 +110,6 @@ class SectionResourcePayload(BaseModel):
 
 class FinishPayload(BaseModel):
     succeeded_section_ids: list[str] = Field(default_factory=list)
-
-
-class LegacyStreamPayload(BaseModel):
-    user_uid: str = Field(min_length=1)
-    message: str = Field(min_length=1, max_length=4000)
-    image_attachment: str | None = None
 
 
 def create_internal_router(engine: Engine, internal_token: str | None) -> APIRouter:  # noqa: C901
@@ -546,49 +539,5 @@ def create_internal_router(engine: Engine, internal_token: str | None) -> APIRou
             )
 
         return _resource_call(user_uid, _run)
-
-    @router.post("/chat/sessions/{session_id}/legacy-stream")
-    async def legacy_stream(
-        session_id: str, payload: LegacyStreamPayload
-    ) -> StreamingResponse:
-        """Transitional bridge (until M5-M7): run the pre-migration orchestration for
-        turns that need a not-yet-migrated agent. Same SSE frames as the old route."""
-        from app.api.orchestration import _stream_chat_events
-        from app.schemas import ChatMessageRequest
-
-        def _check(session: Session) -> None:
-            _require_user(session, payload.user_uid)
-            try:
-                chat_service.load_owned_session_row(
-                    session, session_id, payload.user_uid
-                )
-            except chat_service.SessionNotFoundError:
-                raise HTTPException(status_code=404, detail="会话不存在") from None
-
-        with Session(engine) as session:
-            await run_in_threadpool(_check, session)
-
-        request_payload = ChatMessageRequest(
-            session_id=session_id,
-            message=payload.message,
-            image_attachment=payload.image_attachment,
-        )
-
-        async def frames():
-            with Session(engine) as session:
-                async for frame in _stream_chat_events(
-                    session_id=session_id,
-                    user_uid=payload.user_uid,
-                    user_message=payload.message,
-                    db_session=session,
-                    payload=request_payload,
-                ):
-                    yield frame
-
-        return StreamingResponse(
-            frames(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
 
     return router

@@ -64,7 +64,7 @@ export function chatRoutes(deps: ChatRouteDeps) {
 
 		return createSseResponse(
 			async (writer) => {
-				const progress: ChatGraphDeps["progress"] = { bridged: false, persisted: false };
+				const progress: ChatGraphDeps["progress"] = { persisted: false };
 				const graph = buildChatGraph({
 					backend: deps.backend,
 					runtime: deps.runtime,
@@ -83,8 +83,7 @@ export function chatRoutes(deps: ChatRouteDeps) {
 					);
 					for await (const chunk of stream as AsyncIterable<GraphChunk>) {
 						if (writer.closed) break;
-						if (chunk.kind === "raw") writer.sendRaw(chunk.frames);
-						else writer.send(chunk.event, chunk.payload);
+						writer.send(chunk.event, chunk.payload);
 					}
 				} catch (error) {
 					if (writer.closed || writer.signal.aborted) return;
@@ -115,10 +114,9 @@ async function reportFailure(
 		deps.logger.error(`chat_stream_failed name=${error instanceof Error ? error.name : "unknown"}`);
 		writer.send("error", errorEventPayload({ message: "对话请求失败，请稍后重试。" }));
 	}
-	// Nothing was handled for an unconfigured model, and the legacy bridge persists on
-	// its own; for every other failure keep what the student typed (never an empty AI row).
+	// Nothing was handled for an unconfigured model; for every other failure keep what
+	// the student typed (never an empty AI row).
 	const skipPersist =
-		progress.bridged ||
 		progress.persisted ||
 		(error instanceof GatewayError && error.errorCode === "MODEL_NOT_CONFIGURED");
 	if (skipPersist) return;

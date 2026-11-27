@@ -1,28 +1,20 @@
 from __future__ import annotations
 
-import asyncio
-import json
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.database import build_engine, init_db, set_engine
+from app.database import build_engine
 from app.main import create_app
 from app.models import (
     KnowledgeBaseIngestionJob,
     KnowledgeSource,
     Textbook,
     TextbookSectionContent,
-    User,
     UserCourseKnowledgeOutline,
     UserYearLearningPath,
-)
-from app.orchestration.agents.course_knowledge import run_course_knowledge_agent
-from app.orchestration.agents.course_resources.markdown import (
-    run_section_markdown_agent,
 )
 from app.schema_upgrades import run_schema_upgrades
 from app.services.knowledge_base_service import (
@@ -321,78 +313,6 @@ def test_unpublish_textbook_route_sets_unpublished_state_and_timestamp(
     assert body["published_at"] is not None
 
 
-def test_course_outline_generation_blocks_unpublished_source_textbook(
-    tmp_path: Path,
-) -> None:
-    engine = build_engine(postgresql_test_url(tmp_path, "course-outline-unpublished"))
-    set_engine(engine)
-    init_db(engine, seed_users=False)
-
-    with Session(engine) as session:
-        textbook = _publish_textbook(session)
-        textbook.student_availability_status = "unpublished"
-        session.add(textbook)
-        session.add(
-            User(uid="user-1", username="学生", identifier="student@example.com")
-        )
-        session.commit()
-
-    class RecordingLlm:
-        pass
-
-    class OutlineChain:
-        async def ainvoke(self, _payload):
-            return type(
-                "Output",
-                (),
-                {"content": json.dumps(_outline(), ensure_ascii=False)},
-            )()
-
-    class OutlinePrompt:
-        def __or__(self, _other):
-            return OutlineChain()
-
-    class PromptFactory:
-        @staticmethod
-        def from_messages(_messages):
-            return OutlinePrompt()
-
-    import app.orchestration.agents.course_knowledge as module
-
-    original_factory = module.ChatPromptTemplate
-    module.ChatPromptTemplate = PromptFactory
-    try:
-        result = asyncio.run(
-            run_course_knowledge_agent(
-                {
-                    "user_id": "user-1",
-                    "profile": _profile(),
-                    "year_learning_paths": _year_paths(),
-                    "messages": [
-                        AIMessage(
-                            content="",
-                            tool_calls=[
-                                {
-                                    "name": "course_knowledge_agent",
-                                    "args": {"course_id": "year_3_course_1"},
-                                    "id": "force-course-knowledge",
-                                }
-                            ],
-                        )
-                    ],
-                },
-                RecordingLlm(),
-            )
-        )
-    finally:
-        module.ChatPromptTemplate = original_factory
-
-    assert result == {"error": "教材未发布。", "hard_error": True}
-    with Session(engine) as session:
-        row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
-    assert row is None
-
-
 def test_leaf_keeps_existing_outline_and_markdown_after_unpublish(
     tmp_path: Path,
 ) -> None:
@@ -461,75 +381,6 @@ def test_leaf_keeps_existing_outline_and_markdown_after_unpublish(
     assert body["section_composed_markdowns"]["1.1"]["markdown"].startswith(
         "# 学习目标"
     )
-
-
-def test_markdown_regeneration_blocks_unpublished_source_textbook(
-    tmp_path: Path,
-) -> None:
-    engine = build_engine(postgresql_test_url(tmp_path, "markdown-unpublished"))
-    set_engine(engine)
-    init_db(engine, seed_users=False)
-
-    with Session(engine) as session:
-        textbook = _publish_textbook(session)
-        textbook.student_availability_status = "unpublished"
-        session.add(textbook)
-        session.add(
-            User(uid="user-1", username="学生", identifier="student@example.com")
-        )
-        session.add(
-            UserCourseKnowledgeOutline(
-                user_uid="user-1",
-                course_id="year_3_course_1",
-                grade_year="year_3",
-                course_name="矩阵专题",
-                outline_data=_outline(),
-            )
-        )
-        session.commit()
-
-    class RecordingLlm:
-        pass
-
-    class MarkdownChain:
-        async def ainvoke(self, _payload):
-            return "正文"
-
-    class MarkdownPrompt:
-        def __or__(self, _other):
-            return MarkdownChain()
-
-    class PromptFactory:
-        @staticmethod
-        def from_messages(_messages):
-            return MarkdownPrompt()
-
-    import app.orchestration.agents.course_resources as module
-
-    original_factory = module.ChatPromptTemplate
-    module.ChatPromptTemplate = PromptFactory
-    try:
-        result = asyncio.run(
-            run_section_markdown_agent(
-                {
-                    "user_id": "user-1",
-                    "course_knowledge": _outline(),
-                    "profile": _profile(),
-                    "year_learning_paths": _year_paths(),
-                    "messages": [],
-                },
-                RecordingLlm(),
-                {
-                    "course_id": "year_3_course_1",
-                    "section_id": "1",
-                    "scope": "chapter_sections",
-                },
-            )
-        )
-    finally:
-        module.ChatPromptTemplate = original_factory
-
-    assert result == {"error": "教材未发布。", "hard_error": True}
 
 
 def test_delete_archives_published_and_unpublished_but_removes_unbound_draft(

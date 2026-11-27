@@ -27,10 +27,13 @@ OLD_COMMIT="1111111111111111111111111111111111111111"
 NEW_COMMIT="2222222222222222222222222222222222222222"
 OLD_BACKEND_IMAGE="sha256:old-backend"
 OLD_NGINX_IMAGE="sha256:old-nginx"
+OLD_GATEWAY_IMAGE="sha256:old-ai-gateway"
 NEW_BACKEND_IMAGE="sha256:new-backend"
 NEW_NGINX_IMAGE="sha256:new-nginx"
+NEW_GATEWAY_IMAGE="sha256:new-ai-gateway"
 ROLLBACK_BACKEND_IMAGE="sha256:rollback-backend"
 ROLLBACK_NGINX_IMAGE="sha256:rollback-nginx"
+ROLLBACK_GATEWAY_IMAGE="sha256:rollback-ai-gateway"
 BACKUP_ID="20260714T120000.000000Z"
 DATABASE_URL_VALUE="postgresql://source-role:source-secret@postgres:5432/onetree?application_name=source=value"
 TARGET_DATABASE_URL_VALUE="postgresql://maintenance-role:target-secret@postgres:5432/onetree?application_name=target=value"
@@ -123,6 +126,7 @@ if [[ "$1" == "image" && "$2" == "inspect" ]]; then
   case "$image_name" in
     onetree-backend:production) cat "$TEST_STATE_DIR/backend-image" ;;
     onetree-nginx:production) cat "$TEST_STATE_DIR/nginx-image" ;;
+    onetree-ai-gateway:production) cat "$TEST_STATE_DIR/ai-gateway-image" ;;
     *) exit 67 ;;
   esac
   exit 0
@@ -135,6 +139,7 @@ if [[ "$1" == "image" && "$2" == "tag" ]]; then
   case "$image_name" in
     onetree-backend:production) printf '%s\n' "$image_id" > "$TEST_STATE_DIR/backend-image" ;;
     onetree-nginx:production) printf '%s\n' "$image_id" > "$TEST_STATE_DIR/nginx-image" ;;
+    onetree-ai-gateway:production) printf '%s\n' "$image_id" > "$TEST_STATE_DIR/ai-gateway-image" ;;
     *) exit 68 ;;
   esac
   exit 0
@@ -181,6 +186,8 @@ case "$action" in
       > "$TEST_STATE_DIR/backend-image"
     printf '%s\n' "${TEST_BUILT_NGINX_IMAGE:-$TEST_NEW_NGINX_IMAGE}" \
       > "$TEST_STATE_DIR/nginx-image"
+    printf '%s\n' "${TEST_BUILT_GATEWAY_IMAGE:-$TEST_NEW_GATEWAY_IMAGE}" \
+      > "$TEST_STATE_DIR/ai-gateway-image"
     if fail_stage build; then
       exit 72
     fi
@@ -335,6 +342,7 @@ reset_state() {
   printf '%s\n' "$OLD_COMMIT" > "$STATE_DIR/current-commit"
   printf '%s\n' "$OLD_BACKEND_IMAGE" > "$STATE_DIR/backend-image"
   printf '%s\n' "$OLD_NGINX_IMAGE" > "$STATE_DIR/nginx-image"
+  printf '%s\n' "$OLD_GATEWAY_IMAGE" > "$STATE_DIR/ai-gateway-image"
   rm -f "$LOCK_FILE" "$OUTPUT_FILE"
 }
 
@@ -348,6 +356,7 @@ base_environment() {
     TEST_OLD_COMMIT="$OLD_COMMIT" \
     TEST_NEW_BACKEND_IMAGE="$NEW_BACKEND_IMAGE" \
     TEST_NEW_NGINX_IMAGE="$NEW_NGINX_IMAGE" \
+    TEST_NEW_GATEWAY_IMAGE="$NEW_GATEWAY_IMAGE" \
     TEST_BACKUP_ID="$BACKUP_ID" \
     TEST_DATABASE_URL="$DATABASE_URL_VALUE" \
     TEST_TARGET_DATABASE_URL="$TARGET_DATABASE_URL_VALUE" \
@@ -363,6 +372,7 @@ run_rollback() {
   base_environment \
     TEST_BUILT_BACKEND_IMAGE="$ROLLBACK_BACKEND_IMAGE" \
     TEST_BUILT_NGINX_IMAGE="$ROLLBACK_NGINX_IMAGE" \
+    TEST_BUILT_GATEWAY_IMAGE="$ROLLBACK_GATEWAY_IMAGE" \
     "$ROLLBACK_SCRIPT" "$BACKUP_ID" > "$OUTPUT_FILE" 2>&1
 }
 
@@ -388,6 +398,8 @@ assert_old_release_restored() {
     || fail "old backend image was not restored"
   [[ "$(<"$STATE_DIR/nginx-image")" == "$OLD_NGINX_IMAGE" ]] \
     || fail "old nginx image was not restored"
+  [[ "$(<"$STATE_DIR/ai-gateway-image")" == "$OLD_GATEWAY_IMAGE" ]] \
+    || fail "old ai-gateway image was not restored"
 }
 
 event_line() {
@@ -426,6 +438,8 @@ for failure_stage in fetch build backup migrate up smoke; do
     || fail "$failure_stage failure restored the old backend image more than once"
   [[ "$(grep -Fc "tag:onetree-nginx:production:$OLD_NGINX_IMAGE" "$STATE_DIR/events")" -eq 1 ]] \
     || fail "$failure_stage failure restored the old nginx image more than once"
+  [[ "$(grep -Fc "tag:onetree-ai-gateway:production:$OLD_GATEWAY_IMAGE" "$STATE_DIR/events")" -eq 1 ]] \
+    || fail "$failure_stage failure restored the old ai-gateway image more than once"
   assert_secret_free_output "$OUTPUT_FILE"
   if [[ "$failure_stage" == "fetch" || "$failure_stage" == "build" ]]; then
     [[ ! -e "$STATE_DIR/maintenance" ]] \
@@ -462,6 +476,8 @@ run_deploy || fail "successful deploy failed: $(<"$OUTPUT_FILE")"
   || fail 'successful deploy did not keep the new backend image'
 [[ "$(<"$STATE_DIR/nginx-image")" == "$NEW_NGINX_IMAGE" ]] \
   || fail 'successful deploy did not keep the new nginx image'
+[[ "$(<"$STATE_DIR/ai-gateway-image")" == "$NEW_GATEWAY_IMAGE" ]] \
+  || fail 'successful deploy did not keep the new ai-gateway image'
 [[ ! -e "$STATE_DIR/maintenance" ]] || fail 'successful deploy kept maintenance marker'
 ! grep -Fq 'restore:' "$STATE_DIR/events" || fail 'successful deploy restored a backup'
 assert_before 'git:fetch --prune origin main' 'build'
@@ -495,6 +511,7 @@ reset_state
 printf '%s\n' "$NEW_COMMIT" > "$STATE_DIR/current-commit"
 printf '%s\n' "$NEW_BACKEND_IMAGE" > "$STATE_DIR/backend-image"
 printf '%s\n' "$NEW_NGINX_IMAGE" > "$STATE_DIR/nginx-image"
+printf '%s\n' "$NEW_GATEWAY_IMAGE" > "$STATE_DIR/ai-gateway-image"
 mkdir -p "$TEST_ROOT/backups/$BACKUP_ID"
 run_rollback || fail "successful rollback failed: $(<"$OUTPUT_FILE")"
 [[ "$(<"$STATE_DIR/current-commit")" == "$OLD_COMMIT" ]] \
@@ -503,6 +520,8 @@ run_rollback || fail "successful rollback failed: $(<"$OUTPUT_FILE")"
   || fail 'rollback did not build the corresponding backend image'
 [[ "$(<"$STATE_DIR/nginx-image")" == "$ROLLBACK_NGINX_IMAGE" ]] \
   || fail 'rollback did not build the corresponding nginx image'
+[[ "$(<"$STATE_DIR/ai-gateway-image")" == "$ROLLBACK_GATEWAY_IMAGE" ]] \
+  || fail 'rollback did not build the corresponding ai-gateway image'
 [[ -e "$STATE_DIR/restored" ]] || fail 'rollback did not restore snapshot data'
 [[ ! -e "$STATE_DIR/maintenance" ]] || fail 'successful rollback kept maintenance marker'
 assert_before 'validate-manifest' 'maintenance-enter'
@@ -534,6 +553,7 @@ if base_environment \
   TEST_FAIL_STAGE=smoke \
   TEST_BUILT_BACKEND_IMAGE="$ROLLBACK_BACKEND_IMAGE" \
   TEST_BUILT_NGINX_IMAGE="$ROLLBACK_NGINX_IMAGE" \
+  TEST_BUILT_GATEWAY_IMAGE="$ROLLBACK_GATEWAY_IMAGE" \
   "$ROLLBACK_SCRIPT" "$BACKUP_ID" > "$OUTPUT_FILE" 2>&1; then
   fail 'rollback smoke failure unexpectedly passed'
 fi

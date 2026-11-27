@@ -2,11 +2,23 @@ x-app-environment: &app-environment
   APP_ENV: production
   DATABASE_URL: postgresql://onetree_app:${POSTGRES_APP_PASSWORD}@postgres:5432/onetree
   JWT_SECRET: ${JWT_SECRET}
+  INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+  MODEL_SECRET_ENCRYPTION_KEY: ${MODEL_SECRET_ENCRYPTION_KEY:?MODEL_SECRET_ENCRYPTION_KEY is required}
+  AI_GATEWAY_URL: http://ai-gateway:8100
+  # Platform key for the optional Bilibili video search only; per-user model
+  # credentials live encrypted in the database and are used by the gateway.
   LLM_BASE_URL: ${LLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
-  LLM_API_KEY: ${LLM_API_KEY}
-  LLM_MODEL: ${LLM_MODEL}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  LLM_MODEL: ${LLM_MODEL:-}
   ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
   KNOWLEDGE_BASE_UPLOAD_DIR: /var/lib/onetree/knowledge-base-uploads
+
+x-gateway-environment: &gateway-environment
+  APP_ENV: production
+  JWT_SECRET: ${JWT_SECRET}
+  INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+  PYTHON_BACKEND_URL: http://backend:8000
+  ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
 
 x-maintenance-environment: &maintenance-environment
   DATABASE_URL: postgresql://onetree_app:${POSTGRES_APP_PASSWORD}@postgres:5432/onetree
@@ -85,6 +97,36 @@ services:
       - textbook_uploads:/var/lib/onetree
     logging: *journald-logging
 
+  ai-gateway:
+    build:
+      context: ..
+      dockerfile: ai-gateway/Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+    image: onetree-ai-gateway:production
+    restart: unless-stopped
+    environment: *gateway-environment
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:8100/api/ai/health/ready')
+          .then((r) => process.exit(r.ok ? 0 : 1))
+          .catch(() => process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    logging:
+      driver: journald
+      options:
+        tag: onetree-ai-gateway
+
   nginx:
     build:
       context: ..
@@ -117,6 +159,8 @@ services:
         exec nginx -g 'daemon off;'
     depends_on:
       backend:
+        condition: service_healthy
+      ai-gateway:
         condition: service_healthy
     ports:
       - "80:80"

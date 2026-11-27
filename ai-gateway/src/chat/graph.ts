@@ -27,7 +27,7 @@ export interface ChatGraphDeps {
 	imageAttachment: string | null;
 	signal?: AbortSignal;
 	/** Set by nodes so the route knows what to do when the stream fails midway. */
-	progress: { bridged: boolean; persisted: boolean };
+	progress: { persisted: boolean };
 }
 
 export interface ChatFailure {
@@ -271,7 +271,7 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 		const emit = writerOf(config);
 		const stepId = "learning-path-agent";
 		const intake = state.confirmedIntake ?? readIntake(state.context.session_state.learning_path_intake);
-		if (!intake || intake.status !== "confirmed") {
+		if (intake?.status !== "confirmed") {
 			return new Command({ goto: "finalize", update: { response: "请先确认课程草案，再生成正式学习路径。" } });
 		}
 		emit("agent_calling", { stepId, kind: "agent", agent: "learning_path_agent", label: "学习路径智能体", message: "正在生成按年学习路径" });
@@ -359,7 +359,7 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 		const emit = writerOf(config);
 		const request = state.resourceRequest;
 		const label = "课程资源智能体";
-		if (!request || !request.courseId) {
+		if (!request?.courseId) {
 			return new Command({
 				goto: "finalize",
 				update: { response: "请先生成课程大纲，再生成教学内容。", statePatch: request?.fromPending ? { pending_leaf_regeneration: null } : null },

@@ -19,8 +19,9 @@ def _production_settings(database_url: str):
             "APP_ENV": "production",
             "DATABASE_URL": database_url,
             "JWT_SECRET": "alembic-production-jwt-secret",
-            "LLM_API_KEY": "alembic-test-llm-api-key",
-            "LLM_MODEL": "alembic-test-model",
+            "INTERNAL_API_TOKEN": "test-production-internal-token",
+            "AI_GATEWAY_URL": "http://ai-gateway:8100",
+            "MODEL_SECRET_ENCRYPTION_KEY": "test-production-model-secret-key",
             "ALLOWED_ORIGINS": "https://onetree.chat",
         }
     )

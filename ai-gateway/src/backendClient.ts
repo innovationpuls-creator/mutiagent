@@ -272,13 +272,6 @@ export interface BackendClient {
 	persistTurn(sessionId: string, userUid: string, turn: TurnPayload): Promise<{ persisted: string }>;
 	putStudentProfile(userUid: string, profileData: Record<string, unknown>): Promise<void>;
 	getLearningOverview(userUid: string): Promise<LearningOverview>;
-	/** Transitional bridge (M4-M7): raw SSE response of the pre-migration orchestration. */
-	openLegacyStream(
-		sessionId: string,
-		userUid: string,
-		body: { message: string; image_attachment?: string | null },
-		signal?: AbortSignal,
-	): Promise<Response>;
 	getUserAuthStatus(userUid: string): Promise<UserAuthStatus>;
 	getModelRuntimeConfig(userUid: string): Promise<RuntimeConfig>;
 	oauthRefreshLock(
@@ -505,13 +498,6 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 			}),
 		getLearningOverview: (userUid) =>
 			request<LearningOverview>(`/internal/students/${encodeURIComponent(userUid)}/learning-overview`),
-		// A turn can legitimately run for minutes; the signal (client disconnect) bounds it.
-		openLegacyStream: (sessionId, userUid, body, signal) =>
-			rawRequest(`/internal/chat/sessions/${encodeURIComponent(sessionId)}/legacy-stream`, {
-				method: "POST",
-				body: { user_uid: userUid, ...body },
-				signal: signal ?? AbortSignal.timeout(15 * 60_000),
-			}),
 		getModelRuntimeConfig: (userUid) =>
 			request<RuntimeConfig>(
 				`/internal/users/${encodeURIComponent(userUid)}/model-runtime-config`,

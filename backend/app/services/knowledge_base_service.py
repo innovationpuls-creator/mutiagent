@@ -1572,6 +1572,9 @@ def _source_textbook_ids(value: object) -> list[str]:
                 textbook_ids.append(textbook_id.strip())
             for nested_value in item.values():
                 collect(nested_value)
+        elif isinstance(item, list):
+            for nested_item in item:
+                collect(nested_item)
 
     collect(value)
     return list(dict.fromkeys(textbook_ids))
