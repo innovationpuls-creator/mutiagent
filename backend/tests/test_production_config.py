@@ -61,3 +61,13 @@ def test_jwt_uses_configured_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     token = security.create_access_token({"sub": "user-1"})
 
     assert security.decode_access_token(token)["sub"] == "user-1"
+
+
+def test_production_internal_api_token_is_optional() -> None:
+    environ = valid_production_environ()
+    assert "INTERNAL_API_TOKEN" not in environ
+
+    assert load_settings(environ).internal_api_token is None
+
+    environ["INTERNAL_API_TOKEN"] = "  configured-internal-token  "
+    assert load_settings(environ).internal_api_token == "configured-internal-token"

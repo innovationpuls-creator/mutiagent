@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -9,13 +11,19 @@ from app.api.auth import create_auth_router
 from app.api.branch import create_branch_router
 from app.api.forest import create_forest_router
 from app.api.health import create_health_router
+from app.api.internal import create_internal_router
 from app.api.knowledge_base import create_knowledge_base_router
 from app.api.leaf import create_leaf_router
 from app.api.learning_path import create_learning_path_router
 from app.api.orchestration import create_orchestration_router
 from app.api.profile import create_profile_router
 from app.api.student import create_student_router
-from app.core.config import DEFAULT_JWT_SECRET, AppSettings, load_settings
+from app.core.config import (
+    DEFAULT_INTERNAL_API_TOKEN,
+    DEFAULT_JWT_SECRET,
+    AppSettings,
+    load_settings,
+)
 from app.core.observability import RequestIdMiddleware, configure_json_logging
 from app.core.security import configure_jwt
 from app.database import (
@@ -26,6 +34,8 @@ from app.database import (
     set_engine,
 )
 from app.migration_state import assert_schema_at_head
+
+logger = logging.getLogger(__name__)
 
 DEVELOPMENT_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"]
 
@@ -70,6 +80,9 @@ def create_app(
             engine, check_schema_revision=resolved_settings.is_production
         )
     )
+    app.include_router(
+        create_internal_router(engine, _resolve_internal_token(resolved_settings))
+    )
     app.include_router(create_admin_router(create_session_dependency(engine)))
     app.include_router(create_admin_data_router(create_session_dependency(engine)))
     app.include_router(create_student_router(create_session_dependency(engine)))
@@ -82,6 +95,15 @@ def create_app(
     app.include_router(create_knowledge_base_router(create_session_dependency(engine)))
 
     return app
+
+
+def _resolve_internal_token(settings: AppSettings) -> str | None:
+    if settings.is_production:
+        return settings.internal_api_token
+    if settings.internal_api_token:
+        return settings.internal_api_token
+    logger.warning("INTERNAL_API_TOKEN 未配置，正在使用开发默认内部令牌")
+    return DEFAULT_INTERNAL_API_TOKEN
 
 
 _app: FastAPI | None = None

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 DEFAULT_LLM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_JWT_SECRET = "mutiagent-dev-secret-key-change-in-production"
+DEFAULT_INTERNAL_API_TOKEN = "mutiagent-dev-internal-token-change-in-production"
 PRODUCTION_ENVIRONMENT = "production"
 
 
@@ -18,6 +19,7 @@ class AppSettings:
     llm_api_key: str | None
     llm_model: str | None
     allowed_origins: tuple[str, ...]
+    internal_api_token: str | None = None
 
     @property
     def is_production(self) -> bool:
@@ -41,6 +43,7 @@ def load_settings(environ: Mapping[str, str] | None = None) -> AppSettings:
         llm_api_key=llm_api_key,
         llm_model=llm_model,
         allowed_origins=allowed_origins,
+        internal_api_token=_optional_value(values, "INTERNAL_API_TOKEN"),
     )
     if settings.is_production:
         _validate_production_settings(settings)

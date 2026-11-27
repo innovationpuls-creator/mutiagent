@@ -9,8 +9,15 @@ import {
 } from "../types/chat";
 import {
 	API_BASE_URL,
+	type ApiErrorCode,
 	type ApiErrorResponse,
+	ApiRequestError,
+	getApiErrorAction,
+	getApiErrorCode,
+	getApiErrorProvider,
 	notifyAuthInvalidFromError,
+	parseApiErrorCode,
+	parseNonEmptyString,
 	readApiError,
 } from "./http";
 
@@ -97,6 +104,9 @@ export interface SessionAgentEvent {
 	recoverable?: boolean;
 	retryable?: boolean;
 	retryAction?: "retry_learning_path";
+	error_code?: ApiErrorCode;
+	provider?: string;
+	action?: string;
 	// Timeline / orchestration detail fields (forward-compatible with detailed backend events)
 	dependsOn?: string[];
 	parallelGroup?: string;
@@ -132,13 +142,29 @@ export interface SessionRecoveryData extends SessionStructuredData {
 	hasCompleteProfile: boolean;
 }
 
+export interface SessionStreamErrorInfo {
+	errorCode?: ApiErrorCode | null;
+	provider?: string | null;
+	action?: string | null;
+}
+
 export class SessionStreamError extends Error {
 	sessionId: string | null;
+	errorCode: ApiErrorCode | null;
+	provider: string | null;
+	action: string | null;
 
-	constructor(message: string, sessionId: string | null) {
+	constructor(
+		message: string,
+		sessionId: string | null,
+		info: SessionStreamErrorInfo = {},
+	) {
 		super(message);
 		this.name = "SessionStreamError";
 		this.sessionId = sessionId;
+		this.errorCode = info.errorCode ?? null;
+		this.provider = info.provider ?? null;
+		this.action = info.action ?? null;
 	}
 }
 
@@ -527,6 +553,9 @@ function normalizeSessionEvent(
 			getString(payload.retryAction) === "retry_learning_path"
 				? "retry_learning_path"
 				: undefined,
+		error_code: parseApiErrorCode(payload.error_code) ?? undefined,
+		provider: parseNonEmptyString(payload.provider) ?? undefined,
+		action: parseNonEmptyString(payload.action) ?? undefined,
 		dependsOn: getStringArray(payload.dependsOn),
 		parallelGroup: getString(payload.parallelGroup),
 		toolName: getString(payload.toolName),
@@ -542,7 +571,7 @@ function normalizeSessionEvent(
 	};
 }
 
-function parseSseChunk(buffer: string): {
+export function parseSseChunk(buffer: string): {
 	events: SessionAgentEvent[];
 	rest: string;
 } {
@@ -586,7 +615,7 @@ async function requestChat<TResponse>(
 	if (!response.ok) {
 		const error = await readApiError(response);
 		notifyAuthInvalidFromError(response.status, error);
-		throw new Error(getErrorMessage(error));
+		throw new ApiRequestError(getErrorMessage(error), response.status, error);
 	}
 
 	return (await response.json()) as TResponse;
@@ -608,7 +637,7 @@ async function requestSessionState(
 	if (!response.ok) {
 		const error = await readApiError(response);
 		notifyAuthInvalidFromError(response.status, error);
-		throw new Error(getErrorMessage(error));
+		throw new ApiRequestError(getErrorMessage(error), response.status, error);
 	}
 
 	return normalizeSessionStateResponse(await response.json());
@@ -705,7 +734,11 @@ export async function streamSession(
 	if (!response.ok) {
 		const error = await readApiError(response);
 		notifyAuthInvalidFromError(response.status, error);
-		throw new SessionStreamError(getErrorMessage(error), activeSessionId);
+		throw new SessionStreamError(getErrorMessage(error), activeSessionId, {
+			errorCode: getApiErrorCode(error),
+			provider: getApiErrorProvider(error),
+			action: getApiErrorAction(error),
+		});
 	}
 	if (!response.body) {
 		throw new SessionStreamError(
@@ -739,6 +772,11 @@ export async function streamSession(
 				throw new SessionStreamError(
 					event.message || event.error || "对话请求失败，请稍后重试",
 					completedSessionId ?? activeSessionId,
+					{
+						errorCode: event.error_code,
+						provider: event.provider,
+						action: event.action,
+					},
 				);
 			}
 
