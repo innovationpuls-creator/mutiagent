@@ -8,12 +8,20 @@ import type {
 	ForestSubmitStreamDonePayload,
 	ForestSubmitStreamEvent,
 } from "../types/forest";
-import { API_BASE_URL, notifyAuthInvalidFromError, readApiError } from "./http";
+import {
+	API_BASE_URL,
+	getApiErrorCode,
+	getApiErrorProvider,
+	notifyAuthInvalidFromError,
+	readApiError,
+} from "./http";
 
 export class ForestSubmissionError extends Error {
 	constructor(
 		message: string,
 		public status: number,
+		public errorCode: string | null = null,
+		public provider: string | null = null,
 	) {
 		super(message);
 	}
@@ -71,6 +79,8 @@ async function readForestError(
 	return new ForestSubmissionError(
 		(typeof error?.detail === "string" ? error.detail : null) ?? fallback,
 		response.status,
+		getApiErrorCode(error),
+		getApiErrorProvider(error),
 	);
 }
 

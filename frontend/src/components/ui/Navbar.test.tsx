@@ -1,8 +1,15 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../../contexts/AuthContext";
+import { ModelConfigProvider } from "../../contexts/ModelConfigContext";
+import {
+	CATALOG,
+	makeConfig,
+	seedAuth,
+	stubFetch,
+} from "../../test/modelConfigHarness";
 import { Navbar } from "./Navbar";
 
 vi.mock("framer-motion", async () => {
@@ -122,5 +129,63 @@ describe("Navbar program import removal", () => {
 		fireEvent.click(screen.getByRole("button", { name: "切换个人菜单" }));
 		expect(screen.queryByRole("menuitem", { name: /导入人培方案/ })).toBeNull();
 		expect(screen.queryByRole("dialog", { name: "导入人培方案" })).toBeNull();
+	});
+});
+
+describe("Navbar model config entry (AC-1)", () => {
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	function renderNavbar() {
+		render(
+			<AuthProvider>
+				<ModelConfigProvider>
+					<MemoryRouter initialEntries={["/sprout"]}>
+						<Routes>
+							<Route path="/sprout" element={<Navbar />} />
+							<Route path="/settings/models" element={<p>模型配置页</p>} />
+						</Routes>
+					</MemoryRouter>
+				</ModelConfigProvider>
+			</AuthProvider>,
+		);
+	}
+
+	it("replaces the disabled preferences item with a working 模型配置 entry", async () => {
+		seedAuth("student");
+		stubFetch({
+			"GET /api/model-config": { json: makeConfig() },
+			"GET /api/ai/models/catalog": { json: { providers: CATALOG } },
+		});
+		renderNavbar();
+		fireEvent.click(screen.getByRole("button", { name: "切换个人菜单" }));
+		expect(screen.queryByText(/偏好设置/)).toBeNull();
+		fireEvent.click(screen.getByRole("menuitem", { name: /模型配置/ }));
+		expect(await screen.findByText("模型配置页")).toBeTruthy();
+	});
+
+	it("shows a setup dot until a default model is usable", async () => {
+		seedAuth("student");
+		const config = makeConfig();
+		config.preferences = { ...config.preferences, default_model_ref: null };
+		stubFetch({
+			"GET /api/model-config": { json: config },
+			"GET /api/ai/models/catalog": { json: { providers: CATALOG } },
+		});
+		renderNavbar();
+		expect(await screen.findByTestId("model-setup-dot")).toBeTruthy();
+	});
+
+	it("has no setup dot for a configured user", async () => {
+		seedAuth("student");
+		stubFetch({
+			"GET /api/model-config": { json: makeConfig() },
+			"GET /api/ai/models/catalog": { json: { providers: CATALOG } },
+		});
+		renderNavbar();
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(screen.queryByTestId("model-setup-dot")).toBeNull();
 	});
 });

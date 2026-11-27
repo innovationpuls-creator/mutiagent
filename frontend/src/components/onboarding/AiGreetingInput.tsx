@@ -60,6 +60,13 @@ import type {
 } from "../../types/chat";
 import { CourseKnowledgeCard } from "../learning/CourseKnowledgeCard";
 import { LearningPathCard } from "../learning/LearningPathCard";
+import {
+	isModelGuidanceError,
+	type ModelErrorInfo,
+	ModelGuidanceCard,
+	modelErrorInfo,
+} from "../models/ModelGuidanceCard";
+import { ModelQuickSwitcher } from "../models/ModelQuickSwitcher";
 import { HandwritingCanvas } from "../ui/HandwritingCanvas";
 import { AgentRunTimeline } from "./AgentRunTimeline";
 import { AiEyes } from "./AiEyes";
@@ -514,6 +521,9 @@ export function AiGreetingInput({
 	const [agentEvents, setAgentEvents] = useState<SessionAgentEvent[]>([]);
 	const [showEventLog, setShowEventLog] = useState(false);
 	const [globalError, setGlobalError] = useState<string | null>(null);
+	const [modelGuidance, setModelGuidance] = useState<ModelErrorInfo | null>(
+		null,
+	);
 	const [showCanvas, setShowCanvas] = useState(false);
 	const [imageAttachment, setImageAttachment] = useState<string | null>(null);
 	const [hiddenPathActionsMessageId, setHiddenPathActionsMessageId] = useState<
@@ -877,6 +887,7 @@ export function AiGreetingInput({
 			setAgentEvents([]);
 			setShowEventLog(false);
 			setGlobalError(null);
+			setModelGuidance(null);
 
 			const runId = runIdRef.current + 1;
 			runIdRef.current = runId;
@@ -1141,6 +1152,8 @@ export function AiGreetingInput({
 					sessionId: finalSessionId,
 					retryAction: retryActionRef.current,
 				});
+				const guidance = modelErrorInfo(err);
+				setModelGuidance(isModelGuidanceError(guidance) ? guidance : null);
 				setGlobalError(message);
 				setAgentSteps((current) =>
 					current.map((step) =>
@@ -1398,6 +1411,10 @@ export function AiGreetingInput({
 								</div>
 
 								<div className="composer-container">
+									{modelGuidance && <ModelGuidanceCard info={modelGuidance} />}
+									<div className="composer-model-bar">
+										<ModelQuickSwitcher />
+									</div>
 									{imageAttachment && (
 										<div className="image-preview-box">
 											<img

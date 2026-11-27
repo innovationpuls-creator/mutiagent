@@ -9,6 +9,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { useModelConfig } from "../../contexts/ModelConfigContext";
 import { DURATION_INSTANT, motionTokens } from "../../styles/motion-tokens";
 import styles from "./Navbar.module.css";
 
@@ -81,6 +82,7 @@ const dropdownItemVariants: Variants = {
 export function Navbar() {
 	const navigate = useNavigate();
 	const auth = useAuth();
+	const { needsSetup } = useModelConfig();
 	const reduceMotion = useReducedMotion();
 	const dropdownId = useId();
 	const dropdownRef = useRef<HTMLDivElement>(null);
@@ -223,6 +225,13 @@ export function Navbar() {
 							aria-haspopup="menu"
 						>
 							<span aria-hidden="true">{avatarLabel}</span>
+							{needsSetup && (
+								<span
+									className={styles.setupDot}
+									data-testid="model-setup-dot"
+									aria-hidden="true"
+								/>
+							)}
 						</button>
 
 						<AnimatePresence>
@@ -272,8 +281,10 @@ export function Navbar() {
 										className={styles.dropdownItem}
 										type="button"
 										role="menuitem"
-										disabled
-										aria-disabled="true"
+										onClick={() => {
+											closeDropdown();
+											navigate("/settings/models");
+										}}
 										variants={reduceMotion ? undefined : dropdownItemVariants}
 										initial={reduceMotion ? { opacity: 0 } : "hidden"}
 										animate={reduceMotion ? { opacity: 1 } : "visible"}
@@ -281,9 +292,14 @@ export function Navbar() {
 										<span className={styles.dropdownSymbol} aria-hidden="true">
 											·
 										</span>
-										<span className={styles.dropdownText}>
-											偏好设置 · 暂不可用
-										</span>
+										<span className={styles.dropdownText}>模型配置</span>
+										{needsSetup && (
+											<span
+												className={styles.setupDot}
+												role="img"
+												aria-label="尚未配置模型"
+											/>
+										)}
 									</motion.button>
 									<motion.button
 										className={styles.dropdownItem}

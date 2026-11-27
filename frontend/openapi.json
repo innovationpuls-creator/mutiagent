@@ -220,6 +220,341 @@
 				}
 			}
 		},
+		"/api/model-config": {
+			"get": {
+				"tags": ["model-config"],
+				"summary": "Get Model Config",
+				"operationId": "get_model_config_api_model_config_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ModelConfigView"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			}
+		},
+		"/api/model-config/providers/{provider_id}": {
+			"put": {
+				"tags": ["model-config"],
+				"summary": "Put Provider",
+				"operationId": "put_provider_api_model_config_providers__provider_id__put",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "provider_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+							"title": "Provider Id"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ProviderUpsert"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ProviderView"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			},
+			"delete": {
+				"tags": ["model-config"],
+				"summary": "Remove Provider",
+				"operationId": "remove_provider_api_model_config_providers__provider_id__delete",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "provider_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+							"title": "Provider Id"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "Successful Response"
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/model-config/custom-models": {
+			"put": {
+				"tags": ["model-config"],
+				"summary": "Put Custom Model",
+				"operationId": "put_custom_model_api_model_config_custom_models_put",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CustomModelUpsert"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/CustomModelView"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			}
+		},
+		"/api/model-config/custom-models/{model_row_id}": {
+			"delete": {
+				"tags": ["model-config"],
+				"summary": "Remove Custom Model",
+				"operationId": "remove_custom_model_api_model_config_custom_models__model_row_id__delete",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "model_row_id",
+						"in": "path",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"title": "Model Row Id"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "Successful Response"
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/model-config/preferences": {
+			"put": {
+				"tags": ["model-config"],
+				"summary": "Put Preferences",
+				"operationId": "put_preferences_api_model_config_preferences_put",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/PreferencesPayload"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PreferencesView"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			}
+		},
+		"/api/model-config/quick-switch": {
+			"patch": {
+				"tags": ["model-config"],
+				"summary": "Patch Quick Switch",
+				"operationId": "patch_quick_switch_api_model_config_quick_switch_patch",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/QuickSwitchPayload"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PreferencesView"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				]
+			}
+		},
+		"/api/model-config/usage": {
+			"get": {
+				"tags": ["model-config"],
+				"summary": "Get Usage",
+				"operationId": "get_usage_api_model_config_usage_get",
+				"security": [
+					{
+						"HTTPBearer": []
+					}
+				],
+				"parameters": [
+					{
+						"name": "days",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"type": "integer",
+							"maximum": 365,
+							"minimum": 1,
+							"default": 30,
+							"title": "Days"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/UsageSummary"
+								}
+							}
+						}
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
 		"/api/admin/accounts": {
 			"get": {
 				"tags": ["admin"],
@@ -3361,6 +3696,155 @@
 				"type": "object",
 				"title": "CultivationProgramSaveRequest"
 			},
+			"CustomModelUpsert": {
+				"properties": {
+					"provider_id": {
+						"type": "string",
+						"maxLength": 64,
+						"minLength": 1,
+						"title": "Provider Id"
+					},
+					"model_id": {
+						"type": "string",
+						"maxLength": 128,
+						"minLength": 1,
+						"title": "Model Id"
+					},
+					"display_name": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 128
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Display Name"
+					},
+					"context_window": {
+						"type": "integer",
+						"minimum": 1.0,
+						"title": "Context Window",
+						"default": 128000
+					},
+					"max_tokens": {
+						"type": "integer",
+						"minimum": 1.0,
+						"title": "Max Tokens",
+						"default": 8192
+					},
+					"supports_vision": {
+						"type": "boolean",
+						"title": "Supports Vision",
+						"default": false
+					},
+					"supports_tools": {
+						"type": "boolean",
+						"title": "Supports Tools",
+						"default": true
+					},
+					"supports_reasoning": {
+						"type": "boolean",
+						"title": "Supports Reasoning",
+						"default": false
+					},
+					"compat_config": {
+						"additionalProperties": true,
+						"type": "object",
+						"title": "Compat Config"
+					},
+					"pricing": {
+						"additionalProperties": true,
+						"type": "object",
+						"title": "Pricing"
+					},
+					"enabled": {
+						"type": "boolean",
+						"title": "Enabled",
+						"default": true
+					}
+				},
+				"type": "object",
+				"required": ["provider_id", "model_id"],
+				"title": "CustomModelUpsert"
+			},
+			"CustomModelView": {
+				"properties": {
+					"id": {
+						"type": "string",
+						"title": "Id"
+					},
+					"provider_id": {
+						"type": "string",
+						"title": "Provider Id"
+					},
+					"model_id": {
+						"type": "string",
+						"title": "Model Id"
+					},
+					"display_name": {
+						"type": "string",
+						"title": "Display Name"
+					},
+					"context_window": {
+						"type": "integer",
+						"title": "Context Window"
+					},
+					"max_tokens": {
+						"type": "integer",
+						"title": "Max Tokens"
+					},
+					"supports_vision": {
+						"type": "boolean",
+						"title": "Supports Vision"
+					},
+					"supports_tools": {
+						"type": "boolean",
+						"title": "Supports Tools"
+					},
+					"supports_reasoning": {
+						"type": "boolean",
+						"title": "Supports Reasoning"
+					},
+					"compat_config": {
+						"additionalProperties": true,
+						"type": "object",
+						"title": "Compat Config"
+					},
+					"pricing": {
+						"additionalProperties": true,
+						"type": "object",
+						"title": "Pricing"
+					},
+					"enabled": {
+						"type": "boolean",
+						"title": "Enabled"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Updated At"
+					}
+				},
+				"type": "object",
+				"required": [
+					"id",
+					"provider_id",
+					"model_id",
+					"display_name",
+					"context_window",
+					"max_tokens",
+					"supports_vision",
+					"supports_tools",
+					"supports_reasoning",
+					"compat_config",
+					"pricing",
+					"enabled",
+					"updated_at"
+				],
+				"title": "CustomModelView"
+			},
 			"DataCohortRead": {
 				"properties": {
 					"school": {
@@ -5129,6 +5613,49 @@
 				"required": ["account", "password"],
 				"title": "LoginRequest"
 			},
+			"ModelConfigView": {
+				"properties": {
+					"providers": {
+						"items": {
+							"$ref": "#/components/schemas/ProviderView"
+						},
+						"type": "array",
+						"title": "Providers"
+					},
+					"custom_models": {
+						"items": {
+							"$ref": "#/components/schemas/CustomModelView"
+						},
+						"type": "array",
+						"title": "Custom Models"
+					},
+					"preferences": {
+						"$ref": "#/components/schemas/PreferencesView"
+					}
+				},
+				"type": "object",
+				"required": ["providers", "custom_models", "preferences"],
+				"title": "ModelConfigView"
+			},
+			"ModelRef": {
+				"properties": {
+					"provider_id": {
+						"type": "string",
+						"maxLength": 64,
+						"minLength": 1,
+						"title": "Provider Id"
+					},
+					"model_id": {
+						"type": "string",
+						"maxLength": 128,
+						"minLength": 1,
+						"title": "Model Id"
+					}
+				},
+				"type": "object",
+				"required": ["provider_id", "model_id"],
+				"title": "ModelRef"
+			},
 			"OAuthRequest": {
 				"properties": {
 					"provider": {
@@ -5146,6 +5673,136 @@
 				"type": "object",
 				"required": ["provider", "authorization_code"],
 				"title": "OAuthRequest"
+			},
+			"PreferencesPayload": {
+				"properties": {
+					"config_mode": {
+						"type": "string",
+						"enum": ["simple", "advanced"],
+						"title": "Config Mode",
+						"default": "simple"
+					},
+					"default_model_ref": {
+						"anyOf": [
+							{
+								"$ref": "#/components/schemas/ModelRef"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"default_vision_model_ref": {
+						"anyOf": [
+							{
+								"$ref": "#/components/schemas/ModelRef"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"default_thinking_level": {
+						"type": "string",
+						"enum": ["off", "minimal", "low", "medium", "high", "xhigh"],
+						"title": "Default Thinking Level",
+						"default": "medium"
+					},
+					"runtime_options": {
+						"$ref": "#/components/schemas/RuntimeOptions"
+					},
+					"slot_bindings": {
+						"additionalProperties": {
+							"$ref": "#/components/schemas/SlotBinding"
+						},
+						"propertyNames": {
+							"enum": [
+								"chat_profile",
+								"path_outline",
+								"course_resources",
+								"quiz_vision",
+								"growth_report",
+								"kb_translate",
+								"kb_search"
+							]
+						},
+						"type": "object",
+						"title": "Slot Bindings"
+					}
+				},
+				"type": "object",
+				"title": "PreferencesPayload"
+			},
+			"PreferencesView": {
+				"properties": {
+					"config_mode": {
+						"type": "string",
+						"enum": ["simple", "advanced"],
+						"title": "Config Mode",
+						"default": "simple"
+					},
+					"default_model_ref": {
+						"anyOf": [
+							{
+								"$ref": "#/components/schemas/ModelRef"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"default_vision_model_ref": {
+						"anyOf": [
+							{
+								"$ref": "#/components/schemas/ModelRef"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"default_thinking_level": {
+						"type": "string",
+						"enum": ["off", "minimal", "low", "medium", "high", "xhigh"],
+						"title": "Default Thinking Level",
+						"default": "medium"
+					},
+					"runtime_options": {
+						"$ref": "#/components/schemas/RuntimeOptions"
+					},
+					"slot_bindings": {
+						"additionalProperties": {
+							"$ref": "#/components/schemas/SlotBinding"
+						},
+						"propertyNames": {
+							"enum": [
+								"chat_profile",
+								"path_outline",
+								"course_resources",
+								"quiz_vision",
+								"growth_report",
+								"kb_translate",
+								"kb_search"
+							]
+						},
+						"type": "object",
+						"title": "Slot Bindings"
+					},
+					"updated_at": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "date-time"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Updated At"
+					}
+				},
+				"type": "object",
+				"title": "PreferencesView"
 			},
 			"ProfileDashboardReadResponse": {
 				"properties": {
@@ -5190,6 +5847,236 @@
 					"recommendations"
 				],
 				"title": "ProfileDashboardReadResponse"
+			},
+			"ProviderUpsert": {
+				"properties": {
+					"display_name": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 128
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Display Name"
+					},
+					"is_builtin": {
+						"type": "boolean",
+						"title": "Is Builtin",
+						"default": true
+					},
+					"protocol": {
+						"anyOf": [
+							{
+								"type": "string",
+								"enum": [
+									"openai-completions",
+									"openai-responses",
+									"anthropic-messages",
+									"google-generative-ai"
+								]
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Protocol"
+					},
+					"base_url": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 512
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Base Url"
+					},
+					"headers": {
+						"anyOf": [
+							{
+								"additionalProperties": {
+									"type": "string"
+								},
+								"type": "object"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Headers"
+					},
+					"auth_type": {
+						"type": "string",
+						"enum": ["api_key", "oauth"],
+						"title": "Auth Type",
+						"default": "api_key"
+					},
+					"api_key": {
+						"anyOf": [
+							{
+								"type": "string",
+								"maxLength": 4096
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Api Key"
+					},
+					"enabled": {
+						"type": "boolean",
+						"title": "Enabled",
+						"default": true
+					}
+				},
+				"type": "object",
+				"title": "ProviderUpsert"
+			},
+			"ProviderView": {
+				"properties": {
+					"provider_id": {
+						"type": "string",
+						"title": "Provider Id"
+					},
+					"display_name": {
+						"type": "string",
+						"title": "Display Name"
+					},
+					"is_builtin": {
+						"type": "boolean",
+						"title": "Is Builtin"
+					},
+					"protocol": {
+						"type": "string",
+						"title": "Protocol"
+					},
+					"base_url": {
+						"type": "string",
+						"title": "Base Url"
+					},
+					"headers": {
+						"additionalProperties": {
+							"type": "string"
+						},
+						"type": "object",
+						"title": "Headers"
+					},
+					"auth_type": {
+						"type": "string",
+						"enum": ["api_key", "oauth"],
+						"title": "Auth Type"
+					},
+					"has_secret": {
+						"type": "boolean",
+						"title": "Has Secret"
+					},
+					"secret_mask": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Secret Mask"
+					},
+					"oauth_status": {
+						"anyOf": [
+							{
+								"type": "string",
+								"enum": ["authorized", "expired"]
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Oauth Status"
+					},
+					"oauth_expires_at": {
+						"anyOf": [
+							{
+								"type": "string",
+								"format": "date-time"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Oauth Expires At"
+					},
+					"oauth_account_label": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Oauth Account Label"
+					},
+					"enabled": {
+						"type": "boolean",
+						"title": "Enabled"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time",
+						"title": "Updated At"
+					}
+				},
+				"type": "object",
+				"required": [
+					"provider_id",
+					"display_name",
+					"is_builtin",
+					"protocol",
+					"base_url",
+					"headers",
+					"auth_type",
+					"has_secret",
+					"secret_mask",
+					"oauth_status",
+					"oauth_expires_at",
+					"oauth_account_label",
+					"enabled",
+					"updated_at"
+				],
+				"title": "ProviderView"
+			},
+			"QuickSwitchPayload": {
+				"properties": {
+					"model_ref": {
+						"anyOf": [
+							{
+								"$ref": "#/components/schemas/ModelRef"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"thinking_level": {
+						"anyOf": [
+							{
+								"type": "string",
+								"enum": ["off", "minimal", "low", "medium", "high", "xhigh"]
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Thinking Level"
+					}
+				},
+				"type": "object",
+				"title": "QuickSwitchPayload"
 			},
 			"RegisterRequest": {
 				"properties": {
@@ -5379,6 +6266,76 @@
 				"required": ["passed_chapters", "tested_chapters", "attempts"],
 				"title": "ReportStats"
 			},
+			"RuntimeOptions": {
+				"properties": {
+					"temperature": {
+						"anyOf": [
+							{
+								"type": "number",
+								"maximum": 2.0,
+								"minimum": 0.0
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Temperature"
+					},
+					"max_tokens": {
+						"anyOf": [
+							{
+								"type": "integer",
+								"maximum": 1000000.0,
+								"minimum": 1.0
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Max Tokens"
+					},
+					"timeout_seconds": {
+						"anyOf": [
+							{
+								"type": "integer",
+								"maximum": 600.0,
+								"minimum": 1.0
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Timeout Seconds"
+					},
+					"max_retries": {
+						"anyOf": [
+							{
+								"type": "integer",
+								"maximum": 5.0,
+								"minimum": 0.0
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Max Retries"
+					},
+					"cache_retention": {
+						"anyOf": [
+							{
+								"type": "string",
+								"enum": ["none", "short", "long"]
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Cache Retention"
+					}
+				},
+				"type": "object",
+				"title": "RuntimeOptions"
+			},
 			"SessionStateResponse": {
 				"properties": {
 					"session_id": {
@@ -5453,6 +6410,36 @@
 				"type": "object",
 				"required": ["session_id", "user_uid", "updated_at"],
 				"title": "SessionStateResponse"
+			},
+			"SlotBinding": {
+				"properties": {
+					"model_ref": {
+						"$ref": "#/components/schemas/ModelRef"
+					},
+					"thinking_level": {
+						"anyOf": [
+							{
+								"type": "string",
+								"enum": ["off", "minimal", "low", "medium", "high", "xhigh"]
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Thinking Level"
+					},
+					"fallback_chain": {
+						"items": {
+							"$ref": "#/components/schemas/ModelRef"
+						},
+						"type": "array",
+						"maxItems": 5,
+						"title": "Fallback Chain"
+					}
+				},
+				"type": "object",
+				"required": ["model_ref"],
+				"title": "SlotBinding"
 			},
 			"StructuredTextbookCreateRequest": {
 				"properties": {
@@ -5979,6 +6966,105 @@
 					"textbook_id"
 				],
 				"title": "TextbookSectionContentRead"
+			},
+			"UsageBucket": {
+				"properties": {
+					"date": {
+						"type": "string",
+						"title": "Date"
+					},
+					"scene": {
+						"type": "string",
+						"title": "Scene"
+					},
+					"requests": {
+						"type": "integer",
+						"title": "Requests"
+					},
+					"success_requests": {
+						"type": "integer",
+						"title": "Success Requests"
+					},
+					"input_tokens": {
+						"type": "integer",
+						"title": "Input Tokens"
+					},
+					"output_tokens": {
+						"type": "integer",
+						"title": "Output Tokens"
+					},
+					"cache_read_tokens": {
+						"type": "integer",
+						"title": "Cache Read Tokens"
+					},
+					"cache_write_tokens": {
+						"type": "integer",
+						"title": "Cache Write Tokens"
+					},
+					"reasoning_tokens": {
+						"type": "integer",
+						"title": "Reasoning Tokens"
+					},
+					"estimated_cost_usd": {
+						"type": "number",
+						"title": "Estimated Cost Usd"
+					},
+					"avg_latency_ms": {
+						"type": "number",
+						"title": "Avg Latency Ms"
+					}
+				},
+				"type": "object",
+				"required": [
+					"date",
+					"scene",
+					"requests",
+					"success_requests",
+					"input_tokens",
+					"output_tokens",
+					"cache_read_tokens",
+					"cache_write_tokens",
+					"reasoning_tokens",
+					"estimated_cost_usd",
+					"avg_latency_ms"
+				],
+				"title": "UsageBucket"
+			},
+			"UsageSummary": {
+				"properties": {
+					"days": {
+						"type": "integer",
+						"title": "Days"
+					},
+					"buckets": {
+						"items": {
+							"$ref": "#/components/schemas/UsageBucket"
+						},
+						"type": "array",
+						"title": "Buckets"
+					},
+					"total_requests": {
+						"type": "integer",
+						"title": "Total Requests"
+					},
+					"total_tokens": {
+						"type": "integer",
+						"title": "Total Tokens"
+					},
+					"total_cost_usd": {
+						"type": "number",
+						"title": "Total Cost Usd"
+					}
+				},
+				"type": "object",
+				"required": [
+					"days",
+					"buckets",
+					"total_requests",
+					"total_tokens",
+					"total_cost_usd"
+				],
+				"title": "UsageSummary"
 			},
 			"UserLearningDataRead": {
 				"properties": {

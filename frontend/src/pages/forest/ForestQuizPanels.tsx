@@ -3,6 +3,11 @@ import { PenTool } from "lucide-react";
 import { type ChangeEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { MarkdownRenderer } from "../../components/markdown/MarkdownRenderer";
+import {
+	type ModelErrorInfo,
+	ModelGuidanceCard,
+} from "../../components/models/ModelGuidanceCard";
+import { ModelQuickSwitcher } from "../../components/models/ModelQuickSwitcher";
 import { MessageBubble } from "../../components/onboarding/MessageBubble";
 import { HandwritingCanvas } from "../../components/ui/HandwritingCanvas";
 import { motionTokens } from "../../styles/motion-tokens";
@@ -66,6 +71,7 @@ export interface ForestAiPanelProps {
 	attempt: ForestAttempt | null;
 	selectedQuestion: ForestQuizQuestion | null;
 	aiStatus: ForestAiStatus;
+	aiGuidance?: ModelErrorInfo | null;
 	messages: ForestMessage[];
 	reduceMotion: boolean;
 	onAskForestAi(customMessage?: string, attachment?: string | null): void;
@@ -368,6 +374,7 @@ export function ForestQuestionPanel({
 export function ForestAiPanel({
 	quiz,
 	aiStatus,
+	aiGuidance,
 	messages,
 	reduceMotion,
 	onAskForestAi,
@@ -439,8 +446,10 @@ export function ForestAiPanel({
 				</button>
 			)}
 
+			{aiGuidance && <ModelGuidanceCard info={aiGuidance} />}
 			{quiz && (
 				<div className="forest-composer-container">
+					<ModelQuickSwitcher />
 					{imageAttachment && (
 						<div className="image-preview-box">
 							<img

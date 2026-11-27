@@ -10,6 +10,10 @@ import {
 	submitForestQuizAttemptStream,
 } from "../../api/forest";
 import { ForestQuizOverlay } from "../../components/forest/ForestQuizOverlay";
+import {
+	type ModelErrorInfo,
+	modelErrorInfo,
+} from "../../components/models/ModelGuidanceCard";
 import { useAuth } from "../../contexts/AuthContext";
 import { DraftNavigationGuard } from "../../lib/quizDraft/DraftNavigationGuard";
 import type { PendingSubmission, QuizDraft } from "../../lib/quizDraft/store";
@@ -62,6 +66,7 @@ export function ForestQuizPage() {
 		null,
 	);
 	const [aiStatus, setAiStatus] = useState<ForestAiStatus>("idle");
+	const [aiGuidance, setAiGuidance] = useState<ModelErrorInfo | null>(null);
 	const [messages, setMessages] = useState<ForestMessage[]>([]);
 
 	const selectQuestion = useCallback((questionId: string | null) => {
@@ -275,6 +280,7 @@ export function ForestQuizPage() {
 
 			setMessages((prev) => [...prev, userMsg, assistantMsg]);
 			setAiStatus("streaming");
+			setAiGuidance(null);
 
 			try {
 				await streamForestAi(
@@ -312,6 +318,7 @@ export function ForestQuizPage() {
 				);
 			} catch (error) {
 				setAiStatus("error");
+				setAiGuidance(modelErrorInfo(error));
 				const errMsg =
 					error instanceof Error ? error.message : "Forest AI 暂时不可用";
 				setMessages((prev) =>
@@ -648,6 +655,7 @@ export function ForestQuizPage() {
 						attempt={attempt}
 						selectedQuestion={selectedQuestion}
 						aiStatus={aiStatus}
+						aiGuidance={aiGuidance}
 						messages={messages}
 						reduceMotion={reduceMotion}
 						onAskForestAi={handleAskForestAi}

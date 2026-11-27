@@ -60,6 +60,11 @@ const AdminProgramsPage = lazy(() =>
 		({ AdminProgramsPage: Component }) => ({ default: Component }),
 	),
 );
+const ModelConfigPage = lazy(() =>
+	import("./pages/settings/ModelConfigPage").then(
+		({ ModelConfigPage: Component }) => ({ default: Component }),
+	),
+);
 const BranchPage = lazy(() =>
 	import("./pages/branch/BranchPage").then(({ BranchPage: Component }) => ({
 		default: Component,
@@ -145,6 +150,7 @@ function AnimatedRoutes() {
 		"/leaf",
 		"/forest",
 		"/canopy",
+		"/settings",
 		"/admin",
 	].some(
 		(path) =>
@@ -186,6 +192,7 @@ function AnimatedRoutes() {
 										path="/admin/knowledge-base"
 										element={<AdminKnowledgeBasePage />}
 									/>
+									<Route path="/admin/models" element={<ModelConfigPage />} />
 								</Route>
 							</Route>
 
@@ -207,6 +214,10 @@ function AnimatedRoutes() {
 										element={<ForestQuizPage />}
 									/>
 									<Route path="/canopy" element={<CanopyPage />} />
+									<Route
+										path="/settings/models"
+										element={<ModelConfigPage />}
+									/>
 								</Route>
 							</Route>
 						</Route>
@@ -225,6 +236,7 @@ function AppGlobalAiWidget() {
 		location.pathname === "/login" ||
 		location.pathname === "/forest" ||
 		location.pathname.startsWith("/forest/") ||
+		location.pathname.startsWith("/settings") ||
 		location.pathname.startsWith("/admin");
 	if (isHiddenPath) {
 		return null;
@@ -238,7 +250,8 @@ function AppGlobalAiWidget() {
 
 function AppFilingLink() {
 	const { pathname } = useLocation();
-	if (/^\/(sprout|branch|leaf|forest|canopy)(\/|$)/.test(pathname)) return null;
+	if (/^\/(sprout|branch|leaf|forest|canopy|settings)(\/|$)/.test(pathname))
+		return null;
 	return <IcpFilingLink />;
 }
 
