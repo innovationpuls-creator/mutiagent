@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createApp } from "../src/app.js";
 import { validateQuiz } from "../src/ai/quiz.js";
 import { CHAT_USER, UNCONFIGURED_USER, parseSse, setupChatHarness } from "./chatHarness.js";
-import { INTERNAL_TOKEN, signToken } from "./helpers.js";
+import { INTERNAL_TOKEN, signToken, testConfig } from "./helpers.js";
 
 const h = setupChatHarness();
 beforeEach(() => {
@@ -229,23 +230,81 @@ describe("AC-5 knowledge-base AI", () => {
 		expect(sent).toMatch(/<source>[\s\S]*Arrays store[\s\S]*<\/source>/);
 		await h.app.request("/internal/health", { headers: { "X-Internal-Token": INTERNAL_TOKEN } });
 	});
-	it("returns structured candidates from the search model", async () => {
-		h.primary.queue.push({ text: '好的：[{"title":"OS Book","source_url":"https://example.org/os.pdf","source_type":"pdf"}, "junk"]' });
-		const res = await internal("/kb/search-textbook-sources", { user_uid: CHAT_USER, topic: "操作系统", limit: 5 });
-		expect(res.json.candidates).toEqual([{ title: "OS Book", source_url: "https://example.org/os.pdf", source_type: "pdf" }]);
-	});
 	it("an admin without a model is blocked with MODEL_NOT_CONFIGURED", async () => {
-		for (const [path, body] of [
-			["/kb/translate-chunk", { content: "x" }],
-			["/kb/search-textbook-sources", { topic: "x", limit: 3 }],
-		] as const) {
-			const res = await internal(path, { user_uid: UNCONFIGURED_USER, ...body });
-			expect(res.status).toBe(428);
-			expect(res.json.error_code).toBe("MODEL_NOT_CONFIGURED");
-		}
+		const res = await internal("/kb/translate-chunk", { user_uid: UNCONFIGURED_USER, content: "x" });
+		expect(res.status).toBe(428);
+		expect(res.json.error_code).toBe("MODEL_NOT_CONFIGURED");
 	});
 	it("rejects calls without the internal token", async () => {
 		const res = await h.app.request("/internal/ai/kb/translate-chunk", { method: "POST", body: "{}" });
 		expect(res.status).toBe(401);
+	});
+});
+
+describe("knowledge-base admin agent (tools, not a fixed pipeline)", () => {
+	const ADMIN = "admin-kb";
+	const searchHits = [{ title: "OS Book", url: "https://books.example.org/os.pdf", site_name: "Example", summary: "操作系统教材" }];
+
+	function adminApp(web = true) {
+		h.backend.users.set(ADMIN, { user_uid: ADMIN, exists: true, role: "admin", is_active: true });
+		h.backend.runtimeConfigs.set(ADMIN, h.backend.runtimeConfigs.get(CHAT_USER)!);
+		const config = testConfig(web ? { webSearchBaseUrl: "https://search.test", webSearchApiKey: "k" } : {});
+		return createApp({ config, backend: h.backend, logSink: () => {} });
+	}
+	async function ask(app: ReturnType<typeof createApp>, user = ADMIN, message = "找操作系统教材") {
+		const token = await signToken(user);
+		const res = await app.request("/api/admin/knowledge-base/agent/stream", {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+			body: JSON.stringify({ message }),
+		});
+		return { status: res.status, frames: res.status === 200 ? parseSse(await res.text()) : [] };
+	}
+	afterEach(() => vi.unstubAllGlobals());
+
+	it("lets the model search, read, verify and recommend; only verified sources reach the admin", async () => {
+		const realFetch = globalThis.fetch;
+		const seen: string[] = [];
+		vi.stubGlobal("fetch", async (input: any, init?: any) => {
+			const url = String(input?.url ?? input);
+			if (!url.startsWith("https://search.test")) return realFetch(input, init);
+			seen.push(url);
+			return new Response(JSON.stringify(url.endsWith("/search") ? { results: searchHits } : { title: "OS", content: "# OS\n目录" }), { status: 200 });
+		});
+		h.backend.kb.rejectUrls.add("https://bad.example.org/blog");
+		h.primary.queue.push(
+			{ tool: "kb_overview", args: {} },
+			{ tool: "web_search", args: { query: "操作系统 教材 pdf" } },
+			{ tool: "web_fetch", args: { url: "https://books.example.org/os.pdf" } },
+			{ tool: "verify_textbook_source", args: { title: "博客", source_url: "https://bad.example.org/blog", source_type: "html" } },
+			{ tool: "verify_textbook_source", args: { title: "OS Book", source_url: "https://books.example.org/os.pdf", source_type: "pdf", recommend: true } },
+			{ text: "找到 1 个来源，推荐 OS Book。" },
+		);
+		const res = await ask(adminApp());
+		expect(res.status).toBe(200);
+		const done = res.frames.at(-1)!;
+		expect(done.event).toBe("completed");
+		expect(done.data.response.reply_text).toContain("OS Book");
+		expect(done.data.response.source_results).toHaveLength(1);
+		expect(done.data.response.source_results[0]).toMatchObject({ title: "OS Book", is_recommended: true });
+		expect(done.data.response.selected_source_result_id).toBe(done.data.response.source_results[0].source_result_id);
+		expect(seen).toEqual(["https://search.test/v1/tools/search", "https://search.test/v1/tools/fetch"]);
+		expect(res.frames.filter((f) => f.event === "agent_step").length).toBeGreaterThanOrEqual(5);
+		expect(h.backend.kb.verified).toHaveLength(2);
+	});
+
+	it("tells the model honestly when web search is not configured", async () => {
+		h.primary.queue.push({ tool: "web_search", args: { query: "x" } }, { text: "联网搜索未配置，暂时找不到来源。" });
+		const res = await ask(adminApp(false));
+		const done = res.frames.at(-1)!;
+		expect(done.event).toBe("completed");
+		expect(done.data.response.source_results).toEqual([]);
+		const toolResult = JSON.stringify(h.primary.requests[1]!.body.messages);
+		expect(toolResult).toContain("联网搜索服务未配置");
+	});
+
+	it("is admin only", async () => {
+		const res = await ask(adminApp(), CHAT_USER);
+		expect(res.status).toBe(403);
 	});
 });

@@ -33,28 +33,6 @@ function formatStreamEventName(event: string): string {
 	switch (event) {
 		case "started":
 			return "已收到管理员消息。";
-		case "context_loaded":
-			return "已读取知识库现状。";
-		case "textbook_search_started":
-			return "正在做教材精确匹配。";
-		case "textbook_search_completed":
-			return "教材精确匹配完成。";
-		case "hybrid_search_started":
-			return "正在扩展检索教材内容。";
-		case "hybrid_search_completed":
-			return "扩展检索完成。";
-		case "textbook_hits_ready":
-			return "已整理教材命中结果。";
-		case "gap_search_started":
-			return "正在检查未覆盖待办。";
-		case "gap_search_completed":
-			return "待办检查完成。";
-		case "source_search_started":
-			return "正在联网查找真实教材来源。";
-		case "source_search_completed":
-			return "真实教材来源查找完成。";
-		case "reply_ready":
-			return "已生成管理员回复。";
 		case "completed":
 			return "本轮已完成。";
 		case "error":

@@ -17,6 +17,9 @@ export interface GatewayConfig {
 	allowedOrigins: string[];
 	backendTimeoutMs: number;
 	sseHeartbeatMs: number;
+	/** Optional platform web search/fetch service used by agent tools. */
+	webSearchBaseUrl?: string;
+	webSearchApiKey?: string;
 }
 
 export class ConfigError extends Error {
@@ -98,5 +101,7 @@ export function loadConfig(
 				: DEVELOPMENT_ORIGINS,
 		backendTimeoutMs: positiveInt(env, "BACKEND_TIMEOUT_MS", 5000),
 		sseHeartbeatMs: positiveInt(env, "SSE_HEARTBEAT_MS", 15000),
+		webSearchBaseUrl: optional(env, "WEB_SEARCH_BASE_URL"),
+		webSearchApiKey: optional(env, "WEB_SEARCH_API_KEY"),
 	};
 }

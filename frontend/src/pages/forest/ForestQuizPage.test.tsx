@@ -364,7 +364,10 @@ describe("ForestQuizPage", () => {
 			name: "本章首要目标是什么？",
 			level: 2,
 		});
-		fireEvent.click(screen.getByLabelText("确认边界"));
+		const option = screen.getByLabelText("确认边界") as HTMLInputElement;
+		// The answer fieldset stays disabled until the local draft finished loading.
+		await waitFor(() => expect(option.disabled).toBe(false), { timeout: 5000 });
+		fireEvent.click(option);
 		const submitButton = screen.getByRole("button", {
 			name: "提交测验",
 		}) as HTMLButtonElement;

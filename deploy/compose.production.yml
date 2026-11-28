@@ -19,6 +19,9 @@ x-gateway-environment: &gateway-environment
   INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
   PYTHON_BACKEND_URL: http://backend:8000
   ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+  # Optional platform web search/fetch for agent tools (DeepSeek-compatible API).
+  WEB_SEARCH_BASE_URL: ${WEB_SEARCH_BASE_URL:-}
+  WEB_SEARCH_API_KEY: ${WEB_SEARCH_API_KEY:-}
 
 x-maintenance-environment: &maintenance-environment
   DATABASE_URL: postgresql://onetree_app:${POSTGRES_APP_PASSWORD}@postgres:5432/onetree

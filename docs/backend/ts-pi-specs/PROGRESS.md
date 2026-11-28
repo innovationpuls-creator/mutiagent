@@ -406,3 +406,15 @@
 - **所有模型行为均为脚本化 mock，真实模型输出质量、真实 B 站/YouTube 检索未验证**；任何真实上游问题需用真实配置再测。
 - Python 测试数量下降（984→514）为主动删除旧编排测试所致，覆盖由网关测试承接，但并非逐项对应。
 - 前端 131 条 Biome 基线 warning 未处理。
+
+## M9 之后：范式重构（固定流水线 → agent + 工具）
+
+**目的**：既然已用 Pi Agent，模型该自己决定“查什么、读什么、要不要继续”，Python 只留确定性的数据与校验接口，不再硬编码步骤、关键词表和模板回复。第一个样板是知识库管理员 agent。
+
+### 知识库管理员 agent（已完成）
+- **新**：网关 `POST /api/admin/knowledge-base/agent/stream`（仅管理员，走其个人模型 `kb_search` 场景）。工具：`kb_overview`（现状/已有教材/缺口）、`web_search`、`web_fetch`（`ai-gateway/src/tools/web.ts`，DeepSeek 兼容 `/v1/tools/search|fetch`，由 `WEB_SEARCH_BASE_URL`/`WEB_SEARCH_API_KEY` 配置，未配置时工具如实报错）、`verify_textbook_source`（交给 Python 做公开地址/可访问/可解析的确定性校验，通过的才展示）。闲聊不会触发搜索；找书时模型自己搜索、读页面、换词重试。
+- **删**：Python 的搜索→查重→待办→模板回复流水线（`stream_knowledge_base_agent_events`/`run_knowledge_base_agent`）、硬编码开放教材表 `_OPEN_TEXTBOOK_SOURCE_ROWS` 与关键词匹配、`_NON_TEXTBOOK_SOURCE_MARKERS` 黑名单、`/api/admin/knowledge-base/agent{,/stream}` 旧路由、网关“让模型凭记忆列链接”的 `searchTextbookSources`、相关 schema 与基准脚本。Python 新增内部接口 `GET /internal/knowledge-base/overview`、`POST /internal/knowledge-base/verify-source`。
+- 路由：Vite 代理与两份 Nginx 模板新增该 SSE 路径；`deploy/compose.production.yml` 把 `WEB_SEARCH_*` 透传给网关；前端 `KnowledgeBaseAgentResponse` 改为手写类型（该接口不在 Python OpenAPI 中），`gen:api` 已重生成。
+- **验证**：Python `uv run pytest` 506 passed、ruff 干净；网关 133 passed；前端 322 passed（顺带修了上一提交里一个依赖草稿加载时序的偶发失败用例）；真实验证——terra（中等思考）+ DeepSeek 搜索，管理员问“知识库有什么”不触发搜索；问“找两本操作系统教材”时模型自行搜索约 19 步、读取多个页面、提交校验，最终展示 2 个通过校验的来源并给出推荐与未收录原因。
+- **环境注意**：本机 TUN 代理把公网域名解析成 `198.18.0.0/15`，Python 的 SSRF 校验正确地拒绝它们；走查时仅在验收用的外部启动脚本里放行该网段，**仓库代码未改**。部署机若 DNS 正常不受影响。
+- **未验证/遗留**：`deploy/tests/test_nginx_config.sh` 已加新路径断言，但本轮未重跑 Docker 容器测试；视频检索仍是旧的 DashScope 固定流水线，下一步按同一范式改造。

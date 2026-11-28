@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Generator
 from datetime import datetime, timezone
 
@@ -15,7 +14,6 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
@@ -37,8 +35,6 @@ from app.models import (
     UserYearLearningPath,
 )
 from app.schemas import (
-    KnowledgeBaseAgentRequest,
-    KnowledgeBaseAgentResponse,
     KnowledgeBaseIngestionJobRead,
     KnowledgeBaseSourceConfirmRequest,
     KnowledgeBaseSourceConfirmResponse,
@@ -68,8 +64,6 @@ from app.services.knowledge_base_service import (
     list_knowledge_sources,
     publish_textbook,
     queue_textbook_source_ingestion_for_textbook,
-    run_knowledge_base_agent,
-    stream_knowledge_base_agent_events,
     textbook_payload_covers_topic,
     upsert_structured_textbook,
 )
@@ -77,10 +71,6 @@ from app.services.knowledge_base_service import (
 SessionDependency = Callable[[], Generator[Session, None, None]]
 MAX_TEXTBOOK_UPLOAD_BYTES = 100 * 1024 * 1024
 TEXTBOOK_UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
-
-
-def _sse(event: str, payload: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 async def _read_textbook_upload(file: UploadFile) -> bytes:
@@ -421,52 +411,6 @@ def _register_agent_routes(  # noqa: C901
     session_dependency: SessionDependency,
     require_admin: Callable[..., User],
 ) -> None:
-    @router.post(
-        "/api/admin/knowledge-base/agent",
-        response_model=KnowledgeBaseAgentResponse,
-    )
-    def admin_knowledge_base_agent(
-        payload: KnowledgeBaseAgentRequest,
-        admin: User = Depends(require_admin),
-        session: Session = Depends(session_dependency),
-    ) -> KnowledgeBaseAgentResponse:
-        return run_knowledge_base_agent(
-            session_factory_from_session(session), payload.message
-        )
-
-    @router.post("/api/admin/knowledge-base/agent/stream")
-    def stream_admin_knowledge_base_agent(
-        payload: KnowledgeBaseAgentRequest,
-        admin: User = Depends(require_admin),
-        session: Session = Depends(session_dependency),
-    ) -> StreamingResponse:
-        factory = session_factory_from_session(session)
-
-        def event_stream() -> Generator[str, None, None]:
-            events = stream_knowledge_base_agent_events(
-                factory, payload.message, admin.uid
-            )
-            try:
-                for event in events:
-                    yield _sse(event["event"], event["payload"])
-            except Exception as exc:
-                payload_out: dict[str, object] = {
-                    "message": str(exc) or "知识库 Agent 处理失败。",
-                    "recoverable": True,
-                }
-                code = getattr(exc, "error_code", None)
-                if code:
-                    payload_out["error_code"] = code
-                yield _sse("error", payload_out)
-            finally:
-                events.close()
-
-        return StreamingResponse(
-            event_stream(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
     @router.post(
         "/api/admin/knowledge-base/source-results/confirm",
         response_model=KnowledgeBaseSourceConfirmResponse,

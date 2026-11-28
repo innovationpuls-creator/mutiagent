@@ -4,13 +4,12 @@ import logging
 import os
 import re
 import socket
-from collections.abc import Callable, Generator
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from hashlib import sha1
 from ipaddress import ip_address
 from time import monotonic
-from typing import Any, TypeVar
+from typing import TypeVar
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -20,7 +19,6 @@ from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
 from app.core.observability import get_request_id
-from app.database import SessionFactory, run_db_sync
 from app.models import (
     KnowledgeBaseIngestionJob,
     KnowledgeGap,
@@ -32,9 +30,6 @@ from app.models import (
     TextbookSectionContent,
 )
 from app.schemas import (
-    KnowledgeBaseAgentGapHit,
-    KnowledgeBaseAgentResponse,
-    KnowledgeBaseAgentTextbookHit,
     KnowledgeBaseSourceResult,
 )
 from app.services.ai_gateway_client import (
@@ -63,7 +58,6 @@ _VISIBLE_EXTENSION_RESOURCE_STATUS = "published"
 _RESOLVABLE_GAP_STATUSES = ("open", "material_searching", "material_found")
 _NOTICE_TYPE = "knowledge_gap_resolved"
 _NOTICE_ACTION = "regenerate_learning_path_intake"
-_SOURCE_RESULT_LIMIT = 5
 _SOURCE_TYPES = {"pdf", "html"}
 _TRANSLATION_CHUNK_CHAR_LIMIT = int(
     os.getenv("TEXTBOOK_TRANSLATION_CHUNK_CHARS", "1800")
@@ -77,161 +71,6 @@ _TRANSLATION_SECTION_MAX_WORKERS = int(
 _TRANSLATION_JOB_TIMEOUT_SECONDS = int(
     os.getenv("TEXTBOOK_TRANSLATION_JOB_TIMEOUT_SECONDS", "900")
 )
-_OPEN_TEXTBOOK_SOURCE_ROWS: tuple[dict[str, object], ...] = (
-    {
-        "topic_keywords": (
-            "数据结构",
-            "data structures",
-            "data structure",
-            "算法与数据结构",
-            "algorithms and data structures",
-        ),
-        "title": "Open Data Structures (Python Edition)",
-        "original_title": "Open Data Structures",
-        "language": "en",
-        "source_url": "https://opendatastructures.org/ods-python/",
-        "source_type": "html",
-        "provider_name": "Open Data Structures",
-        "description": (
-            "Open textbook covering arrays, linked lists, trees, hashing, "
-            "graphs, and sorting."
-        ),
-        "tags": ["数据结构", "算法", "Python"],
-        "parseability_score": 100,
-        "parseability_reason": (
-            "HTML textbook pages are accessible and can be converted by MarkItDown."
-        ),
-        "topic_summary": "覆盖数据结构课程的核心章节和小节正文。",
-    },
-    {
-        "topic_keywords": (
-            "数据结构",
-            "data structures",
-            "data structure",
-            "算法与数据结构",
-            "algorithms and data structures",
-        ),
-        "title": "Open Data Structures (Java Edition)",
-        "original_title": "Open Data Structures",
-        "language": "en",
-        "source_url": "https://opendatastructures.org/ods-java/",
-        "source_type": "html",
-        "provider_name": "Open Data Structures",
-        "description": (
-            "Open textbook covering data structures with Java-oriented examples."
-        ),
-        "tags": ["数据结构", "算法", "Java"],
-        "parseability_score": 98,
-        "parseability_reason": (
-            "HTML textbook pages are accessible and can be converted by MarkItDown."
-        ),
-        "topic_summary": "覆盖数据结构课程的核心章节和小节正文。",
-    },
-    {
-        "topic_keywords": (
-            "数据结构",
-            "data structures",
-            "data structure",
-            "算法与数据结构",
-            "algorithms and data structures",
-        ),
-        "title": "Open Data Structures (C++ Edition)",
-        "original_title": "Open Data Structures",
-        "language": "en",
-        "source_url": "https://opendatastructures.org/ods-cpp/",
-        "source_type": "html",
-        "provider_name": "Open Data Structures",
-        "description": (
-            "Open textbook covering data structures with C++-oriented examples."
-        ),
-        "tags": ["数据结构", "算法", "C++"],
-        "parseability_score": 96,
-        "parseability_reason": (
-            "HTML textbook pages are accessible and can be converted by MarkItDown."
-        ),
-        "topic_summary": "覆盖数据结构课程的核心章节和小节正文。",
-    },
-    {
-        "topic_keywords": (
-            "数据结构",
-            "data structures",
-            "data structure",
-            "算法与数据结构",
-            "algorithms and data structures",
-        ),
-        "title": "An Open Guide to Data Structures and Algorithms",
-        "original_title": "An Open Guide to Data Structures and Algorithms",
-        "language": "en",
-        "source_url": (
-            "https://pressbooks.palni.org/anopenguidetodatastructuresandalgorithms/"
-        ),
-        "source_type": "html",
-        "provider_name": "PALNI Pressbooks",
-        "description": (
-            "Open Pressbooks textbook covering algorithms, lists, trees, hashing, "
-            "queues, graphs, and dynamic programming."
-        ),
-        "tags": ["数据结构", "算法", "Open Textbook"],
-        "parseability_score": 94,
-        "parseability_reason": (
-            "HTML textbook chapters are accessible and can be converted by MarkItDown."
-        ),
-        "topic_summary": "覆盖算法分析、线性结构、树、散列、图等内容。",
-    },
-    {
-        "topic_keywords": (
-            "数据结构",
-            "data structures",
-            "data structure",
-            "算法与数据结构",
-            "algorithms and data structures",
-        ),
-        "title": "OpenDSA Data Structures and Algorithms Modules Collection",
-        "original_title": "OpenDSA Data Structures and Algorithms Modules Collection",
-        "language": "en",
-        "source_url": "https://opendsa-server.cs.vt.edu/ODSA/Books/Everything/html/",
-        "source_type": "html",
-        "provider_name": "OpenDSA",
-        "description": (
-            "OpenDSA HTML modules covering data structures and algorithms topics."
-        ),
-        "tags": ["数据结构", "算法", "OpenDSA"],
-        "parseability_score": 90,
-        "parseability_reason": (
-            "HTML module pages are accessible and can be converted by MarkItDown."
-        ),
-        "topic_summary": "覆盖数据结构与算法模块，适合补充检索和解析。",
-    },
-    {
-        "topic_keywords": (
-            "agent开发",
-            "agent 开发",
-            "智能体开发",
-            "ai agent",
-            "ai agents",
-            "computational agents",
-            "artificial intelligence agents",
-        ),
-        "title": "Artificial Intelligence: Foundations of Computational Agents",
-        "original_title": (
-            "Artificial Intelligence: Foundations of Computational Agents"
-        ),
-        "language": "en",
-        "source_url": "https://artint.info/3e/html/ArtInt3e.html",
-        "source_type": "html",
-        "provider_name": "Cambridge University Press",
-        "description": (
-            "Open textbook covering computational agents, reasoning, planning, "
-            "learning, and agent foundations."
-        ),
-        "tags": ["agent开发", "AI Agent", "人工智能"],
-        "parseability_score": 100,
-        "parseability_reason": (
-            "HTML textbook pages are accessible and can be converted by MarkItDown."
-        ),
-        "topic_summary": "覆盖智能体基础、知识表示、推理、规划与学习。",
-    },
-)
 _PLACEHOLDER_HOSTS = {
     "example.com",
     "example.org",
@@ -241,27 +80,6 @@ _PLACEHOLDER_HOSTS = {
     "127.0.0.1",
 }
 _TEXTBOOK_CONTENT_TYPES = ("application/pdf", "text/html")
-_NON_TEXTBOOK_SOURCE_MARKERS = (
-    "/docs/",
-    "/posts/",
-    "/short-courses/",
-    "docs.",
-    "github.com/",
-    "blog",
-    "short-courses",
-    "documentation",
-    "api reference",
-    "developer guide",
-    "development guide",
-    "user guide",
-    "开发指南",
-    "用户指南",
-    "官方开发指南",
-    "博客",
-    "课程介绍页",
-    "仓库",
-    "文档",
-)
 
 
 def create_knowledge_source(
@@ -1641,109 +1459,36 @@ def search_admin_textbooks(
     return [textbook for _, textbook in scored[:limit]]
 
 
-def search_real_textbook_sources(
-    topic: str,
-    limit: int = _SOURCE_RESULT_LIMIT,
-    user_uid: str | None = None,
-) -> list[KnowledgeBaseSourceResult]:
-    if limit <= 0:
-        return []
+def evaluate_textbook_source_candidate(
+    raw_result: object,
+) -> tuple[KnowledgeBaseSourceResult | None, str]:
+    """Deterministic gate for a source the agent proposes.
 
-    raw_results = [
-        *_search_known_open_textbook_sources(topic),
-        *_search_real_textbook_sources_with_llm(topic, limit, user_uid),
-    ]
-    source_results: list[KnowledgeBaseSourceResult] = []
-    seen_urls: set[str] = set()
-    for raw_result in raw_results:
-        source_result = _normalize_source_result(raw_result)
-        if (
-            source_result is None
-            or source_result.source_url in seen_urls
-            or not _source_result_looks_like_textbook(source_result)
-            or not _source_result_is_parseable(source_result)
-        ):
-            continue
-        seen_urls.add(source_result.source_url)
-        source_results.append(source_result)
-
-    source_results.sort(
-        key=lambda result: (
-            result.parseability_score,
-            result.language.strip().lower() == "zh",
-        ),
-        reverse=True,
-    )
-    limited_results = source_results[:limit]
-    for index, source_result in enumerate(limited_results):
-        source_result.is_recommended = index == 0
-    return limited_results
-
-
-def _search_known_open_textbook_sources(topic: str) -> list[dict[str, object]]:
-    normalized_topic = topic.strip().lower()
-    if not normalized_topic:
-        return []
-
-    rows: list[dict[str, object]] = []
-    for source_row in _OPEN_TEXTBOOK_SOURCE_ROWS:
-        raw_keywords = source_row.get("topic_keywords")
-        if not isinstance(raw_keywords, tuple):
-            continue
-        keywords = [keyword for keyword in raw_keywords if isinstance(keyword, str)]
-        if not any(keyword.lower() in normalized_topic for keyword in keywords):
-            continue
-        rows.append(
-            {key: value for key, value in source_row.items() if key != "topic_keywords"}
-        )
-    return rows
-
-
-def _search_real_textbook_sources_with_llm(
-    topic: str, limit: int, user_uid: str | None = None
-) -> list[dict[str, object]]:
-    """Candidate sources from the admin's own model; URLs are verified later."""
-    if not user_uid:
-        return []
-    # MODEL_NOT_CONFIGURED and friends propagate so the admin page can guide to setup.
-    result = call_gateway_ai(
-        "/internal/ai/kb/search-textbook-sources",
-        {"user_uid": user_uid, "topic": topic.strip(), "limit": limit},
-    )
-    candidates = result.get("candidates")
-    if not isinstance(candidates, list):
-        return []
-    return [item for item in candidates if isinstance(item, dict)]
-
-
-def _extract_json_array(content: str) -> str:
-    stripped = content.strip()
-    if stripped.startswith("[") and stripped.endswith("]"):
-        return stripped
-    start = stripped.find("[")
-    end = stripped.rfind("]")
-    if start < 0 or end <= start:
-        raise ValueError("搜索结果没有 JSON 数组。")
-    return stripped[start : end + 1]
-
-
-def _normalize_source_result(raw_result: object) -> KnowledgeBaseSourceResult | None:
+    Relevance and quality are the agent's call; this only enforces what code can
+    prove: sane fields, a public reachable URL, and content we can really parse.
+    Returns ``(source_result, "")`` or ``(None, reason)`` so the agent can retry.
+    """
     if not isinstance(raw_result, dict):
-        return None
-
+        return None, "候选必须是 JSON 对象。"
     title = _clean_text(raw_result.get("title"))
-    source_url = _validated_textbook_url(raw_result.get("source_url"))
+    source_url = _clean_text(raw_result.get("source_url"))
     source_type = _clean_text(raw_result.get("source_type")).lower()
-    if not title or not source_url or source_type not in _SOURCE_TYPES:
-        return None
+    if not title:
+        return None, "缺少 title。"
+    if source_type not in _SOURCE_TYPES:
+        return None, "source_type 只能是 pdf 或 html。"
+    if not _is_safe_textbook_url(source_url):
+        return None, "source_url 不是可公开访问的 http(s) 地址。"
+    if not _is_reachable_textbook_url(source_url):
+        return None, "source_url 无法访问，或返回的不是 PDF/HTML 教材内容。"
 
     raw_tags = raw_result.get("tags")
-    tags: list[str] = []
-    if isinstance(raw_tags, list):
-        tags = [tag for tag in (_clean_text(item) for item in raw_tags) if tag]
-
-    parseability_score = _parse_source_score(raw_result.get("parseability_score"))
-    return KnowledgeBaseSourceResult(
+    tags = (
+        [tag for tag in (_clean_text(item) for item in raw_tags) if tag]
+        if isinstance(raw_tags, list)
+        else []
+    )
+    source_result = KnowledgeBaseSourceResult(
         source_result_id=_source_result_id(source_url),
         title=title,
         original_title=_clean_text(raw_result.get("original_title")),
@@ -1753,43 +1498,59 @@ def _normalize_source_result(raw_result: object) -> KnowledgeBaseSourceResult | 
         provider_name=_clean_text(raw_result.get("provider_name")),
         description=_clean_text(raw_result.get("description")),
         tags=tags,
-        parseability_score=parseability_score,
+        parseability_score=_parse_source_score(raw_result.get("parseability_score")),
         parseability_reason=_clean_text(raw_result.get("parseability_reason")),
         topic_summary=_clean_text(raw_result.get("topic_summary")),
     )
-
-
-def _source_result_is_parseable(source_result: KnowledgeBaseSourceResult) -> bool:
     try:
         _ensure_source_result_parseable(source_result, max_linked_pages=8)
     except (DocumentParseError, ValueError) as exc:
-        logger.info(
-            "Rejected textbook source %s because parsing failed: %s",
-            source_result.source_url,
-            exc,
-        )
-        return False
-    return True
+        return None, str(exc) or "教材来源无法解析。"
+    return source_result, ""
 
 
-def _source_result_looks_like_textbook(
-    source_result: KnowledgeBaseSourceResult,
-) -> bool:
-    searchable_text = " ".join(
-        [
-            source_result.title,
-            source_result.original_title,
-            source_result.source_url,
-            source_result.provider_name,
-            source_result.description,
-            source_result.parseability_reason,
-            source_result.topic_summary,
-            *source_result.tags,
-        ]
-    ).lower()
-    return not any(
-        marker.lower() in searchable_text for marker in _NON_TEXTBOOK_SOURCE_MARKERS
-    )
+def verify_textbook_source_candidate(
+    session: Session, source_result: KnowledgeBaseSourceResult
+) -> KnowledgeBaseSourceResult:
+    """Mark whether an accepted candidate is already in the knowledge base."""
+    _mark_imported_source_results(session, [source_result])
+    return source_result
+
+
+def knowledge_base_overview(session: Session) -> dict[str, object]:
+    """What the admin agent needs to judge duplicates and open gaps by itself."""
+    textbooks = session.exec(
+        select(Textbook)
+        .where(Textbook.student_availability_status != "archived")
+        .order_by(Textbook.textbook_id)
+        .limit(200)
+    ).all()
+    gaps = session.exec(
+        select(KnowledgeGap).order_by(KnowledgeGap.gap_id).limit(100)
+    ).all()
+    return {
+        **_knowledge_base_counts(session),
+        "textbooks": [
+            {
+                "textbook_id": row.textbook_id,
+                "title": row.title,
+                "language": row.language,
+                "status": row.student_availability_status,
+                "source_url": row.download_url,
+                "tags": [tag for tag in row.tags if isinstance(tag, str)],
+            }
+            for row in textbooks
+        ],
+        "gaps": [
+            {
+                "gap_id": gap.gap_id,
+                "topic": gap.normalized_topic,
+                "status": gap.status,
+                "student_goals": list(gap.student_goal_summaries)[:3],
+            }
+            for gap in gaps
+        ],
+    }
 
 
 def _ensure_source_result_parseable(
@@ -1832,17 +1593,6 @@ def _source_result_id(source_url: str) -> str:
 
 def _clean_text(value: object) -> str:
     return value.strip() if isinstance(value, str) else ""
-
-
-def _validated_textbook_url(value: object) -> str:
-    url = _clean_text(value)
-    if not url:
-        return ""
-    if not _is_safe_textbook_url(url):
-        return ""
-    if not _is_reachable_textbook_url(url):
-        return ""
-    return url
 
 
 def _is_safe_textbook_url(url: str) -> bool:
@@ -1917,72 +1667,6 @@ def _is_reachable_textbook_url(url: str) -> bool:
     return False
 
 
-def _textbook_hits_from_matches(
-    session: Session, matched_textbooks: list[Textbook]
-) -> list[KnowledgeBaseAgentTextbookHit]:
-    source_name_map = {
-        source.source_id: source.name for source in list_knowledge_sources(session)
-    }
-    textbook_hits: list[KnowledgeBaseAgentTextbookHit] = []
-    for textbook in matched_textbooks:
-        source_name = source_name_map.get(textbook.source_id, textbook.source_id)
-        score = 20 if textbook.student_availability_status == "published" else 10
-        reason = (
-            "已发布教材"
-            if textbook.student_availability_status == "published"
-            else "待整理教材"
-        )
-        textbook_hits.append(
-            KnowledgeBaseAgentTextbookHit(
-                textbook_id=textbook.textbook_id,
-                title=textbook.title,
-                source_name=source_name,
-                student_availability_status=textbook.student_availability_status,
-                score=score,
-                reason=reason,
-            )
-        )
-    return textbook_hits
-
-
-def _matching_gap_hits(session: Session, query: str) -> list[KnowledgeBaseAgentGapHit]:
-    gap_hits: list[KnowledgeBaseAgentGapHit] = []
-    normalized_query = query.lower()
-    for gap in session.exec(select(KnowledgeGap).order_by(KnowledgeGap.gap_id)).all():
-        if normalized_query not in gap.normalized_topic.lower() and not any(
-            normalized_query in summary.lower()
-            for summary in gap.student_goal_summaries
-        ):
-            continue
-        gap_hits.append(
-            KnowledgeBaseAgentGapHit(
-                gap_id=gap.gap_id,
-                normalized_topic=gap.normalized_topic,
-                status=gap.status,
-                reason="缺口主题命中。",
-            )
-        )
-    return gap_hits
-
-
-def run_knowledge_base_agent(
-    session: Session | SessionFactory, message: str
-) -> KnowledgeBaseAgentResponse:
-    final_response: KnowledgeBaseAgentResponse | None = None
-    for event in stream_knowledge_base_agent_events(session, message):
-        if event["event"] != "completed":
-            continue
-        response_payload = event["payload"].get("response")
-        if not isinstance(response_payload, dict):
-            continue
-        final_response = KnowledgeBaseAgentResponse.model_validate(response_payload)
-    if final_response is None:
-        return KnowledgeBaseAgentResponse(
-            reply_text="知识库 Agent 未返回结果，请稍后重试。",
-        )
-    return final_response
-
-
 def _mark_imported_source_results(
     session: Session, source_results: list[KnowledgeBaseSourceResult]
 ) -> None:
@@ -2014,16 +1698,6 @@ def _mark_imported_source_results(
             result.textbook_id = existing.textbook_id
 
 
-def _agent_database_operation(
-    database: Session | SessionFactory,
-    operation: Callable[..., _AgentResult],
-    *args: Any,
-) -> _AgentResult:
-    if isinstance(database, Session):
-        return operation(database, *args)
-    return run_db_sync(database, operation, *args)
-
-
 def _knowledge_base_counts(session: Session) -> dict[str, int]:
     return {
         "source_count": session.exec(
@@ -2034,137 +1708,3 @@ def _knowledge_base_counts(session: Session) -> dict[str, int]:
         ).one(),
         "gap_count": session.exec(select(func.count()).select_from(KnowledgeGap)).one(),
     }
-
-
-def stream_knowledge_base_agent_events(
-    session: Session | SessionFactory, message: str, user_uid: str | None = None
-) -> Generator[dict[str, object], None, None]:
-    query = message.strip()
-    yield _agent_stream_event(
-        "started",
-        "已收到管理员消息。",
-        raw_length=len(message),
-        normalized_length=len(query),
-    )
-    if not query:
-        response = KnowledgeBaseAgentResponse(
-            reply_text="先说一句话，我会自动帮你从知识库里匹配教材。",
-        )
-        yield _agent_stream_event("completed", "本轮已结束。", response=response)
-        return
-
-    counts = _agent_database_operation(session, _knowledge_base_counts)
-    yield _agent_stream_event(
-        "context_loaded",
-        "已读取知识库现状。",
-        **counts,
-    )
-    yield _agent_stream_event(
-        "source_search_started",
-        "正在联网查找真实教材来源。",
-    )
-    source_results = search_real_textbook_sources(
-        query, limit=_SOURCE_RESULT_LIMIT, user_uid=user_uid
-    )
-    yield _agent_stream_event(
-        "source_search_completed",
-        "真实教材来源查找完成。",
-        result_count=len(source_results),
-    )
-
-    yield _agent_stream_event(
-        "duplicate_check_started",
-        "正在进行本地知识库查重。",
-    )
-    _agent_database_operation(session, _mark_imported_source_results, source_results)
-
-    imported_count = sum(1 for r in source_results if r.already_imported)
-    yield _agent_stream_event(
-        "duplicate_check_completed",
-        "本地查重比对完成。",
-        imported_count=imported_count,
-    )
-
-    yield _agent_stream_event(
-        "gap_search_started",
-        "正在检查未覆盖待办是否命中本轮主题。",
-    )
-    gap_hits = _agent_database_operation(session, _matching_gap_hits, query)
-    yield _agent_stream_event(
-        "gap_search_completed",
-        "待办检查完成。",
-        hit_count=len(gap_hits),
-    )
-
-    selected_source_result_id = None
-    if source_results:
-        non_imported = [r for r in source_results if not r.already_imported]
-        if non_imported:
-            selected_source_result_id = non_imported[0].source_result_id
-        else:
-            selected_source_result_id = source_results[0].source_result_id
-
-    reply_parts = []
-    if source_results:
-        msg = (
-            f"我已联网为你查找到以下相关教材素材：共找到 {len(source_results)} "
-            f"个真实教材来源（其中 {imported_count} 个已入库）。"
-        )
-        reply_parts.append(msg)
-        reply_parts.append(
-            "你可以点击“确认解析”将新资源导入知识库，或直接“去查看”已入库教材。"
-        )
-    else:
-        reply_parts.append(
-            "我尝试联网查找真实教材来源，但没有拿到可用结果。请检查搜索服务配置。"
-        )
-
-    if gap_hits:
-        reply_parts.append(
-            "仍然空着的方向有："
-            + "、".join(f"“{hit.normalized_topic}”" for hit in gap_hits[:3])
-            + "。"
-        )
-
-    response = KnowledgeBaseAgentResponse(
-        reply_text=" ".join(reply_parts),
-        selected_textbook_id=None,
-        selected_source_result_id=selected_source_result_id,
-        textbook_hits=[],
-        gap_hits=gap_hits[:5],
-        source_results=source_results,
-    )
-    yield _agent_stream_event(
-        "reply_ready",
-        "已生成管理员回复。",
-        reply_length=len(response.reply_text),
-    )
-    yield _agent_stream_event("completed", "本轮已完成。", response=response)
-
-
-def _agent_stream_event(
-    event: str, message: str, **payload: object
-) -> dict[str, object]:
-    serialized_payload = {
-        key: _serialize_agent_stream_value(value) for key, value in payload.items()
-    }
-    serialized_payload["message"] = message
-    return {"event": event, "payload": serialized_payload}
-
-
-def _serialize_agent_stream_value(value: object) -> object:
-    if isinstance(value, KnowledgeBaseAgentResponse):
-        return value.model_dump()
-    if isinstance(value, KnowledgeBaseAgentTextbookHit):
-        return value.model_dump()
-    if isinstance(value, KnowledgeBaseAgentGapHit):
-        return value.model_dump()
-    if isinstance(value, KnowledgeBaseSourceResult):
-        return value.model_dump()
-    if isinstance(value, list):
-        return [_serialize_agent_stream_value(item) for item in value]
-    if isinstance(value, dict):
-        return {
-            str(key): _serialize_agent_stream_value(item) for key, item in value.items()
-        }
-    return value

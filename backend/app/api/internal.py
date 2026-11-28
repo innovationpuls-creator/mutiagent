@@ -19,6 +19,7 @@ from app.model_config_schemas import (
 from app.models import User
 from app.services import chat_context_service as chat_service
 from app.services import forest_ai_service, outline_service, resource_service
+from app.services import knowledge_base_service as kb_service
 from app.services import learning_path_runtime_service as path_service
 from app.services import model_config_service as model_service
 
@@ -40,6 +41,10 @@ class StudentProfilePayload(BaseModel):
 class TextbookContextPayload(BaseModel):
     learning_topic: str = Field(min_length=1, max_length=200)
     student_goal_summary: str = Field(default="", max_length=4000)
+
+
+class VerifySourcePayload(BaseModel):
+    candidate: dict
 
 
 class AssemblePathPayload(BaseModel):
@@ -279,6 +284,27 @@ def create_internal_router(engine: Engine, internal_token: str | None) -> APIRou
             return path_service.textbook_context_for_intake(
                 session, payload.learning_topic, payload.student_goal_summary
             )
+
+    @router.get("/knowledge-base/overview")
+    def knowledge_base_overview() -> dict:
+        with Session(engine) as session:
+            return kb_service.knowledge_base_overview(session)
+
+    @router.post("/knowledge-base/verify-source")
+    def verify_knowledge_base_source(payload: VerifySourcePayload) -> dict:
+        # Network + parsing happen before any DB session is opened.
+        source_result, reason = kb_service.evaluate_textbook_source_candidate(
+            payload.candidate
+        )
+        if source_result is None:
+            return {"accepted": False, "reason": reason, "source_result": None}
+        with Session(engine) as session:
+            kb_service.verify_textbook_source_candidate(session, source_result)
+        return {
+            "accepted": True,
+            "reason": "",
+            "source_result": source_result.model_dump(),
+        }
 
     @router.get("/students/{user_uid}/protected-courses")
     def protected_courses(user_uid: str) -> dict:

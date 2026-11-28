@@ -30,6 +30,7 @@ export function testConfig(overrides: Partial<GatewayConfig> = {}): GatewayConfi
 }
 
 export interface FakeBackend extends BackendClient {
+	kb: { overview: Record<string, unknown>; rejectUrls: Set<string>; verified: Array<Record<string, unknown>> };
 	users: Map<string, UserAuthStatus>;
 	down: boolean;
 	calls: string[];
@@ -99,6 +100,7 @@ export interface FakeResources {
 export function fakeBackend(): FakeBackend {
 	const backend: FakeBackend = {
 		users: new Map(),
+		kb: { overview: { textbook_count: 0, gap_count: 1, textbooks: [], gaps: [{ gap_id: "g1", topic: "操作系统", status: "open", student_goals: [] }] }, rejectUrls: new Set(), verified: [] },
 		down: false,
 		calls: [],
 		runtimeConfigs: new Map(),
@@ -271,6 +273,27 @@ export function fakeBackend(): FakeBackend {
 			backend.order.push("save_outlines");
 			backend.savedOutlines.push({ pathFingerprints, outlines });
 			return { saved_course_ids: outlines.map((o) => String(o.course_id)) };
+		},
+		async getKnowledgeBaseOverview() {
+			return structuredClone(backend.kb.overview);
+		},
+		async verifyTextbookSource(candidate) {
+			backend.kb.verified.push(candidate);
+			if (backend.kb.rejectUrls.has(String(candidate.source_url))) {
+				return { accepted: false, reason: "source_url 无法访问。", source_result: null };
+			}
+			return {
+				accepted: true,
+				reason: "",
+				source_result: {
+					source_result_id: `source-result-${backend.kb.verified.length}`,
+					title: candidate.title,
+					source_url: candidate.source_url,
+					source_type: candidate.source_type,
+					already_imported: false,
+					textbook_id: null,
+				},
+			};
 		},
 		async getTextbookContext(topic) {
 			backend.textbookLookups.push(topic);

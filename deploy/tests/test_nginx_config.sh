@@ -307,6 +307,7 @@ for https_server in (domain_server, production_ip_https):
         r"=\s+/api/chat/message",
         r"=\s+/api/forest/ai/stream",
         r"=\s+/api/branch/canopy/report/stream",
+        r"=\s+/api/admin/knowledge-base/agent/stream",
     ):
         gateway = directive_block(https_server, r"location\s+" + gateway_location)
         assert re.search(

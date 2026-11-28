@@ -884,40 +884,6 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	"/api/admin/knowledge-base/agent": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Admin Knowledge Base Agent */
-		post: operations["admin_knowledge_base_agent_api_admin_knowledge_base_agent_post"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/admin/knowledge-base/agent/stream": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Stream Admin Knowledge Base Agent */
-		post: operations["stream_admin_knowledge_base_agent_api_admin_knowledge_base_agent_stream_post"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
 	"/api/admin/knowledge-base/source-results/confirm": {
 		parameters: {
 			query?: never;
@@ -1675,73 +1641,6 @@ export interface components {
 			 * @enum {string}
 			 */
 			database: "connected" | "unavailable";
-		};
-		/** KnowledgeBaseAgentGapHit */
-		KnowledgeBaseAgentGapHit: {
-			/** Gap Id */
-			gap_id: string;
-			/** Normalized Topic */
-			normalized_topic: string;
-			/**
-			 * Status
-			 * @enum {string}
-			 */
-			status:
-				| "open"
-				| "material_searching"
-				| "material_found"
-				| "resolved"
-				| "closed";
-			/**
-			 * Reason
-			 * @default
-			 */
-			reason: string;
-		};
-		/** KnowledgeBaseAgentRequest */
-		KnowledgeBaseAgentRequest: {
-			/** Message */
-			message: string;
-		};
-		/** KnowledgeBaseAgentResponse */
-		KnowledgeBaseAgentResponse: {
-			/** Reply Text */
-			reply_text: string;
-			/** Selected Textbook Id */
-			selected_textbook_id?: string | null;
-			/** Selected Source Result Id */
-			selected_source_result_id?: string | null;
-			/** Textbook Hits */
-			textbook_hits?: components["schemas"]["KnowledgeBaseAgentTextbookHit"][];
-			/** Gap Hits */
-			gap_hits?: components["schemas"]["KnowledgeBaseAgentGapHit"][];
-			/** Source Results */
-			source_results?: components["schemas"]["KnowledgeBaseSourceResult"][];
-		};
-		/** KnowledgeBaseAgentTextbookHit */
-		KnowledgeBaseAgentTextbookHit: {
-			/** Textbook Id */
-			textbook_id: string;
-			/** Title */
-			title: string;
-			/** Source Name */
-			source_name: string;
-			/**
-			 * Student Availability Status
-			 * @enum {string}
-			 */
-			student_availability_status:
-				| "draft"
-				| "published"
-				| "unpublished"
-				| "archived";
-			/** Score */
-			score: number;
-			/**
-			 * Reason
-			 * @default
-			 */
-			reason: string;
 		};
 		/** KnowledgeBaseIngestionJobRead */
 		KnowledgeBaseIngestionJobRead: {
@@ -4558,72 +4457,6 @@ export interface operations {
 				};
 				content: {
 					"application/json": components["schemas"]["KnowledgeBaseIngestionJobRead"];
-				};
-			};
-			/** @description Validation Error */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["HTTPValidationError"];
-				};
-			};
-		};
-	};
-	admin_knowledge_base_agent_api_admin_knowledge_base_agent_post: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["KnowledgeBaseAgentRequest"];
-			};
-		};
-		responses: {
-			/** @description Successful Response */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["KnowledgeBaseAgentResponse"];
-				};
-			};
-			/** @description Validation Error */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["HTTPValidationError"];
-				};
-			};
-		};
-	};
-	stream_admin_knowledge_base_agent_api_admin_knowledge_base_agent_stream_post: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["KnowledgeBaseAgentRequest"];
-			};
-		};
-		responses: {
-			/** @description Successful Response */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": unknown;
 				};
 			};
 			/** @description Validation Error */

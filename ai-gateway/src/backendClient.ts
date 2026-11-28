@@ -175,7 +175,17 @@ export interface ReportContextView {
 	has_attempts: boolean;
 }
 
+export interface TextbookSourceVerdict {
+	accepted: boolean;
+	reason: string;
+	source_result: Record<string, unknown> | null;
+}
+
 export interface BackendClient {
+	/** Counts, existing textbooks and open gaps: what the KB admin agent reasons over. */
+	getKnowledgeBaseOverview(): Promise<Record<string, unknown>>;
+	/** Deterministic gate for an agent-proposed textbook source (public, reachable, parseable). */
+	verifyTextbookSource(candidate: Record<string, unknown>): Promise<TextbookSourceVerdict>;
 	/** Published textbook outlines for a topic; registers a KnowledgeGap when none match. */
 	getTextbookContext(learningTopic: string, studentGoalSummary: string): Promise<TextbookContext>;
 	getProtectedCourses(userUid: string): Promise<ProtectedCourse[]>;
@@ -393,6 +403,13 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 				body: { profile_data: profileData },
 			});
 		},
+		getKnowledgeBaseOverview: () => request<Record<string, unknown>>("/internal/knowledge-base/overview"),
+		verifyTextbookSource: (candidate) =>
+			request<TextbookSourceVerdict>("/internal/knowledge-base/verify-source", {
+				method: "POST",
+				body: { candidate },
+				timeoutMs: 90000,
+			}),
 		getTextbookContext: (learningTopic, studentGoalSummary) =>
 			request<TextbookContext>("/internal/knowledge-base/textbook-context-for-intake", {
 				method: "POST",

@@ -7,7 +7,9 @@ import type { Logger } from "../observability.js";
 import { createSseResponse } from "../sse.js";
 import { streamForestAi, type ForestAiBody } from "./forestAi.js";
 import { runGrowthReport } from "./growthReport.js";
-import { translateChunk, searchTextbookSources } from "./kb.js";
+import { runKnowledgeBaseAgent } from "./kbAgent.js";
+import { translateChunk } from "./kb.js";
+import type { WebConfig } from "../tools/web.js";
 import { generateQuiz, gradeQuiz, type GradeInput, type QuizMaterial } from "./quiz.js";
 
 async function jsonBody(request: Request): Promise<Record<string, unknown>> {
@@ -53,13 +55,6 @@ export function internalAiRoutes(deps: { runtime: ModelRuntime }) {
 		if (typeof body.content !== "string" || !body.content.trim()) throw new GatewayError(422, undefined, "content 不能为空");
 		return c.json(await translateChunk(deps.runtime, { user_uid: uid, content: body.content }));
 	});
-	app.post("/kb/search-textbook-sources", async (c) => {
-		const body = await jsonBody(c.req.raw);
-		const uid = requireUid(body);
-		return c.json(
-			await searchTextbookSources(deps.runtime, { user_uid: uid, topic: String(body.topic ?? ""), limit: Number(body.limit ?? 5) }),
-		);
-	});
 	return app;
 }
 
@@ -69,6 +64,7 @@ export interface StreamRouteDeps {
 	runtime: ModelRuntime;
 	logger: Logger;
 	heartbeatMs: number;
+	web: WebConfig;
 }
 
 /** `POST /api/forest/ai/stream` and `POST /api/branch/canopy/report/stream`. */
@@ -105,6 +101,34 @@ export function aiStreamRoutes(deps: StreamRouteDeps) {
 				} catch (error) {
 					if (writer.closed || writer.signal.aborted) return;
 					writer.sendRaw(frame("forest_error", failurePayload(error, "Forest AI 暂时不可用")));
+				}
+			},
+			{ heartbeatMs: deps.heartbeatMs },
+		);
+	});
+
+	app.post("/admin/knowledge-base/agent/stream", jwtAuth(deps.jwtSecret, deps.backend), async (c) => {
+		const { userUid, role } = c.get("auth");
+		if (role !== "admin") throw new GatewayError(403, undefined, "仅管理员可使用知识库智能体");
+		const raw = await jsonBody(c.req.raw);
+		const message = typeof raw.message === "string" ? raw.message.trim() : "";
+		if (message.length < 1 || message.length > 4000) throw new GatewayError(422, undefined, "message 长度需在 1-4000 之间");
+		return createSseResponse(
+			async (writer) => {
+				try {
+					await runKnowledgeBaseAgent({
+						runtime: deps.runtime,
+						backend: deps.backend,
+						web: deps.web,
+						userUid,
+						message,
+						signal: writer.signal,
+						emit: (event) => writer.sendRaw(frame(event.event, event.payload)),
+					});
+				} catch (error) {
+					if (writer.closed || writer.signal.aborted) return;
+					deps.logger.warn(`kb_agent_failed name=${error instanceof Error ? error.name : "unknown"}`);
+					writer.sendRaw(frame("error", { ...failurePayload(error, "知识库 Agent 处理失败。"), recoverable: true }));
 				}
 			},
 			{ heartbeatMs: deps.heartbeatMs },
