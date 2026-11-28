@@ -12,7 +12,7 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	padding: 80px 24px 24px 24px; /* 顶部留出 80px 的空间，确保与任何可能的导航栏保持安全距离 */
+	padding: var(--space-80) var(--space-24) var(--space-24); /* 顶部留出安全距离，避开导航栏 */
 }
 
 .overlay-backdrop {
@@ -31,14 +31,11 @@
 	max-width: 960px; /* 居中卡片的最大宽度 */
 	height: 100%;
 	max-height: 85vh; /* 避免触及屏幕上下边缘 */
-	background: var(
-		--color-surface-elevated,
-		oklch(98% 0.004 80 / 0.72)
-	); /* 完美继承原卡片的颜色 */
+	background: var(--color-surface-raised);
 	backdrop-filter: var(--glass-pebble-blur); /* 完美继承原卡片的毛玻璃质感 */
-	border: 1px solid var(--color-border-subtle, oklch(78% 0.012 80 / 0.55)); /* 原卡片的柔和边框 */
-	border-radius: var(--radius-2xl, 32px); /* 展开后变成大圆角 */
-	box-shadow: var(--shadow-xl, 0 32px 64px rgba(0, 0, 0, 0.15));
+	border: 1px solid var(--glass-border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-lg);
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
@@ -58,25 +55,6 @@
 	font-weight: var(--font-weight-medium);
 	color: var(--color-text-primary);
 	margin: 0;
-}
-
-.overlay-close-btn {
-	background: transparent;
-	border: none;
-	color: var(--color-text-secondary);
-	cursor: pointer;
-	padding: var(--space-8);
-	margin-inline-end: calc(-1 * var(--space-8));
-	border-radius: var(--radius-full);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	transition: all var(--duration-fast) ease;
-}
-
-.overlay-close-btn:hover {
-	background-color: var(--color-hover-wash, oklch(99% 0.01 80 / 0.68));
-	color: var(--color-text-primary);
 }
 
 .overlay-scroll-area {
@@ -247,4 +225,33 @@
 		width: 80px;
 		height: 80px;
 	}
+}
+
+/* 推荐依据 */
+.overlay-basis {
+	display: grid;
+	gap: var(--space-12);
+	padding-block-start: var(--space-16);
+	border-block-start: 1px solid var(--color-border);
+}
+
+.overlay-basis-title {
+	display: flex;
+	align-items: center;
+	gap: var(--space-8);
+	margin: 0;
+	color: var(--color-text-secondary);
+	font-size: var(--text-body-sm);
+	font-weight: var(--font-weight-medium);
+}
+
+.overlay-basis-title .section-dot {
+	background: var(--color-primary);
+}
+
+.overlay-basis p {
+	margin: 0;
+	color: var(--color-text-muted);
+	font-size: var(--text-caption);
+	line-height: 1.7;
 }

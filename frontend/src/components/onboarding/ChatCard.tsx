@@ -1,6 +1,4 @@
 import React from "react";
-import { useAiWidget } from "../../contexts/AiWidgetContext";
-import { buildLearningPathGenerationDraft } from "../../onboarding/learningPathFlow";
 import type {
 	ConfirmedInfo,
 	PartialStructuredData,
@@ -8,6 +6,8 @@ import type {
 	SessionMessage,
 } from "../../types/chat";
 import { MarkdownRenderer } from "../markdown";
+import { Button } from "../ui/Button";
+import { StatusBadge } from "../ui/StatusBadge";
 import { CardWrapper } from "./ChatCard.styles";
 
 interface ChatCardProps {
@@ -16,7 +16,8 @@ interface ChatCardProps {
 	onFollowKnowledgeGap?: (gapId: string) => Promise<void> | void;
 	disabled?: boolean;
 	partialData?: PartialStructuredData | null;
-	showPathGenerationCta?: boolean;
+	/** 画像完成后的过渡说明；进入下一步的按钮只在对话底部输入区出现一次 */
+	showProfileTransition?: boolean;
 }
 
 type FieldKey = keyof ConfirmedInfo;
@@ -152,14 +153,8 @@ export function ChatCard({
 	onFollowKnowledgeGap,
 	disabled = false,
 	partialData,
-	showPathGenerationCta = true,
+	showProfileTransition = true,
 }: ChatCardProps) {
-	const { openWithDraft } = useAiWidget();
-
-	const handleGeneratePathDraft = () => {
-		openWithDraft(buildLearningPathGenerationDraft());
-	};
-
 	const [inputValue, setInputValue] = React.useState("");
 	const [hasSubmittedReply, setHasSubmittedReply] = React.useState(false);
 	const [formValues, setFormValues] = React.useState<
@@ -407,14 +402,14 @@ export function ChatCard({
 				</div>
 
 				{showReplyControls && (
-					<button
-						type="button"
+					<Button
+						variant="primary"
 						className="form-submit-btn"
 						disabled={isSubmitDisabled}
 						onClick={handleFormSubmit}
 					>
 						{form.submit_label || "提交"}
-					</button>
+					</Button>
 				)}
 			</div>
 		);
@@ -424,19 +419,26 @@ export function ChatCard({
 		<CardWrapper data-state={message.type}>
 			<header className="card-head">
 				<span className="card-kicker">{STAGE_LABELS[message.stage]}</span>
-				<span className="card-state">
+				<StatusBadge
+					className="card-state"
+					tone={message.type === "basic_profile" ? "success" : "accent"}
+				>
 					{message.type === "basic_profile" ? "已生成" : "采集中"}
-				</span>
+				</StatusBadge>
 			</header>
 
 			{message.type === "basic_profile" ? (
 				<>
-					{showPathGenerationCta && (
+					{showProfileTransition && (
 						<div className="profile-transition-banner">
-							<div className="completed-badge">
-								<span className="badge-dot" />
-								<span>基础画像分析完成</span>
-							</div>
+							<StatusBadge
+								variant="pill"
+								tone="success"
+								showDot
+								className="completed-badge"
+							>
+								基础画像分析完成
+							</StatusBadge>
 							<div className="sprout-avatar-container">
 								<div className="sprout-orb">
 									<svg
@@ -458,16 +460,8 @@ export function ChatCard({
 							</div>
 							<h3>了解自己，是成长的第一步。</h3>
 							<p className="transition-explanation">
-								我们已经根据你的年级、专业以及优势与瓶颈，准备好与你一同规划初步的课程方向。接下来将进入学习路径草案智能体，定制你的初步课程规划草案。
+								已根据你的年级、专业以及优势与瓶颈整理好画像。点下方「进入学习路径草案智能体」，定制你的初步课程规划草案。
 							</p>
-							<button
-								className="cta-open-path-btn"
-								onClick={handleGeneratePathDraft}
-								type="button"
-							>
-								<span>进入学习路径草案智能体</span>
-								<span className="arrow">➔</span>
-							</button>
 						</div>
 					)}
 
@@ -544,7 +538,8 @@ export function ChatCard({
 							<div className="confirmed-list">
 								{confirmed.map(([key, value]) => (
 									<span
-										className="info-chip"
+										className="info-chip ui-status-badge"
+										data-variant="pill"
 										key={key}
 										data-streaming={isFieldStreaming(key) ? true : undefined}
 									>
@@ -594,8 +589,9 @@ export function ChatCard({
 										<h3>主题待补齐</h3>
 										<p>关注后，知识库补齐这个主题时会提醒你。</p>
 									</div>
-									<button
-										type="button"
+									<Button
+										variant="secondary"
+										size="sm"
 										disabled={
 											disabled ||
 											gapFollowState === "pending" ||
@@ -608,7 +604,7 @@ export function ChatCard({
 											: gapFollowState === "pending"
 												? "关注中..."
 												: "关注该主题"}
-									</button>
+									</Button>
 									{gapFollowState === "error" && (
 										<p className="knowledge-gap-error">
 											关注失败，请稍后再试。
@@ -651,13 +647,15 @@ export function ChatCard({
 													if (event.key === "Enter") submitInlineAnswer();
 												}}
 											/>
-											<button
-												type="button"
+											<Button
+												variant="icon"
+												size="sm"
+												className="input-groove-submit"
 												disabled={disabled || !inputValue.trim()}
 												onClick={submitInlineAnswer}
 											>
 												+
-											</button>
+											</Button>
 										</div>
 									</>
 								) : (
@@ -673,13 +671,15 @@ export function ChatCard({
 												if (event.key === "Enter") submitInlineAnswer();
 											}}
 										/>
-										<button
-											type="button"
+										<Button
+											variant="icon"
+											size="sm"
+											className="input-groove-submit"
 											disabled={disabled || !inputValue.trim()}
 											onClick={submitInlineAnswer}
 										>
 											+
-										</button>
+										</Button>
 									</div>
 								))}
 						</>

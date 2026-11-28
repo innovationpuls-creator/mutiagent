@@ -45,13 +45,13 @@ const EyesWrapper = styled.div`
   height: 52px;
   gap: 2rem;
   
-  &.happy { gap: 0; svg { width: 60px; color: var(--color-text-primary, #fff); } }
+  &.happy { gap: 0; svg { width: 60px; color: var(--color-text-primary); } }
   
   & .eye {
     width: 26px;
     height: 52px;
-    background-color: var(--color-text-primary, #fff);
-    border-radius: 16px;
+    background-color: var(--color-text-primary);
+    border-radius: var(--radius-sm);
     animation: animate-eyes 10s infinite linear;
   }
 

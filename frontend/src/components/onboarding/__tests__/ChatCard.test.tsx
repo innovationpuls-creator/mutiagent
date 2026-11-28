@@ -144,21 +144,16 @@ describe("ChatCard", () => {
 		expect(onSendReply).toHaveBeenCalledWith("我是转专业过来的");
 	});
 
-	it("renders the completed profile transition card and opens a learning path draft", () => {
+	it("renders the completed profile transition without its own path CTA", () => {
 		render(<ChatCard message={generatedProfile} />);
 
 		expect(screen.getByText("基础画像分析完成")).toBeTruthy();
 		expect(screen.getByText("了解自己，是成长的第一步。")).toBeTruthy();
-		expect(screen.getByText("进入学习路径草案智能体")).toBeTruthy();
-
-		const ctaBtn = screen.getByRole("button", {
-			name: "进入学习路径草案智能体 ➔",
-		});
-		fireEvent.click(ctaBtn);
-
-		expect(mockOpenWithDraft).toHaveBeenCalledWith("进入学习路径草案智能体");
-		expect(mockSetWidgetState).not.toHaveBeenCalledWith("WIDGET");
-		expect(mockNavigate).not.toHaveBeenCalled();
+		// 进入路径草案的按钮只在对话底部输入区出现，卡片内不重复
+		expect(
+			screen.queryByRole("button", { name: /进入学习路径草案智能体/ }),
+		).toBeNull();
+		expect(mockOpenWithDraft).not.toHaveBeenCalled();
 	});
 
 	it("renders dynamic question form, handles single/multi select choices, and submits correctly", () => {

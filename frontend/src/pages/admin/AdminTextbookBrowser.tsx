@@ -1,6 +1,7 @@
 import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Textbook, TextbookSectionContent } from "../../api/knowledgeBase";
+import { StatusBadge } from "../../components/ui/StatusBadge";
 import { AdminTextbookInspector } from "./AdminTextbookInspector";
 
 interface AdminTextbookBrowserProps {
@@ -48,6 +49,15 @@ function formatOutlineSummary(outline: unknown) {
 		return `${sections.length} 节`;
 	}
 	return "暂无大纲";
+}
+
+function availabilityTone(
+	status: string,
+): "success" | "warning" | "error" | "neutral" {
+	if (status === "published") return "success";
+	if (status === "draft") return "warning";
+	if (status === "unpublished") return "error";
+	return "neutral";
 }
 
 function getColorForTextbook(title: string) {
@@ -107,7 +117,7 @@ export function AdminTextbookBrowser({
 				{/* 左侧：教材库目录 */}
 				<section className="admin-kb-left-panel" aria-label="教材库目录">
 					<div className="admin-kb-panel-header">
-						<h3>📚 已导入教材库</h3>
+						<h3>已导入教材库</h3>
 						<p>查看与检索知识库中已录入的所有学术教材</p>
 					</div>
 
@@ -167,19 +177,21 @@ export function AdminTextbookBrowser({
 												style={{ backgroundColor: coverColor }}
 											>
 												<span className="book-cover-letter">
-													{textbook.title[0] || "📖"}
+													{textbook.title[0] || "书"}
 												</span>
-												<div className="book-cover-spine" />
 											</div>
 
 											<div className="admin-kb-book-info">
 												<div className="admin-kb-book-title-row">
 													<strong>{textbook.title}</strong>
-													<span
-														className={`status-pill is-${textbook.student_availability_status}`}
+													<StatusBadge
+														variant="pill"
+														tone={availabilityTone(
+															textbook.student_availability_status,
+														)}
 													>
 														{formatStatus(textbook.student_availability_status)}
-													</span>
+													</StatusBadge>
 												</div>
 
 												{textbook.original_title && (
@@ -223,7 +235,7 @@ export function AdminTextbookBrowser({
 				{/* 右侧：教材大纲与资源详情审查面板 */}
 				<section className="admin-kb-right-panel" aria-label="详情审查面板">
 					<div className="admin-kb-panel-header">
-						<h3>📖 教材与解析详情</h3>
+						<h3>教材与解析详情</h3>
 						<p>查看教材大纲与管理操作 (已录入 {textbooks.length} 本教材)</p>
 					</div>
 

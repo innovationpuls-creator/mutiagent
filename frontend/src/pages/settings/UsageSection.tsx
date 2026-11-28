@@ -4,6 +4,7 @@ import {
 	SCENES,
 	type UsageSummary,
 } from "../../api/modelConfig";
+import { Tabs } from "../../components/ui/Tabs";
 import { useAuth } from "../../contexts/AuthContext";
 
 const RANGES = [
@@ -13,6 +14,12 @@ const RANGES = [
 ] as const;
 
 const fmt = (n: number) => n.toLocaleString("zh-CN");
+
+function formatCost(requests: number, costUsd: number) {
+	if (requests === 0) return "—";
+	if (costUsd > 0 && costUsd < 0.01) return "< $0.01";
+	return `$${costUsd.toFixed(2)}`;
+}
 
 export function UsageSection() {
 	const { token } = useAuth();
@@ -74,21 +81,22 @@ export function UsageSection() {
 		<section className="mc-section" aria-labelledby="mc-usage-title">
 			<header className="mc-section-head">
 				<div>
-					<h2 id="mc-usage-title">个人用量与费用</h2>
-					<p className="mc-hint">费用为按模型参考单价估算，仅供参考。</p>
+					<h2 id="mc-usage-title">用量与费用</h2>
+					<p className="mc-hint">
+						用量单位为 Token；费用按模型参考单价估算，仅供参考。
+					</p>
 				</div>
-				<div className="mc-seg" role="toolbar" aria-label="时间范围">
-					{RANGES.map((range) => (
-						<button
-							key={range.days}
-							type="button"
-							aria-pressed={days === range.days}
-							onClick={() => setDays(range.days)}
-						>
-							{range.label}
-						</button>
-					))}
-				</div>
+				<Tabs
+					mode="segmented"
+					size="sm"
+					ariaLabel="时间范围"
+					value={String(days)}
+					onChange={(next) => setDays(Number(next))}
+					items={RANGES.map((range) => ({
+						value: String(range.days),
+						label: range.label,
+					}))}
+				/>
 			</header>
 			{error && (
 				<p className="mc-error" role="alert">
@@ -111,24 +119,24 @@ export function UsageSection() {
 							</dd>
 						</div>
 						<div>
-							<dt>输入 Token</dt>
+							<dt>输入</dt>
 							<dd>{fmt(totals.input)}</dd>
 						</div>
 						<div>
-							<dt>输出 Token</dt>
+							<dt>输出</dt>
 							<dd>{fmt(totals.output)}</dd>
 						</div>
 						<div>
-							<dt>缓存命中 Token</dt>
+							<dt>缓存命中</dt>
 							<dd>{fmt(totals.cache)}</dd>
 						</div>
 						<div>
-							<dt>推理 Token</dt>
+							<dt>推理</dt>
 							<dd>{fmt(totals.reasoning)}</dd>
 						</div>
 						<div>
 							<dt>估算费用</dt>
-							<dd>${usage.total_cost_usd.toFixed(4)}</dd>
+							<dd>{formatCost(totals.requests, usage.total_cost_usd)}</dd>
 						</div>
 					</dl>
 					{byScene.length === 0 ? (
@@ -150,7 +158,7 @@ export function UsageSection() {
 										<th scope="row">{sceneLabel(scene)}</th>
 										<td>{fmt(row.requests)}</td>
 										<td>{fmt(row.tokens)}</td>
-										<td>{row.cost.toFixed(4)}</td>
+										<td>{formatCost(row.requests, row.cost)}</td>
 									</tr>
 								))}
 							</tbody>

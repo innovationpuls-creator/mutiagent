@@ -93,14 +93,14 @@ describe("ForestQuizOverlay", () => {
 		renderOverlay();
 		expect(screen.getByText("85")).toBeTruthy();
 		expect(screen.getByText("分")).toBeTruthy();
-		expect(screen.getByText("CONGRATULATIONS")).toBeTruthy();
+		expect(screen.getByText("测验通过")).toBeTruthy();
 		expect(screen.getByText("恭喜通关！本次测验表现优异。")).toBeTruthy();
 	});
 
 	it("displays failure status when not passed", () => {
 		renderOverlay({ attempt: baseAttempt({ passed: false, score: 40 }) });
 		expect(screen.getByText("40")).toBeTruthy();
-		expect(screen.getByText("KEEP WORKING")).toBeTruthy();
+		expect(screen.getByText("继续加油")).toBeTruthy();
 		expect(
 			screen.getByText("未达到通关分数，AI 已记录薄弱方向。"),
 		).toBeTruthy();

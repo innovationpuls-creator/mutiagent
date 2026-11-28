@@ -1227,15 +1227,15 @@ describe("BranchPage", () => {
 		});
 
 		// Verify coachmark balloon is rendered
-		expect(screen.getByText("✨ 点击此处，开启第一章学习")).toBeTruthy();
+		expect(screen.getByText("点击此处，开启第一章学习")).toBeTruthy();
 
 		// Click coachmark to dismiss it
-		const coachmark = screen.getByText("✨ 点击此处，开启第一章学习");
+		const coachmark = screen.getByText("点击此处，开启第一章学习");
 		fireEvent.click(coachmark);
 
 		// Verify coachmark is dismissed
 		await waitFor(() => {
-			expect(screen.queryByText("✨ 点击此处，开启第一章学习")).toBeNull();
+			expect(screen.queryByText("点击此处，开启第一章学习")).toBeNull();
 		});
 	});
 

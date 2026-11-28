@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { breathingGlowVariants } from "../../lib/motion";
+import { breathingGlowClassName } from "../../lib/motion";
 import { EditorialMarkdown } from "./EditorialMarkdown";
 import "../../styles/node-learning-view.css";
 
@@ -111,12 +111,8 @@ export function NodeLearningView({
 						layoutId={`node-agent-${nodeId}`}
 						layout="position"
 					>
-						<motion.span
-							className="whisper-dot active"
-							variants={breathingGlowVariants}
-							animate="animate"
-						/>
-						{agentMessage || "Agent is monitoring your progress..."}
+						<span className={`whisper-dot active ${breathingGlowClassName}`} />
+						{agentMessage || "智能体正在跟进你的学习进度…"}
 					</motion.div>
 				</div>
 

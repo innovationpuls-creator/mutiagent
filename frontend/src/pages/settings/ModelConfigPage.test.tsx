@@ -79,7 +79,7 @@ describe("ModelConfigPage — providers (AC-3)", () => {
 		renderWithModels(<ModelConfigPage />);
 		fireEvent.click(
 			await screen.findByRole("button", {
-				name: "新增自定义 Provider / 中转站",
+				name: "添加自定义服务",
 			}),
 		);
 		fireEvent.change(await screen.findByLabelText("Provider 标识"), {
@@ -205,7 +205,7 @@ describe("ModelConfigPage — providers (AC-3)", () => {
 		renderWithModels(<ModelConfigPage />);
 		fireEvent.click(
 			await screen.findByRole("button", {
-				name: "新增自定义 Provider / 中转站",
+				name: "添加自定义服务",
 			}),
 		);
 		fireEvent.change(await screen.findByLabelText("Provider 标识"), {
@@ -404,7 +404,9 @@ describe("ModelConfigPage — usage", () => {
 		await screen.findByText("估算费用");
 		const stats = screen.getByText("成功率").closest("div") as HTMLElement;
 		expect(stats.textContent).toContain("75%");
-		expect(screen.getByText("$0.0123")).toBeTruthy();
+		expect(
+			(screen.getByText("估算费用").closest("div") as HTMLElement).textContent,
+		).toContain("$0.01");
 		expect(screen.getByRole("cell", { name: "4" })).toBeTruthy();
 	});
 });

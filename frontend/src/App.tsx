@@ -7,6 +7,7 @@ import {
 	Route,
 	RouterProvider,
 	Routes,
+	ScrollRestoration,
 	useLocation,
 } from "react-router-dom";
 import { IcpFilingLink } from "./components/layout/IcpFilingLink";
@@ -258,6 +259,8 @@ function AppFilingLink() {
 function AppContent() {
 	return (
 		<AiWidgetProvider>
+			{/* 新导航回到页面顶部，后退时恢复原位置；否则从长页面跳转会带着旧滚动位置进入新页面 */}
+			<ScrollRestoration />
 			<AnimatedRoutes />
 			<AppGlobalAiWidget />
 			<AppFilingLink />

@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { BranchCourseNode } from "../../../types/branch";
 
@@ -8,7 +9,8 @@ interface CourseRowProps {
 }
 
 export function CourseRow({ course, isActive, onClick }: CourseRowProps) {
-	const semesterText = `学期 ${course.time_arrangement?.semester_scope ?? "?"}`;
+	const semesterScope = course.time_arrangement?.semester_scope;
+	const semesterText = semesterScope ? `第 ${semesterScope} 学期` : "学期待定";
 	const durationText = course.time_arrangement?.duration ?? "";
 
 	return (
@@ -23,7 +25,10 @@ export function CourseRow({ course, isActive, onClick }: CourseRowProps) {
 			</div>
 			<div className="course-meta">
 				<span className="course-duration">{durationText}</span>
-				<span className="course-edit-badge">编辑</span>
+				<span className="course-edit-hint">
+					编辑
+					<ChevronRight size={14} aria-hidden="true" />
+				</span>
 			</div>
 		</button>
 	);
@@ -49,10 +54,16 @@ export function GradeSection({
 			<button
 				type="button"
 				className="grade-header"
+				aria-expanded={!isFolded}
 				onClick={() => setIsFolded(!isFolded)}
 			>
-				<span className="grade-title">{gradeName}</span>
-				<span className="fold-icon">{isFolded ? "▲" : "▼"}</span>
+				<span className="grade-title">
+					{gradeName}
+					<span className="grade-count">{courses.length} 门课程</span>
+				</span>
+				<span className="fold-icon" aria-hidden="true">
+					{isFolded ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+				</span>
 			</button>
 			{!isFolded && (
 				<div className="grade-content">
@@ -90,10 +101,10 @@ export function ProgramTreeTable({
 	onSelectCourse,
 }: ProgramTreeTableProps) {
 	const grades = [
-		{ key: "Freshman", name: "大一 (Freshman)" },
-		{ key: "Sophomore", name: "大二 (Sophomore)" },
-		{ key: "Junior", name: "大三 (Junior)" },
-		{ key: "Senior", name: "大四 (Senior)" },
+		{ key: "Freshman", name: "大一" },
+		{ key: "Sophomore", name: "大二" },
+		{ key: "Junior", name: "大三" },
+		{ key: "Senior", name: "大四" },
 	];
 
 	return (

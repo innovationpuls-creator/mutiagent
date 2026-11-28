@@ -290,9 +290,7 @@ describe("ForestQuizPage", () => {
 
 		renderForest();
 
-		const textarea = await screen.findByPlaceholderText(
-			"自定义追问或手写演算草稿...",
-		);
+		const textarea = await screen.findByPlaceholderText("向 AI 助教追问…");
 		const penButton = screen.getByTitle("手写画板");
 		fireEvent.click(penButton);
 

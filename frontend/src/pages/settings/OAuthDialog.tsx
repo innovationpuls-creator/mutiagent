@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { aiModelsApi, type OAuthStart } from "../../api/modelConfig";
+import { Button } from "../../components/ui/Button";
 import { useDialogAccessibility } from "../../components/ui/useDialogAccessibility";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -112,14 +113,9 @@ export function OAuthDialog({
 			>
 				<header className="mc-dialog-head">
 					<h2 id="mc-oauth-title">OAuth 登录 · {providerName}</h2>
-					<button
-						ref={closeRef}
-						type="button"
-						className="mc-btn mc-btn-ghost"
-						onClick={onClose}
-					>
+					<Button ref={closeRef} variant="ghost" size="sm" onClick={onClose}>
 						关闭
-					</button>
+					</Button>
 				</header>
 				{!session && !error && (
 					<p role="status">正在向 {providerName} 申请授权…</p>
@@ -132,20 +128,20 @@ export function OAuthDialog({
 						</p>
 						<div className="mc-row">
 							<a
-								className="mc-btn mc-btn-primary"
+								className="button button-primary button-sm"
 								href={session.auth_url}
 								target="_blank"
 								rel="noopener noreferrer"
 							>
 								打开授权页
 							</a>
-							<button
-								type="button"
-								className="mc-btn"
+							<Button
+								variant="secondary"
+								size="sm"
 								onClick={() => void copy(session.auth_url ?? "")}
 							>
 								{copied ? "已复制" : "复制授权链接"}
-							</button>
+							</Button>
 						</div>
 						{session.instructions && (
 							<p className="mc-hint">{session.instructions}</p>
@@ -163,14 +159,14 @@ export function OAuthDialog({
 								spellCheck={false}
 							/>
 						</label>
-						<button
-							type="button"
-							className="mc-btn mc-btn-primary"
+						<Button
+							variant="primary"
+							size="sm"
 							disabled={busy || !code.trim()}
 							onClick={() => void submit()}
 						>
 							{busy ? "验证中…" : "完成授权"}
-						</button>
+						</Button>
 					</div>
 				)}
 				{session?.mode === "device_code" && (
@@ -182,7 +178,7 @@ export function OAuthDialog({
 						</p>
 						{session.verification_uri && (
 							<a
-								className="mc-btn mc-btn-primary"
+								className="button button-primary button-sm"
 								href={session.verification_uri}
 								target="_blank"
 								rel="noopener noreferrer"

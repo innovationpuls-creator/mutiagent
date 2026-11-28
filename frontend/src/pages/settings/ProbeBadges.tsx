@@ -4,6 +4,7 @@ import {
 	type ProbeItem,
 	type ProbeResult,
 } from "../../api/modelConfig";
+import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../contexts/AuthContext";
 
 const ITEMS: Array<{ key: "text" | "tools" | "vision"; label: string }> = [
@@ -77,15 +78,15 @@ export function ProbeButton({
 
 	return (
 		<div className="mc-probe-wrap">
-			<button
-				type="button"
-				className="mc-btn mc-btn-ghost"
+			<Button
+				variant="ghost"
+				size="sm"
 				onClick={() => void run()}
 				disabled={disabled || running || !modelId}
 				title={modelId ? `用 ${modelId} 测试` : "没有可测试的模型"}
 			>
 				{running ? "测试中…" : label}
-			</button>
+			</Button>
 			{result && <ProbeBadges result={result} />}
 			{error && (
 				<p className="mc-error" role="alert">

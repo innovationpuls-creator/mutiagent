@@ -4,6 +4,7 @@ import {
 	type CustomModelView,
 	modelConfigApi,
 } from "../../api/modelConfig";
+import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../contexts/AuthContext";
 
 type Tri = "" | "true" | "false";
@@ -176,13 +177,13 @@ export function CustomModelsPanel({
 			<div className="mc-row mc-between">
 				<h3>自定义模型</h3>
 				{!draft && (
-					<button
-						type="button"
-						className="mc-btn"
+					<Button
+						variant="secondary"
+						size="sm"
 						onClick={() => setDraft(emptyDraft())}
 					>
 						新增模型
-					</button>
+					</Button>
 				)}
 			</div>
 			{models.length === 0 && !draft && (
@@ -200,22 +201,22 @@ export function CustomModelsPanel({
 							</small>
 						</span>
 						<span className="mc-row">
-							<button
-								type="button"
-								className="mc-btn mc-btn-ghost"
+							<Button
+								variant="ghost"
+								size="sm"
 								onClick={() => setDraft(draftFrom(model))}
 							>
 								编辑
-							</button>
-							<button
-								type="button"
-								className="mc-btn mc-btn-danger"
+							</Button>
+							<Button
+								variant="danger"
+								size="sm"
 								disabled={busy}
 								onClick={() => void remove(model)}
 								aria-label={`删除模型 ${model.model_id}`}
 							>
 								删除
-							</button>
+							</Button>
 						</span>
 					</li>
 				))}
@@ -350,24 +351,24 @@ export function CustomModelsPanel({
 						</div>
 					</details>
 					<div className="mc-row">
-						<button
-							type="button"
-							className="mc-btn mc-btn-primary"
+						<Button
+							variant="primary"
+							size="sm"
 							disabled={busy}
 							onClick={() => void save()}
 						>
 							{busy ? "保存中…" : "保存模型"}
-						</button>
-						<button
-							type="button"
-							className="mc-btn mc-btn-ghost"
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
 							onClick={() => {
 								setDraft(null);
 								setError(null);
 							}}
 						>
 							取消
-						</button>
+						</Button>
 					</div>
 				</div>
 			)}

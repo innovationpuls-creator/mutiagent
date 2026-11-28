@@ -1,4 +1,4 @@
-import { SendHorizonal } from "lucide-react";
+import { ChevronDown, ChevronUp, SendHorizonal } from "lucide-react";
 import {
 	type FormEvent,
 	type KeyboardEvent,
@@ -16,6 +16,8 @@ import type {
 	Textbook,
 	TextbookSectionContent,
 } from "../../api/knowledgeBase";
+import { Button } from "../../components/ui/Button";
+import { StatusBadge } from "../../components/ui/StatusBadge";
 import { AdminTextbookInspector } from "./AdminTextbookInspector";
 
 export interface AdminKnowledgeBaseAgentEntry {
@@ -215,26 +217,25 @@ export function AdminKnowledgeBaseAgent({
 						</p>
 					) : null}
 					{result.already_imported ? (
-						<button
-							type="button"
-							className="admin-secondary-action"
+						<Button
+							variant="secondary"
+							size="sm"
 							onClick={() =>
 								result.textbook_id && onSelectTextbook(result.textbook_id)
 							}
 							aria-label={`去查看已入库教材 ${result.title}`}
 						>
-							<span>已入库 (去查看)</span>
-						</button>
+							已入库 (去查看)
+						</Button>
 					) : (
-						<button
-							type="button"
-							className="admin-primary-action"
+						<Button
+							size="sm"
 							disabled={isBusy}
 							onClick={() => void onConfirmSourceResult(result)}
 							aria-label={`确认解析 ${result.title}`}
 						>
-							<span>确认解析</span>
-						</button>
+							确认解析
+						</Button>
 					)}
 				</article>
 			))}
@@ -245,7 +246,6 @@ export function AdminKnowledgeBaseAgent({
 		<section className="admin-kb-stream-panel" aria-label="实时反馈">
 			<div className="admin-kb-rail-head">
 				<div>
-					<p className="admin-kicker">stream</p>
 					<h3>实时反馈</h3>
 				</div>
 			</div>
@@ -279,7 +279,7 @@ export function AdminKnowledgeBaseAgent({
 				{/* 左侧：智能对话工作台 */}
 				<section className="admin-kb-left-panel" aria-label="对话工作台">
 					<div className="admin-kb-panel-header">
-						<h3>💬 AI 知识库助手</h3>
+						<h3>AI 知识库助手</h3>
 						<p>通过对话导入教材、解析大纲或关联未覆盖的知识点</p>
 					</div>
 
@@ -338,14 +338,13 @@ export function AdminKnowledgeBaseAgent({
 							rows={3}
 						/>
 						<div className="admin-kb-composer-actions">
-							<button
+							<Button
 								type="submit"
-								className="admin-primary-action"
+								icon={<SendHorizonal aria-hidden="true" />}
 								disabled={isBusy}
 							>
-								<SendHorizonal aria-hidden="true" />
-								<span>{isBusy ? "发送中" : "发送"}</span>
-							</button>
+								{isBusy ? "发送中" : "发送"}
+							</Button>
 						</div>
 					</form>
 
@@ -358,13 +357,17 @@ export function AdminKnowledgeBaseAgent({
 							aria-expanded={isResourcesExpanded}
 						>
 							<span className="admin-kb-drawer-title">
-								📚 <span>来源状态</span>与<span>未覆盖待办</span>
+								<span>来源状态</span>与<span>未覆盖待办</span>
 							</span>
 							<span className="admin-kb-drawer-count">
 								{sources.length} 来源 · {gaps.length} 待办
 							</span>
 							<span className="admin-kb-drawer-chevron">
-								{isResourcesExpanded ? "▲" : "▼"}
+								{isResourcesExpanded ? (
+									<ChevronUp size={16} aria-hidden="true" />
+								) : (
+									<ChevronDown size={16} aria-hidden="true" />
+								)}
 							</span>
 						</button>
 						{isResourcesExpanded && (
@@ -381,11 +384,16 @@ export function AdminKnowledgeBaseAgent({
 													>
 														<div className="admin-kb-drawer-card-title">
 															<strong>{source.name}</strong>
-															<span
-																className={`status-pill is-${source.status}`}
+															<StatusBadge
+																variant="pill"
+																tone={
+																	source.status === "enabled"
+																		? "success"
+																		: "neutral"
+																}
 															>
 																{source.status === "enabled" ? "启用" : "停用"}
-															</span>
+															</StatusBadge>
 														</div>
 														<small>
 															下载{" "}
@@ -416,9 +424,9 @@ export function AdminKnowledgeBaseAgent({
 													>
 														<div className="admin-kb-drawer-card-title">
 															<strong>{gap.normalized_topic}</strong>
-															<span className="status-pill">
+															<StatusBadge variant="pill" tone="warning">
 																{formatGapStatus(gap.status)}
-															</span>
+															</StatusBadge>
 														</div>
 														<p>{gap.student_goal_summaries[0] || "无摘要"}</p>
 														<small>
@@ -441,7 +449,7 @@ export function AdminKnowledgeBaseAgent({
 				{/* 右侧：教材大纲与资源详情审查面板 */}
 				<section className="admin-kb-right-panel" aria-label="详情审查面板">
 					<div className="admin-kb-panel-header">
-						<h3>📖 教材与解析详情</h3>
+						<h3>教材与解析详情</h3>
 						<p>查看教材大纲与管理操作 (已录入 {textbooks.length} 本教材)</p>
 					</div>
 
@@ -450,7 +458,7 @@ export function AdminKnowledgeBaseAgent({
 						{lastResponse &&
 							(lastTextbookHits.length > 0 || lastGapHits.length > 0) && (
 								<div className="admin-kb-matches-section">
-									<h4>🎯 本轮智能匹配结果</h4>
+									<h4>本轮智能匹配结果</h4>
 									<div className="admin-kb-rail-list">
 										{lastTextbookHits.map((hit) => (
 											<button
@@ -462,9 +470,9 @@ export function AdminKnowledgeBaseAgent({
 											>
 												<div className="admin-kb-match-header">
 													<strong>{hit.title}</strong>
-													<span className="status-badge">
+													<StatusBadge variant="pill" tone="info">
 														{formatStatus(hit.student_availability_status)}
-													</span>
+													</StatusBadge>
 												</div>
 												<p>{hit.reason || hit.source_name}</p>
 											</button>
@@ -473,9 +481,9 @@ export function AdminKnowledgeBaseAgent({
 											<div className="admin-kb-match-gap-card" key={gap.gap_id}>
 												<div className="admin-kb-match-header">
 													<strong>{gap.normalized_topic}</strong>
-													<span className="status-badge">
+													<StatusBadge variant="pill" tone="warning">
 														{formatGapStatus(gap.status)}
-													</span>
+													</StatusBadge>
 												</div>
 												<p>{gap.reason || "缺口匹配成功"}</p>
 											</div>

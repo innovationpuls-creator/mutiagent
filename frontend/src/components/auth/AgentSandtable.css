@@ -24,52 +24,15 @@
 .agent-sandtable__terminal {
 	flex: 0 0 auto;
 	overflow: hidden;
-	background: oklch(96% 0.01 60 / 0.55);
-	border: 1px solid var(--color-border-subtle);
-	border-radius: var(--radius-md);
-	box-shadow: var(--shadow-sm);
-	backdrop-filter: blur(20px);
-	-webkit-backdrop-filter: blur(20px);
-	z-index: 10;
-}
-
-.agent-sandtable__terminal-header {
-	display: flex;
-	align-items: center;
-	gap: var(--space-8);
-	padding: var(--space-16) var(--space-20);
-	border-bottom: 1px solid var(--color-border-subtle);
-}
-
-.agent-sandtable__traffic-lights {
-	display: flex;
-	gap: var(--space-4);
-}
-
-.agent-sandtable__traffic-light {
-	display: block;
-	width: calc(var(--space-4) + 2px);
-	height: calc(var(--space-4) + 2px);
-	border-radius: var(--radius-full);
-}
-
-.agent-sandtable__traffic-light--red {
-	background: oklch(75% 0.12 25);
-}
-
-.agent-sandtable__traffic-light--yellow {
-	background: oklch(82% 0.12 95);
-}
-
-.agent-sandtable__traffic-light--green {
-	background: oklch(80% 0.1 145);
+	padding-block-start: var(--space-16);
+	border-block-start: 1px solid var(--color-border-subtle);
 }
 
 .agent-sandtable__terminal-title {
-	font-family: var(--font-mono, monospace);
-	font-size: 9px;
-	color: var(--color-text-whisper);
-	letter-spacing: 0.5px;
+	margin: 0;
+	padding-inline: var(--space-4);
+	font-size: var(--text-caption);
+	color: var(--color-text-tertiary);
 }
 
 .agent-sandtable__terminal-body {
@@ -77,7 +40,7 @@
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
-	padding: var(--space-16) var(--space-20);
+	padding: var(--space-8) var(--space-4);
 	overflow-y: auto;
 }
 
@@ -96,6 +59,13 @@
 		flex: 0 0 300px;
 		min-height: 300px;
 	}
+}
+
+/* 窄容器：舞台按设计宽度排版后整体等比缩放（比例由 useStageScale 写入）。
+   用 zoom 而不是 transform，让缩放后的尺寸参与布局，不留空白。 */
+.agent-sandtable[data-compact] .agent-sandtable__stage {
+	inline-size: 600px;
+	zoom: var(--sandtable-scale, 1);
 }
 
 /* Sub-agent 环绕呼吸浮动 (纯 CSS, 零 JS 开销) */
@@ -163,8 +133,8 @@
 }
 .terminal-cursor {
 	position: absolute;
-	right: var(--space-20);
-	bottom: var(--space-16);
+	right: var(--space-4);
+	bottom: var(--space-8);
 	display: inline-block;
 	width: 5px;
 	height: 11px;

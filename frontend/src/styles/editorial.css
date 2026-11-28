@@ -1,7 +1,4 @@
 /* Editorial Markdown Styles */
-:root {
-	--glass-dark-bg: rgba(33, 33, 33, 0.78);
-}
 
 .editorial-canvas {
 	width: 100%;
@@ -21,7 +18,7 @@
 	text-wrap: balance;
 	margin-top: var(--space-xl);
 	margin-bottom: var(--space-md);
-	text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+	text-shadow: 0 1px 0 oklch(100% 0 0 / 0.4);
 }
 
 .editorial-h1 {
@@ -41,15 +38,15 @@
 
 /* Editorial Quote */
 .editorial-quote {
-	background-color: var(--color-canvas-surface);
-	border-left: 2px solid var(--color-intent-planner);
+	background-color: var(--color-surface);
+	border: 1px solid var(--color-border);
 	padding: var(--space-md) var(--space-lg);
 	margin-bottom: var(--space-lg);
-	border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+	border-radius: var(--radius-sm);
 }
 
 .editorial-quote p {
-	color: var(--color-text-whisper);
+	color: var(--color-text-secondary);
 	margin-bottom: 0;
 	font-size: var(--text-body-sm);
 }
@@ -64,11 +61,11 @@
 	backdrop-filter: var(--glass-pebble-blur);
 	-webkit-backdrop-filter: var(--glass-pebble-blur);
 	overflow-x: auto;
-	border: 1px solid rgba(255, 255, 255, 0.05);
+	border: 1px solid var(--dark-border);
 }
 
 .editorial-code-block code {
-	color: #e8cdb0; /* Warm muted sand color for code */
+	color: var(--dark-text-primary);
 	font-family: var(--font-mono);
 	font-size: var(--text-body-sm);
 	line-height: 1.6;
@@ -76,15 +73,13 @@
 
 /* Inline Code Whisper */
 .editorial-code-inline {
-	background-color: transparent;
-	color: var(--color-text-whisper);
+	background-color: var(--color-surface-inset);
+	color: var(--color-text-secondary);
 	font-family: var(--font-mono);
 	font-size: var(--text-caption);
-	text-transform: var(--font-whisper-caps);
-	letter-spacing: var(--font-whisper-spacing);
 	display: inline-flex;
 	align-items: center;
-	padding: 0 var(--space-xs);
-	border: 1px solid rgba(58, 56, 54, 0.05); /* whisper thin border */
-	border-radius: var(--space-xs);
+	padding: 0 var(--space-8);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
 }

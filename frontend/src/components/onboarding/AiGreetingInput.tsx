@@ -5,7 +5,7 @@ import {
 	useSpring,
 	useTransform,
 } from "framer-motion";
-import { PenTool } from "lucide-react";
+import { ChevronDown, ChevronUp, PenTool, X } from "lucide-react";
 import React, {
 	useCallback,
 	useEffect,
@@ -67,6 +67,7 @@ import {
 	modelErrorInfo,
 } from "../models/ModelGuidanceCard";
 import { ModelQuickSwitcher } from "../models/ModelQuickSwitcher";
+import { Button } from "../ui/Button";
 import { HandwritingCanvas } from "../ui/HandwritingCanvas";
 import { AgentRunTimeline } from "./AgentRunTimeline";
 import { AiEyes } from "./AiEyes";
@@ -1275,7 +1276,7 @@ export function AiGreetingInput({
 						}
 						disabled={!isLatestInteractive || isPending}
 						partialData={message.partialData ?? null}
-						showPathGenerationCta={isLatestInteractive && !hasLearningOutput}
+						showProfileTransition={isLatestInteractive && !hasLearningOutput}
 					/>
 				);
 			} else {
@@ -1361,7 +1362,7 @@ export function AiGreetingInput({
 									setWidgetState("WIDGET");
 								}}
 							>
-								<span aria-hidden="true">✕</span>
+								<X size={18} aria-hidden="true" />
 							</button>
 						</header>
 
@@ -1373,7 +1374,7 @@ export function AiGreetingInput({
 									onClick={() => setGlobalError(null)}
 									aria-label="关闭"
 								>
-									×
+									<X size={16} aria-hidden="true" />
 								</button>
 							</div>
 						)}
@@ -1393,12 +1394,12 @@ export function AiGreetingInput({
 												<h3>{latestKnowledgeGapNotice.title}</h3>
 												<p>{latestKnowledgeGapNotice.body}</p>
 											</div>
-											<button type="button" onClick={handleNoticeAction}>
+											<Button size="sm" onClick={handleNoticeAction}>
 												{latestKnowledgeGapNotice.action_label ===
 												"重新生成学习路径"
 													? "重新生成课程草案"
 													: latestKnowledgeGapNotice.action_label}
-											</button>
+											</Button>
 										</div>
 									)}
 
@@ -1428,7 +1429,7 @@ export function AiGreetingInput({
 												onClick={() => setImageAttachment(null)}
 												aria-label="删除图片"
 											>
-												✕
+												<X size={12} aria-hidden="true" />
 											</button>
 										</div>
 									)}
@@ -1453,9 +1454,13 @@ export function AiGreetingInput({
 										<>
 											{shouldShowPathActions && (
 												<div className="composer-path-actions">
-													<button type="button" onClick={handleOpenPath}>
+													<Button
+														variant="secondary"
+														size="sm"
+														onClick={handleOpenPath}
+													>
 														开始学习
-													</button>
+													</Button>
 												</div>
 											)}
 											<form
@@ -1525,7 +1530,11 @@ export function AiGreetingInput({
 											>
 												<span>进度</span>
 												<span aria-hidden="true">
-													{showEventLog ? "⌃" : "⌄"}
+													{showEventLog ? (
+														<ChevronUp size={16} />
+													) : (
+														<ChevronDown size={16} />
+													)}
 												</span>
 											</button>
 										) : (
@@ -2068,7 +2077,7 @@ const StyledWrapper = styled.div`
     flex: 1;
     min-block-size: 0;
     inline-size: 100%;
-    padding: var(--space-8) var(--space-8) var(--space-96);
+    padding: var(--space-8) var(--space-8) var(--space-24);
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -2097,21 +2106,6 @@ const StyledWrapper = styled.div`
     color: var(--color-text-secondary);
     font-size: var(--text-body-sm);
     line-height: 1.8;
-  }
-
-  .knowledge-notice-banner button {
-    flex-shrink: 0;
-    min-block-size: var(--space-40);
-    border: none;
-    border-radius: var(--radius-full);
-    background: var(--color-primary);
-    color: var(--color-text-inverse);
-    font-family: var(--font-body);
-    font-size: var(--text-body-sm);
-    font-weight: var(--font-weight-medium);
-    padding: var(--space-8) var(--space-16);
-    cursor: pointer;
-    box-shadow: var(--shadow-sm);
   }
 
   .onboarding-step-bar {
@@ -2207,12 +2201,13 @@ const StyledWrapper = styled.div`
     color: var(--color-text-secondary);
   }
 
+  /* 输入区是对话列底部的固定页脚，不再浮在消息上方：消息滚动区止于分割线 */
   .composer-container {
-    position: absolute;
-    bottom: var(--space-8);
-    left: var(--space-8);
-    right: var(--space-8);
+    position: relative;
+    flex: 0 0 auto;
     z-index: 10;
+    padding: var(--space-12) var(--space-8) var(--space-8);
+    border-block-start: 1px solid var(--color-border);
     display: flex;
     flex-direction: column;
     gap: var(--space-8);
@@ -2305,7 +2300,7 @@ const StyledWrapper = styled.div`
     max-block-size: var(--space-64);
     border: none;
     outline: none;
-    resize: vertical;
+    resize: none;
     background: transparent;
     color: var(--color-text-primary);
     font-family: var(--font-body);
@@ -2372,26 +2367,8 @@ const StyledWrapper = styled.div`
     padding-inline: var(--space-12);
   }
 
-  .composer-path-actions button {
+  .composer-path-actions .button {
     flex: 1 1 0;
-    min-block-size: var(--space-40);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-full);
-    background: var(--color-surface-raised);
-    color: var(--color-text-primary);
-    font-family: var(--font-body);
-    font-size: var(--text-body-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    box-shadow: var(--shadow-sm);
-    transition:
-      transform var(--duration-lazy-hover) var(--ease-lazy),
-      background-color var(--duration-lazy-hover) var(--ease-lazy);
-  }
-
-  .composer-path-actions button:hover {
-    transform: translateY(calc(var(--space-2) * -1));
-    background: var(--color-primary-soft);
   }
 
   .cta-completed-btn {
@@ -2450,8 +2427,7 @@ const StyledWrapper = styled.div`
     .agent-event-log,
     .agent-step-row,
     .global-error,
-    .composer-completed-hint,
-    .knowledge-notice-banner button {
+    .composer-completed-hint {
       animation: none;
     }
 

@@ -107,7 +107,7 @@ export function ModelConfigProvider({ children }: { children: ReactNode }) {
 				setCatalog(nextCatalog.value);
 				setCatalogError(null);
 			} else {
-				setCatalogError("模型目录暂时无法加载，内置厂商的模型列表可能不完整");
+				setCatalogError("模型目录暂时无法加载，预置服务商的模型列表可能不完整");
 			}
 		} finally {
 			if (generation.current === current) setIsLoading(false);

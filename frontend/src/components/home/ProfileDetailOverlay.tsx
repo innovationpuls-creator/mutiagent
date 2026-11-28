@@ -1,4 +1,5 @@
 import { motion, useReducedMotion } from "framer-motion";
+import { X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { motionTokens } from "../../styles/motion-tokens";
 import type { UserProfile } from "../../types/profile";
@@ -64,7 +65,6 @@ export function ProfileDetailOverlay({
 				className="overlay-content"
 				role="dialog"
 				aria-modal="true"
-				style={{ borderRadius: "var(--radius-lg)" }}
 				initial={reduceMotion ? false : { opacity: 0 }}
 				animate={reduceMotion ? undefined : { opacity: 1 }}
 				exit={reduceMotion ? undefined : { opacity: 0 }}
@@ -81,25 +81,12 @@ export function ProfileDetailOverlay({
 					<h2 className="overlay-title">我的完整画像</h2>
 					<button
 						type="button"
-						className="overlay-close-btn"
+						className="ui-close-btn"
 						ref={closeRef}
 						onClick={onClose}
 						aria-label="关闭"
 					>
-						<svg
-							width="24"
-							height="24"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="2"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-							aria-hidden="true"
-						>
-							<line x1="18" y1="6" x2="6" y2="18"></line>
-							<line x1="6" y1="6" x2="18" y2="18"></line>
-						</svg>
+						<X size={18} aria-hidden="true" />
 					</button>
 				</div>
 
@@ -228,12 +215,12 @@ export function ProfileDetailOverlay({
 						</section>
 
 						{/* 推荐依据 */}
-						<div className="mt-6 pt-4 border-t border-[var(--color-border)]">
-							<h4 className="text-sm font-medium text-[var(--color-text-secondary)] mb-3 flex items-center gap-2">
-								<span className="w-2 h-2 rounded-full bg-[var(--color-primary)]" />
+						<div className="overlay-basis">
+							<h4 className="overlay-basis-title">
+								<span className="section-dot" aria-hidden="true" />
 								推荐依据
 							</h4>
-							<p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+							<p>
 								你的学习资源推荐基于以下画像维度：薄弱方向、学习方式偏好、内容形式偏好和知识基础。
 								每个章节的推荐理由会显示在资源卡片下方。
 							</p>

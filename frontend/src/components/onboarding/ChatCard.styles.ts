@@ -13,11 +13,6 @@ export const CardWrapper = styled.article`
 
   &[data-state='basic_profile'] {
     inline-size: min(100%, var(--container-default));
-    background:
-      radial-gradient(circle at 10% 0%, oklch(84% 0.12 63 / 0.22), transparent 34%),
-      radial-gradient(circle at 100% 18%, oklch(75% 0.09 135 / 0.16), transparent 32%),
-      var(--color-surface-raised);
-    border-color: oklch(84% 0.03 73 / 0.76);
     box-shadow: var(--shadow-lg);
   }
 
@@ -69,14 +64,12 @@ export const CardWrapper = styled.article`
     color: var(--color-text-secondary);
   }
 
+  /* 卡片内部只用分割线和留白分区，不再嵌套带底色的面板 */
   .confirmed-panel,
   .question-panel,
-  .profile-section,
-  .profile-hero,
   .profile-narrative section {
-    border-radius: var(--radius-md);
-    background: var(--color-surface-raised);
-    padding: var(--space-16);
+    padding-block-start: var(--space-16);
+    border-block-start: 1px solid var(--color-border);
   }
 
   .confirmed-panel,
@@ -127,22 +120,12 @@ export const CardWrapper = styled.article`
 
   .question-panel {
     margin-block-start: var(--space-16);
-  }
-
-  .question-panel {
-    display: grid;
     gap: var(--space-8);
   }
 
   .question-list p {
     color: var(--color-text-primary);
     line-height: 1.8;
-  }
-
-  .question-list p::before {
-    content: '//';
-    color: var(--color-primary);
-    margin-inline-end: var(--space-8);
   }
 
   .question-list ul,
@@ -247,7 +230,6 @@ export const CardWrapper = styled.article`
     display: grid;
     gap: var(--space-12);
     margin-block-end: var(--space-16);
-    padding: var(--space-24);
   }
 
   .profile-hero h3 {
@@ -262,11 +244,7 @@ export const CardWrapper = styled.article`
   }
 
   .profile-eyebrow {
-    inline-size: fit-content;
-    border-radius: var(--radius-full);
-    padding: var(--space-8) var(--space-12);
-    background: var(--color-primary-soft);
-    color: var(--color-text-primary);
+    color: var(--color-text-muted);
     font-size: var(--text-caption);
     line-height: 1.4;
   }
@@ -279,18 +257,22 @@ export const CardWrapper = styled.article`
   }
 
   .profile-meter span {
-    border-radius: var(--radius-full);
-    padding: var(--space-8) var(--space-12);
-    background: var(--color-surface-inset);
     color: var(--color-text-secondary);
     font-size: var(--text-caption);
     line-height: 1.4;
   }
 
+  .profile-meter span + span::before {
+    content: '·';
+    margin-inline-end: var(--space-8);
+    color: var(--color-text-muted);
+  }
+
   .profile-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--gap-sm);
+    column-gap: var(--gap-lg);
+    border-block-start: 1px solid var(--color-border);
   }
 
   .profile-section {
@@ -298,6 +280,8 @@ export const CardWrapper = styled.article`
     gap: var(--space-12);
     align-content: start;
     min-block-size: auto;
+    padding-block: var(--space-16);
+    border-block-end: 1px solid var(--color-border);
   }
 
   .profile-section dl {
@@ -321,10 +305,6 @@ export const CardWrapper = styled.article`
     color: var(--color-text-primary);
     font-size: var(--text-body-sm);
     line-height: 1.7;
-  }
-
-  .profile-section[data-empty='true'] {
-    background: var(--color-background);
   }
 
   .profile-section[data-empty='true'] p {
@@ -363,12 +343,6 @@ export const CardWrapper = styled.article`
     .badge-dot {
       animation: none;
     }
-
-    .cta-open-path-btn,
-    .cta-open-path-btn .arrow {
-      transition: none;
-      transform: none;
-    }
   }
 
   .profile-transition-banner {
@@ -376,23 +350,15 @@ export const CardWrapper = styled.article`
     flex-direction: column;
     align-items: center;
     text-align: center;
-    border-radius: var(--radius-md);
-    background: var(--color-primary-soft);
-    padding: var(--space-24) var(--space-20);
-    margin-bottom: var(--space-16);
-    border: 1px solid oklch(90% 0.04 140 / 0.3);
+    padding-block: var(--space-8) var(--space-16);
   }
 
   .completed-badge {
     display: inline-flex;
     align-items: center;
     gap: var(--space-pill-padding);
-    background: var(--color-surface);
-    padding: var(--space-4) var(--space-12);
-    border-radius: var(--radius-full);
     font-size: var(--text-caption);
     color: var(--color-text-secondary);
-    border: 1px solid var(--color-border);
     margin-bottom: var(--space-16);
   }
 
@@ -436,38 +402,6 @@ export const CardWrapper = styled.article`
     text-wrap: pretty;
   }
 
-  .cta-open-path-btn {
-    width: 100%;
-    max-width: 240px;
-    padding: var(--space-8) var(--space-20);
-    border: none;
-    border-radius: var(--radius-full);
-    background: var(--color-primary);
-    color: var(--color-text-inverse);
-    font-family: var(--font-body);
-    font-size: var(--text-body-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-pill-padding);
-    box-shadow: var(--shadow-sm);
-    transition: transform var(--duration-lazy-hover) var(--ease-lazy);
-  }
-
-  .cta-open-path-btn:hover {
-    transform: translateY(-2px);
-  }
-
-  .cta-open-path-btn .arrow {
-    transition: transform var(--duration-lazy-hover) var(--ease-lazy);
-  }
-
-  .cta-open-path-btn:hover .arrow {
-    transform: translateX(4px);
-  }
-
   @keyframes status-pulse {
     from { opacity: 0.4; }
     to { opacity: 1; }
@@ -483,10 +417,8 @@ export const CardWrapper = styled.article`
     display: grid;
     gap: var(--space-24);
     margin-block-start: var(--space-16);
-    background: var(--color-surface-raised);
-    padding: var(--space-24);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-sm);
+    padding-block-start: var(--space-16);
+    border-block-start: 1px solid var(--color-border);
   }
 
   .form-header {
@@ -552,7 +484,6 @@ export const CardWrapper = styled.article`
     font-size: var(--text-body-sm);
     padding: var(--space-8) var(--space-16);
     cursor: pointer;
-    box-shadow: var(--shadow-sm);
     transition:
       transform var(--duration-lazy-hover) var(--ease-lazy),
       background-color var(--duration-lazy-hover) var(--ease-lazy),
@@ -563,25 +494,22 @@ export const CardWrapper = styled.article`
   .form-chip:hover:not(:disabled) {
     background: var(--color-hover-wash);
     transform: translateY(-1px);
-    box-shadow: var(--shadow-md);
   }
 
+  /* 选中态与 Tabs 一致：深鸭蓝；珊瑚色只留给主按钮 */
   .form-chip.selected {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
+    background: var(--color-secondary);
+    border-color: var(--color-secondary);
     color: var(--color-text-inverse);
-    box-shadow: var(--shadow-md);
   }
 
   .form-chip.selected:hover:not(:disabled) {
-    background: var(--color-primary-hover);
+    background: var(--color-secondary);
   }
 
   .form-chip:disabled {
     cursor: not-allowed;
     opacity: 0.64;
-    transform: none !important;
-    box-shadow: none !important;
   }
 
   .form-input-text {
@@ -615,7 +543,7 @@ export const CardWrapper = styled.article`
     border: none;
     border-radius: var(--radius-full);
     background: var(--color-primary);
-    color: var(--color-text-inverse);
+    color: var(--color-on-primary);
     font-family: var(--font-body);
     font-size: var(--text-body);
     font-weight: var(--font-weight-medium);

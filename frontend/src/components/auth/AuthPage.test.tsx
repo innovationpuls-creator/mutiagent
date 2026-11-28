@@ -65,8 +65,8 @@ describe("AuthPage", () => {
 		expect(screen.queryByRole("tab", { name: "教师" })).toBeNull();
 		expect(screen.getByRole("button", { name: /QQ 登录/ })).toBeTruthy();
 		expect(screen.getByRole("button", { name: /学习通登录/ })).toBeTruthy();
-		expect(screen.getByText("Planner Agent 倾听你的原始需求")).toBeTruthy();
-		expect(screen.getByText("动态更新的多Agent协同学习系统")).toBeTruthy();
+		expect(screen.getByText("规划智能体读懂你的学习目标")).toBeTruthy();
+		expect(screen.getByText("多智能体协同学习系统")).toBeTruthy();
 	});
 
 	it("routes admin login to the program management page", async () => {

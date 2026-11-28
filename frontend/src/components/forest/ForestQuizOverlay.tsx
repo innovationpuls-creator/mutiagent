@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { X } from "lucide-react";
 import { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motionTokens } from "../../styles/motion-tokens";
@@ -7,6 +8,8 @@ import type {
 	ChapterWeaknessData,
 	ForestAttempt,
 } from "../../types/forest";
+import { Button } from "../ui/Button";
+import { StatusBadge } from "../ui/StatusBadge";
 import { useDialogAccessibility } from "../ui/useDialogAccessibility";
 
 interface ForestQuizOverlayProps {
@@ -338,21 +341,13 @@ export function ForestQuizOverlay({
 					aria-label="关闭"
 					ref={closeRef}
 				>
-					✕
+					<X size={16} aria-hidden="true" />
 				</button>
 
 				<header className="forest-overlay-header">
-					<span className="whisper-badge">
-						<span
-							className={`whisper-dot ${passed ? "feedback" : "active"}`}
-							style={{
-								backgroundColor: passed
-									? "var(--color-intent-success)"
-									: "var(--color-intent-warning)",
-							}}
-						/>
-						{passed ? "CONGRATULATIONS" : "KEEP WORKING"}
-					</span>
+					<StatusBadge tone={passed ? "success" : "warning"}>
+						{passed ? "测验通过" : "继续加油"}
+					</StatusBadge>
 					<h1 className="forest-overlay-score-title">
 						<span className="score-num">{score}</span>
 						<span className="score-unit">分</span>
@@ -370,9 +365,9 @@ export function ForestQuizOverlay({
 						<div className="tree-container">
 							<GrowthTreeSVG stage={stage} />
 						</div>
-						<span className="growth-stage-badge">
+						<StatusBadge variant="pill" tone="success">
 							{getGrowthStageName(stage)}
-						</span>
+						</StatusBadge>
 					</div>
 
 					{/* Right Column: Canopy Metrics & Adaptive Notes */}
@@ -427,18 +422,14 @@ export function ForestQuizOverlay({
 								</p>
 								<div className="weakness-tag-list">
 									{weaknesses.map((w) => (
-										<span
+										<StatusBadge
 											key={`${w.knowledge_point_id}:${w.knowledge_point_name}:${w.severity}`}
-											className="weakness-tag"
-											style={{
-												borderColor:
-													w.severity >= 2
-														? "var(--color-intent-warning)"
-														: "var(--color-border)",
-											}}
+											variant="pill"
+											tone={w.severity >= 2 ? "warning" : "neutral"}
+											showDot={false}
 										>
 											{w.knowledge_point_name || w.knowledge_point_id}
-										</span>
+										</StatusBadge>
 									))}
 								</div>
 							</div>
@@ -448,22 +439,12 @@ export function ForestQuizOverlay({
 
 				{/* Action CTAs */}
 				<div className="forest-overlay-footer-actions">
-					<button
-						type="button"
-						className="forest-btn-secondary"
-						onClick={handleGoCanopy}
-					>
+					<Button variant="secondary" onClick={handleGoCanopy}>
 						返回雨林
-					</button>
+					</Button>
 
 					{(nextUnlockedChapterId || nextCourseId) && passed && (
-						<button
-							type="button"
-							className="forest-btn-primary"
-							onClick={handleGoNext}
-						>
-							解锁下一章 →
-						</button>
+						<Button onClick={handleGoNext}>解锁下一章 →</Button>
 					)}
 				</div>
 			</motion.div>

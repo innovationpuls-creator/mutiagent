@@ -14,10 +14,14 @@ import {
 	type ModelErrorInfo,
 	modelErrorInfo,
 } from "../../components/models/ModelGuidanceCard";
+import { Button } from "../../components/ui/Button";
+import { FeedbackState } from "../../components/ui/FeedbackState";
+import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAuth } from "../../contexts/AuthContext";
 import { DraftNavigationGuard } from "../../lib/quizDraft/DraftNavigationGuard";
 import type { PendingSubmission, QuizDraft } from "../../lib/quizDraft/store";
 import { useQuizDraft } from "../../lib/quizDraft/useQuizDraft";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import type {
 	ForestAttempt,
 	ForestQuiz,
@@ -44,6 +48,7 @@ export function ForestQuizPage() {
 	const [searchParams] = useSearchParams();
 	const { token, user } = useAuth();
 	const reduceMotion = useReducedMotion() ?? false;
+	const isWideLayout = useMediaQuery("(min-width: 1024px)");
 	const chapterId = searchParams.get("chapter_id");
 
 	const routeIdentity = `${user?.uid}/${courseNodeId}/${chapterId}`;
@@ -304,7 +309,7 @@ export function ForestQuizPage() {
 									msg.id === assistantMsgId
 										? {
 												...msg,
-												content: event.message ?? "Forest AI 暂时不可用",
+												content: event.message ?? "AI 助教暂时不可用",
 											}
 										: msg,
 								),
@@ -320,7 +325,7 @@ export function ForestQuizPage() {
 				setAiStatus("error");
 				setAiGuidance(modelErrorInfo(error));
 				const errMsg =
-					error instanceof Error ? error.message : "Forest AI 暂时不可用";
+					error instanceof Error ? error.message : "AI 助教暂时不可用";
 				setMessages((prev) =>
 					prev.map((msg) =>
 						msg.id === assistantMsgId ? { ...msg, content: errMsg } : msg,
@@ -515,7 +520,7 @@ export function ForestQuizPage() {
 		return (
 			<EmptyForestState
 				ariaLabel="成林测验缺少章节"
-				label="// forest"
+				variant="empty"
 				title="还没有选中章节"
 				message="请从叶茂章节进入成林测验。"
 			/>
@@ -530,9 +535,9 @@ export function ForestQuizPage() {
 		return (
 			<EmptyForestState
 				ariaLabel="成林测验加载中"
-				label="// loading"
+				variant="loading"
 				title="正在准备章节测验"
-				message="Forest AI 会在题目旁边等你。"
+				message="AI 助教会在题目旁边陪你作答。"
 			/>
 		);
 	}
@@ -541,7 +546,7 @@ export function ForestQuizPage() {
 		return (
 			<EmptyForestState
 				ariaLabel="成林测验加载失败"
-				label="// error"
+				variant="error"
 				title="测验加载失败"
 				message={errorMessage ?? "请稍后再试。"}
 			/>
@@ -558,73 +563,96 @@ export function ForestQuizPage() {
 				dirty={draft.dirty || imageReading}
 				save={saveBeforeLeaving}
 			/>
-			<div className="forest-draft-status" aria-live="polite">
-				<p>{draft.message}</p>
-				{draft.notice && <p>{draft.notice}</p>}
-				{(draft.dirty || draft.conflict) && (
-					<button
-						type="button"
-						onClick={() => {
-							void draft.save().catch(() => {});
-						}}
-					>
-						重试保存
-					</button>
-				)}
-				{draft.conflict && (
-					<>
-						<button
-							type="button"
-							onClick={() => {
-								void draft
-									.reload()
-									.catch(() => setErrorMessage("草稿读取失败，请重试"));
-							}}
-						>
-							读取已保存草稿
-						</button>
-						<button
-							type="button"
-							onClick={() => {
-								void draft.save(true).catch(() => {});
-							}}
-						>
-							保留当前输入
-						</button>
-					</>
-				)}
-				{draft.pending && !isSubmitting && !submissionInvalid && (
-					<>
-						<button
-							type="button"
-							onClick={() => {
-								if (draft.pending) void confirmSubmission(draft.pending);
-							}}
-						>
-							重新查询提交结果
-						</button>
-						<button
-							type="button"
-							onClick={() => {
-								void handleSubmit();
-							}}
-						>
-							使用原答案重试
-						</button>
-						<Link to="/forest">返回章节列表</Link>
-					</>
-				)}
-			</div>
 			{submissionInvalid && (
-				<div role="alert">
-					<p>{errorMessage}</p>
-					<button type="button" onClick={() => window.location.reload()}>
-						重新加载题目
-					</button>
-					<Link to="/forest">返回章节列表</Link>
-				</div>
+				<FeedbackState
+					variant="error"
+					title="提交结果无法确认"
+					description={errorMessage}
+					actions={
+						<>
+							<Button size="sm" onClick={() => window.location.reload()}>
+								重新加载题目
+							</Button>
+							<Link className="button button-ghost button-sm" to="/forest">
+								返回章节列表
+							</Link>
+						</>
+					}
+				/>
 			)}
-			<main className="forest-quiz-shell">
+			<div className="forest-quiz-shell">
+				<div className="forest-draft-status" aria-live="polite">
+					{draft.message && (
+						<StatusBadge
+							tone={draft.dirty || draft.conflict ? "warning" : "success"}
+						>
+							{draft.message}
+						</StatusBadge>
+					)}
+					{draft.notice && <p>{draft.notice}</p>}
+					<div className="forest-draft-actions">
+						{(draft.dirty || draft.conflict) && (
+							<Button
+								variant="secondary"
+								size="sm"
+								onClick={() => {
+									void draft.save().catch(() => {});
+								}}
+							>
+								重试保存
+							</Button>
+						)}
+						{draft.conflict && (
+							<>
+								<Button
+									variant="secondary"
+									size="sm"
+									onClick={() => {
+										void draft
+											.reload()
+											.catch(() => setErrorMessage("草稿读取失败，请重试"));
+									}}
+								>
+									读取已保存草稿
+								</Button>
+								<Button
+									variant="secondary"
+									size="sm"
+									onClick={() => {
+										void draft.save(true).catch(() => {});
+									}}
+								>
+									保留当前输入
+								</Button>
+							</>
+						)}
+						{draft.pending && !isSubmitting && !submissionInvalid && (
+							<>
+								<Button
+									variant="secondary"
+									size="sm"
+									onClick={() => {
+										if (draft.pending) void confirmSubmission(draft.pending);
+									}}
+								>
+									重新查询提交结果
+								</Button>
+								<Button
+									variant="secondary"
+									size="sm"
+									onClick={() => {
+										void handleSubmit();
+									}}
+								>
+									使用原答案重试
+								</Button>
+								<Link className="button button-ghost button-sm" to="/forest">
+									返回章节列表
+								</Link>
+							</>
+						)}
+					</div>
+				</div>
 				<fieldset
 					className="forest-answer-fieldset"
 					disabled={
@@ -655,20 +683,35 @@ export function ForestQuizPage() {
 						onSubmit={handleSubmit}
 					/>
 				</fieldset>
-				<details className="forest-ai-disclosure">
-					<summary>AI 解析与帮助</summary>
-					<ForestAiPanel
-						quiz={quiz}
-						attempt={attempt}
-						selectedQuestion={selectedQuestion}
-						aiStatus={aiStatus}
-						aiGuidance={aiGuidance}
-						messages={messages}
-						reduceMotion={reduceMotion}
-						onAskForestAi={handleAskForestAi}
-					/>
-				</details>
-			</main>
+				{isWideLayout ? (
+					<aside className="forest-ai-column" aria-label="AI 解析与帮助">
+						<ForestAiPanel
+							quiz={quiz}
+							attempt={attempt}
+							selectedQuestion={selectedQuestion}
+							aiStatus={aiStatus}
+							aiGuidance={aiGuidance}
+							messages={messages}
+							reduceMotion={reduceMotion}
+							onAskForestAi={handleAskForestAi}
+						/>
+					</aside>
+				) : (
+					<details className="forest-ai-disclosure">
+						<summary>AI 解析与帮助</summary>
+						<ForestAiPanel
+							quiz={quiz}
+							attempt={attempt}
+							selectedQuestion={selectedQuestion}
+							aiStatus={aiStatus}
+							aiGuidance={aiGuidance}
+							messages={messages}
+							reduceMotion={reduceMotion}
+							onAskForestAi={handleAskForestAi}
+						/>
+					</details>
+				)}
+			</div>
 
 			{submitStatusMessage && (
 				<p className="forest-submit-status">{submitStatusMessage}</p>

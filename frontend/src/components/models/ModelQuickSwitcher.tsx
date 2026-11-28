@@ -1,4 +1,4 @@
-import { ChevronDown, Eye, Sparkles, Wrench } from "lucide-react";
+import { Brain, ChevronDown, Cpu, Eye, Wrench } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -72,7 +72,7 @@ export function ModelQuickSwitcher({ className = "" }: { className?: string }) {
 				aria-controls={isOpen ? popoverId : undefined}
 				onClick={() => setIsOpen((open) => !open)}
 			>
-				<Sparkles aria-hidden="true" size={14} />
+				<Cpu aria-hidden="true" size={14} />
 				<span className="mqs-model">
 					{current?.label ??
 						(needsSetup
@@ -110,7 +110,7 @@ export function ModelQuickSwitcher({ className = "" }: { className?: string }) {
 											</span>
 											<span className="mqs-icons" aria-hidden="true">
 												{option.vision && <Eye size={12} />}
-												{option.reasoning && <Sparkles size={12} />}
+												{option.reasoning && <Brain size={12} />}
 												{option.tools && <Wrench size={12} />}
 											</span>
 										</button>

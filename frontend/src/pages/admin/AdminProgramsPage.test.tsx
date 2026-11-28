@@ -91,6 +91,7 @@ vi.mock("framer-motion", async () => {
 			header: createMockComponent("header"),
 			aside: createMockComponent("aside"),
 			footer: createMockComponent("footer"),
+			button: actual.motion.button,
 		},
 		AnimatePresence: ({ children }: { children: React.ReactNode }) => (
 			<>{children}</>
@@ -375,13 +376,11 @@ describe("AdminProgramsPage manual editing and JSON import/export", () => {
 		await flushProgramLoad();
 
 		await act(async () => {
-			fireEvent.click(screen.getByRole("button", { name: "方案依赖图谱" }));
+			fireEvent.click(screen.getByRole("tab", { name: "方案依赖图谱" }));
 		});
 
 		expect(screen.getByRole("heading", { name: "方案依赖图谱" })).toBeTruthy();
-		expect(
-			screen.getByText("学期学分分布 (Credits per Semester)"),
-		).toBeTruthy();
-		expect(screen.getByText("学期课时分布 (Hours per Semester)")).toBeTruthy();
+		expect(screen.getByText("学期学分分布")).toBeTruthy();
+		expect(screen.getByText("学期课时分布")).toBeTruthy();
 	});
 });

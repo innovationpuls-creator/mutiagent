@@ -69,25 +69,14 @@ export function AuthPanel(props: AuthPanelProps) {
 
 	return (
 		<section className="auth-glass-panel" aria-label="登录注册">
-			<p className="auth-overline">A QUIET SPACE TO LEARN</p>
-			<h2>
-				{isLogin ? (
-					<>
-						<em>欢迎回来</em>，<br />
-						回到你的栖息地。
-					</>
-				) : (
-					<>
-						一张<em>空白画布</em>，<br />
-						写给你的心绪。
-					</>
-				)}
-			</h2>
-			{isLogin ? (
-				<div className="auth-copy-stack">
-					<p>外界再喧嚣，这里的思绪依然澄澈。请重新连接。</p>
-				</div>
-			) : null}
+			<h2>{isLogin ? <em>欢迎回来</em> : <em>创建账号</em>}</h2>
+			<div className="auth-copy-stack">
+				<p>
+					{isLogin
+						? "登录后继续你的学习路径。"
+						: "注册后先完成画像评估，系统会据此生成你的学习路径。"}
+				</p>
+			</div>
 
 			<div className="auth-entry-tabs" role="tablist" aria-label="登录身份">
 				{entries.map((entry) => (

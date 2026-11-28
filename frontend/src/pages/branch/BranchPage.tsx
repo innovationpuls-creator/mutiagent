@@ -11,7 +11,9 @@ import { adminProgramApi } from "../../api/adminProgram";
 import { fetchBranchOverview } from "../../api/branch";
 import { fetchProfileDashboard } from "../../api/profile";
 import { PathInitOverlay } from "../../components/onboarding/PathInitOverlay";
+import { FeedbackState } from "../../components/ui/FeedbackState";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
+import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useAuth } from "../../contexts/AuthContext";
 import { profileYearIdFromCurrentGrade } from "../../lib/profileContract";
 import { LEARNING_PATH_UPDATED_EVENT } from "../../onboarding/learningPathFlow";
@@ -84,15 +86,13 @@ function courseSourceLabel(course: BranchCourseNode): string {
 }
 
 function CourseSourceBadge({ course }: { course: BranchCourseNode }) {
-	const sourceClassName =
-		course.is_custom === true
-			? "branch-course-source-badge-custom"
-			: "branch-course-source-badge-self";
-
 	return (
-		<span className={`branch-course-source-badge ${sourceClassName}`}>
+		<StatusBadge
+			className="branch-course-source-badge"
+			tone={course.is_custom === true ? "accent" : "info"}
+		>
 			{courseSourceLabel(course)}
-		</span>
+		</StatusBadge>
 	);
 }
 
@@ -908,10 +908,7 @@ function PathSession({
 							) : null}
 
 							{stage.center ? (
-								<div
-									className="branch-stage-slot branch-stage-slot-center branch-node-center"
-									style={{ position: "relative" }}
-								>
+								<div className="branch-stage-slot branch-stage-slot-center branch-node-center">
 									<div className="branch-mascot" aria-hidden="true">
 										<MascotBlob />
 									</div>
@@ -921,7 +918,7 @@ function PathSession({
 											className="leaf-coachmark-balloon"
 											onClick={onCloseCoachmark}
 										>
-											<span>✨ 点击此处，开启第一章学习</span>
+											<span>点击此处，开启第一章学习</span>
 											<div className="balloon-arrow" />
 										</button>
 									)}
@@ -1192,7 +1189,7 @@ export function BranchPage() {
 
 	return (
 		<>
-			<motion.main
+			<motion.div
 				className="home-page"
 				initial={reduceMotion ? false : { opacity: 0 }}
 				animate={reduceMotion ? undefined : { opacity: 1 }}
@@ -1222,15 +1219,17 @@ export function BranchPage() {
 
 					<div className="branch-view-container">
 						{loading ? (
-							<div className="branch-feedback-card">
-								<p className="branch-feedback-title">正在加载课程路径</p>
-								<span className="branch-feedback-text">请稍候片刻。</span>
-							</div>
+							<FeedbackState
+								variant="loading"
+								title="正在加载课程路径"
+								description="请稍候片刻。"
+							/>
 						) : error ? (
-							<div className="branch-feedback-card">
-								<p className="branch-feedback-title">课程路径暂时不可用</p>
-								<span className="branch-feedback-text">{error}</span>
-							</div>
+							<FeedbackState
+								variant="error"
+								title="课程路径暂时不可用"
+								description={error}
+							/>
 						) : (
 							<motion.div
 								key={activeYear}
@@ -1264,7 +1263,7 @@ export function BranchPage() {
 						)}
 					</div>
 				</div>
-			</motion.main>
+			</motion.div>
 
 			<AnimatePresence>
 				{showPathOverlay && (

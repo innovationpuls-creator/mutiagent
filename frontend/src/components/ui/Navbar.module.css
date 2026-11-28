@@ -234,7 +234,7 @@
 	border-radius: 40% 60% 60% 40% / 50% 40% 60% 50%;
 	background: var(--gradient-coral);
 	box-shadow: var(--shadow-sm);
-	color: var(--color-text-inverse);
+	color: var(--color-on-primary);
 	font-size: var(--text-caption);
 	font-weight: var(--font-weight-medium);
 	animation: avatar-breathe var(--duration-breathe) var(--ease-breathe) infinite

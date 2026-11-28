@@ -12,6 +12,8 @@ import {
 	parseRefKey,
 	refKey,
 } from "../../components/models/modelOptions";
+import { Button } from "../../components/ui/Button";
+import { Tabs } from "../../components/ui/Tabs";
 import { useAuth } from "../../contexts/AuthContext";
 import { useModelConfig } from "../../contexts/ModelConfigContext";
 import { ProbeButton } from "./ProbeBadges";
@@ -67,18 +69,14 @@ function LevelControl({
 	return (
 		<div className="mc-field">
 			<span id={`lvl-${label}`}>{label}</span>
-			<div className="mc-seg" role="toolbar" aria-labelledby={`lvl-${label}`}>
-				{THINKING_LEVELS.map((item) => (
-					<button
-						key={item.value}
-						type="button"
-						aria-pressed={value === item.value}
-						onClick={() => onChange(item.value)}
-					>
-						{item.label}
-					</button>
-				))}
-			</div>
+			<Tabs
+				mode="segmented"
+				size="sm"
+				ariaLabel={label}
+				value={value}
+				onChange={onChange}
+				items={THINKING_LEVELS}
+			/>
 		</div>
 	);
 }
@@ -200,32 +198,26 @@ export function SlotSection() {
 		<section className="mc-section" aria-labelledby="mc-slots-title">
 			<header className="mc-section-head">
 				<div>
-					<h2 id="mc-slots-title">场景槽位与运行参数</h2>
+					<h2 id="mc-slots-title">选择要用的模型</h2>
 					<p className="mc-hint">
-						极简模式选两个模型就能用；高级模式可按场景单独指定、设置回退链。
+						选好主力模型就能开始学习；需要看图的场景再选一个视觉模型。「高级」可按场景单独指定模型和备用模型。
 					</p>
 				</div>
-				<div className="mc-seg" role="toolbar" aria-label="配置模式">
-					<button
-						type="button"
-						aria-pressed={mode === "simple"}
-						onClick={() => setMode("simple")}
-					>
-						极简
-					</button>
-					<button
-						type="button"
-						aria-pressed={mode === "advanced"}
-						onClick={() => setMode("advanced")}
-					>
-						高级
-					</button>
-				</div>
+				<Tabs
+					mode="segmented"
+					size="sm"
+					ariaLabel="配置模式"
+					value={mode}
+					onChange={setMode}
+					items={[
+						{ value: "simple", label: "极简" },
+						{ value: "advanced", label: "高级" },
+					]}
+				/>
 			</header>
 			{options.length === 0 && (
 				<p className="mc-warn">
-					还没有可选模型：先在上方配置 Provider（内置厂商填 Key /
-					OAuth，或新增自定义模型）。
+					还没有可选模型：先在上方配置模型服务（预置服务商填写密钥或授权登录，也可以添加自定义模型）。
 				</p>
 			)}
 			<div className="mc-form">
@@ -306,9 +298,9 @@ export function SlotSection() {
 														<li key={refKey(ref)}>
 															<span>{refKey(ref)}</span>
 															<span className="mc-row">
-																<button
-																	type="button"
-																	className="mc-btn mc-btn-ghost"
+																<Button
+																	variant="ghost"
+																	size="sm"
 																	disabled={index === 0}
 																	aria-label={`上移 ${refKey(ref)}`}
 																	onClick={() => {
@@ -323,10 +315,10 @@ export function SlotSection() {
 																	}}
 																>
 																	↑
-																</button>
-																<button
-																	type="button"
-																	className="mc-btn mc-btn-ghost"
+																</Button>
+																<Button
+																	variant="ghost"
+																	size="sm"
 																	aria-label={`移除 ${refKey(ref)}`}
 																	onClick={() =>
 																		setBinding(scene.id, {
@@ -337,7 +329,7 @@ export function SlotSection() {
 																	}
 																>
 																	移除
-																</button>
+																</Button>
 															</span>
 														</li>
 													))}
@@ -422,14 +414,14 @@ export function SlotSection() {
 				</p>
 			)}
 			<div className="mc-row">
-				<button
-					type="button"
-					className="mc-btn mc-btn-primary"
+				<Button
+					variant="primary"
+					size="sm"
 					disabled={busy || options.length === 0}
 					onClick={() => void save()}
 				>
 					{busy ? "保存中…" : "保存配置"}
-				</button>
+				</Button>
 			</div>
 		</section>
 	);

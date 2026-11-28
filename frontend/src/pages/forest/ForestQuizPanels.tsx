@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { PenTool } from "lucide-react";
+import { PenTool, X } from "lucide-react";
 import { type ChangeEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { MarkdownRenderer } from "../../components/markdown/MarkdownRenderer";
@@ -9,7 +9,13 @@ import {
 } from "../../components/models/ModelGuidanceCard";
 import { ModelQuickSwitcher } from "../../components/models/ModelQuickSwitcher";
 import { MessageBubble } from "../../components/onboarding/MessageBubble";
+import { Button } from "../../components/ui/Button";
+import {
+	FeedbackState,
+	type FeedbackStateVariant,
+} from "../../components/ui/FeedbackState";
 import { HandwritingCanvas } from "../../components/ui/HandwritingCanvas";
+import { StatusBadge } from "../../components/ui/StatusBadge";
 import { motionTokens } from "../../styles/motion-tokens";
 import type {
 	ForestAiContext,
@@ -34,7 +40,7 @@ export interface ForestAnswerDraft {
 }
 
 export interface EmptyForestStateProps {
-	label: string;
+	variant: FeedbackStateVariant;
 	title: string;
 	message: string;
 	ariaLabel: string;
@@ -116,7 +122,7 @@ export function getQuestionResult(
 }
 
 export function getResultText(attempt: ForestAttempt | null): string {
-	if (!attempt) return "提交后，Forest AI 会结合判题结果继续解析。";
+	if (!attempt) return "提交后，AI 助教会结合判题结果继续讲解。";
 	const summary = attempt.grading_result.summary;
 	if (typeof summary === "string" && summary.trim()) return summary;
 	return attempt.passed ? "本次测验已通过。" : "本次测验还需要继续打磨。";
@@ -174,23 +180,36 @@ export function initAnswers(
 		.map((q) => ({ question_id: q.question_id, value: q.starter_code }));
 }
 
+const QUESTION_TYPE_LABELS: Record<ForestQuizQuestion["type"], string> = {
+	single_choice: "单选题",
+	code: "代码题",
+	image_upload: "图片题",
+};
+
 export function EmptyForestState({
-	label,
+	variant,
 	title,
 	message,
 	ariaLabel,
 }: EmptyForestStateProps) {
 	return (
 		<section className="forest-quiz-page" aria-label={ariaLabel}>
-			<div className="forest-empty-state">
-				<span>{label}</span>
-				<h1>{title}</h1>
-				<p>{message}</p>
-				<Link to="/forest">返回章节列表</Link>
-				<button type="button" onClick={() => window.location.reload()}>
-					重新加载
-				</button>
-			</div>
+			<FeedbackState
+				className="forest-empty-state"
+				variant={variant}
+				title={title}
+				description={message}
+				actions={
+					<>
+						<Link className="button button-secondary button-sm" to="/forest">
+							返回章节列表
+						</Link>
+						<Button size="sm" onClick={() => window.location.reload()}>
+							重新加载
+						</Button>
+					</>
+				}
+			/>
 		</section>
 	);
 }
@@ -228,8 +247,12 @@ export function ForestQuestionCard({
 			transition={motionTokens.lazy}
 		>
 			<div className="forest-question-meta">
-				<span>{question.type}</span>
-				<span>{question.points} 分</span>
+				<StatusBadge variant="pill" tone="info" showDot={false}>
+					{QUESTION_TYPE_LABELS[question.type]}
+				</StatusBadge>
+				<StatusBadge variant="pill" tone="accent" showDot={false}>
+					{question.points} 分
+				</StatusBadge>
 			</div>
 			<h2>{question.prompt}</h2>
 			{imageError && <p role="alert">{imageError}</p>}
@@ -305,7 +328,7 @@ export function ForestQuestionPanel({
 			transition={motionTokens.editorial}
 		>
 			<header className="forest-panel-header">
-				<span>{"// quiz"}</span>
+				<span>章节测验</span>
 				<h1>{session.chapter.title}</h1>
 				<p>{session.course.course_or_chapter_theme}</p>
 			</header>
@@ -343,26 +366,18 @@ export function ForestQuestionPanel({
 
 					<div className="forest-actions">
 						<p>{getResultText(attempt)}</p>
-						<button
-							type="button"
-							onClick={onSubmit}
-							disabled={!canSubmit || isSubmitting}
-						>
+						<Button onClick={onSubmit} disabled={!canSubmit || isSubmitting}>
 							{isSubmitting ? "提交中" : "提交测验"}
-						</button>
+						</Button>
 					</div>
 				</>
 			) : (
 				<div className="forest-empty-quiz">
 					<h2>这一章还没有题目</h2>
-					<p>生成后即可开始作答，Forest AI 会使用当前题目上下文解析。</p>
-					<button
-						type="button"
-						onClick={onGenerateQuiz}
-						disabled={isGenerating}
-					>
+					<p>生成后即可开始作答，AI 助教会结合当前题目为你讲解。</p>
+					<Button onClick={onGenerateQuiz} disabled={isGenerating}>
 						{isGenerating ? "生成中" : "生成测验"}
-					</button>
+					</Button>
 				</div>
 			)}
 
@@ -389,10 +404,10 @@ export function ForestAiPanel({
 			initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 16 }}
 			animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
 			transition={motionTokens.editorial}
-			aria-label="Forest AI 对话解析"
+			aria-label="AI 助教对话解析"
 		>
 			<header className="forest-ai-header">
-				<span>{"// Forest AI"}</span>
+				<span>AI 助教</span>
 			</header>
 			{messages.length > 0 && (
 				<div className="forest-ai-messages-scroll">
@@ -425,25 +440,13 @@ export function ForestAiPanel({
 				</div>
 			)}
 			{messages.length === 0 && (
-				<button
-					type="button"
+				<Button
 					className="forest-ask-initial-button"
 					onClick={() => onAskForestAi()}
 					disabled={aiStatus === "streaming" || !quiz}
-					style={{
-						paddingInline: "var(--space-32)",
-						minBlockSize: "calc(var(--space-40) + var(--space-8))",
-						borderRadius: "var(--radius-full)",
-						fontWeight: "var(--font-weight-medium)",
-						cursor: "pointer",
-						background: "var(--gradient-coral)",
-						color: "var(--color-text-inverse)",
-						boxShadow: "var(--shadow-sm)",
-						border: "none",
-					}}
 				>
-					{aiStatus === "streaming" ? "解析中" : "请 Forest AI 解析"}
-				</button>
+					{aiStatus === "streaming" ? "解析中" : "请 AI 助教解析"}
+				</Button>
 			)}
 
 			{aiGuidance && <ModelGuidanceCard info={aiGuidance} />}
@@ -457,13 +460,14 @@ export function ForestAiPanel({
 								alt="预览"
 								className="preview-thumbnail"
 							/>
-							<button
-								type="button"
+							<Button
+								variant="icon"
+								size="sm"
 								className="delete-preview-button"
+								aria-label="移除图片"
+								icon={<X aria-hidden="true" />}
 								onClick={() => setImageAttachment(null)}
-							>
-								✕
-							</button>
+							/>
 						</div>
 					)}
 					<form
@@ -480,19 +484,21 @@ export function ForestAiPanel({
 							setImageAttachment(null);
 						}}
 					>
-						<button
-							type="button"
+						<Button
+							variant="icon"
+							size="sm"
 							className="pen-button"
 							onClick={() => setShowCanvas(true)}
 							title="手写画板"
+							aria-label="手写画板"
 							disabled={aiStatus === "streaming"}
-						>
-							<PenTool className="w-4 h-4" />
-						</button>
+							icon={<PenTool aria-hidden="true" />}
+						/>
 						<textarea
 							value={inputValue}
 							onChange={(e) => setInputValue(e.target.value)}
-							placeholder="自定义追问或手写演算草稿..."
+							rows={1}
+							placeholder="向 AI 助教追问…"
 							disabled={aiStatus === "streaming"}
 							onKeyDown={(e) => {
 								if (e.key === "Enter" && !e.shiftKey) {
@@ -508,8 +514,9 @@ export function ForestAiPanel({
 								}
 							}}
 						/>
-						<button
+						<Button
 							type="submit"
+							size="sm"
 							className="submit-button"
 							disabled={
 								aiStatus === "streaming" ||
@@ -517,7 +524,7 @@ export function ForestAiPanel({
 							}
 						>
 							发送
-						</button>
+						</Button>
 					</form>
 				</div>
 			)}

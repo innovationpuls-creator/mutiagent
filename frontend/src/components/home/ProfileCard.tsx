@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { motionTokens } from "../../styles/motion-tokens";
 import type { UserProfile } from "../../types/profile";
+import { StatusBadge } from "../ui/StatusBadge";
 
 interface ProfileCardProps {
 	profile: UserProfile;
@@ -28,9 +29,18 @@ export function ProfileCard({
 			layoutId="profile-card-container"
 			className={`profile-card ${onClick ? "profile-card--interactive" : ""}`}
 			onClick={onClick}
+			onKeyDown={
+				onClick
+					? (event) => {
+							if (event.key === "Enter" || event.key === " ") {
+								event.preventDefault();
+								onClick();
+							}
+						}
+					: undefined
+			}
 			role={onClick ? "button" : undefined}
 			tabIndex={onClick ? 0 : undefined}
-			style={{ borderRadius: 24 }}
 			initial={reduceMotion ? false : { opacity: 0, y: 20 }}
 			animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
 			transition={{ ...motionTokens.editorial, delay: 0.2 }}
@@ -82,9 +92,9 @@ export function ProfileCard({
 						{profile.currentGrade} · {profile.learningStage}
 					</span>
 					{topTags.map((tag) => (
-						<span className="profile-tag-pill" key={tag}>
+						<StatusBadge key={tag} variant="pill" tone="accent">
 							{tag}
-						</span>
+						</StatusBadge>
 					))}
 				</div>
 			</div>

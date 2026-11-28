@@ -15,33 +15,90 @@
 .mc-page textarea {
 	font: inherit;
 }
-.mc-kicker {
+/* 三个区块是一条步骤流：左侧编号轨道 + 竖线串联，右侧是该步内容 */
+.mc-steps {
+	display: grid;
 	margin: 0;
-	font-size: 0.75rem;
-	letter-spacing: 0.08em;
-	color: var(--color-text-whisper);
+	padding: 0;
+	list-style: none;
+	counter-reset: mc-step;
 }
-.mc-hero h1 {
-	margin: var(--space-4) 0 var(--space-8);
-	font-family: var(--font-heading);
+.mc-step {
+	position: relative;
+	display: grid;
+	grid-template-columns: var(--space-40) minmax(0, 1fr);
+	column-gap: var(--space-20);
+	counter-increment: mc-step;
+}
+.mc-step::before {
+	content: counter(mc-step);
+	grid-column: 1;
+	grid-row: 1;
+	z-index: 1;
+	display: grid;
+	place-items: center;
+	inline-size: var(--space-40);
+	block-size: var(--space-40);
+	margin-block-start: var(--space-24);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-full);
+	background: var(--color-surface);
+	color: var(--color-text-secondary);
+	font-weight: var(--font-weight-medium);
+}
+.mc-step[data-state="current"]::before {
+	border-color: var(--color-secondary);
+	background: var(--color-secondary);
+	color: var(--color-text-inverse);
+}
+.mc-step[data-state="done"]::before {
+	content: "✓";
+	border-color: var(--color-success);
+	background: var(--color-success-bg);
+	color: var(--color-success);
+}
+.mc-step[data-state="pending"] > .mc-section {
+	opacity: 0.72;
+}
+/* 串联竖线 */
+.mc-step::after {
+	content: "";
+	position: absolute;
+	inset-block: calc(var(--space-24) + var(--space-40)) 0;
+	inset-inline-start: calc(var(--space-20) - 0.5px);
+	border-inline-start: 1px solid var(--color-border);
+}
+.mc-step:last-child::after {
+	display: none;
+}
+.mc-step > .mc-section {
+	grid-column: 2;
+	grid-row: 1;
 }
 .mc-section {
 	display: grid;
 	gap: var(--space-16);
-	padding: var(--space-24);
-	border-radius: var(--radius-lg);
-	background: var(--color-surface-elevated);
-	box-shadow: var(--shadow-sm);
+	padding-block: var(--space-24) var(--space-48);
+}
+.mc-step + .mc-step > .mc-section {
+	border-block-start: 1px solid var(--color-border);
+}
+.mc-section-head h2 {
+	min-block-size: var(--space-40);
+	display: flex;
+	align-items: center;
 }
 .mc-section h2,
 .mc-section h3,
 .mc-dialog h2,
 .mc-drawer h2 {
 	margin: 0;
-	font-size: 1.0625rem;
+	font-family: var(--font-heading);
+	font-size: var(--text-h4);
+	font-weight: var(--font-weight-medium);
 }
 .mc-section h3 {
-	font-size: 0.9375rem;
+	font-size: var(--text-body);
 }
 .mc-section-head,
 .mc-dialog-head,
@@ -128,36 +185,6 @@
 	font-size: 0.8125rem;
 	color: var(--color-text-whisper);
 }
-.mc-btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	min-block-size: var(--space-40);
-	padding: var(--space-8) var(--space-16);
-	border: 0;
-	border-radius: var(--radius-full);
-	background: var(--color-surface-raised);
-	color: inherit;
-	box-shadow: var(--shadow-pebble-float);
-	text-decoration: none;
-	cursor: pointer;
-}
-.mc-btn:disabled {
-	opacity: 0.55;
-	cursor: not-allowed;
-}
-.mc-btn-primary {
-	background: var(--gradient-coral);
-	color: var(--color-text-inverse);
-}
-.mc-btn-ghost {
-	background: transparent;
-	box-shadow: none;
-}
-.mc-btn-danger {
-	background: var(--color-error-bg);
-	color: var(--color-error);
-}
 .mc-hint,
 .mc-empty {
 	margin: 0;
@@ -170,10 +197,24 @@
 	margin: 0;
 	padding: var(--space-8) var(--space-12);
 	border-radius: var(--radius-md);
-	font-size: 0.875rem;
+	font-size: var(--text-body-sm);
 }
+/* 提示不再是黄色横幅：小圆点 + 文字 */
 .mc-warn {
-	background: var(--color-warning-bg);
+	display: flex;
+	align-items: baseline;
+	gap: var(--space-8);
+	padding-inline: 0;
+	color: var(--color-text-secondary);
+}
+.mc-warn::before {
+	content: "";
+	flex: 0 0 auto;
+	inline-size: var(--space-8);
+	block-size: var(--space-8);
+	border-radius: var(--radius-full);
+	background: var(--color-warning);
+	transform: translateY(calc(var(--space-4) * -0.5));
 }
 .mc-error {
 	background: var(--color-error-bg);
@@ -251,27 +292,6 @@
 .mc-details[open] > summary {
 	margin-block-end: var(--space-8);
 }
-.mc-seg {
-	display: inline-flex;
-	flex-wrap: wrap;
-	gap: var(--space-4);
-	padding: var(--space-4);
-	border-radius: var(--radius-full);
-	background: var(--color-surface);
-}
-.mc-seg button {
-	min-block-size: var(--space-32);
-	padding: 0 var(--space-12);
-	border: 0;
-	border-radius: var(--radius-full);
-	background: transparent;
-	color: inherit;
-	cursor: pointer;
-}
-.mc-seg button[aria-pressed="true"] {
-	background: var(--color-primary);
-	color: var(--color-text-inverse);
-}
 .mc-probe-wrap {
 	display: grid;
 	gap: var(--space-8);
@@ -308,16 +328,22 @@
 	max-inline-size: 16rem;
 	overflow-wrap: anywhere;
 }
+/* 指标栏：一行带竖分割线，不再是 7 张小卡 */
 .mc-stats {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-	gap: var(--space-12);
+	grid-template-columns: repeat(
+			auto-fit,
+			minmax(calc(var(--space-80) + var(--space-16)), 1fr)
+		);
 	margin: 0;
+	padding-block: var(--space-16);
+	border-block: 1px solid var(--color-border);
 }
 .mc-stats > div {
-	padding: var(--space-12);
-	border-radius: var(--radius-md);
-	background: var(--color-surface-raised);
+	padding: var(--space-4) var(--space-16);
+}
+.mc-stats > div + div {
+	border-inline-start: 1px solid var(--color-border);
 }
 .mc-stats dt {
 	font-size: 0.75rem;
@@ -338,6 +364,9 @@
 	padding: var(--space-8) var(--space-12);
 	text-align: start;
 	border-block-end: 1px solid var(--color-border);
+}
+.mc-table th {
+	white-space: nowrap;
 }
 .mc-sr {
 	position: absolute;
@@ -402,13 +431,26 @@
 		padding-block-start: var(--space-48);
 	}
 	.mc-section {
-		padding: var(--space-16);
+		padding-block: var(--space-24) var(--space-8);
 	}
 	.mc-section-head {
 		flex-direction: column;
 	}
 }
 @media (max-width: 640px) {
+	.mc-step {
+		grid-template-columns: var(--space-32) minmax(0, 1fr);
+		column-gap: var(--space-12);
+	}
+	.mc-step::before {
+		inline-size: var(--space-32);
+		block-size: var(--space-32);
+		font-size: var(--text-body-sm);
+	}
+	.mc-step::after {
+		inset-block-start: calc(var(--space-24) + var(--space-32));
+		inset-inline-start: calc(var(--space-16) - 0.5px);
+	}
 	.mc-grid-2 {
 		grid-template-columns: minmax(0, 1fr);
 	}
@@ -429,5 +471,12 @@
 	.mc-page * {
 		transition: none !important;
 		animation: none !important;
+	}
+}
+
+/* 窄屏：底部导航之外再留一段余量，最后一行表单与按钮滚到底时不贴着导航 */
+@media (max-width: 1023px) {
+	.mc-page {
+		padding-block-end: calc(var(--space-64) + var(--space-32));
 	}
 }

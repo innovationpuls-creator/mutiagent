@@ -1,6 +1,8 @@
 import { BookOpen, FileText, LayoutDashboard, Play } from "lucide-react";
 import { useEffect, useState } from "react";
 import { MarkdownRenderer } from "../../components/markdown";
+import { FeedbackState } from "../../components/ui/FeedbackState";
+import { StatusBadge } from "../../components/ui/StatusBadge";
 import type {
 	LeafAnimationBlock,
 	LeafComposedSection,
@@ -60,66 +62,46 @@ function VideoCard({ block, index }: { block: LeafVideoBlock; index: number }) {
 	if (block.status !== "available" || !firstVideo?.url) {
 		return (
 			<section
-				className="bg-[var(--color-surface-raised)] p-6 rounded-xl border-2 border-dashed border-[var(--color-border)] opacity-70"
+				className="leaf-media-missing"
 				key={`${block.brief_id}-${index}`}
 			>
-				<div className="flex flex-col items-center justify-center text-center py-8">
-					<span className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium mb-2">
-						video
-					</span>
-					<h3 className="text-lg font-medium text-[var(--color-text-primary)] mb-2">
-						{block.title}
-					</h3>
-					<p className="text-sm text-[var(--color-text-secondary)] max-w-md">
-						{block.purpose}
-					</p>
-					<div className="mt-4 px-4 py-2 bg-[var(--color-error-bg)] text-[var(--color-error)] text-xs rounded-full inline-flex items-center gap-2">
-						视频生成失败
-					</div>
-				</div>
+				<span className="leaf-media-kind">视频</span>
+				<h3 className="leaf-media-title">{block.title}</h3>
+				<p className="leaf-media-missing-purpose">{block.purpose}</p>
+				<StatusBadge variant="pill" tone="error" showDot={false}>
+					视频生成失败
+				</StatusBadge>
 			</section>
 		);
 	}
 
 	return (
-		<section
-			className="bg-[var(--glass-bg)] backdrop-blur-md rounded-2xl p-4 md:p-5 shadow-[var(--shadow-md)] border border-[var(--glass-border)] group"
-			key={`${block.brief_id}-${index}`}
-		>
+		<section className="leaf-video" key={`${block.brief_id}-${index}`}>
 			<a
 				href={firstVideo.url}
 				target="_blank"
 				rel="noreferrer"
-				className="block relative w-full aspect-video rounded-xl overflow-hidden bg-[var(--color-surface-inset)] cursor-pointer group-hover:shadow-[var(--shadow-lg)] transition-shadow"
+				className="leaf-video-link"
 			>
 				<img
 					src={coverSrc}
 					alt={videoTitle}
-					className="absolute inset-0 h-full w-full object-cover"
+					className="leaf-video-cover"
 					onError={() => {
 						if (coverSrc !== fallbackCoverSrc) {
 							setCoverSrc(fallbackCoverSrc);
 						}
 					}}
 				/>
-				<div className="absolute inset-0 bg-[var(--color-secondary)]/12" />
-				<div className="absolute inset-0 flex items-center justify-center z-10">
-					<div className="w-16 h-16 bg-[var(--glass-bg)] backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 group-hover:bg-[var(--color-primary-soft)] group-hover:text-[var(--color-primary)] transition-all duration-300">
-						<Play
-							className="w-8 h-8 ml-1 text-[var(--color-text-primary)] group-hover:text-[var(--color-primary)]"
-							fill="currentColor"
-						/>
-					</div>
-				</div>
-
-				<div className="absolute bottom-0 left-0 w-full p-6 bg-[var(--glass-dark-bg)] flex justify-between items-end">
-					<div>
-						<h3 className="font-medium text-base text-white">{videoTitle}</h3>
-						<p className="text-sm opacity-80 text-white mt-1 flex items-center gap-1">
-							<Play className="w-3 h-3" /> 视频资源
-						</p>
-					</div>
-				</div>
+				<span className="leaf-video-play" aria-hidden="true">
+					<Play fill="currentColor" />
+				</span>
+				<span className="leaf-video-caption">
+					<strong>{videoTitle}</strong>
+					<span>
+						<Play aria-hidden="true" /> 视频资源
+					</span>
+				</span>
 			</a>
 		</section>
 	);
@@ -135,41 +117,27 @@ function renderAnimation(block: LeafAnimationBlock, index: number) {
 	if (block.status !== "available" || !block.html.trim()) {
 		return (
 			<section
-				className="bg-[var(--color-surface-raised)] p-6 rounded-xl border-2 border-dashed border-[var(--color-border)] opacity-70"
+				className="leaf-media-missing"
 				key={`${block.brief_id}-${index}`}
 			>
-				<div className="flex flex-col items-center justify-center text-center py-8">
-					<span className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium mb-2">
-						animation
-					</span>
-					<h3 className="text-lg font-medium text-[var(--color-text-primary)] mb-2">
-						{block.title}
-					</h3>
-					<div className="mt-4 px-4 py-2 bg-[var(--color-error-bg)] text-[var(--color-error)] text-xs rounded-full inline-flex items-center gap-2">
-						动画生成失败
-					</div>
-				</div>
+				<span className="leaf-media-kind">动画</span>
+				<h3 className="leaf-media-title">{block.title}</h3>
+				<StatusBadge variant="pill" tone="error" showDot={false}>
+					动画生成失败
+				</StatusBadge>
 			</section>
 		);
 	}
 
 	return (
-		<section
-			className="bg-[var(--glass-bg)] backdrop-blur-md rounded-xl p-4 md:p-6 shadow-[var(--shadow-md)] border border-[var(--glass-border)]"
-			key={`${block.brief_id}-${index}`}
-		>
-			<div className="mb-4">
-				<span className="text-[10px] uppercase tracking-wider text-[var(--color-secondary)] font-medium mb-1 block">
-					Interactive Canvas
-				</span>
-				<h3 className="text-lg font-medium text-[var(--color-text-primary)]">
-					{block.title}
-				</h3>
-			</div>
-			<div className="w-full aspect-[4/3] md:aspect-[16/9] min-h-[300px] border border-[var(--color-border)] rounded-xl overflow-hidden bg-[var(--color-surface-raised)] shadow-[var(--shadow-inset)] relative">
+		<section className="leaf-animation" key={`${block.brief_id}-${index}`}>
+			<header className="leaf-animation-head">
+				<span className="leaf-media-kind">互动画布</span>
+				<h3 className="leaf-media-title">{block.title}</h3>
+			</header>
+			<div className="leaf-animation-frame">
 				<iframe
 					title={block.title}
-					className="w-full h-full absolute inset-0"
 					sandbox="allow-scripts"
 					srcDoc={block.html}
 				/>
@@ -239,7 +207,7 @@ function renderContentBlock(block: LeafContentBlock, index: number) {
 					enableMermaid={true}
 				/>
 				{block.recommendation_reason && (
-					<p className="text-xs text-[var(--color-text-muted)] mt-2 pl-1 italic opacity-70">
+					<p className="leaf-recommendation-reason">
 						{block.recommendation_reason}
 					</p>
 				)}
@@ -258,55 +226,37 @@ export function LeafContent({
 }: LeafContentProps) {
 	if (!section) {
 		return (
-			<article className="flex flex-col items-center justify-center text-center py-20 px-6 bg-[var(--glass-bg)] rounded-2xl border border-[var(--glass-border)] shadow-sm">
-				<div className="w-16 h-16 rounded-full bg-[var(--color-surface-inset)] flex items-center justify-center mb-6">
-					<LayoutDashboard className="w-8 h-8 text-[var(--color-text-muted)]" />
-				</div>
-				<span className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium mb-2">
-					{/* empty */}
-				</span>
-				<h2 className="text-xl font-medium text-[var(--color-text-primary)] mb-2">
-					课程章节还没有准备好
-				</h2>
-				<p className="text-sm text-[var(--color-text-secondary)]">
-					{lockedReason ?? "等待课程 Agent 生成章节 structure。"}
-				</p>
-			</article>
+			<FeedbackState
+				variant="empty"
+				title="课程章节还没有准备好"
+				description={lockedReason ?? "章节结构生成后会显示在这里。"}
+				icon={<LayoutDashboard aria-hidden="true" />}
+			/>
 		);
 	}
 
 	return (
-		<article className="w-full flex flex-col">
-			{/* Content Header */}
-			<div className="mb-10">
-				<div className="inline-flex items-center gap-2 bg-[var(--color-surface-raised)] px-4 py-1.5 rounded-full mb-6 border border-[var(--glass-border)] shadow-[var(--shadow-sm)]">
-					<BookOpen className="w-4 h-4 text-[var(--color-primary)]" />
-					<span className="text-xs font-medium text-[var(--color-primary)] uppercase tracking-wider">
-						{getLeafSectionLabel(section.section_id)}
-					</span>
-				</div>
-				<h1 className="text-4xl md:text-5xl font-medium text-[var(--color-text-primary)] mb-4 tracking-normal leading-tight">
-					{getLeafSectionHeading(section)}
-				</h1>
-				<p className="text-lg text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
+		<article className="leaf-section">
+			<header className="leaf-section-head">
+				<p className="leaf-section-label">
+					<BookOpen aria-hidden="true" />
+					{getLeafSectionLabel(section.section_id)}
+				</p>
+				<h1>{getLeafSectionHeading(section)}</h1>
+				<p className="leaf-section-description">
 					{getLeafSectionDescription(section)}
 				</p>
-			</div>
+			</header>
 
 			{sectionResourceError ? (
-				<section className="flex flex-col items-center justify-center text-center py-20 px-6 bg-[var(--color-surface-raised)] rounded-2xl border-2 border-dashed border-[var(--color-border)] opacity-90 mt-4">
-					<div className="w-12 h-12 rounded-full bg-[var(--color-error-bg)] flex items-center justify-center mb-6 shadow-sm">
-						<FileText className="w-5 h-5 text-[var(--color-error)]" />
-					</div>
-					<h3 className="text-xl font-medium text-[var(--color-text-primary)] mb-3">
-						这一节生成失败
-					</h3>
-					<p className="text-sm text-[var(--color-text-secondary)] max-w-sm">
-						{sectionResourceError.message}
-					</p>
-				</section>
+				<FeedbackState
+					variant="error"
+					title="这一节生成失败"
+					description={sectionResourceError.message}
+					icon={<FileText aria-hidden="true" />}
+				/>
 			) : composedSection ? (
-				<div className="flex flex-col gap-12">
+				<div className="leaf-section-blocks">
 					{composedSection.blocks.length > 0 ? (
 						composedSection.blocks.map(renderContentBlock)
 					) : (
@@ -319,17 +269,12 @@ export function LeafContent({
 					)}
 				</div>
 			) : (
-				<section className="flex flex-col items-center justify-center text-center py-20 px-6 bg-[var(--color-surface-raised)] rounded-2xl border-2 border-dashed border-[var(--color-border)] opacity-80 mt-4">
-					<div className="w-12 h-12 rounded-full bg-[var(--color-primary-soft)] flex items-center justify-center mb-6 shadow-sm">
-						<FileText className="w-5 h-5 text-[var(--color-primary)]" />
-					</div>
-					<h3 className="text-xl font-medium text-[var(--color-text-primary)] mb-3">
-						这一节还没有生成内容
-					</h3>
-					<p className="text-sm text-[var(--color-text-secondary)] max-w-sm">
-						可以从本章入口请 AI 生成 Markdown、视频资源和 HTML 动画。
-					</p>
-				</section>
+				<FeedbackState
+					variant="empty"
+					title="这一节还没有生成内容"
+					description="可以从本章入口请 AI 生成 Markdown、视频资源和 HTML 动画。"
+					icon={<FileText aria-hidden="true" />}
+				/>
 			)}
 		</article>
 	);

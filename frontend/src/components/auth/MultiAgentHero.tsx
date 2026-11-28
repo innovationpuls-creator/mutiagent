@@ -4,9 +4,9 @@ import { useState } from "react";
 import { AgentSandtable } from "./AgentSandtable";
 
 const STAGES = [
-	{ title: "意图解析", subtitle: "Planner Agent 倾听你的原始需求", icon: "〇" },
-	{ title: "知识寻源", subtitle: "Researcher Agent 编织信息网络", icon: "✦" },
-	{ title: "路径规划", subtitle: "Path Agent 构建有机学习序列", icon: "⎔" },
+	{ title: "意图解析", subtitle: "规划智能体读懂你的学习目标", icon: "〇" },
+	{ title: "知识寻源", subtitle: "检索智能体查找并整理资料", icon: "✦" },
+	{ title: "路径规划", subtitle: "路径智能体排出学习顺序", icon: "⎔" },
 ];
 
 export function MultiAgentHero() {
@@ -86,20 +86,18 @@ export function MultiAgentHero() {
 								gap: "var(--space-4)",
 							}}
 						>
-							<div className="hero-brand-text" style={{ lineHeight: 1 }}>
-								one-tree
-							</div>
+							<div className="hero-brand-text">one-tree</div>
 							<div
 								className="hero-shoulder"
 								style={{
 									fontFamily: "var(--font-body)",
 									fontSize: "var(--text-body-sm)",
 									fontWeight: "var(--font-weight-regular)",
-									color: "oklch(55% 0.06 55)",
+									color: "var(--color-text-secondary)",
 									letterSpacing: "0.02em",
 								}}
 							>
-								动态更新的多Agent协同学习系统
+								多智能体协同学习系统
 							</div>
 						</div>
 					</motion.div>
@@ -114,7 +112,7 @@ export function MultiAgentHero() {
 								? undefined
 								: { duration: 1.2, delay: 0.3, ease: "easeOut" }
 						}
-						style={{ fontFamily: "var(--font-heading)", margin: 0 }}
+						style={{ fontFamily: "var(--font-heading)" }}
 					>
 						从一句轻声的提问，到一张
 						<motion.span

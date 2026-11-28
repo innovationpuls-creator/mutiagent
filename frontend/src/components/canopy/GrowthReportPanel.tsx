@@ -9,6 +9,8 @@ import type {
 	ReportInsight,
 	ReportStage,
 } from "../../api/growthReport";
+import { Button } from "../ui/Button";
+import { FeedbackState } from "../ui/FeedbackState";
 import "./growth-report.css";
 
 const STAGES: Record<ReportStage, string> = {
@@ -91,15 +93,16 @@ function ActionItem({
 				</p>
 				<EvidenceDetails ids={action.evidence_ids} evidence={evidence} />
 				{action.course_id && (
-					<button
-						className="growth-report-link"
-						type="button"
+					<Button
+						variant="ghost"
+						size="sm"
+						icon={<ArrowUpRight size={16} aria-hidden="true" />}
 						onClick={() =>
 							navigate(`/leaf/${encodeURIComponent(action.course_id ?? "")}`)
 						}
 					>
-						前往对应课程 <ArrowUpRight size={16} aria-hidden="true" />
-					</button>
+						前往对应课程
+					</Button>
 				)}
 			</div>
 		</article>
@@ -215,14 +218,15 @@ function ReportHeader({
 				)}
 			</div>
 			{report && (
-				<button
-					type="button"
-					className="growth-report-link"
+				<Button
+					variant="ghost"
+					size="sm"
+					icon={<RotateCcw size={16} aria-hidden="true" />}
 					disabled={!!stage}
 					onClick={onGenerate}
 				>
-					<RotateCcw size={16} aria-hidden="true" /> 重新生成
-				</button>
+					重新生成
+				</Button>
 			)}
 		</header>
 	);
@@ -236,26 +240,37 @@ function ReportFeedback({
 	return (
 		<>
 			{stage && (
-				<div role="status" className="growth-report-status">
-					<Leaf className="growth-report-breath" size={24} aria-hidden="true" />
-					<div>
-						<p>{STAGES[stage]}</p>
-						<span>将学习足迹整理成一份清晰的回顾</span>
-					</div>
-				</div>
+				<FeedbackState
+					className="growth-report-status"
+					variant="loading"
+					title={STAGES[stage]}
+					description="将学习足迹整理成一份清晰的回顾"
+					icon={
+						<Leaf
+							className="growth-report-breath"
+							size={24}
+							aria-hidden="true"
+						/>
+					}
+				/>
 			)}
 			{error && (
-				<div role="alert" className="growth-report-error">
-					<p>{error}</p>
-					<button
-						className="growth-report-link"
-						type="button"
-						onClick={onGenerate}
-						disabled={!!stage}
-					>
-						重试
-					</button>
-				</div>
+				<FeedbackState
+					className="growth-report-error"
+					variant="error"
+					title="成长报告暂时无法生成"
+					description={error}
+					actions={
+						<Button
+							variant="secondary"
+							size="sm"
+							onClick={onGenerate}
+							disabled={!!stage}
+						>
+							重试
+						</Button>
+					}
+				/>
 			)}
 		</>
 	);

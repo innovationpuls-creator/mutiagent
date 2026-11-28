@@ -7,6 +7,7 @@ import {
 	type ProviderView,
 } from "../../api/modelConfig";
 import { providerStatus } from "../../components/models/modelOptions";
+import { Button } from "../../components/ui/Button";
 import { useDialogAccessibility } from "../../components/ui/useDialogAccessibility";
 import { useAuth } from "../../contexts/AuthContext";
 import { useModelConfig } from "../../contexts/ModelConfigContext";
@@ -83,7 +84,7 @@ function ProviderDrawer({
 	const title = target.isNew
 		? target.isBuiltin
 			? `配置 ${displayName || providerId}`
-			: "新增自定义 Provider / 中转站"
+			: "添加自定义服务"
 		: `配置 ${provider?.display_name || providerId}`;
 	const exampleModel = catalogEntry?.models[0]?.id ?? null;
 
@@ -168,14 +169,9 @@ function ProviderDrawer({
 			>
 				<header className="mc-dialog-head">
 					<h2 id="mc-drawer-title">{title}</h2>
-					<button
-						ref={closeRef}
-						type="button"
-						className="mc-btn mc-btn-ghost"
-						onClick={onClose}
-					>
+					<Button ref={closeRef} variant="ghost" size="sm" onClick={onClose}>
 						关闭
-					</button>
+					</Button>
 				</header>
 				<div className="mc-drawer-body">
 					<div className="mc-form">
@@ -328,15 +324,15 @@ function ProviderDrawer({
 									</div>
 								))}
 								<div className="mc-row">
-									<button
-										type="button"
-										className="mc-btn mc-btn-ghost"
+									<Button
+										variant="ghost"
+										size="sm"
 										onClick={() =>
 											setHeaders([...headers, { key: "", value: "" }])
 										}
 									>
 										添加请求头
-									</button>
+									</Button>
 									{existingHeaderNames.length > 0 && (
 										<label className="mc-inline">
 											<input
@@ -364,45 +360,45 @@ function ProviderDrawer({
 							</p>
 						)}
 						<div className="mc-row">
-							<button
-								type="button"
-								className="mc-btn mc-btn-primary"
+							<Button
+								variant="primary"
+								size="sm"
 								disabled={busy}
 								onClick={() => void save()}
 							>
 								{busy ? "保存中…" : "保存"}
-							</button>
+							</Button>
 							{provider && authType === "oauth" && supportsOAuth && (
-								<button
-									type="button"
-									className="mc-btn"
+								<Button
+									variant="secondary"
+									size="sm"
 									onClick={() => {
 										onClose();
 										onOAuth(providerId, provider.display_name || providerId);
 									}}
 								>
 									OAuth 登录
-								</button>
+								</Button>
 							)}
 							{provider &&
 								!target.isNew &&
 								(confirmDelete ? (
-									<button
-										type="button"
-										className="mc-btn mc-btn-danger"
+									<Button
+										variant="danger"
+										size="sm"
 										disabled={busy}
 										onClick={() => void remove()}
 									>
 										确认删除
-									</button>
+									</Button>
 								) : (
-									<button
-										type="button"
-										className="mc-btn mc-btn-danger"
+									<Button
+										variant="danger"
+										size="sm"
 										onClick={() => setConfirmDelete(true)}
 									>
 										删除配置
-									</button>
+									</Button>
 								))}
 						</div>
 						{provider && (
@@ -486,28 +482,28 @@ export function ProviderSection({
 		<section className="mc-section" aria-labelledby="mc-providers-title">
 			<header className="mc-section-head">
 				<div>
-					<h2 id="mc-providers-title">Provider 与凭证</h2>
+					<h2 id="mc-providers-title">添加模型服务</h2>
 					<p className="mc-hint">
-						添加你自己的 API Key、OAuth
-						登录或自建中转站；密钥加密保存，只显示掩码。
+						从下方选择一个服务商，填写它提供的 API Key
+						或授权登录。密钥加密保存，只显示掩码。自建或中转服务请点「添加自定义服务」。
 					</p>
 				</div>
-				<button
-					type="button"
-					className="mc-btn mc-btn-primary"
+				<Button
+					variant="secondary"
+					size="sm"
 					onClick={() =>
 						setDrawer({ providerId: "", isNew: true, isBuiltin: false })
 					}
 				>
-					新增自定义 Provider / 中转站
-				</button>
+					添加自定义服务
+				</Button>
 			</header>
 			{catalogError && <p className="mc-warn">{catalogError}</p>}
 			<div className="mc-row mc-wrap">
 				<label className="mc-field mc-grow">
-					<span>添加内置厂商</span>
+					<span>添加预置服务商</span>
 					<select value={pickId} onChange={(e) => setPickId(e.target.value)}>
-						<option value="">选择厂商…</option>
+						<option value="">选择服务商…</option>
 						{addable.map((c) => (
 							<option key={c.id} value={c.id}>
 								{c.name}
@@ -515,9 +511,9 @@ export function ProviderSection({
 						))}
 					</select>
 				</label>
-				<button
-					type="button"
-					className="mc-btn"
+				<Button
+					variant="secondary"
+					size="sm"
 					disabled={!pickId}
 					onClick={() => {
 						setDrawer({ providerId: pickId, isNew: true, isBuiltin: true });
@@ -525,7 +521,7 @@ export function ProviderSection({
 					}}
 				>
 					配置
-				</button>
+				</Button>
 				{providers.length > 6 && (
 					<label className="mc-field mc-grow">
 						<span>筛选已配置</span>
@@ -535,7 +531,7 @@ export function ProviderSection({
 			</div>
 			{configured.length === 0 ? (
 				<p className="mc-empty">
-					还没有配置任何 Provider。选择一个内置厂商，或新增自定义中转站。
+					还没有配置任何模型服务。选择一个预置服务商，或添加自定义服务。
 				</p>
 			) : (
 				<ul className="mc-cards">
@@ -554,14 +550,14 @@ export function ProviderSection({
 								</div>
 								<small>
 									{provider.is_builtin
-										? "内置厂商"
+										? "预置服务商"
 										: `自定义 · ${provider.protocol}`}
 									{provider.secret_mask ? ` · ${provider.secret_mask}` : ""}
 								</small>
 								<div className="mc-row mc-wrap">
-									<button
-										type="button"
-										className="mc-btn"
+									<Button
+										variant="secondary"
+										size="sm"
 										onClick={() =>
 											setDrawer({
 												providerId: provider.provider_id,
@@ -571,11 +567,11 @@ export function ProviderSection({
 										}
 									>
 										配置
-									</button>
+									</Button>
 									{entry?.supports_oauth && (
-										<button
-											type="button"
-											className="mc-btn"
+										<Button
+											variant="secondary"
+											size="sm"
 											onClick={() =>
 												setOauth({
 													id: provider.provider_id,
@@ -584,7 +580,7 @@ export function ProviderSection({
 											}
 										>
 											OAuth 登录
-										</button>
+										</Button>
 									)}
 								</div>
 								<ProbeButton

@@ -1,4 +1,7 @@
+import { ChevronDown, PencilLine } from "lucide-react";
 import { useState } from "react";
+import { Button } from "../../../components/ui/Button";
+import { StatusBadge } from "../../../components/ui/StatusBadge";
 
 export interface ProgramScope {
 	school: string;
@@ -57,7 +60,7 @@ export function ProgramScopePanel({
 			label: "学校",
 			value: scope.school,
 			placeholder: schoolOptions[0] ?? "填写学生账号中的学校",
-			helper: "必须和学生账号里的 school 完全一致。",
+			helper: "需与学生账号中填写的学校名称完全一致。",
 			options: schoolOptions,
 		},
 		{
@@ -73,11 +76,38 @@ export function ProgramScopePanel({
 			label: "班级",
 			value: scope.className,
 			placeholder: classNameOptions[0] ?? "填写学生账号中的班级",
-			helper: "发布后只会匹配同一学校、专业、班级的学生。",
+			helper: "发布后只匹配这个班的学生。",
 			options: classNameOptions,
 		},
 	] as const;
 	const hasCompleteScope = scopeItems.every((item) => item.value.trim());
+	// 已填完整的范围默认收起成一行摘要，把首屏留给课程编排；未填完时展开表单。
+	// null 表示跟随数据自动判断（范围异步加载完成后自动收起）；用户一旦聚焦输入框就进入显式编辑，避免输入中途被收起。
+	const [editMode, setEditMode] = useState<boolean | null>(null);
+	const isEditing = editMode ?? !hasCompleteScope;
+	const setIsEditing = (next: boolean) => setEditMode(next);
+
+	if (hasCompleteScope && !isEditing) {
+		return (
+			<section
+				className="program-scope-panel program-scope-collapsed"
+				aria-labelledby="program-scope-title"
+			>
+				<h2 id="program-scope-title">发布范围</h2>
+				<p className="program-scope-inline">
+					{scope.school} · {scope.major} · {scope.className}
+				</p>
+				<Button
+					variant="ghost"
+					size="sm"
+					icon={<PencilLine aria-hidden="true" />}
+					onClick={() => setIsEditing(true)}
+				>
+					修改
+				</Button>
+			</section>
+		);
+	}
 
 	return (
 		<section
@@ -85,10 +115,9 @@ export function ProgramScopePanel({
 			aria-labelledby="program-scope-title"
 		>
 			<div className="program-scope-copy">
-				<p className="program-scope-kicker">{"// publish scope"}</p>
 				<h2 id="program-scope-title">发布范围</h2>
 				<p>
-					填写时可直接选已有组织班级；发布后，学生端会用账号里的学校、专业、班级精确匹配这份人培方案。
+					这份方案发给哪个班：学生账号里的学校、专业、班级与这里完全一致时，才会用这份方案生成学习路径。
 				</p>
 			</div>
 			<div className="program-scope-summary">
@@ -105,7 +134,10 @@ export function ProgramScopePanel({
 									aria-autocomplete="list"
 									role="combobox"
 									value={item.value}
-									onFocus={() => setOpenField(item.key)}
+									onFocus={() => {
+										setOpenField(item.key);
+										setEditMode(true);
+									}}
 									onChange={(event) => {
 										setScopeField(item.key, event.target.value);
 										setOpenField(item.key);
@@ -120,7 +152,7 @@ export function ProgramScopePanel({
 										setOpenField(openField === item.key ? null : item.key)
 									}
 								>
-									▾
+									<ChevronDown size={14} aria-hidden="true" />
 								</button>
 								{openField === item.key ? (
 									<div
@@ -162,14 +194,27 @@ export function ProgramScopePanel({
 						</div>
 					))}
 				</div>
-				<div
-					className={`program-scope-status ${hasCompleteScope ? "" : "program-scope-status-warning"}`}
-				>
-					<span>
+				<div className="program-scope-footer">
+					<StatusBadge
+						className="program-scope-status"
+						tone={hasCompleteScope ? "success" : "warning"}
+					>
 						{hasCompleteScope
 							? "发布范围已填写，请确认和学生账号完全一致"
 							: "学校、专业、班级都填写后才能发布"}
-					</span>
+					</StatusBadge>
+					{hasCompleteScope ? (
+						<Button
+							variant="secondary"
+							size="sm"
+							onClick={() => {
+								setOpenField(null);
+								setIsEditing(false);
+							}}
+						>
+							完成
+						</Button>
+					) : null}
 				</div>
 			</div>
 		</section>

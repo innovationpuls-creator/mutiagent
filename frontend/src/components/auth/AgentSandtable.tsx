@@ -42,9 +42,9 @@ function TermLine({
 						opacity: 0,
 						display: "inline-block",
 						fontFamily: "var(--font-mono, monospace)",
-						fontSize: "10px",
+						fontSize: "var(--text-caption)",
 						color: isPrefix
-							? "oklch(70% 0.06 45)"
+							? "var(--color-text-tertiary)"
 							: "var(--color-text-secondary)",
 						letterSpacing: "0.01em",
 					}}
@@ -91,7 +91,7 @@ const nodeBase: React.CSSProperties = {
 	position: "relative",
 	display: "flex",
 	flexDirection: "column",
-	padding: "10px 12px",
+	padding: "var(--space-8) var(--space-12)",
 	backgroundColor: "var(--color-surface-elevated)",
 	border: "1px solid var(--color-border-subtle)",
 	borderRadius: "var(--radius-lg)",
@@ -109,8 +109,26 @@ const dot = (color: string): React.CSSProperties => ({
 });
 
 /* ═══ 主组件 ═══ */
+/** 沙盘节点按百分比定位、尺寸固定；容器窄于该宽度时整体等比缩放，避免节点互相压住。 */
+const STAGE_DESIGN_WIDTH = 600;
+
+function useStageScale(root: { current: HTMLElement | null }) {
+	useEffect(() => {
+		const element = root.current;
+		if (!element || typeof ResizeObserver === "undefined") return;
+		const observer = new ResizeObserver(([entry]) => {
+			const scale = Math.min(1, entry.contentRect.width / STAGE_DESIGN_WIDTH);
+			element.style.setProperty("--sandtable-scale", scale.toFixed(3));
+			element.toggleAttribute("data-compact", scale < 1);
+		});
+		observer.observe(element);
+		return () => observer.disconnect();
+	}, [root]);
+}
+
 export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 	const [scope, animate] = useAnimate();
+	useStageScale(scope);
 	const reduceMotion = useReducedMotion();
 
 	useEffect(() => {
@@ -499,11 +517,11 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 						className="node-el hide-on-reset"
 						initial={{ opacity: 0, filter: "blur(10px)", scale: 0.88 }}
 						style={{
-							padding: "5px 14px",
-							borderRadius: "20px",
+							padding: "var(--space-4) var(--space-12)",
+							borderRadius: "var(--radius-full)",
 							backgroundColor: "var(--color-surface-elevated)",
 							color: "var(--color-text-primary)",
-							fontSize: "10px",
+							fontSize: "var(--text-caption)",
 							display: "flex",
 							alignItems: "center",
 							gap: 6,
@@ -513,7 +531,7 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 						}}
 					>
 						<div style={dot("var(--color-intent-info)")} />
-						User Prompt
+						你的目标
 					</motion.div>
 				</div>
 
@@ -550,7 +568,7 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 									letterSpacing: "0.3px",
 								}}
 							>
-								〇 Planner
+								〇 规划
 							</span>
 						</div>
 						{/* 任务拆解清单 */}
@@ -627,7 +645,7 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 									letterSpacing: "0.3px",
 								}}
 							>
-								✦ Researcher
+								✦ 检索
 							</span>
 						</div>
 						{/* 活动指示条 */}
@@ -765,7 +783,7 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 									letterSpacing: "0.3px",
 								}}
 							>
-								⎔ Path
+								⎔ 路径
 							</span>
 						</div>
 					</motion.div>
@@ -842,45 +860,25 @@ export function AgentSandtable({ setStageIndex }: AgentSandtableProps) {
 				))}
 			</div>
 
-			{/* ═══════════ 沙色终端 (Soft Terminal) ═══════════ */}
+			{/* ═══════════ 协作过程（极简步骤预览） ═══════════ */}
 			<div className="agent-sandtable__terminal">
-				{/* Terminal 标题栏 */}
-				<div className="agent-sandtable__terminal-header">
-					<div className="agent-sandtable__traffic-lights">
-						<span className="agent-sandtable__traffic-light agent-sandtable__traffic-light--red" />
-						<span className="agent-sandtable__traffic-light agent-sandtable__traffic-light--yellow" />
-						<span className="agent-sandtable__traffic-light agent-sandtable__traffic-light--green" />
-					</div>
-					<span className="agent-sandtable__terminal-title">运行日志</span>
-				</div>
+				<p className="agent-sandtable__terminal-title">协作过程</p>
 				{/* Terminal 输出区 */}
 				<div className="agent-sandtable__terminal-body">
 					<div className="agent-sandtable__terminal-logs">
 						<TermLine
 							id="term-1"
-							prefix="[Planner] "
-							text="解析目标: 构建前端架构地图..."
+							prefix="规划 · "
+							text="读取学习目标：前端架构"
 						/>
-						<TermLine
-							id="term-2"
-							prefix="[Planner] "
-							text="拆解为 3 个子任务 ✓"
-						/>
+						<TermLine id="term-2" prefix="规划 · " text="拆成 3 个学习任务 ✓" />
 						<TermLine
 							id="term-3"
-							prefix="[Swarm]   "
-							text="并行唤醒 3 个知识寻源体..."
+							prefix="检索 · "
+							text="3 个智能体同时查找资料"
 						/>
-						<TermLine
-							id="term-4"
-							prefix="[Swarm]   "
-							text="正在降维清洗 1204 个图谱节点..."
-						/>
-						<TermLine
-							id="term-5"
-							prefix="[Path]    "
-							text="收敛最优拓扑 · 路径已生成 ✓"
-						/>
+						<TermLine id="term-4" prefix="检索 · " text="整理 1204 个知识点" />
+						<TermLine id="term-5" prefix="路径 · " text="学习路径已生成 ✓" />
 					</div>
 					<div
 						className="terminal-cursor hide-on-reset"

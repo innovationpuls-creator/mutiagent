@@ -12,6 +12,8 @@ import {
 	type Textbook,
 	type TextbookSectionContent,
 } from "../../api/knowledgeBase";
+import { Button } from "../../components/ui/Button";
+import { Tabs } from "../../components/ui/Tabs";
 import { useAuth } from "../../contexts/AuthContext";
 import {
 	AdminKnowledgeBaseAgent,
@@ -447,22 +449,21 @@ export function AdminKnowledgeBasePage({
 	if (isEditingOutline && selectedTextbook) {
 		return (
 			<>
-				<header className="admin-header">
-					<div>
-						<p className="admin-kicker">outline</p>
+				<header className="page-header">
+					<div className="page-header-title">
+						<p className="page-header-kicker">课程大纲</p>
 						<h1 id="admin-knowledge-title">
 							《{selectedTextbook.title}》教材大纲与正文
 						</h1>
 					</div>
-					<div className="admin-header-actions">
-						<button
-							className="admin-secondary-action"
-							type="button"
+					<div className="page-header-actions">
+						<Button
+							variant="secondary"
 							onClick={() => setIsEditingOutline(false)}
 							aria-label="返回教材工作台"
 						>
 							返回工作台
-						</button>
+						</Button>
 					</div>
 				</header>
 
@@ -479,55 +480,37 @@ export function AdminKnowledgeBasePage({
 
 	return (
 		<>
-			<header className="admin-header admin-kb-header">
-				<div>
-					<p className="admin-kicker">knowledge-base</p>
+			<header className="page-header">
+				<div className="page-header-title">
 					<h1 id="admin-knowledge-title">知识库</h1>
-
-					{/* Tabs */}
-					<div className="admin-kb-tabs" role="tablist">
-						<button
-							role="tab"
-							aria-selected={activeTab === "agent"}
-							className={`admin-kb-tab ${activeTab === "agent" ? "is-active" : ""}`}
-							type="button"
-							onClick={() => setActiveTab("agent")}
-						>
-							💬 AI 智能助理
-						</button>
-						<button
-							role="tab"
-							aria-selected={activeTab === "browser"}
-							className={`admin-kb-tab ${activeTab === "browser" ? "is-active" : ""}`}
-							type="button"
-							onClick={() => setActiveTab("browser")}
-						>
-							📚 教材库浏览
-						</button>
-					</div>
 				</div>
-				<div className="admin-header-actions">
-					<button
-						className="admin-secondary-action"
-						type="button"
+				<div className="page-header-actions">
+					<Button
+						variant="secondary"
+						icon={<RefreshCw aria-hidden="true" />}
 						onClick={() => void loadKnowledgeBase()}
 						disabled={busy}
 					>
-						<RefreshCw aria-hidden="true" />
-						<span>刷新知识库</span>
-					</button>
+						刷新知识库
+					</Button>
 					{selectedTextbook ? (
-						<button
-							className="admin-primary-action"
-							type="button"
-							disabled={busy}
-							onClick={() => setIsEditingOutline(true)}
-						>
-							<span>查看教材</span>
-						</button>
+						<Button disabled={busy} onClick={() => setIsEditingOutline(true)}>
+							查看教材
+						</Button>
 					) : null}
 				</div>
 			</header>
+
+			<Tabs
+				className="admin-page-tabs"
+				ariaLabel="知识库视图"
+				value={activeTab}
+				onChange={setActiveTab}
+				items={[
+					{ value: "agent", label: "AI 智能助理" },
+					{ value: "browser", label: "教材库浏览" },
+				]}
+			/>
 
 			{error ? <p className="admin-error">{error}</p> : null}
 

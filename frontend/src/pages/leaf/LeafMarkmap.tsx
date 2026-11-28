@@ -3,10 +3,14 @@ import {
 	Check,
 	ChevronDown,
 	ChevronRight,
+	FileText,
 	ListTree,
 	Lock,
 	PanelLeftClose,
+	Shapes,
+	Video,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { motionTokens } from "../../styles/motion-tokens";
 import type { LeafCourseResponse, LeafSection } from "../../types/leaf";
 import {
@@ -124,7 +128,7 @@ function LeafMarkmapNode({
 
 	// Determine content media types of the section (micro-badges)
 	const composed = response.section_composed_markdowns[section.section_id];
-	const badges: string[] = [];
+	const badges: { key: string; label: string; icon: ReactNode }[] = [];
 	if (composed) {
 		const hasVideo = composed.blocks.some((b) => b.type === "video");
 		const hasAnimation = composed.blocks.some((b) => b.type === "animation");
@@ -133,13 +137,25 @@ function LeafMarkmapNode({
 			(composed.markdown && composed.markdown.trim().length > 0);
 
 		if (hasVideo) {
-			badges.push("//");
+			badges.push({
+				key: "video",
+				label: "含视频",
+				icon: <Video aria-hidden="true" />,
+			});
 		}
 		if (hasAnimation) {
-			badges.push("*");
+			badges.push({
+				key: "animation",
+				label: "含动画",
+				icon: <Shapes aria-hidden="true" />,
+			});
 		}
 		if (!hasVideo && !hasAnimation && hasMarkdown) {
-			badges.push("+");
+			badges.push({
+				key: "markdown",
+				label: "含文档",
+				icon: <FileText aria-hidden="true" />,
+			});
 		}
 	}
 
@@ -184,8 +200,14 @@ function LeafMarkmapNode({
 						{badges.length > 0 && (
 							<div className="leaf-markmap-badges">
 								{badges.map((badge) => (
-									<span key={badge} className="leaf-markmap-badge">
-										{badge}
+									<span
+										key={badge.key}
+										className="leaf-markmap-badge"
+										role="img"
+										aria-label={badge.label}
+										title={badge.label}
+									>
+										{badge.icon}
 									</span>
 								))}
 							</div>
@@ -304,7 +326,7 @@ export function LeafMarkmap({
 					<div className="leaf-markmap-journey">
 						<div className="leaf-markmap-journey-root">
 							<ListTree className="leaf-markmap-journey-root-icon" />
-							<span>Course Structure</span>
+							<span>课程结构</span>
 						</div>
 
 						<div className="leaf-markmap-journey-list">

@@ -1,4 +1,5 @@
 import type { Textbook, TextbookSectionContent } from "../../api/knowledgeBase";
+import { Button } from "../../components/ui/Button";
 
 interface AdminTextbookInspectorProps {
 	selectedTextbook: Textbook | null;
@@ -119,38 +120,37 @@ export function AdminTextbookInspector({
 			</div>
 
 			<div className="admin-kb-detail-actions">
-				<button
-					type="button"
-					className="admin-primary-action"
+				<Button
+					size="sm"
 					disabled={isBusy}
 					onClick={() => void onPublishSelected()}
 				>
-					<span>发布当前教材</span>
-				</button>
-				<button
-					type="button"
-					className="admin-secondary-action"
+					发布当前教材
+				</Button>
+				<Button
+					variant="secondary"
+					size="sm"
 					disabled={isBusy}
 					onClick={() => void onUnpublishSelected()}
 				>
-					<span>下架</span>
-				</button>
-				<button
-					type="button"
-					className="admin-secondary-action"
+					下架
+				</Button>
+				<Button
+					variant="secondary"
+					size="sm"
 					disabled={isBusy}
 					onClick={onEditSelectedOutline}
 				>
-					<span>查看教材</span>
-				</button>
-				<button
-					type="button"
-					className="admin-danger-action"
+					查看教材
+				</Button>
+				<Button
+					variant="danger"
+					size="sm"
 					disabled={isBusy}
 					onClick={() => void onDeleteSelected()}
 				>
-					<span>删除</span>
-				</button>
+					删除
+				</Button>
 			</div>
 
 			{selectedTextbook.outline && (
