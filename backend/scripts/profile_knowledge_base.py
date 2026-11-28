@@ -56,82 +56,6 @@ def application(engine):
     return app, headers
 
 
-async def agent_batch(app, headers, engine):
-    latencies, waiting = [], []
-
-    def search(_query, limit=5):
-        waiting.append(engine.pool.checkedout())
-        time.sleep(0.05)
-        return []
-
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://benchmark"
-    ) as client:
-
-        async def request():
-            started = time.perf_counter()
-            response = await client.post(
-                "/api/admin/knowledge-base/agent/stream",
-                headers=headers,
-                json={"message": "offline benchmark"},
-            )
-            latencies.append((time.perf_counter() - started) * 1000)
-            assert response.status_code == 200
-            assert "event: completed" in response.text
-            assert "event: error" not in response.text
-
-        with patch(
-            "app.services.knowledge_base_service.search_real_textbook_sources", search
-        ):
-            await asyncio.gather(*(request() for _ in range(10)))
-    return {"request_latency_ms": latencies, "model_wait_connections": waiting}
-
-
-async def agent_barrier(app, headers, engine, count=35):
-    ready, release = threading.Event(), threading.Event()
-    lock = threading.Lock()
-    arrivals = 0
-
-    def search(_query, limit=5):
-        nonlocal arrivals
-        with lock:
-            arrivals += 1
-            if arrivals == count:
-                ready.set()
-        if not release.wait(15):
-            raise TimeoutError("search barrier expired")
-        return []
-
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://benchmark"
-    ) as client:
-        with patch(
-            "app.services.knowledge_base_service.search_real_textbook_sources", search
-        ):
-            tasks = [
-                asyncio.create_task(
-                    client.post(
-                        "/api/admin/knowledge-base/agent/stream",
-                        headers=headers,
-                        json={"message": "offline barrier"},
-                    )
-                )
-                for _ in range(count)
-            ]
-            try:
-                assert await asyncio.to_thread(ready.wait, 10)
-                connections = engine.pool.checkedout()
-                started = time.perf_counter()
-                health = await asyncio.wait_for(client.get("/api/health/ready"), 2)
-                health_ms = (time.perf_counter() - started) * 1000
-                assert connections == 0 and health.status_code == 200
-            finally:
-                release.set()
-                responses = await asyncio.gather(*tasks)
-            assert all("event: completed" in r.text for r in responses)
-    return {"requests": count, "wait_connections": connections, "health_ms": health_ms}
-
-
 async def upload(app, headers, payload):
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://benchmark"
@@ -235,14 +159,6 @@ def main():
         directory = Path(temp)
         app, headers = application(engine)
         with patch.dict(os.environ, {"KNOWLEDGE_BASE_UPLOAD_DIR": temp}):
-            asyncio.run(agent_batch(app, headers, engine))
-            results["agent_10"] = measure(
-                "agent_10",
-                lambda: asyncio.run(agent_batch(app, headers, engine)),
-                engine,
-                args.output_dir,
-                5,
-            )
             for size in (1, 10, 100):
                 payload = b"x" * (size * 1024 * 1024)
                 results[f"upload_{size}_mib"] = measure(
@@ -255,10 +171,6 @@ def main():
             results["upload_barrier"] = asyncio.run(
                 upload_barrier(app, headers, engine, directory)
             )
-            if args.acceptance:
-                results["agent_35_barrier"] = asyncio.run(
-                    agent_barrier(app, headers, engine)
-                )
     data = {
         "method": "five warm samples; cProfile main thread + tracemalloc; offline HTTP",
         "synthetic_uploads": "bytes with PDF filename; no parsing or external network",

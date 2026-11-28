@@ -1,4 +1,5 @@
 import { motion, useReducedMotion } from "framer-motion";
+import { X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { motionTokens } from "../../styles/motion-tokens";
 import type { TodayLearning } from "../../types/profile";
@@ -12,6 +13,7 @@ import {
 	getSectionHeading,
 	getSectionLabel,
 } from "../learning/courseKnowledgeHelpers";
+import { StatusBadge } from "../ui/StatusBadge";
 import { useDialogAccessibility } from "../ui/useDialogAccessibility";
 import "./TodayLearningDetailOverlay.css";
 
@@ -134,14 +136,20 @@ export function TodayLearningDetailOverlay({
 						onClick={onClose}
 						aria-label="关闭今日学习详情"
 					>
-						✕
+						<X size={16} aria-hidden="true" />
 					</button>
 				</header>
 
 				<section className="today-detail-hero">
-					<div className={`status-pill status-${current.progress_state}`}>
+					<StatusBadge
+						className="today-detail-status"
+						surface="dark"
+						tone={
+							current.progress_state === "in_progress" ? "success" : "neutral"
+						}
+					>
 						{progressStateLabel(current.progress_state)}
-					</div>
+					</StatusBadge>
 					<h2>{current.course_or_chapter_theme}</h2>
 					<strong>{current.current_focus}</strong>
 					{current.next_action && (

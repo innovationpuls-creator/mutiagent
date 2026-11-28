@@ -13,15 +13,23 @@ def valid_production_environ() -> dict[str, str]:
         "APP_ENV": "production",
         "DATABASE_URL": "postgresql://user:password@localhost:5432/mutiagent",
         "JWT_SECRET": "test-production-jwt-secret",
-        "LLM_API_KEY": "test-llm-api-key",
-        "LLM_MODEL": "test-llm-model",
         "ALLOWED_ORIGINS": "https://onetree.chat,https://www.onetree.chat",
+        "INTERNAL_API_TOKEN": "test-production-internal-token",
+        "AI_GATEWAY_URL": "http://ai-gateway:8100",
+        "MODEL_SECRET_ENCRYPTION_KEY": "test-production-model-secret-key",
     }
 
 
 @pytest.mark.parametrize(
     "missing_key",
-    ["DATABASE_URL", "JWT_SECRET", "LLM_API_KEY", "LLM_MODEL", "ALLOWED_ORIGINS"],
+    [
+        "DATABASE_URL",
+        "JWT_SECRET",
+        "ALLOWED_ORIGINS",
+        "INTERNAL_API_TOKEN",
+        "AI_GATEWAY_URL",
+        "MODEL_SECRET_ENCRYPTION_KEY",
+    ],
 )
 def test_production_rejects_missing_required_settings(missing_key: str) -> None:
     environ = valid_production_environ()
@@ -61,3 +69,21 @@ def test_jwt_uses_configured_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     token = security.create_access_token({"sub": "user-1"})
 
     assert security.decode_access_token(token)["sub"] == "user-1"
+
+
+def test_production_rejects_default_internal_api_token() -> None:
+    environ = valid_production_environ()
+    environ["INTERNAL_API_TOKEN"] = "mutiagent-dev-internal-token-change-in-production"
+
+    with pytest.raises(ValueError, match="INTERNAL_API_TOKEN"):
+        load_settings(environ)
+
+
+def test_production_does_not_need_platform_llm_credentials() -> None:
+    environ = valid_production_environ()
+    assert "LLM_API_KEY" not in environ and "LLM_MODEL" not in environ
+
+    settings = load_settings(environ)
+
+    assert settings.internal_api_token == "test-production-internal-token"
+    assert settings.ai_gateway_url == "http://ai-gateway:8100"

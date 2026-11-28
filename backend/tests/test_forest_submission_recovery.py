@@ -368,38 +368,3 @@ def test_generation_rejects_changed_chapter_content(tmp_path):
 
         stored = session.get(ChapterQuiz, quiz.quiz_id)
         assert stored.questions == QUESTIONS
-
-
-def test_outline_generation_cannot_restore_state_deleted_by_same_id_path_replacement(
-    tmp_path,
-):
-    from copy import deepcopy
-
-    from app.orchestration.agents.course_knowledge import _persist_generated_outlines
-    from app.services.learning_path_service import get_year_learning_path
-
-    engine, _client, uid, _quiz, _payload = setup_quiz(tmp_path)
-    with Session(engine) as session:
-        expected_path = deepcopy(get_year_learning_path(session, uid, "year_3"))
-        outline = deepcopy(
-            session.get(
-                UserCourseKnowledgeOutline, (uid, "year_3_course_2")
-            ).outline_data
-        )
-        replacement = deepcopy(expected_path)
-        replacement["grade_plans"]["year_3"]["course_nodes"][0]["course_goal"] = (
-            "新的课程目标"
-        )
-        from app.services.course_knowledge_service import (
-            delete_user_course_outlines_by_grade_year,
-        )
-
-        upsert_year_learning_path(
-            session, uid, "year_3", "AI", replacement, commit=False
-        )
-        delete_user_course_outlines_by_grade_year(session, uid, "year_3", commit=False)
-        session.commit()
-    with pytest.raises(ValueError, match="学习路径已更新"):
-        _persist_generated_outlines(uid, [outline], {"year_3": expected_path})
-    with Session(engine) as session:
-        assert session.get(UserCourseKnowledgeOutline, (uid, "year_3_course_2")) is None

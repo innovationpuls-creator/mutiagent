@@ -111,10 +111,7 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
 								<span className="pill-icon" aria-hidden="true">
 									<QQIcon className="pill-icon-svg" />
 								</span>
-								<div className="pill-text">
-									<strong>QQ 登录</strong>
-									<span>A familiar start</span>
-								</div>
+								<span className="pill-text">QQ 登录</span>
 							</button>
 							<button
 								type="button"
@@ -125,10 +122,7 @@ export function AuthPage({ authApi = defaultAuthApi }: AuthPageProps) {
 								<span className="pill-icon" aria-hidden="true">
 									<XuexitongIcon className="pill-icon-svg" />
 								</span>
-								<div className="pill-text">
-									<strong>学习通登录</strong>
-									<span>Your academic space</span>
-								</div>
+								<span className="pill-text">学习通登录</span>
 							</button>
 						</div>
 					)}

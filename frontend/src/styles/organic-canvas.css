@@ -1,9 +1,8 @@
 .organic-canvas-root {
 	position: relative;
 	width: 100%;
-	height: 100vh;
-	overflow: auto;
-	background: var(--color-canvas-base);
+	min-block-size: calc(var(--space-120) * 2);
+	background: transparent;
 }
 
 .organic-svg-layer {
@@ -29,6 +28,23 @@
 .node-wrapper {
 	position: absolute;
 	pointer-events: auto; /* Re-enable for NodeCards */
+}
+
+.node-select {
+	display: block;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: inherit;
+	cursor: pointer;
+	border-radius: var(--radius-md);
+}
+
+.node-select:focus-visible {
+	outline: 2px solid var(--color-focus-ring);
+	outline-offset: 4px;
 }
 
 /* Edges */

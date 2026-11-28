@@ -1,7 +1,9 @@
 import { motion, useReducedMotion } from "framer-motion";
+import { X } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { motionTokens } from "../../styles/motion-tokens";
+import { Button } from "./Button";
 import { useDialogAccessibility } from "./useDialogAccessibility";
 
 const CANVAS_DISPLAY_WIDTH = 480;
@@ -137,7 +139,7 @@ export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
 
 	return (
 		<motion.div
-			className="fixed inset-0 bg-[var(--color-overlay)] flex items-center justify-center z-[999999]"
+			className="handwriting-backdrop"
 			role="dialog"
 			aria-labelledby="handwriting-canvas-title"
 			aria-modal="true"
@@ -147,7 +149,7 @@ export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
 			transition={backdropTransition}
 		>
 			<motion.div
-				className="bg-[var(--color-surface)] p-[var(--space-24)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] w-full max-w-lg flex flex-col gap-[var(--space-16)]"
+				className="handwriting-dialog"
 				initial={
 					shouldReduceMotion
 						? { opacity: 0 }
@@ -161,21 +163,16 @@ export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
 				}
 				transition={modalTransition}
 			>
-				<div className="flex justify-between items-center">
-					<h3
-						className="font-medium text-base text-[var(--color-text-primary)]"
-						id="handwriting-canvas-title"
-					>
-						手写笔记/草图
-					</h3>
+				<div className="handwriting-head">
+					<h3 id="handwriting-canvas-title">手写笔记/草图</h3>
 					<button
 						type="button"
 						onClick={onClose}
 						ref={closeButtonRef}
-						className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors duration-[var(--duration-instant)] text-lg leading-none"
+						className="ui-close-btn"
 						aria-label="关闭"
 					>
-						×
+						<X aria-hidden="true" size={18} />
 					</button>
 				</div>
 
@@ -193,14 +190,12 @@ export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
 					onTouchStart={startDrawing}
 					onTouchMove={draw}
 					onTouchEnd={stopDrawing}
-					className="border border-[var(--color-border)] rounded-[var(--radius-sm)] bg-[var(--color-surface-inset)] cursor-crosshair touch-none shadow-inner"
+					className="handwriting-surface"
 				/>
 
-				<div className="flex justify-between items-center gap-[var(--space-16)]">
-					<div className="flex items-center gap-[var(--space-8)]">
-						<span className="text-xs text-[var(--color-text-secondary)]">
-							笔粗:
-						</span>
+				<div className="handwriting-toolbar">
+					<div className="handwriting-pen">
+						<span>笔粗</span>
 						<input
 							aria-label="笔粗"
 							type="range"
@@ -208,29 +203,17 @@ export function HandwritingCanvas({ onSave, onClose }: HandwritingCanvasProps) {
 							max="10"
 							value={lineWidth}
 							onChange={(e) => setLineWidth(Number(e.target.value))}
-							className="h-1 bg-[var(--color-surface-inset)] rounded-lg appearance-none cursor-pointer accent-[var(--color-primary)] w-24"
+							className="handwriting-range"
 						/>
-						<span className="text-xs text-[var(--color-text-muted)] w-6 text-right">
-							{lineWidth}px
-						</span>
+						<span className="handwriting-pen-value">{lineWidth}px</span>
 					</div>
-					<div className="flex gap-[var(--space-8)]">
-						<motion.button
-							onClick={handleClear}
-							className="px-[var(--space-16)] py-[var(--space-pill-padding)] rounded-full border border-[var(--color-border)] text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-hover-wash)] transition-colors"
-							whileHover={shouldReduceMotion ? undefined : { scale: 1.02 }}
-							whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
-						>
+					<div className="handwriting-actions">
+						<Button variant="secondary" size="sm" onClick={handleClear}>
 							清空
-						</motion.button>
-						<motion.button
-							onClick={handleSave}
-							className="px-[var(--space-16)] py-[var(--space-pill-padding)] rounded-full bg-[var(--gradient-coral)] text-[var(--color-text-inverse)] text-xs font-medium hover:opacity-95 shadow-sm"
-							whileHover={shouldReduceMotion ? undefined : { scale: 1.02 }}
-							whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
-						>
+						</Button>
+						<Button size="sm" onClick={handleSave}>
 							确认导出
-						</motion.button>
+						</Button>
 					</div>
 				</div>
 			</motion.div>

@@ -509,35 +509,6 @@ class KnowledgeBaseSourceConfirmResponse(BaseModel):
     job: KnowledgeBaseIngestionJobRead
 
 
-class KnowledgeBaseAgentTextbookHit(BaseModel):
-    textbook_id: str
-    title: str
-    source_name: str
-    student_availability_status: TextbookStudentAvailabilityStatus
-    score: int = Field(ge=0)
-    reason: str = ""
-
-
-class KnowledgeBaseAgentGapHit(BaseModel):
-    gap_id: str
-    normalized_topic: str
-    status: KnowledgeGapStatus
-    reason: str = ""
-
-
-class KnowledgeBaseAgentRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=4000)
-
-
-class KnowledgeBaseAgentResponse(BaseModel):
-    reply_text: str
-    selected_textbook_id: str | None = None
-    selected_source_result_id: str | None = None
-    textbook_hits: list[KnowledgeBaseAgentTextbookHit] = Field(default_factory=list)
-    gap_hits: list[KnowledgeBaseAgentGapHit] = Field(default_factory=list)
-    source_results: list[KnowledgeBaseSourceResult] = Field(default_factory=list)
-
-
 class KnowledgeGapFollowRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

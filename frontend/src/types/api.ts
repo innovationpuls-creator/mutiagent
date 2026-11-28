@@ -140,6 +140,126 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	"/api/model-config": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Get Model Config */
+		get: operations["get_model_config_api_model_config_get"];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/model-config/providers/{provider_id}": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		/** Put Provider */
+		put: operations["put_provider_api_model_config_providers__provider_id__put"];
+		post?: never;
+		/** Remove Provider */
+		delete: operations["remove_provider_api_model_config_providers__provider_id__delete"];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/model-config/custom-models": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		/** Put Custom Model */
+		put: operations["put_custom_model_api_model_config_custom_models_put"];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/model-config/custom-models/{model_row_id}": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		/** Remove Custom Model */
+		delete: operations["remove_custom_model_api_model_config_custom_models__model_row_id__delete"];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/model-config/preferences": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		/** Put Preferences */
+		put: operations["put_preferences_api_model_config_preferences_put"];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	"/api/model-config/quick-switch": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		/** Patch Quick Switch */
+		patch: operations["patch_quick_switch_api_model_config_quick_switch_patch"];
+		trace?: never;
+	};
+	"/api/model-config/usage": {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Get Usage */
+		get: operations["get_usage_api_model_config_usage_get"];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	"/api/admin/accounts": {
 		parameters: {
 			query?: never;
@@ -385,26 +505,6 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	"/api/chat/message": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/**
-		 * Send Message
-		 * @description Send a message and receive SSE-streamed agent responses.
-		 */
-		post: operations["send_message_api_chat_message_post"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
 	"/api/chat/sessions/{session_id}": {
 		parameters: {
 			query?: never;
@@ -453,23 +553,6 @@ export interface paths {
 		get: operations["read_my_learning_path_api_learning_path_me_get"];
 		put?: never;
 		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/branch/canopy/report/stream": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Generate Growth Report */
-		post: operations["generate_growth_report_api_branch_canopy_report_stream_post"];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -606,23 +689,6 @@ export interface paths {
 		put?: never;
 		/** Submit Quiz Attempt Stream */
 		post: operations["submit_quiz_attempt_stream_api_forest_quizzes__quiz_id__attempts_stream_post"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/forest/ai/stream": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Stream Forest Ai */
-		post: operations["stream_forest_ai_api_forest_ai_stream_post"];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -812,40 +878,6 @@ export interface paths {
 		get: operations["read_admin_ingestion_job_api_admin_knowledge_base_ingestion_jobs__job_id__get"];
 		put?: never;
 		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/admin/knowledge-base/agent": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Admin Knowledge Base Agent */
-		post: operations["admin_knowledge_base_agent_api_admin_knowledge_base_agent_post"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/admin/knowledge-base/agent/stream": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Stream Admin Knowledge Base Agent */
-		post: operations["stream_admin_knowledge_base_agent_api_admin_knowledge_base_agent_stream_post"];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -1223,18 +1255,6 @@ export interface components {
 				[key: string]: components["schemas"]["CourseQualityScore"];
 			};
 		};
-		/** ChatMessageRequest */
-		ChatMessageRequest: {
-			/** Session Id */
-			session_id: string;
-			/** Message */
-			message: string;
-			/**
-			 * Image Attachment
-			 * @description Base64 encoded image attachment
-			 */
-			image_attachment?: string | null;
-		};
 		/** ChatResponse */
 		ChatResponse: {
 			/** Session Id */
@@ -1327,6 +1347,89 @@ export interface components {
 			/** Class Name */
 			class_name?: string | null;
 		};
+		/** CustomModelUpsert */
+		CustomModelUpsert: {
+			/** Provider Id */
+			provider_id: string;
+			/** Model Id */
+			model_id: string;
+			/** Display Name */
+			display_name?: string | null;
+			/**
+			 * Context Window
+			 * @default 128000
+			 */
+			context_window: number;
+			/**
+			 * Max Tokens
+			 * @default 8192
+			 */
+			max_tokens: number;
+			/**
+			 * Supports Vision
+			 * @default false
+			 */
+			supports_vision: boolean;
+			/**
+			 * Supports Tools
+			 * @default true
+			 */
+			supports_tools: boolean;
+			/**
+			 * Supports Reasoning
+			 * @default false
+			 */
+			supports_reasoning: boolean;
+			/** Compat Config */
+			compat_config?: {
+				[key: string]: unknown;
+			};
+			/** Pricing */
+			pricing?: {
+				[key: string]: unknown;
+			};
+			/**
+			 * Enabled
+			 * @default true
+			 */
+			enabled: boolean;
+		};
+		/** CustomModelView */
+		CustomModelView: {
+			/** Id */
+			id: string;
+			/** Provider Id */
+			provider_id: string;
+			/** Model Id */
+			model_id: string;
+			/** Display Name */
+			display_name: string;
+			/** Context Window */
+			context_window: number;
+			/** Max Tokens */
+			max_tokens: number;
+			/** Supports Vision */
+			supports_vision: boolean;
+			/** Supports Tools */
+			supports_tools: boolean;
+			/** Supports Reasoning */
+			supports_reasoning: boolean;
+			/** Compat Config */
+			compat_config: {
+				[key: string]: unknown;
+			};
+			/** Pricing */
+			pricing: {
+				[key: string]: unknown;
+			};
+			/** Enabled */
+			enabled: boolean;
+			/**
+			 * Updated At
+			 * Format: date-time
+			 */
+			updated_at: string;
+		};
 		/** DataCohortRead */
 		DataCohortRead: {
 			/** School */
@@ -1360,46 +1463,6 @@ export interface components {
 			learning_data: {
 				[key: string]: number;
 			};
-		};
-		/** ForestAiContext */
-		ForestAiContext: {
-			/** Course Node Id */
-			course_node_id: string;
-			/** Chapter Id */
-			chapter_id: string;
-			/** Quiz Id */
-			quiz_id?: string | null;
-			/** Question Id */
-			question_id?: string | null;
-			/** Question */
-			question?: {
-				[key: string]: unknown;
-			} | null;
-			/** Answer */
-			answer?: unknown | null;
-			/** Grading Result */
-			grading_result?: {
-				[key: string]: unknown;
-			} | null;
-		};
-		/** ForestAiStreamRequest */
-		ForestAiStreamRequest: {
-			/** Course Node Id */
-			course_node_id: string;
-			/** Chapter Id */
-			chapter_id: string;
-			/** Quiz Id */
-			quiz_id?: string | null;
-			/** Question Id */
-			question_id?: string | null;
-			/** Message */
-			message: string;
-			active_question_context: components["schemas"]["ForestAiContext"];
-			/**
-			 * Image Attachment
-			 * @description Base64 encoded image attachment
-			 */
-			image_attachment?: string | null;
 		};
 		/** ForestAttemptRead */
 		ForestAttemptRead: {
@@ -1561,27 +1624,6 @@ export interface components {
 			/** Next Course Id */
 			next_course_id?: string | null;
 		};
-		/** GrowthReport */
-		GrowthReport: {
-			/** Overview */
-			overview: string;
-			/** Strengths */
-			strengths: components["schemas"]["ReportInsight"][];
-			/** Improvements */
-			improvements: components["schemas"]["ReportInsight"][];
-			/** Actions */
-			actions: components["schemas"]["ReportAction"][];
-			/**
-			 * Generated At
-			 * Format: date-time
-			 */
-			generated_at: string;
-			stats: components["schemas"]["ReportStats"];
-			/** Evidence */
-			evidence: components["schemas"]["ReportEvidence"][];
-			/** Coverage */
-			coverage: string;
-		};
 		/** HTTPValidationError */
 		HTTPValidationError: {
 			/** Detail */
@@ -1599,73 +1641,6 @@ export interface components {
 			 * @enum {string}
 			 */
 			database: "connected" | "unavailable";
-		};
-		/** KnowledgeBaseAgentGapHit */
-		KnowledgeBaseAgentGapHit: {
-			/** Gap Id */
-			gap_id: string;
-			/** Normalized Topic */
-			normalized_topic: string;
-			/**
-			 * Status
-			 * @enum {string}
-			 */
-			status:
-				| "open"
-				| "material_searching"
-				| "material_found"
-				| "resolved"
-				| "closed";
-			/**
-			 * Reason
-			 * @default
-			 */
-			reason: string;
-		};
-		/** KnowledgeBaseAgentRequest */
-		KnowledgeBaseAgentRequest: {
-			/** Message */
-			message: string;
-		};
-		/** KnowledgeBaseAgentResponse */
-		KnowledgeBaseAgentResponse: {
-			/** Reply Text */
-			reply_text: string;
-			/** Selected Textbook Id */
-			selected_textbook_id?: string | null;
-			/** Selected Source Result Id */
-			selected_source_result_id?: string | null;
-			/** Textbook Hits */
-			textbook_hits?: components["schemas"]["KnowledgeBaseAgentTextbookHit"][];
-			/** Gap Hits */
-			gap_hits?: components["schemas"]["KnowledgeBaseAgentGapHit"][];
-			/** Source Results */
-			source_results?: components["schemas"]["KnowledgeBaseSourceResult"][];
-		};
-		/** KnowledgeBaseAgentTextbookHit */
-		KnowledgeBaseAgentTextbookHit: {
-			/** Textbook Id */
-			textbook_id: string;
-			/** Title */
-			title: string;
-			/** Source Name */
-			source_name: string;
-			/**
-			 * Student Availability Status
-			 * @enum {string}
-			 */
-			student_availability_status:
-				| "draft"
-				| "published"
-				| "unpublished"
-				| "archived";
-			/** Score */
-			score: number;
-			/**
-			 * Reason
-			 * @default
-			 */
-			reason: string;
 		};
 		/** KnowledgeBaseIngestionJobRead */
 		KnowledgeBaseIngestionJobRead: {
@@ -2126,6 +2101,21 @@ export interface components {
 			/** Password */
 			password: string;
 		};
+		/** ModelConfigView */
+		ModelConfigView: {
+			/** Providers */
+			providers: components["schemas"]["ProviderView"][];
+			/** Custom Models */
+			custom_models: components["schemas"]["CustomModelView"][];
+			preferences: components["schemas"]["PreferencesView"];
+		};
+		/** ModelRef */
+		ModelRef: {
+			/** Provider Id */
+			provider_id: string;
+			/** Model Id */
+			model_id: string;
+		};
 		/** OAuthRequest */
 		OAuthRequest: {
 			/**
@@ -2135,6 +2125,64 @@ export interface components {
 			provider: "qq" | "xuexitong";
 			/** Authorization Code */
 			authorization_code: string;
+		};
+		/** PreferencesPayload */
+		PreferencesPayload: {
+			/**
+			 * Config Mode
+			 * @default simple
+			 * @enum {string}
+			 */
+			config_mode: "simple" | "advanced";
+			default_model_ref?: components["schemas"]["ModelRef"] | null;
+			default_vision_model_ref?: components["schemas"]["ModelRef"] | null;
+			/**
+			 * Default Thinking Level
+			 * @default medium
+			 * @enum {string}
+			 */
+			default_thinking_level:
+				| "off"
+				| "minimal"
+				| "low"
+				| "medium"
+				| "high"
+				| "xhigh";
+			runtime_options?: components["schemas"]["RuntimeOptions"];
+			/** Slot Bindings */
+			slot_bindings?: {
+				[key: string]: components["schemas"]["SlotBinding"];
+			};
+		};
+		/** PreferencesView */
+		PreferencesView: {
+			/**
+			 * Config Mode
+			 * @default simple
+			 * @enum {string}
+			 */
+			config_mode: "simple" | "advanced";
+			default_model_ref?: components["schemas"]["ModelRef"] | null;
+			default_vision_model_ref?: components["schemas"]["ModelRef"] | null;
+			/**
+			 * Default Thinking Level
+			 * @default medium
+			 * @enum {string}
+			 */
+			default_thinking_level:
+				| "off"
+				| "minimal"
+				| "low"
+				| "medium"
+				| "high"
+				| "xhigh";
+			runtime_options?: components["schemas"]["RuntimeOptions"];
+			/** Slot Bindings */
+			slot_bindings?: {
+				[key: string]: components["schemas"]["SlotBinding"];
+			};
+			/** Updated At */
+			updated_at?: string | null;
 		};
 		/** ProfileDashboardReadResponse */
 		ProfileDashboardReadResponse: {
@@ -2157,6 +2205,91 @@ export interface components {
 				[key: string]: unknown;
 			}[];
 		};
+		/** ProviderUpsert */
+		ProviderUpsert: {
+			/** Display Name */
+			display_name?: string | null;
+			/**
+			 * Is Builtin
+			 * @default true
+			 */
+			is_builtin: boolean;
+			/** Protocol */
+			protocol?:
+				| (
+						| "openai-completions"
+						| "openai-responses"
+						| "anthropic-messages"
+						| "google-generative-ai"
+				  )
+				| null;
+			/** Base Url */
+			base_url?: string | null;
+			/** Headers */
+			headers?: {
+				[key: string]: string;
+			} | null;
+			/**
+			 * Auth Type
+			 * @default api_key
+			 * @enum {string}
+			 */
+			auth_type: "api_key" | "oauth";
+			/** Api Key */
+			api_key?: string | null;
+			/**
+			 * Enabled
+			 * @default true
+			 */
+			enabled: boolean;
+		};
+		/** ProviderView */
+		ProviderView: {
+			/** Provider Id */
+			provider_id: string;
+			/** Display Name */
+			display_name: string;
+			/** Is Builtin */
+			is_builtin: boolean;
+			/** Protocol */
+			protocol: string;
+			/** Base Url */
+			base_url: string;
+			/** Headers */
+			headers: {
+				[key: string]: string;
+			};
+			/**
+			 * Auth Type
+			 * @enum {string}
+			 */
+			auth_type: "api_key" | "oauth";
+			/** Has Secret */
+			has_secret: boolean;
+			/** Secret Mask */
+			secret_mask: string | null;
+			/** Oauth Status */
+			oauth_status: ("authorized" | "expired") | null;
+			/** Oauth Expires At */
+			oauth_expires_at: string | null;
+			/** Oauth Account Label */
+			oauth_account_label: string | null;
+			/** Enabled */
+			enabled: boolean;
+			/**
+			 * Updated At
+			 * Format: date-time
+			 */
+			updated_at: string;
+		};
+		/** QuickSwitchPayload */
+		QuickSwitchPayload: {
+			model_ref?: components["schemas"]["ModelRef"] | null;
+			/** Thinking Level */
+			thinking_level?:
+				| ("off" | "minimal" | "low" | "medium" | "high" | "xhigh")
+				| null;
+		};
 		/** RegisterRequest */
 		RegisterRequest: {
 			/** Username */
@@ -2174,61 +2307,18 @@ export interface components {
 			/** Class Name */
 			class_name: string;
 		};
-		/** ReportAction */
-		ReportAction: {
-			/** Title */
-			title: string;
-			/** Body */
-			body: string;
-			/**
-			 * Evidence Ids
-			 * @description 逐字复制本次 evidence 目录中 id 字段的值，不加前缀，不改写。
-			 */
-			evidence_ids: string[];
-			/** Check */
-			check: string;
-			/**
-			 * Course Id
-			 * @description 逐字复制 course_ids 中的值，或 null。
-			 */
-			course_id?: string | null;
-		};
-		/** ReportEvidence */
-		ReportEvidence: {
-			/** Id */
-			id: string;
-			/**
-			 * Kind
-			 * @enum {string}
-			 */
-			kind: "path" | "quiz" | "chapter" | "weakness" | "textbook";
-			/** Title */
-			title: string;
-			/** Detail */
-			detail: string;
-			/** Course Id */
-			course_id?: string | null;
-		};
-		/** ReportInsight */
-		ReportInsight: {
-			/** Title */
-			title: string;
-			/** Body */
-			body: string;
-			/**
-			 * Evidence Ids
-			 * @description 逐字复制本次 evidence 目录中 id 字段的值，不加前缀，不改写。
-			 */
-			evidence_ids: string[];
-		};
-		/** ReportStats */
-		ReportStats: {
-			/** Passed Chapters */
-			passed_chapters: number;
-			/** Tested Chapters */
-			tested_chapters: number;
-			/** Attempts */
-			attempts: number;
+		/** RuntimeOptions */
+		RuntimeOptions: {
+			/** Temperature */
+			temperature?: number | null;
+			/** Max Tokens */
+			max_tokens?: number | null;
+			/** Timeout Seconds */
+			timeout_seconds?: number | null;
+			/** Max Retries */
+			max_retries?: number | null;
+			/** Cache Retention */
+			cache_retention?: ("none" | "short" | "long") | null;
 		};
 		/** SessionStateResponse */
 		SessionStateResponse: {
@@ -2259,6 +2349,16 @@ export interface components {
 			 * Format: date-time
 			 */
 			updated_at: string;
+		};
+		/** SlotBinding */
+		SlotBinding: {
+			model_ref: components["schemas"]["ModelRef"];
+			/** Thinking Level */
+			thinking_level?:
+				| ("off" | "minimal" | "low" | "medium" | "high" | "xhigh")
+				| null;
+			/** Fallback Chain */
+			fallback_chain?: components["schemas"]["ModelRef"][];
 		};
 		/** StructuredTextbookCreateRequest */
 		StructuredTextbookCreateRequest: {
@@ -2592,6 +2692,44 @@ export interface components {
 			/** Textbook Id */
 			textbook_id: string;
 		};
+		/** UsageBucket */
+		UsageBucket: {
+			/** Date */
+			date: string;
+			/** Scene */
+			scene: string;
+			/** Requests */
+			requests: number;
+			/** Success Requests */
+			success_requests: number;
+			/** Input Tokens */
+			input_tokens: number;
+			/** Output Tokens */
+			output_tokens: number;
+			/** Cache Read Tokens */
+			cache_read_tokens: number;
+			/** Cache Write Tokens */
+			cache_write_tokens: number;
+			/** Reasoning Tokens */
+			reasoning_tokens: number;
+			/** Estimated Cost Usd */
+			estimated_cost_usd: number;
+			/** Avg Latency Ms */
+			avg_latency_ms: number;
+		};
+		/** UsageSummary */
+		UsageSummary: {
+			/** Days */
+			days: number;
+			/** Buckets */
+			buckets: components["schemas"]["UsageBucket"][];
+			/** Total Requests */
+			total_requests: number;
+			/** Total Tokens */
+			total_tokens: number;
+			/** Total Cost Usd */
+			total_cost_usd: number;
+		};
 		/** UserLearningDataRead */
 		UserLearningDataRead: {
 			user: components["schemas"]["UserRead"];
@@ -2887,6 +3025,249 @@ export interface operations {
 				};
 				content: {
 					"application/json": unknown;
+				};
+			};
+		};
+	};
+	get_model_config_api_model_config_get: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["ModelConfigView"];
+				};
+			};
+		};
+	};
+	put_provider_api_model_config_providers__provider_id__put: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				provider_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": components["schemas"]["ProviderUpsert"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["ProviderView"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	remove_provider_api_model_config_providers__provider_id__delete: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				provider_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	put_custom_model_api_model_config_custom_models_put: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": components["schemas"]["CustomModelUpsert"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["CustomModelView"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	remove_custom_model_api_model_config_custom_models__model_row_id__delete: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				model_row_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	put_preferences_api_model_config_preferences_put: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": components["schemas"]["PreferencesPayload"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["PreferencesView"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	patch_quick_switch_api_model_config_quick_switch_patch: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				"application/json": components["schemas"]["QuickSwitchPayload"];
+			};
+		};
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["PreferencesView"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
+				};
+			};
+		};
+	};
+	get_usage_api_model_config_usage_get: {
+		parameters: {
+			query?: {
+				days?: number;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Successful Response */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["UsageSummary"];
+				};
+			};
+			/** @description Validation Error */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					"application/json": components["schemas"]["HTTPValidationError"];
 				};
 			};
 		};
@@ -3388,39 +3769,6 @@ export interface operations {
 			};
 		};
 	};
-	send_message_api_chat_message_post: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["ChatMessageRequest"];
-			};
-		};
-		responses: {
-			/** @description Successful Response */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": unknown;
-				};
-			};
-			/** @description Validation Error */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["HTTPValidationError"];
-				};
-			};
-		};
-	};
 	get_session_state_api_chat_sessions__session_id__get: {
 		parameters: {
 			query?: never;
@@ -3488,26 +3836,6 @@ export interface operations {
 				};
 				content: {
 					"application/json": components["schemas"]["YearLearningPathsReadResponse"];
-				};
-			};
-		};
-	};
-	generate_growth_report_api_branch_canopy_report_stream_post: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description SSE: report_stage, report_completed (GrowthReport), report_error */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"text/event-stream": unknown;
 				};
 			};
 		};
@@ -3730,39 +4058,6 @@ export interface operations {
 		requestBody: {
 			content: {
 				"application/json": components["schemas"]["ForestQuizAttemptCreateRequest"];
-			};
-		};
-		responses: {
-			/** @description Successful Response */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": unknown;
-				};
-			};
-			/** @description Validation Error */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["HTTPValidationError"];
-				};
-			};
-		};
-	};
-	stream_forest_ai_api_forest_ai_stream_post: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["ForestAiStreamRequest"];
 			};
 		};
 		responses: {
@@ -4162,72 +4457,6 @@ export interface operations {
 				};
 				content: {
 					"application/json": components["schemas"]["KnowledgeBaseIngestionJobRead"];
-				};
-			};
-			/** @description Validation Error */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["HTTPValidationError"];
-				};
-			};
-		};
-	};
-	admin_knowledge_base_agent_api_admin_knowledge_base_agent_post: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["KnowledgeBaseAgentRequest"];
-			};
-		};
-		responses: {
-			/** @description Successful Response */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["KnowledgeBaseAgentResponse"];
-				};
-			};
-			/** @description Validation Error */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["HTTPValidationError"];
-				};
-			};
-		};
-	};
-	stream_admin_knowledge_base_agent_api_admin_knowledge_base_agent_stream_post: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["KnowledgeBaseAgentRequest"];
-			};
-		};
-		responses: {
-			/** @description Successful Response */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": unknown;
 				};
 			};
 			/** @description Validation Error */

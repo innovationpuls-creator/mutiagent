@@ -1,6 +1,6 @@
 import "../../pages/student-workspace.css";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import React from "react";
+import React, { useRef } from "react";
 import { useLocation, useOutlet } from "react-router-dom";
 import { Navbar } from "../ui/Navbar";
 import { IcpFilingLink } from "./IcpFilingLink";
@@ -12,6 +12,9 @@ export function MainLayout() {
 	const location = useLocation();
 	const outlet = useOutlet();
 	const reduceMotion = useReducedMotion();
+	// 窄屏下滚动发生在 main 内部，window 级的 ScrollRestoration 管不到；
+	// 旧页面退场后把内容区滚回顶部，新页面从标题开始显示。
+	const viewportRef = useRef<HTMLElement>(null);
 
 	return (
 		<div
@@ -20,6 +23,7 @@ export function MainLayout() {
 		>
 			<Navbar />
 			<main
+				ref={viewportRef}
 				className="student-content-viewport"
 				style={{
 					flex: 1,
@@ -28,7 +32,11 @@ export function MainLayout() {
 					position: "relative",
 				}}
 			>
-				<AnimatePresence mode="wait" initial={false}>
+				<AnimatePresence
+					mode="wait"
+					initial={false}
+					onExitComplete={() => viewportRef.current?.scrollTo?.({ top: 0 })}
+				>
 					{outlet && (
 						<motion.div
 							key={location.pathname}

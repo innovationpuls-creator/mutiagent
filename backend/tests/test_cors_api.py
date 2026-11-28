@@ -17,8 +17,9 @@ def make_client(tmp_path: Path, allowed_origins: str) -> TestClient:
             "APP_ENV": "production",
             "DATABASE_URL": database_url,
             "JWT_SECRET": "cors-test-jwt-secret",
-            "LLM_API_KEY": "cors-test-llm-api-key",
-            "LLM_MODEL": "cors-test-llm-model",
+            "INTERNAL_API_TOKEN": "test-production-internal-token",
+            "AI_GATEWAY_URL": "http://ai-gateway:8100",
+            "MODEL_SECRET_ENCRYPTION_KEY": "test-production-model-secret-key",
             "ALLOWED_ORIGINS": allowed_origins,
         }
     )

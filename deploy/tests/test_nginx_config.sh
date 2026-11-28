@@ -265,7 +265,7 @@ assert (
     in production_ip_https
 )
 
-for https_server in (domain_server,):
+for https_server in (domain_server, production_ip_https):
     assert_security_headers(https_server, "response_request_id")
     assert "proxy_hide_header X-Request-ID;" in https_server
     assert "proxy_intercept_errors on;" in https_server
@@ -301,6 +301,28 @@ for https_server in (domain_server,):
     assert "client_max_body_size 101m;" in upload
     assert "proxy_pass http://backend:8000;" in upload
     assert "proxy_set_header X-Request-ID $request_id_header;" in upload
+
+    for gateway_location in (
+        r"\^~\s+/api/ai/",
+        r"=\s+/api/chat/message",
+        r"=\s+/api/forest/ai/stream",
+        r"=\s+/api/branch/canopy/report/stream",
+        r"=\s+/api/admin/knowledge-base/agent/stream",
+    ):
+        gateway = directive_block(https_server, r"location\s+" + gateway_location)
+        assert re.search(
+            r"if\s*\(-f\s+\$maintenance_marker\)\s*\{\s*return 503;\s*\}", gateway
+        ), gateway_location
+        assert "resolver 127.0.0.11 ipv6=off valid=10s;" in gateway
+        assert "set $ai_gateway_upstream ai-gateway:8100;" in gateway
+        assert "proxy_pass http://$ai_gateway_upstream;" in gateway
+        assert "proxy_set_header X-Request-ID $request_id_header;" in gateway
+        assert "proxy_buffering off;" in gateway
+        assert "proxy_read_timeout 300s;" in gateway
+
+    internal = directive_block(https_server, r"location\s+\^~\s+/internal/")
+    assert "return 404;" in internal
+    assert "proxy_pass" not in internal
 
 assert_security_headers(ip_server, "response_request_id")
 assert "proxy_hide_header X-Request-ID;" in ip_server
@@ -426,9 +448,8 @@ export APP_ENV=production
 export POSTGRES_MAINTENANCE_PASSWORD=nginx-test-maintenance-password
 export POSTGRES_APP_PASSWORD=nginx-test-app-password
 export JWT_SECRET=nginx-test-jwt-secret
-export LLM_API_KEY=nginx-test-llm-api-key
-export LLM_MODEL=nginx-test-llm-model
-export LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+export INTERNAL_API_TOKEN=nginx-test-internal-token
+export MODEL_SECRET_ENCRYPTION_KEY=nginx-test-model-secret-key
 export ALLOWED_ORIGINS=https://onetree.chat,https://www.onetree.chat
 export LETSENCRYPT_EMAIL=nginx-test@example.com
 export SMOKE_ACCOUNT=18771701100

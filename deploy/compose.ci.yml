@@ -2,11 +2,18 @@ x-ci-app-environment: &ci-app-environment
   APP_ENV: production
   DATABASE_URL: postgresql://onetree_app:compose-test-app-password@postgres:5432/onetree
   JWT_SECRET: compose-test-jwt-secret
-  LLM_BASE_URL: https://example.test/source
-  LLM_API_KEY: compose-test-llm-api-key
-  LLM_MODEL: compose-test-llm-model
   ALLOWED_ORIGINS: http://nginx
+  INTERNAL_API_TOKEN: compose-test-internal-token
+  MODEL_SECRET_ENCRYPTION_KEY: compose-test-model-secret-key
+  AI_GATEWAY_URL: http://ai-gateway:8100
   KNOWLEDGE_BASE_UPLOAD_DIR: /var/lib/onetree/knowledge-base-uploads
+
+x-ci-gateway-environment: &ci-gateway-environment
+  APP_ENV: production
+  JWT_SECRET: compose-test-jwt-secret
+  INTERNAL_API_TOKEN: compose-test-internal-token
+  PYTHON_BACKEND_URL: http://backend:8000
+  ALLOWED_ORIGINS: http://nginx
 
 x-ci-logging: &ci-logging
   driver: local
@@ -39,6 +46,10 @@ services:
       start_period: 20s
     logging: *ci-logging
 
+  ai-gateway:
+    environment: *ci-gateway-environment
+    logging: *ci-logging
+
   nginx:
     environment:
       MAINTENANCE_BYPASS_TOKEN: compose-test-maintenance-bypass
@@ -56,6 +67,19 @@ services:
 
             root /usr/share/nginx/html;
             index index.html;
+
+            location ^~ /internal/ {
+                return 404;
+            }
+
+            location ^~ /api/ai/ {
+                resolver 127.0.0.11 ipv6=off valid=10s;
+                set $$ai_gateway_upstream ai-gateway:8100;
+                proxy_http_version 1.1;
+                proxy_set_header Host $$host;
+                proxy_set_header X-Request-ID $$request_id_header;
+                proxy_pass http://$$ai_gateway_upstream;
+            }
 
             location /api {
                 proxy_set_header Host $$host;

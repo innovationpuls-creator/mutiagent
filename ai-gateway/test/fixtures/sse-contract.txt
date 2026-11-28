@@ -1,0 +1,55 @@
+event: session_started
+data: {"session_id":"s-1"}
+
+: keep-alive
+
+event: message
+data: {"message":"正在分析你的需求...","type":"supervisor_thinking"}
+
+: keep-alive
+
+event: message
+data: {"agent":"profile_agent","label":"画像智能体","reason":"调用 画像智能体","type":"supervisor_plan"}
+
+: keep-alive
+
+event: agent_calling
+data: {"agent":"profile_agent","label":"画像智能体","args":"{}"}
+
+: keep-alive
+
+event: agent_progress
+data: {"stepId":"s1","agent":"profile_agent","message":"处理中"}
+
+: keep-alive
+
+event: agent_result
+data: {"agent":"profile_agent","success":true,"summary":"完成"}
+
+: keep-alive
+
+event: message
+data: {"chunk":"你好，世界\n第二行","type":"text_chunk"}
+
+: keep-alive
+
+event: data_update
+data: {"update_type":"profile","years":["大一"]}
+
+: keep-alive
+
+event: message_completed
+data: {"full_text":"你好，世界\n第二行"}
+
+: keep-alive
+
+event: session_completed
+data: {"session_id":"s-1","has_profile":true,"has_paths":false,"has_outline":false}
+
+: keep-alive
+
+event: error
+data: {"message":"尚未配置可用的个人模型，请先前往「模型配置」完成设置","recoverable":true,"retryable":false,"error_code":"MODEL_NOT_CONFIGURED","action":"open_model_settings"}
+
+: keep-alive
+

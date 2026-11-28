@@ -2,6 +2,7 @@ import { Check, Loader2, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Textbook, TextbookSectionContent } from "../../api/knowledgeBase";
 import { MarkdownRenderer } from "../../components/markdown";
+import { Button } from "../../components/ui/Button";
 
 interface OutlineSection {
 	section_id: string;
@@ -188,10 +189,6 @@ export function OutlineEditor({
 							>
 								<div
 									className={`outline-chapter-header clickable ${selectedSectionId === (chapter.chapter_id || String(chapter.chapter_number)) ? "is-active" : ""}`}
-									style={{
-										borderRadius: "var(--radius-sm)",
-										padding: "var(--space-4) var(--space-8)",
-									}}
 								>
 									<div className="chapter-info">
 										<button
@@ -203,7 +200,7 @@ export function OutlineEditor({
 												)
 											}
 										>
-											Chapter {chapter.chapter_number}
+											第 {chapter.chapter_number} 章
 										</button>
 										<input
 											type="text"
@@ -263,27 +260,26 @@ export function OutlineEditor({
 
 					<div className="outline-tree-footer">
 						{error && <p className="editor-error-msg">{error}</p>}
-						<button
-							type="button"
-							className="admin-primary-action save-outline-btn"
+						<Button
+							className="save-outline-btn"
 							onClick={handleSave}
 							disabled={isSaving}
+							icon={
+								isSaving ? (
+									<Loader2 className="spinner" size={16} />
+								) : saveSuccess ? (
+									<Check size={16} />
+								) : (
+									<Save size={16} />
+								)
+							}
 						>
-							{isSaving ? (
-								<Loader2 className="spinner" size={16} />
-							) : saveSuccess ? (
-								<Check size={16} />
-							) : (
-								<Save size={16} />
-							)}
-							<span>
-								{isSaving
-									? "正在保存..."
-									: saveSuccess
-										? "已成功保存"
-										: "保存大纲配置"}
-							</span>
-						</button>
+							{isSaving
+								? "正在保存..."
+								: saveSuccess
+									? "已成功保存"
+									: "保存大纲配置"}
+						</Button>
 					</div>
 				</div>
 

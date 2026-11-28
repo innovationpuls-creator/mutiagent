@@ -6,6 +6,8 @@ import { fetchCanopyOverview } from "../../api/branch";
 import { GrowthReportPanel } from "../../components/canopy/GrowthReportPanel";
 import { GrowthTreeSVG } from "../../components/canopy/GrowthTreeSVG";
 import { useGrowthReport } from "../../components/canopy/useGrowthReport";
+import { Button } from "../../components/ui/Button";
+import { FeedbackState } from "../../components/ui/FeedbackState";
 import { useAuth } from "../../contexts/AuthContext";
 import { motionTokens } from "../../styles/motion-tokens";
 import type {
@@ -226,7 +228,7 @@ export function CanopyPage() {
 			<div className="forest-ambient-sun" aria-hidden="true" />
 			<div className="forest-paper-canvas" aria-hidden="true" />
 
-			<motion.main
+			<motion.div
 				className="canopy-layout"
 				data-report-visible={
 					!!(growthReport.report || growthReport.stage || growthReport.error)
@@ -238,13 +240,13 @@ export function CanopyPage() {
 			>
 				<section className="graph-section" aria-label="知识雨林图谱">
 					<header className="section-header">
-						<span>{"// knowledge canopy"}</span>
 						<h2>知识雨林图谱</h2>
 						<p>
 							当前阶段：{stageLabel} · 雨林点亮率 {activeRate}%
 						</p>
-						<button
-							type="button"
+						<Button
+							variant="secondary"
+							size="sm"
 							className="canopy-report-trigger"
 							disabled={!isAuthReady || !token || !!growthReport.stage}
 							onClick={() => {
@@ -256,27 +258,34 @@ export function CanopyPage() {
 								: growthReport.report
 									? "更新成长报告"
 									: "生成成长报告"}
-						</button>
+						</Button>
 					</header>
 
 					<div className="network-container">
 						{loading ? (
-							<div className="feedback-panel" role="status">
-								<p>正在加载成森进度</p>
-								<span>请稍候片刻。</span>
-							</div>
+							<FeedbackState
+								className="canopy-feedback"
+								variant="loading"
+								title="正在加载成森进度"
+								description="请稍候片刻。"
+							/>
 						) : error ? (
-							<div className="feedback-panel" role="alert">
-								<p>成森进度暂时不可用</p>
-								<span>{error}</span>
-							</div>
+							<FeedbackState
+								className="canopy-feedback"
+								variant="error"
+								title="成森进度暂时不可用"
+								description={error}
+							/>
+						) : positionedCourses.length === 0 ? (
+							<FeedbackState
+								className="canopy-feedback"
+								variant="empty"
+								title="还没有点亮的课程"
+								description="完成画像评估并开始学习第一门课程后，课程会在这里按年级生长出来。"
+							/>
 						) : (
 							<>
-								<svg
-									viewBox="0 0 900 600"
-									className="network-svg"
-									aria-hidden={positionedCourses.length === 0}
-								>
+								<svg viewBox="0 0 900 600" className="network-svg">
 									<title>课程知识关系图</title>
 									<defs>
 										<radialGradient
@@ -456,7 +465,7 @@ export function CanopyPage() {
 														flex: 1,
 														height: "6px",
 														background: "var(--color-surface-inset)",
-														borderRadius: "3px",
+														borderRadius: "var(--radius-full)",
 														overflow: "hidden",
 													}}
 												>
@@ -465,7 +474,7 @@ export function CanopyPage() {
 															height: "100%",
 															width: `${item.value}%`,
 															background: "var(--color-primary)",
-															borderRadius: "3px",
+															borderRadius: "var(--radius-full)",
 														}}
 													/>
 												</div>
@@ -491,49 +500,35 @@ export function CanopyPage() {
 										)}
 									</div>
 								)}
-
-								{positionedCourses.length === 0 ? (
-									<div className="empty-state" role="status">
-										<span aria-hidden="true">*</span>
-										<p>
-											画像评估尚未完成，请先进行冷启动评估生成你专属的学业树。
-										</p>
-									</div>
-								) : null}
 							</>
 						)}
 					</div>
 				</section>
 
 				<section className="stats-section" aria-label="成森统计指标">
-					<article className="stats-card tree-card">
-						<header className="card-header">
-							<span>{"// growth tree"}</span>
-							<h3>成长树</h3>
-						</header>
-						<div className="growth-tree-panel">
-							<GrowthTreeSVG stage={growthStage} />
-						</div>
-						<div className="tree-stage-label">
-							<strong>{stageLabel}</strong>
-							<span>{activeRate}%</span>
-						</div>
-					</article>
-
-					<div className="stats-grid">
-						<article className="stats-card mini-card">
-							<span>已点亮叶片数</span>
-							<div className="value">{completedCount}</div>
-						</article>
-						<article className="stats-card mini-card">
-							<span>测验平均得分</span>
-							<div className="value">{avgScore}分</div>
-						</article>
-						<article className="stats-card mini-card full-width">
-							<span>专注学习时长</span>
-							<div className="value">{focusedHours.toFixed(1)}小时</div>
-						</article>
+					<header className="card-header">
+						<h3>成长树</h3>
+						<p>
+							{stageLabel} · 点亮率 {activeRate}%
+						</p>
+					</header>
+					<div className="growth-tree-panel">
+						<GrowthTreeSVG stage={growthStage} />
 					</div>
+					<dl className="canopy-facts">
+						<div>
+							<dt>已点亮叶片数</dt>
+							<dd>{completedCount}</dd>
+						</div>
+						<div>
+							<dt>测验平均得分</dt>
+							<dd>{avgScore}分</dd>
+						</div>
+						<div>
+							<dt>专注学习时长</dt>
+							<dd>{focusedHours.toFixed(1)}小时</dd>
+						</div>
+					</dl>
 				</section>
 
 				<GrowthReportPanel
@@ -544,9 +539,8 @@ export function CanopyPage() {
 						void growthReport.generate();
 					}}
 				/>
-				<article className="stats-card timeline-card">
+				<section className="timeline-card" aria-label="成长里程">
 					<header className="card-header">
-						<span>{"// milestones"}</span>
 						<h3>成长里程</h3>
 					</header>
 					<div className="milestones-list">
@@ -567,8 +561,8 @@ export function CanopyPage() {
 							);
 						})}
 					</div>
-				</article>
-			</motion.main>
+				</section>
+			</motion.div>
 		</PageWrapper>
 	);
 }
@@ -577,7 +571,7 @@ const PageWrapper = styled.section`
   position: relative;
   min-block-size: 100svh;
   overflow-x: hidden;
-  padding-block: calc(var(--space-80) + var(--space-48)) var(--space-64);
+  padding-block: calc(var(--space-80) + var(--space-48)) var(--ai-widget-safe-area);
   padding-inline: var(--space-64);
   color: var(--color-text-primary);
   background-color: oklch(96% 0.02 75);
@@ -622,19 +616,24 @@ const PageWrapper = styled.section`
     grid-template-areas:
       "graph stats"
       "timeline timeline";
-    align-items: start;
-    gap: var(--gap-lg);
-    inline-size: min(1520px, 100%);
+    align-items: stretch;
+    /* 与其它页面同宽，右侧留给 AI 浮球，避免遮挡统计数值 */
+    inline-size: min(var(--container-wide), 100%);
     margin-inline: auto;
-  }
-
-  .graph-section,
-  .stats-card {
+    /* 整页是一个工作台：只有外层一个表面，图谱 / 成长树 / 报告 / 里程用分割线分区 */
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
     background: var(--glass-bg);
     box-shadow: var(--shadow-sm);
     backdrop-filter: var(--glass-blur);
+  }
+
+  .canopy-layout > .growth-report {
+    border: none;
+    border-block-start: 1px solid var(--color-border);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .graph-section {
@@ -644,20 +643,13 @@ const PageWrapper = styled.section`
     gap: var(--gap-md);
     padding: var(--space-40);
     min-block-size: min(760px, calc(100svh - var(--space-120)));
+    border-inline-end: 1px solid var(--color-border);
   }
 
   .section-header,
   .card-header {
     display: grid;
     gap: var(--space-8);
-  }
-
-  .section-header span,
-  .card-header span {
-    color: var(--color-primary);
-    font-size: var(--text-caption);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.4;
   }
 
   .section-header h2,
@@ -674,9 +666,8 @@ const PageWrapper = styled.section`
   }
 
   .section-header p,
-  .milestone-item p,
-  .feedback-panel span,
-  .empty-state p {
+  .card-header p,
+  .milestone-item p {
     margin: 0;
     color: var(--color-text-secondary);
     font-size: var(--text-body-sm);
@@ -689,9 +680,7 @@ const PageWrapper = styled.section`
     position: relative;
     width: 100%;
     min-block-size: calc(var(--space-120) * 4.5);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-inset);
-    border: 1px solid var(--color-border);
+    border-block-start: 1px solid var(--color-border);
     overflow: hidden;
   }
 
@@ -813,42 +802,9 @@ const PageWrapper = styled.section`
     opacity: 1;
   }
 
-  .feedback-panel,
-  .empty-state {
-    position: absolute;
-    inset: var(--space-24);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-12);
-    border-radius: var(--radius-md);
-    background: oklch(97% 0.02 75 / 0.72);
-    text-align: center;
-    backdrop-filter: var(--glass-blur);
-  }
-
-  .feedback-panel p {
-    margin: 0;
-    color: var(--color-secondary);
-    font-size: var(--text-h5);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .empty-state span {
-    display: grid;
-    place-items: center;
-    inline-size: var(--space-48);
-    block-size: var(--space-48);
-    border-radius: var(--radius-full);
-    background: var(--color-primary-soft);
-    color: var(--color-primary);
-    font-size: var(--text-h3);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .empty-state p {
-    max-inline-size: calc(var(--space-120) * 3);
+  .network-container .canopy-feedback {
+    min-block-size: inherit;
+    align-content: center;
   }
 
   .stats-section {
@@ -856,13 +812,7 @@ const PageWrapper = styled.section`
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);
-  }
-
-  .stats-card {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-md);
-    padding: var(--space-32);
+    padding: var(--space-40) var(--space-32);
   }
 
   .growth-tree-panel {
@@ -872,10 +822,6 @@ const PageWrapper = styled.section`
     inline-size: min(100%, calc(var(--space-120) * 3.2));
     margin-inline: auto;
     aspect-ratio: 1;
-    border-radius: var(--radius-full);
-    background: var(--color-surface-inset);
-    border: 1px solid var(--color-border);
-    box-shadow: var(--shadow-inset);
     overflow: hidden;
   }
 
@@ -912,54 +858,39 @@ const PageWrapper = styled.section`
     animation: canopy-breathe var(--duration-breathe) var(--ease-breathe) infinite alternate;
   }
 
-  .tree-stage-label {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: var(--space-12);
-    border-radius: var(--radius-full);
-    background: oklch(99% 0.01 80 / 0.72);
-    border: 1px solid var(--glass-border);
-    padding: var(--space-8) var(--space-16);
-    backdrop-filter: var(--glass-blur);
-  }
-
-  .tree-stage-label strong,
-  .tree-stage-label span {
-    font-size: var(--text-caption);
-    color: var(--color-secondary);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .stats-grid {
+  .canopy-facts {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--gap-md);
+    margin: 0;
   }
 
-  .mini-card {
-    padding: var(--space-24);
-    gap: var(--space-8);
+  .canopy-facts div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-12);
+    padding-block: var(--space-12);
+    border-block-start: 1px solid var(--color-border);
   }
 
-  .mini-card span {
-    font-size: var(--text-caption);
+  .canopy-facts dt {
     color: var(--color-text-secondary);
+    font-size: var(--text-body-sm);
   }
 
-  .mini-card .value {
-    font-size: var(--text-h3);
+  .canopy-facts dd {
+    margin: 0;
     color: var(--color-secondary);
+    font-size: var(--text-h5);
     font-weight: var(--font-weight-medium);
-    line-height: 1.2;
-  }
-
-  .full-width {
-    grid-column: span 2;
+    white-space: nowrap;
   }
 
   .timeline-card {
     grid-area: timeline;
+    display: grid;
+    gap: var(--gap-md);
+    padding: var(--space-32) var(--space-40) var(--space-40);
+    border-block-start: 1px solid var(--color-border);
   }
 
   .milestones-list {
@@ -971,20 +902,20 @@ const PageWrapper = styled.section`
   .milestone-item {
     position: relative;
     display: grid;
-    grid-template-columns: var(--space-24) minmax(0, 1fr);
-    gap: var(--space-12);
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-8);
     align-items: flex-start;
     align-content: start;
-    padding-block-start: var(--space-40);
   }
 
   .milestone-item::before {
     content: '';
     position: absolute;
+    /* 与圆点中心对齐：圆点半径 */
     inset-block-start: var(--space-12);
     inset-inline-start: var(--space-24);
     inset-inline-end: calc(var(--gap-md) * -1);
-    border-block-start: 1px dashed oklch(84% 0.03 73);
+    border-block-start: 1px solid var(--color-border);
   }
 
   .milestone-item:last-child::before {
@@ -1014,15 +945,11 @@ const PageWrapper = styled.section`
   }
 
   .milestone-item .date {
-    grid-column: 2;
+    grid-column: 1;
     width: fit-content;
     font-size: var(--text-caption);
-    color: var(--color-primary);
-    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
     font-family: var(--font-mono);
-    background: var(--color-surface-inset);
-    padding: var(--space-4) var(--space-8);
-    border-radius: var(--radius-sm);
     white-space: nowrap;
   }
 
@@ -1036,7 +963,7 @@ const PageWrapper = styled.section`
   }
 
   .milestone-item .details {
-    grid-column: 2;
+    grid-column: 1;
   }
 
   @keyframes canopy-breathe {
@@ -1078,6 +1005,8 @@ const PageWrapper = styled.section`
 
     .graph-section {
       min-block-size: auto;
+      border-inline-end: none;
+      border-block-end: 1px solid var(--color-border);
     }
 
     .network-container {
@@ -1091,7 +1020,7 @@ const PageWrapper = styled.section`
 
     .milestone-item {
       grid-template-columns: var(--space-24) auto 1fr;
-      padding-block-start: 0;
+      gap: var(--space-12);
     }
 
     .milestone-item::before {
@@ -1101,7 +1030,7 @@ const PageWrapper = styled.section`
       inset-inline-end: auto;
       transform: translateX(-50%);
       border-block-start: none;
-      border-inline-start: 1px dashed oklch(84% 0.03 73);
+      border-inline-start: 1px solid var(--color-border);
     }
 
     .milestone-item .date,
@@ -1115,16 +1044,9 @@ const PageWrapper = styled.section`
     padding-inline: var(--space-24);
 
     .graph-section,
-    .stats-card {
+    .stats-section,
+    .timeline-card {
       padding: var(--space-24);
-    }
-
-    .stats-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .full-width {
-      grid-column: auto;
     }
   }
 

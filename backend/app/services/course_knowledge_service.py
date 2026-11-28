@@ -12,6 +12,8 @@ SECTION_GENERATED_ASSET_KEYS = (
     "section_composed_markdowns",
     "section_video_links",
     "section_html_animations",
+    "section_resource_checkpoints",
+    "section_resource_errors",
 )
 SECTION_STRUCTURE_SIGNATURE_KEYS = (
     "section_id",

@@ -17,31 +17,8 @@
 	flex: 1;
 }
 
-.branch-feedback-card {
-	width: min(680px, 100%);
-	padding: var(--space-40);
-	border-radius: var(--radius-lg);
-	background: oklch(100% 0 0 / 0.52);
-	border: 1px solid var(--color-border-subtle);
-	box-shadow: var(--shadow-sm);
-	text-align: center;
-	backdrop-filter: var(--glass-blur);
-	-webkit-backdrop-filter: var(--glass-blur);
-}
-
-.branch-feedback-title {
-	margin: 0 0 var(--space-12);
-	color: var(--color-text-primary);
-	font-family: var(--font-heading);
-	font-size: var(--text-h3);
-	font-weight: var(--font-weight-medium);
-	line-height: 1.35;
-}
-
-.branch-feedback-text {
-	color: var(--color-text-whisper);
-	font-size: var(--text-body);
-	line-height: 1.85;
+.branch-view-container .ui-feedback {
+	inline-size: min(680px, 100%);
 }
 
 .branch-session {
@@ -372,8 +349,8 @@
 }
 
 .branch-blob-title-current {
-	font-size: clamp(2rem, 3vw, 2.5rem);
-	line-height: 1.08;
+	font-size: clamp(var(--text-h3), 2.2vw, var(--text-h2));
+	line-height: 1.15;
 }
 
 .branch-blob-status {
@@ -399,21 +376,14 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	gap: 0.5rem;
+	gap: var(--space-8);
 	width: 100%;
-	min-height: 2.4rem;
-	margin-top: 0.5rem;
-	padding: 0 1.2rem;
-	border: none;
-	border-radius: var(--radius-full);
-	background: linear-gradient(135deg, oklch(80% 0.09 56), oklch(74% 0.11 36));
-	color: oklch(100% 0 0 / 0.98);
+	margin-top: var(--space-8);
+	color: var(--color-primary);
 	font-family: var(--font-heading);
-	font-size: 0.72rem;
+	font-size: var(--text-caption);
 	font-weight: var(--font-weight-medium);
 	line-height: 1;
-	box-shadow: 0 10px 18px oklch(76% 0.12 55 / 0.24);
-	transition: transform var(--duration-lazy-hover) var(--ease-lazy);
 	cursor: pointer;
 }
 
@@ -424,9 +394,7 @@
 }
 
 .branch-focus-button:hover {
-	background: linear-gradient(135deg, oklch(78% 0.12 45), oklch(72% 0.14 28));
-	filter: brightness(1.02);
-	box-shadow: 0 14px 28px oklch(76% 0.12 55 / 0.32);
+	color: var(--color-primary-hover);
 }
 
 .branch-focus-button:hover .branch-focus-button-arrow {
@@ -678,12 +646,7 @@
 	}
 
 	.branch-blob-title-current {
-		font-size: 1.8rem;
-	}
-
-	.branch-focus-button {
-		min-height: 2rem;
-		font-size: 0.62rem;
+		font-size: var(--text-h3);
 	}
 
 	.branch-mascot {
@@ -693,7 +656,6 @@
 		height: 72px;
 	}
 
-	.branch-feedback-card,
 	.branch-stage-empty {
 		padding: var(--space-24);
 	}
@@ -779,28 +741,9 @@
 }
 
 .branch-course-source-badge {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
 	align-self: center;
 	justify-self: center;
 	inline-size: fit-content;
-	padding: var(--space-4) var(--space-8);
-	border-radius: var(--radius-full);
-	font-size: var(--text-caption);
-	font-weight: var(--font-weight-medium);
-	line-height: 1;
-	white-space: nowrap;
-}
-
-.branch-course-source-badge-self {
-	background: var(--color-secondary-soft);
-	color: var(--color-secondary);
-}
-
-.branch-course-source-badge-custom {
-	background: var(--color-primary-soft);
-	color: oklch(45% 0.12 55);
 }
 
 /* Custom Course Card and Glow Dot Styles (Task 4 & 5) */

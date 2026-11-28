@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 
 from app import schemas as app_schemas
 from app.api import knowledge_base as knowledge_base_api
+from app.core.config import DEFAULT_INTERNAL_API_TOKEN
 from app.database import get_engine
 from app.main import create_app
 from app.models import (
@@ -543,137 +544,71 @@ def test_find_materials_returns_only_admitted_sources_and_updates_gap(
         assert gap.status == "material_searching"
 
 
-def test_agent_returns_real_textbook_sources_without_creating_textbook(
+def test_internal_overview_and_source_verification_feed_the_agent(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = make_client(tmp_path, monkeypatch)
-    headers = admin_headers(client)
-    client.post(
-        "/api/admin/knowledge-base/sources",
-        headers=headers,
-        json=admitted_source_payload(source_id="source-open-textbook"),
-    )
-
-    monkeypatch.setattr(
-        "app.services.knowledge_base_service.search_real_textbook_sources",
-        lambda topic, limit=5: [
-            app_schemas.KnowledgeBaseSourceResult(
-                source_result_id="source-result-ods-python",
-                title="Open Data Structures",
-                original_title="Open Data Structures",
-                language="en",
-                source_url="https://opendatastructures.org/ods-python.pdf",
-                source_type="pdf",
-                provider_name="Open Data Structures",
-                description=(
-                    "Open textbook covering arrays, trees, hash tables, and graphs."
-                ),
-                tags=["数据结构", "算法"],
-                parseability_score=95,
-                parseability_reason="PDF 稳定可访问，目录结构清晰。",
-                topic_summary="覆盖数据结构核心课程内容。",
-                is_recommended=True,
-            ),
-            app_schemas.KnowledgeBaseSourceResult(
-                source_result_id="source-result-ods-java",
-                title="Open Data Structures in Java",
-                original_title="Open Data Structures in Java",
-                language="en",
-                source_url="https://opendatastructures.org/ods-java.pdf",
-                source_type="pdf",
-                provider_name="Open Data Structures",
-                description="Java edition of the open data structures textbook.",
-                tags=["数据结构", "Java"],
-                parseability_score=90,
-                parseability_reason="PDF 稳定可访问。",
-                topic_summary="覆盖线性结构、树、图。",
-                is_recommended=False,
-            ),
-        ],
-    )
-
-    response = client.post(
-        "/api/admin/knowledge-base/agent",
-        headers=headers,
-        json={"message": "数据结构"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["selected_textbook_id"] is None
-    assert body["selected_source_result_id"] == "source-result-ods-python"
-    assert body["textbook_hits"] == []
-    assert len(body["source_results"]) == 2
-    assert body["source_results"][0]["title"] == "Open Data Structures"
-    assert body["source_results"][0]["is_recommended"] is True
-    assert "找到 2 个真实教材来源" in body["reply_text"]
-
-    textbooks_response = client.get(
-        "/api/admin/knowledge-base/textbooks",
-        headers=headers,
-    )
-    assert textbooks_response.status_code == 200
-    assert textbooks_response.json() == []
-
-
-def test_agent_returns_source_results_when_local_textbook_is_missing(
-    tmp_path: Path, monkeypatch
-) -> None:
-    client = make_client(tmp_path, monkeypatch)
-    headers = admin_headers(client)
-    client.post(
-        "/api/admin/knowledge-base/sources",
-        headers=headers,
-        json=admitted_source_payload(),
-    )
+    internal = {"X-Internal-Token": DEFAULT_INTERNAL_API_TOKEN}
     create_gap(normalized_topic="数据结构")
 
+    overview = client.get("/internal/knowledge-base/overview", headers=internal)
+    assert overview.status_code == 200
+    body = overview.json()
+    assert body["gap_count"] == 1
+    assert body["gaps"][0]["topic"] == "数据结构"
+    assert body["textbooks"] == []
+
+    candidate = {
+        "title": "Open Data Structures",
+        "source_url": "https://opendatastructures.org/ods-python.pdf",
+        "source_type": "pdf",
+        "language": "en",
+    }
+    accepted = app_schemas.KnowledgeBaseSourceResult(
+        source_result_id="source-result-ods-python",
+        title="Open Data Structures",
+        language="en",
+        source_url=candidate["source_url"],
+        source_type="pdf",
+        parseability_score=90,
+    )
     monkeypatch.setattr(
-        "app.services.knowledge_base_service.search_real_textbook_sources",
-        lambda topic, limit=5: [
-            app_schemas.KnowledgeBaseSourceResult(
-                source_result_id="source-result-ods-python",
-                title="Open Data Structures",
-                original_title="Open Data Structures",
-                language="en",
-                source_url="https://opendatastructures.org/ods-python.pdf",
-                source_type="pdf",
-                provider_name="Open Data Structures",
-                description="Open textbook.",
-                tags=["数据结构"],
-                parseability_score=95,
-                parseability_reason="PDF 稳定可访问。",
-                topic_summary="覆盖数据结构。",
-                is_recommended=True,
-            )
-        ],
+        "app.services.knowledge_base_service.evaluate_textbook_source_candidate",
+        lambda raw: (accepted, "") if raw == candidate else (None, "无法访问。"),
     )
 
-    response = client.post(
-        "/api/admin/knowledge-base/agent",
-        headers=headers,
-        json={"message": "数据结构"},
+    ok = client.post(
+        "/internal/knowledge-base/verify-source",
+        headers=internal,
+        json={"candidate": candidate},
     )
+    assert ok.status_code == 200
+    assert ok.json()["accepted"] is True
+    assert ok.json()["source_result"]["already_imported"] is False
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["selected_textbook_id"] is None
-    assert body["selected_source_result_id"] == "source-result-ods-python"
-    assert body["textbook_hits"] == []
-    assert len(body["source_results"]) == 1
-    assert body["source_results"][0]["title"] == "Open Data Structures"
-    assert "找到 1 个真实教材来源" in body["reply_text"]
-
-    textbooks_response = client.get(
-        "/api/admin/knowledge-base/textbooks", headers=headers
+    rejected = client.post(
+        "/internal/knowledge-base/verify-source",
+        headers=internal,
+        json={"candidate": {"title": "bad"}},
     )
-    assert textbooks_response.status_code == 200
-    assert textbooks_response.json() == []
+    assert rejected.json() == {
+        "accepted": False,
+        "reason": "无法访问。",
+        "source_result": None,
+    }
 
-    with Session(get_engine()) as session:
-        gap = session.get(KnowledgeGap, "gap-api")
-        assert gap is not None
-        assert gap.status == "open"
+
+def test_removed_agent_routes_are_served_by_the_gateway_only(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    headers = admin_headers(client)
+
+    for path in ("/agent", "/agent/stream"):
+        response = client.post(
+            f"/api/admin/knowledge-base{path}", headers=headers, json={"message": "x"}
+        )
+        assert response.status_code in {404, 405}
 
 
 def test_confirm_source_result_creates_draft_textbook_and_queued_job(

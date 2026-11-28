@@ -2,71 +2,88 @@
 	color-scheme: light;
 
 	/* =========================================
-     1. Global Tokens (The Morandi Calibration)
+     1. Brand & Semantic Colors (docs/ui-design/01)
      ========================================= */
 
-	/* The Canvas (基础环境) */
-	--color-canvas-base: oklch(97.5% 0.003 80);
-	--color-canvas-surface: oklch(95.5% 0.005 80);
-	--color-text-primary: oklch(35% 0.005 80);
-	--color-text-whisper: oklch(60% 0.005 80);
-
-	/* The Actors (角色与状态) */
-	--color-intent-planner: oklch(75% 0.05 285); /* 柔和紫 */
-	--color-intent-feedback: oklch(80% 0.06 140); /* 鼠尾草绿 */
-	--color-intent-active: oklch(82% 0.08 60); /* 蜜桃沙色 */
-
-	/* Sandtable semantic actors (沙盘语义色 — 暖场内的冷色锚点对比) */
-	--color-intent-success: oklch(72% 0.09 145); /* 寻源绿 — Researcher / 集群 */
-	--color-intent-warning: oklch(76% 0.1 70); /* 路径琥珀 — Path / 拓扑 */
-	--color-intent-info: oklch(72% 0.07 250); /* 意图蓝 — User / Planner 冷锚点 */
-
-	/* Elevated glass surface & hairline border (沙盘卡片) */
-	--color-surface-elevated: oklch(98% 0.004 80 / 0.72);
-	--color-border-subtle: oklch(78% 0.012 80 / 0.55);
-
-	/* Legacy Colors (To be refactored out over time) */
-	--color-primary: oklch(78% 0.06 60);
+	/* Brand */
+	--color-primary: oklch(76% 0.12 55);
+	--color-primary-hover: oklch(70% 0.12 55);
 	--color-primary-soft: oklch(91% 0.05 55);
 	--color-secondary: oklch(49% 0.05 235);
 	--color-secondary-soft: oklch(88% 0.03 220);
-	--color-background: var(--color-canvas-base);
-	--color-background-warm: var(--color-canvas-surface);
-	--color-surface: var(--color-canvas-surface);
+
+	/* Paper Surfaces */
+	--color-background: oklch(94% 0.04 73);
+	--color-background-warm: oklch(91% 0.06 68);
+	--color-surface: oklch(97% 0.02 75);
 	--color-surface-raised: oklch(99% 0.01 80);
 	--color-surface-inset: oklch(90% 0.03 73);
+	--color-surface-elevated: oklch(98% 0.008 75 / 0.78);
 	--color-border: oklch(84% 0.03 73);
-	--color-text-secondary: var(--color-text-whisper);
-	--color-text-muted: var(--color-text-whisper);
-	--color-text-inverse: var(--color-canvas-base);
-	--color-success: var(--color-intent-success);
-	--color-warning: var(--color-intent-warning);
-	--color-error: oklch(72% 0.13 28);
-	--color-error-bg: oklch(93% 0.04 28);
-	--color-warning-bg: oklch(94% 0.04 58);
+	--color-border-subtle: oklch(78% 0.018 75 / 0.55);
+
+	/* Ink & Typography */
+	--color-text-primary: oklch(26% 0.04 235);
+	--color-text-secondary: oklch(42% 0.035 235);
+	--color-text-muted: oklch(58% 0.025 235);
+	--color-text-inverse: oklch(96% 0.025 75);
+	/* 珊瑚主按钮上的文字：浅奶油字在珊瑚渐变上对比度不足（约 1.9:1），改用深暖墨色 */
+	--color-on-primary: oklch(27% 0.06 40);
+	--color-link: var(--color-secondary);
+
+	/* Accents */
+	--color-accent-sage: oklch(75% 0.09 135);
+	--color-accent-peach: oklch(84% 0.08 58);
+	--color-accent-lavender: oklch(75% 0.07 292);
+	--color-accent-salmon: oklch(72% 0.13 28);
+
+	/* Semantic Status */
+	--color-success: var(--color-accent-sage);
 	--color-success-bg: oklch(93% 0.04 135);
+	--color-warning: var(--color-accent-peach);
+	--color-warning-bg: oklch(94% 0.04 58);
+	--color-error: var(--color-accent-salmon);
+	--color-error-bg: oklch(93% 0.04 28);
 	--color-info: var(--color-secondary);
 	--color-info-bg: var(--color-secondary-soft);
 
-	/* Interaction States (交互态) */
+	/* Interaction States */
 	--color-hover-wash: oklch(99% 0.01 80 / 0.68);
 	--color-focus-ring: oklch(76% 0.12 55 / 0.42);
-	--color-primary-hover: oklch(70% 0.12 55);
 	--color-overlay: oklch(26% 0.04 235 / 0.42);
+	--color-disabled-bg: oklch(88% 0.02 73);
+	--color-disabled-text: oklch(62% 0.02 235);
 	--color-link-underline: oklch(78% 0.12 55 / 0.4);
 
+	/* Sandtable & Legacy Aliases (mapped cleanly to the unified palette) */
+	--color-canvas-base: var(--color-background);
+	--color-canvas-surface: var(--color-surface);
+	--color-text-whisper: var(--color-text-muted);
+	--color-intent-planner: var(--color-accent-lavender);
+	--color-intent-feedback: var(--color-accent-sage);
+	--color-intent-active: var(--color-accent-peach);
+	/* 与 --color-accent-peach 同色相，40% 透明度 */
+	--shadow-glow-active: 0 0 var(--space-16) var(--space-4)
+		oklch(84% 0.08 58 / 0.4);
+	--color-intent-success: oklch(72% 0.09 145);
+	--color-intent-warning: oklch(76% 0.1 70);
+	--color-intent-info: oklch(72% 0.07 250);
+
 	/* =========================================
-     2. Semantic Tokens (语义变量)
+     2. Gradients & Materials (docs/ui-design/06 & 08)
      ========================================= */
 
-	/* Action Gradients */
+	--material-paper-base: var(--color-background);
+	--material-paper-raised: var(--color-surface-raised);
+	--material-paper-inset: var(--color-surface-inset);
+	--material-dark-panel: oklch(18% 0.035 235);
+	--material-dark-panel-raised: oklch(22% 0.04 235);
+
 	--gradient-action-send: linear-gradient(
 		135deg,
-		oklch(78% 0.06 60),
-		oklch(85% 0.05 60)
+		oklch(78% 0.08 58),
+		oklch(84% 0.08 58)
 	);
-
-	/* Brand Gradients (品牌渐变 — from docs/06) */
 	--gradient-paper: linear-gradient(
 		135deg,
 		oklch(94% 0.04 73),
@@ -83,49 +100,43 @@
 		oklch(22% 0.04 235)
 	);
 
-	/* =========================================
-     3. Component Tokens & Material Physics
-     ========================================= */
-
-	/* The Groove (凹槽内阴影) */
-	--shadow-groove-shallow:
-		inset 0 1px 3px oklch(35% 0.005 80 / 0.04),
-		inset 0 1px 2px oklch(35% 0.005 80 / 0.02);
-	--shadow-groove-deep:
-		inset 0 2px 6px oklch(35% 0.005 80 / 0.06),
-		inset 0 4px 12px oklch(35% 0.005 80 / 0.04);
-
-	/* The Pebble (卵石外浮与硅胶透光) */
-	--shadow-pebble-float:
-		0 4px 14px oklch(35% 0.005 80 / 0.04), 0 1px 3px oklch(35% 0.005 80 / 0.02);
-	--glass-pebble-bg: oklch(97.5% 0.003 80 / 0.65);
-	--glass-pebble-border: 1px solid oklch(100% 0 0 / 0.5);
-	--glass-pebble-blur: blur(16px);
-
-	--color-pebble-matte: oklch(100% 0 0 / 0.18);
-	--glass-pebble-blur-matte: blur(4px);
-
-	/* Glass Material (轻毛玻璃) */
+	/* Glass Material */
 	--glass-bg: oklch(97% 0.02 75 / 0.76);
 	--glass-dark-bg: oklch(20% 0.04 235 / 0.72);
 	--glass-blur: blur(12px);
 	--glass-border: oklch(100% 0 0 / 0.42);
-	--material-dark-panel: oklch(18% 0.035 235);
-	--material-dark-panel-raised: oklch(22% 0.04 235);
+
+	/* The Groove & Pebble */
+	--shadow-groove-shallow:
+		inset 0 1px 3px oklch(26% 0.04 235 / 0.06),
+		inset 0 1px 2px oklch(26% 0.04 235 / 0.03);
+	--shadow-groove-deep:
+		inset 0 2px 6px oklch(26% 0.04 235 / 0.08),
+		inset 0 4px 12px oklch(26% 0.04 235 / 0.05);
+	--shadow-pebble-float:
+		0 4px 14px oklch(50% 0.05 55 / 0.08), 0 1px 3px oklch(50% 0.05 55 / 0.04);
+	--glass-pebble-bg: oklch(97% 0.02 75 / 0.68);
+	--glass-pebble-border: 1px solid oklch(100% 0 0 / 0.5);
+	--glass-pebble-blur: blur(16px);
+	--color-pebble-matte: oklch(100% 0 0 / 0.22);
+	--glass-pebble-blur-matte: blur(4px);
+
+	/* Dark Panel Tokens (docs/ui-design/08) */
 	--dark-surface: oklch(16% 0.035 235);
 	--dark-surface-raised: oklch(20% 0.04 235);
+	--dark-surface-elevated: var(--dark-surface-raised);
 	--dark-surface-inset: oklch(12% 0.035 235);
-	--dark-text-primary: oklch(92% 0.01 80);
-	--dark-text-secondary: oklch(84% 0.015 80 / 0.88);
-	--dark-text-muted: oklch(76% 0.012 80 / 0.72);
-	--dark-border: oklch(58% 0.02 235 / 0.34);
-	--dark-highlight: oklch(28% 0.03 235 / 0.82);
+	--dark-text-primary: oklch(92% 0.025 75);
+	--dark-text-secondary: oklch(80% 0.025 75);
+	--dark-text-muted: oklch(64% 0.02 235);
+	--dark-border: oklch(92% 0.02 75 / 0.12);
+	--dark-highlight: oklch(92% 0.02 75 / 0.08);
 	--status-running: oklch(78% 0.08 145);
-	--status-waiting: oklch(76% 0.1 70);
+	--status-waiting: oklch(85% 0.08 60);
 	--status-error: oklch(72% 0.13 28);
-	--status-neutral: oklch(80% 0.04 250 / 0.92);
+	--status-neutral: oklch(75% 0.06 292);
 
-	/* Shadow Scale (多层叠加) */
+	/* Shadow Scale (docs/ui-design/04) */
 	--shadow-sm:
 		0 1px 2px oklch(50% 0.05 55 / 0.08), 0 8px 24px oklch(76% 0.12 55 / 0.1);
 	--shadow-md:
@@ -133,13 +144,14 @@
 	--shadow-lg:
 		0 4px 12px oklch(50% 0.05 55 / 0.1), 0 32px 80px oklch(76% 0.12 55 / 0.22),
 		0 64px 120px oklch(84% 0.12 63 / 0.14);
+	--shadow-xl: var(--shadow-lg);
 	--shadow-inset:
 		inset 0 1px 2px oklch(20% 0.04 235 / 0.18),
 		inset 0 -1px 1px oklch(100% 0 0 / 0.18);
 	--shadow-glow:
 		0 0 48px oklch(76% 0.12 55 / 0.24), 0 0 96px oklch(84% 0.12 63 / 0.16);
 
-	/* Ambient Effects (晨光与弥散 — from docs/06) */
+	/* Ambient Effects */
 	--effect-sun-glow: radial-gradient(
 		circle,
 		oklch(84% 0.12 63 / 0.72),
@@ -159,53 +171,74 @@
 	--effect-blur-sun: blur(120px);
 
 	/* =========================================
-     4. Micro-Geometry & Optical Spacing
+     3. Spacing & Geometry (docs/ui-design/03 & 04)
      ========================================= */
 
-	/* 4pt Grid */
-	--space-xs: 4px;
-	--space-sm: 8px;
-	--space-md: 16px;
-	--space-pill-padding: 6px;
-
-	/* Additional Grid Steps for Layout */
 	--space-4: 4px;
 	--space-8: 8px;
 	--space-12: 12px;
 	--space-16: 16px;
 	--space-20: 20px;
 	--space-24: 24px;
+	--space-28: 28px;
 	--space-32: 32px;
 	--space-40: 40px;
+	--space-44: 44px;
 	--space-48: 48px;
 	--space-64: 64px;
 	--space-80: 80px;
 	--space-96: 96px;
 	--space-120: 120px;
+
+	/* 右下角 AI 浮球（80px + 40px 边距）在桌面端占用的安全区，页面末尾需留出 */
+	--ai-widget-safe-area: calc(
+		var(--space-80) +
+		var(--space-40) +
+		var(--space-16)
+	);
+
+	/* Semantic Spacing Aliases */
+	--space-xs: var(--space-4);
+	--space-sm: var(--space-8);
+	--space-md: var(--space-16);
+	--space-lg: var(--space-24);
+	--space-xl: var(--space-32);
+	--space-pill-padding: 6px;
+
 	--gap-xs: var(--space-8);
 	--gap-sm: var(--space-16);
 	--gap-md: var(--space-24);
 	--gap-lg: var(--space-40);
 	--gap-xl: var(--space-64);
+
+	--section-padding-x: var(--space-24);
+	--section-padding-y: var(--space-48);
+	--section-padding-y-lg: var(--space-64);
+
 	--container-narrow: 640px;
 	--container-default: 960px;
 	--container-wide: 1120px;
+	--container-full: 1280px;
 
-	--radius-sm: 8px;
-	--radius-md: 12px;
-	--radius-lg: 24px;
+	/* Border Radius Scale (16/24/32/40/9999) */
+	--radius-sm: 16px;
+	--radius-md: 24px;
+	--radius-lg: 32px;
+	--radius-xl: 40px;
+	--radius-2xl: var(--radius-lg);
 	--radius-full: 9999px;
-
-	--radius-pill-inner: 14px;
+	--radius-pill-inner: 16px;
 	--height-groove-track: 44px;
 
-	/* Typography */
+	/* =========================================
+     4. Typography (docs/ui-design/02)
+     ========================================= */
+
 	--font-brand: "Caveat", "LXGW WenKai", cursive;
 	--font-heading: "LXGW WenKai", serif;
 	--font-body: "LXGW WenKai", serif;
-	--font-mono: "LXGW WenKai", serif;
+	--font-mono: "LXGW WenKai Mono", "LXGW WenKai", ui-monospace, monospace;
 
-	/* Whisper Typography */
 	--font-whisper-caps: uppercase;
 	--font-whisper-spacing: 0.05em;
 
@@ -214,6 +247,7 @@
 	--font-weight-medium: 500;
 	--font-weight-bold: 500;
 
+	--text-display: 5rem;
 	--text-h1: 2.5rem;
 	--text-h2: 2rem;
 	--text-h3: 1.5rem;
@@ -221,30 +255,62 @@
 	--text-h5: 1.0625rem;
 	--text-h6: 0.9375rem;
 	--text-body: 1rem;
-	--text-body-sm: 0.9rem;
 	--text-body-relaxed: 1.0625rem;
+	--text-body-compact: 1rem;
+	--text-body-sm: 0.9rem;
 	--text-caption: 0.8125rem;
+	--text-overline: 0.75rem;
+	--text-button: 0.95rem;
 
+	--text-h1-mobile: 2rem;
+	--text-h2-mobile: 1.625rem;
+	--text-h3-mobile: 1.25rem;
+	--text-h4-mobile: 1.125rem;
+
+	/* Motion Tokens (preserved) */
 	--ease-editorial: cubic-bezier(0.25, 1, 0.5, 1);
 	--ease-lazy: cubic-bezier(0.33, 1, 0.68, 1);
 	--ease-flip: cubic-bezier(0.64, 0, 0.35, 1);
 	--ease-breathe: ease-in-out;
 	--duration-instant: 120ms;
+	--duration-fast: 180ms;
 	--duration-lazy-hover: 420ms;
 	--duration-reveal: 760ms;
 	--duration-route: 980ms;
 	--duration-flip: 1200ms;
 	--duration-breathe: 4200ms;
+}
 
-	/* Mobile Typography */
-	--text-h1-mobile: 2rem;
-	--text-h2-mobile: 1.625rem;
-	--text-h3-mobile: 1.25rem;
-	--text-h4-mobile: 1.125rem;
+@media (max-width: 767px) {
+	:root {
+		--text-display: 3rem;
+		--text-h1: 2rem;
+		--text-h2: 1.625rem;
+		--text-h3: 1.25rem;
+		--text-h4: 1.125rem;
+		--text-h5: 1rem;
+		--text-h6: 0.875rem;
+	}
+}
+
+@media (min-width: 768px) {
+	:root {
+		--section-padding-x: var(--space-40);
+		--section-padding-y: var(--space-64);
+		--section-padding-y-lg: var(--space-96);
+	}
+}
+
+@media (min-width: 1280px) {
+	:root {
+		--section-padding-x: var(--space-64);
+		--section-padding-y: var(--space-80);
+		--section-padding-y-lg: var(--space-120);
+	}
 }
 
 body {
-	background-color: var(--color-canvas-base);
+	background-color: var(--color-background);
 	color: var(--color-text-primary);
 	font-family: var(--font-body);
 }
@@ -252,11 +318,11 @@ body {
 .whisper-badge {
 	text-transform: var(--font-whisper-caps);
 	letter-spacing: var(--font-whisper-spacing);
-	color: var(--color-text-whisper);
+	color: var(--color-text-muted);
 	font-size: var(--text-caption);
 	display: inline-flex;
 	align-items: center;
-	gap: var(--space-sm);
+	gap: var(--space-8);
 	background: transparent;
 }
 

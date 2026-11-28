@@ -1,5 +1,6 @@
-import { Database, Trash2 } from "lucide-react";
+import { ChevronRight, Database, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
 	type AdminAccountApi,
 	adminApi as defaultAdminApi,
@@ -11,6 +12,8 @@ import {
 	type UserLearningData,
 } from "../../api/adminData";
 import type { CultivationProgram } from "../../api/adminProgram";
+import { Button } from "../../components/ui/Button";
+import { Tabs } from "../../components/ui/Tabs";
 import { useAuth } from "../../contexts/AuthContext";
 import type { AuthUser } from "../../types/auth";
 import "./admin.css";
@@ -177,36 +180,32 @@ export function AdminDataPage({
 
 	return (
 		<>
-			<header className="admin-header">
-				<div>
-					<p className="admin-kicker">data</p>
+			<header className="page-header">
+				<div className="page-header-title">
 					<h1 id="admin-data-title">数据管理</h1>
+					<p>
+						查看系统里的账号、班级、人培方案和学生学习记录，按班级排查或清理数据。
+					</p>
 				</div>
-				<div className="admin-header-actions">
-					<button
-						className="admin-secondary-action"
-						type="button"
+				<div className="page-header-actions">
+					<Button
+						variant="secondary"
+						icon={<Database aria-hidden="true" />}
 						onClick={() => void loadData()}
 						disabled={busy}
 					>
-						<Database aria-hidden="true" />
-						<span>刷新数据</span>
-					</button>
+						刷新数据
+					</Button>
 				</div>
 			</header>
 
-			<section className="admin-data-tabs" aria-label="数据管理分类">
-				{tabs.map((tab) => (
-					<button
-						key={tab.value}
-						type="button"
-						className={`admin-data-tab ${activeTab === tab.value ? "active" : ""}`}
-						onClick={() => setActiveTab(tab.value)}
-					>
-						{tab.label}
-					</button>
-				))}
-			</section>
+			<Tabs
+				className="admin-page-tabs"
+				ariaLabel="数据管理分类"
+				items={tabs}
+				value={activeTab}
+				onChange={setActiveTab}
+			/>
 
 			{activeTab !== "overview" ? (
 				<label className="admin-data-search">
@@ -221,7 +220,9 @@ export function AdminDataPage({
 
 			{error ? <p className="admin-error">{error}</p> : null}
 
-			{activeTab === "overview" ? <OverviewPanel overview={overview} /> : null}
+			{activeTab === "overview" ? (
+				<OverviewPanel overview={overview} onOpen={setActiveTab} />
+			) : null}
 			{activeTab === "cohorts" ? (
 				<CohortPanel
 					cohorts={filteredCohorts}
@@ -248,38 +249,80 @@ export function AdminDataPage({
 	);
 }
 
-function OverviewPanel({ overview }: { overview: DataOverview | null }) {
+function OverviewPanel({
+	overview,
+	onOpen,
+}: {
+	overview: DataOverview | null;
+	onOpen(tab: DataTab): void;
+}) {
+	const navigate = useNavigate();
 	const learningCount = overview
 		? Object.values(overview.learning_data).reduce(
 				(total, value) => total + value,
 				0,
 			)
 		: 0;
+	const accountCount = overview
+		? Object.values(overview.accounts).reduce(
+				(total, value) => total + value,
+				0,
+			)
+		: 0;
+	const items: {
+		label: string;
+		value: number;
+		desc: string;
+		action: string;
+		onClick(): void;
+	}[] = [
+		{
+			label: "账号",
+			value: accountCount,
+			desc: "学生与管理员账号总数",
+			action: "去账号管理",
+			onClick: () => navigate("/admin/accounts"),
+		},
+		{
+			label: "组织班级",
+			value: overview?.cohorts ?? 0,
+			desc: "按学校 · 专业 · 班级归组的学生",
+			action: "查看班级",
+			onClick: () => onOpen("cohorts"),
+		},
+		{
+			label: "人培方案",
+			value: overview?.programs ?? 0,
+			desc: "已发布到班级的课程方案",
+			action: "查看方案",
+			onClick: () => onOpen("programs"),
+		},
+		{
+			label: "学习数据",
+			value: learningCount,
+			desc: "学生的画像、路径、大纲与测验记录",
+			action: "查看学习数据",
+			onClick: () => onOpen("learning"),
+		},
+	];
 	return (
 		<section className="admin-data-overview" aria-label="数据概览">
-			<article>
-				<span>账号</span>
-				<strong>
-					{overview
-						? Object.values(overview.accounts).reduce(
-								(total, value) => total + value,
-								0,
-							)
-						: 0}
-				</strong>
-			</article>
-			<article>
-				<span>组织班级</span>
-				<strong>{overview?.cohorts ?? 0}</strong>
-			</article>
-			<article>
-				<span>人培方案</span>
-				<strong>{overview?.programs ?? 0}</strong>
-			</article>
-			<article>
-				<span>学习数据</span>
-				<strong>{learningCount}</strong>
-			</article>
+			{items.map((item) => (
+				<button
+					key={item.label}
+					type="button"
+					className="admin-data-overview-item"
+					onClick={item.onClick}
+				>
+					<span>{item.label}</span>
+					<strong>{item.value}</strong>
+					<small>{item.desc}</small>
+					<em>
+						{item.action}
+						<ChevronRight aria-hidden="true" size={14} />
+					</em>
+				</button>
+			))}
 		</section>
 	);
 }
@@ -294,8 +337,8 @@ function CohortPanel({
 	onDeleteProgram(cohort: DataCohort): void;
 }) {
 	return (
-		<section className="admin-data-table" aria-label="组织班级列表">
-			<div className="admin-data-row admin-data-head">
+		<section className="data-table admin-data-table" aria-label="组织班级列表">
+			<div className="data-table-row admin-data-row data-table-head">
 				<span>学校</span>
 				<span>专业</span>
 				<span>班级</span>
@@ -306,7 +349,7 @@ function CohortPanel({
 			</div>
 			{cohorts.map((cohort) => (
 				<div
-					className="admin-data-row"
+					className="data-table-row admin-data-row"
 					key={`${cohort.school}-${cohort.major}-${cohort.class_name}`}
 				>
 					<span>{cohort.school}</span>
@@ -319,13 +362,14 @@ function CohortPanel({
 							? (cohort.program_admin_name ?? "已发布")
 							: "暂无"}
 					</span>
-					<button
-						type="button"
+					<Button
+						variant="danger"
+						size="sm"
 						disabled={busy || !cohort.has_program}
 						onClick={() => onDeleteProgram(cohort)}
 					>
 						删除方案
-					</button>
+					</Button>
 				</div>
 			))}
 		</section>
@@ -334,8 +378,8 @@ function CohortPanel({
 
 function ProgramPanel({ programs }: { programs: CultivationProgram[] }) {
 	return (
-		<section className="admin-data-table" aria-label="人培方案列表">
-			<div className="admin-data-row admin-data-head">
+		<section className="data-table admin-data-table" aria-label="人培方案列表">
+			<div className="data-table-row admin-data-row data-table-head">
 				<span>学校</span>
 				<span>专业</span>
 				<span>班级</span>
@@ -344,7 +388,7 @@ function ProgramPanel({ programs }: { programs: CultivationProgram[] }) {
 				<span>发布时间</span>
 			</div>
 			{programs.map((program) => (
-				<div className="admin-data-row" key={program.program_id}>
+				<div className="data-table-row admin-data-row" key={program.program_id}>
 					<span>{program.school}</span>
 					<span>{program.major}</span>
 					<span>{program.class_name}</span>
@@ -442,15 +486,14 @@ function LearningDataPanel({
 					</article>
 				</div>
 			)}
-			<button
-				className="admin-danger-action"
-				type="button"
+			<Button
+				variant="danger"
+				icon={<Trash2 aria-hidden="true" />}
 				onClick={onDelete}
 				disabled={busy || !selectedUid}
 			>
-				<Trash2 aria-hidden="true" />
-				<span>清理该账号学习数据</span>
-			</button>
+				清理该账号学习数据
+			</Button>
 		</section>
 	);
 }

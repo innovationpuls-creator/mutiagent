@@ -1,0 +1,617 @@
+from __future__ import annotations
+
+import hmac
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, Field
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
+from sqlmodel import Session, select
+from starlette.responses import JSONResponse
+
+from app.model_config_schemas import (
+    OAuthCredentialPayload,
+    OAuthRefreshPayload,
+    UsageRecordPayload,
+)
+from app.models import User
+from app.services import chat_context_service as chat_service
+from app.services import forest_ai_service, outline_service, resource_service
+from app.services import knowledge_base_service as kb_service
+from app.services import learning_path_runtime_service as path_service
+from app.services import model_config_service as model_service
+
+INTERNAL_TOKEN_HEADER = "X-Internal-Token"
+
+
+class TurnPayload(BaseModel):
+    user_uid: str = Field(min_length=1)
+    user_message: str = Field(min_length=1, max_length=4000)
+    image_attachment: str | None = None
+    assistant_message: str | None = None
+    session_state_patch: dict | None = None
+
+
+class StudentProfilePayload(BaseModel):
+    profile_data: dict
+
+
+class KnowledgeGapPayload(BaseModel):
+    topic: str = Field(min_length=1, max_length=200)
+    student_goal_summary: str = Field(default="", max_length=4000)
+
+
+class VerifyVideoPayload(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
+
+
+class ComposeVideoPayload(BaseModel):
+    videos: list[dict] = Field(default_factory=list, max_length=10)
+    unavailable_reason: str = Field(default="", max_length=500)
+
+
+class VerifySourcePayload(BaseModel):
+    candidate: dict
+
+
+class AssemblePathPayload(BaseModel):
+    profile: dict
+    learning_topic: str = Field(min_length=1)
+    plan: dict
+    intake_courses: list[dict]
+
+
+class SaveYearPathPayload(BaseModel):
+    learning_topic: str = Field(min_length=1)
+    path_data: dict
+
+
+class OutlineSourcePayload(BaseModel):
+    course_id: str = Field(default="", max_length=200)
+
+
+class ComposeOutlinePayload(BaseModel):
+    course: dict
+    naming: dict
+
+
+class SaveOutlinesPayload(BaseModel):
+    path_fingerprints: dict[str, str]
+    outlines: list[dict] = Field(min_length=1)
+
+
+class ReportEvidencePayload(BaseModel):
+    tool: str
+    evidence_id: str
+
+
+class ReportValidatePayload(BaseModel):
+    narrative: dict
+    details: dict[str, str] = Field(default_factory=dict)
+
+
+class QuizMaterialPayload(BaseModel):
+    course_node_id: str
+    chapter_id: str
+
+
+class PreparePayload(BaseModel):
+    mode: str = "generate"
+
+
+class PromptPayload(BaseModel):
+    issue: str = ""
+    regeneration_focus: str = ""
+    previous_html: str = ""
+
+
+class ValidateMarkdownPayload(BaseModel):
+    raw_output: str
+
+
+class ValidateAnimationPayload(BaseModel):
+    animations: list[dict] = Field(default_factory=list)
+    fallback: bool = False
+
+
+class SectionResourcePayload(BaseModel):
+    phase: str
+    value: dict | None = None
+    failure: str = ""
+
+
+class FinishPayload(BaseModel):
+    succeeded_section_ids: list[str] = Field(default_factory=list)
+
+
+def create_internal_router(engine: Engine, internal_token: str | None) -> APIRouter:  # noqa: C901
+    def verify_internal_token(
+        provided: str | None = Header(default=None, alias=INTERNAL_TOKEN_HEADER),
+    ) -> None:
+        if provided is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="缺少内部令牌"
+            )
+        if not internal_token:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="内部接口未启用"
+            )
+        if not hmac.compare_digest(
+            provided.encode("utf-8"), internal_token.encode("utf-8")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="内部令牌无效"
+            )
+
+    router = APIRouter(
+        prefix="/internal",
+        dependencies=[Depends(verify_internal_token)],
+        include_in_schema=False,
+    )
+
+    @router.get("/health")
+    def internal_health() -> JSONResponse:
+        try:
+            with engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+        except SQLAlchemyError:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "error", "database": "unavailable"},
+            )
+        return JSONResponse(content={"status": "ok", "database": "connected"})
+
+    @router.get("/users/{user_uid}/auth-status")
+    def user_auth_status(user_uid: str) -> dict[str, str | bool | None]:
+        with Session(engine) as session:
+            user = session.exec(select(User).where(User.uid == user_uid)).first()
+            if user is None:
+                return {
+                    "user_uid": user_uid,
+                    "exists": False,
+                    "role": None,
+                    "is_active": False,
+                }
+            return {
+                "user_uid": user.uid,
+                "exists": True,
+                "role": user.role,
+                "is_active": user.is_active,
+            }
+
+    @router.get("/users/{user_uid}/model-runtime-config")
+    def model_runtime_config(user_uid: str, request: Request) -> JSONResponse:
+        with Session(engine) as session:
+            user = session.exec(select(User).where(User.uid == user_uid)).first()
+            if user is None:
+                raise HTTPException(status_code=404, detail="用户不存在")
+            config = model_service.runtime_config(
+                session, user_uid, request.app.state.model_cipher
+            )
+        return JSONResponse(content=jsonable_encoder(config))
+
+    @router.post("/users/{user_uid}/providers/{provider_id}/oauth-refresh-lock")
+    def oauth_refresh_lock(
+        user_uid: str,
+        provider_id: str,
+        payload: OAuthRefreshPayload,
+        request: Request,
+    ) -> JSONResponse:
+        with Session(engine) as session:
+            result = model_service.oauth_refresh_lock(
+                session,
+                user_uid,
+                provider_id,
+                payload.previous_refresh_fingerprint,
+                payload.new_credential,
+                payload.expires_at,
+                request.app.state.model_cipher,
+            )
+        return JSONResponse(content=jsonable_encoder(result))
+
+    @router.put("/users/{user_uid}/providers/{provider_id}/oauth-credential")
+    def save_oauth_credential(
+        user_uid: str,
+        provider_id: str,
+        payload: OAuthCredentialPayload,
+        request: Request,
+    ) -> dict[str, bool]:
+        with Session(engine) as session:
+            if session.exec(select(User).where(User.uid == user_uid)).first() is None:
+                raise HTTPException(status_code=404, detail="用户不存在")
+            model_service.save_oauth_credential(
+                session,
+                user_uid,
+                provider_id,
+                payload.credential,
+                payload.expires_at,
+                payload.account_label,
+                request.app.state.model_cipher,
+            )
+        request.app.state.ai_gateway_client.invalidate_user_model_config(user_uid)
+        return {"ok": True}
+
+    @router.post("/users/{user_uid}/model-usage")
+    def model_usage(user_uid: str, payload: UsageRecordPayload) -> dict[str, str]:
+        with Session(engine) as session:
+            if session.exec(select(User).where(User.uid == user_uid)).first() is None:
+                raise HTTPException(status_code=404, detail="用户不存在")
+            row = model_service.record_usage(session, user_uid, payload)
+            return {"usage_id": row.usage_id}
+
+    def _require_user(session: Session, user_uid: str) -> None:
+        if session.exec(select(User).where(User.uid == user_uid)).first() is None:
+            raise HTTPException(status_code=404, detail="用户不存在")
+
+    @router.get("/chat/sessions/{session_id}/context")
+    def chat_context(session_id: str, user_uid: str) -> JSONResponse:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            try:
+                context = chat_service.build_chat_context(session, session_id, user_uid)
+            except chat_service.SessionNotFoundError:
+                raise HTTPException(status_code=404, detail="会话不存在") from None
+        return JSONResponse(content=jsonable_encoder(context))
+
+    @router.post("/chat/sessions/{session_id}/turn")
+    def chat_turn(session_id: str, payload: TurnPayload) -> dict:
+        with Session(engine) as session:
+            try:
+                return chat_service.persist_turn(
+                    session,
+                    session_id,
+                    payload.user_uid,
+                    user_message=payload.user_message,
+                    image_attachment=payload.image_attachment,
+                    assistant_message=payload.assistant_message,
+                    session_state_patch=payload.session_state_patch,
+                )
+            except chat_service.SessionNotFoundError:
+                raise HTTPException(status_code=404, detail="会话不存在") from None
+
+    @router.put("/students/{user_uid}/profile")
+    def put_student_profile(user_uid: str, payload: StudentProfilePayload) -> dict:
+        profile = payload.profile_data
+        if profile.get("type") not in {"collecting", "basic_profile"}:
+            raise HTTPException(status_code=422, detail="画像类型无效")
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            return chat_service.save_student_profile(session, user_uid, profile)
+
+    @router.get("/students/{user_uid}/learning-overview")
+    def learning_overview(user_uid: str) -> JSONResponse:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            overview = chat_service.build_learning_overview(session, user_uid)
+        return JSONResponse(content=jsonable_encoder(overview))
+
+    @router.get("/knowledge-base/published-textbooks")
+    def published_textbooks(
+        query: str = "", offset: int = 0, limit: int = Query(50, ge=1, le=200)
+    ) -> dict:
+        with Session(engine) as session:
+            return kb_service.list_published_textbooks(session, query, offset, limit)
+
+    @router.get("/knowledge-base/published-textbooks/{textbook_id}/outline")
+    def published_textbook_outline(
+        textbook_id: str, offset: int = 0, limit: int = Query(120, ge=1, le=500)
+    ) -> dict:
+        with Session(engine) as session:
+            try:
+                return kb_service.published_textbook_outline(
+                    session, textbook_id, offset, limit
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from None
+
+    @router.post("/knowledge-base/gaps")
+    def register_knowledge_gap(payload: KnowledgeGapPayload) -> dict:
+        """Record a topic the library cannot serve yet, for the admin to-do list."""
+        with Session(engine) as session:
+            gap = kb_service.create_or_update_knowledge_gap(
+                session, payload.topic, payload.student_goal_summary
+            )
+            return {"gap_id": gap.gap_id}
+
+    @router.get("/knowledge-base/overview")
+    def knowledge_base_overview() -> dict:
+        with Session(engine) as session:
+            return kb_service.knowledge_base_overview(session)
+
+    @router.post("/knowledge-base/verify-source")
+    def verify_knowledge_base_source(payload: VerifySourcePayload) -> dict:
+        # Network + parsing happen before any DB session is opened.
+        source_result, reason = kb_service.evaluate_textbook_source_candidate(
+            payload.candidate
+        )
+        if source_result is None:
+            return {"accepted": False, "reason": reason, "source_result": None}
+        with Session(engine) as session:
+            kb_service.verify_textbook_source_candidate(session, source_result)
+        return {
+            "accepted": True,
+            "reason": "",
+            "source_result": source_result.model_dump(),
+        }
+
+    @router.get("/students/{user_uid}/protected-courses")
+    def protected_courses(user_uid: str) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            return {"courses": path_service.protected_courses(session, user_uid)}
+
+    @router.get("/students/{user_uid}/learning-paths/progress-snapshots")
+    def progress_snapshots(user_uid: str) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            return {
+                "snapshots": jsonable_encoder(
+                    path_service.progress_snapshots(session, user_uid)
+                )
+            }
+
+    @router.post("/students/{user_uid}/learning-paths/{grade_year}/assemble")
+    def assemble_learning_path(
+        user_uid: str, grade_year: str, payload: AssemblePathPayload
+    ) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            try:
+                path = path_service.assemble_learning_path(
+                    session,
+                    user_uid,
+                    profile=payload.profile,
+                    grade_year=grade_year,
+                    learning_topic=payload.learning_topic,
+                    plan=payload.plan,
+                    intake_courses=payload.intake_courses,
+                )
+            except (ValueError, KeyError, TypeError) as exc:
+                raise HTTPException(
+                    status_code=422, detail=f"学习路径规划无法装配：{exc}"
+                ) from None
+            return {"path_data": path}
+
+    @router.put("/students/{user_uid}/learning-paths/{grade_year}")
+    def put_year_learning_path(
+        user_uid: str, grade_year: str, payload: SaveYearPathPayload
+    ) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            path_service.save_year_path(
+                session, user_uid, grade_year, payload.learning_topic, payload.path_data
+            )
+            return {"ok": True, "grade_year": grade_year}
+
+    @router.post("/students/{user_uid}/outline-source-context")
+    def outline_source_context(user_uid: str, payload: OutlineSourcePayload) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            try:
+                return outline_service.source_context(
+                    session, user_uid, payload.course_id
+                )
+            except outline_service.OutlineSourceError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    @router.post("/students/{user_uid}/course-outlines/compose")
+    def compose_course_outline(user_uid: str, payload: ComposeOutlinePayload) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+        try:
+            return {
+                "outline": outline_service.compose_outline(
+                    payload.course, payload.naming
+                )
+            }
+        except (ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    @router.post("/students/{user_uid}/course-outlines/batch")
+    def save_course_outlines(user_uid: str, payload: SaveOutlinesPayload) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            try:
+                saved = outline_service.save_outlines(
+                    session, user_uid, payload.path_fingerprints, payload.outlines
+                )
+            except outline_service.PathChangedError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from None
+            return {"saved_course_ids": saved}
+
+    def _resource_call(user_uid: str, call):
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            try:
+                return call(session)
+            except resource_service.ResourceRequestError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    _RES = "/students/{user_uid}/courses/{course_id}"
+
+    @router.post(_RES + "/chapters/{chapter_id}/generation-prepare")
+    def generation_prepare(
+        user_uid: str, course_id: str, chapter_id: str, payload: PreparePayload
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.prepare_generation(
+                s, user_uid, course_id, chapter_id, payload.mode
+            ),
+        )
+
+    @router.post(_RES + "/chapters/{chapter_id}/generation-finish")
+    def generation_finish(
+        user_uid: str, course_id: str, chapter_id: str, payload: FinishPayload
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.finish_generation(
+                s, user_uid, course_id, chapter_id, payload.succeeded_section_ids
+            ),
+        )
+
+    @router.post(_RES + "/sections/{section_id}/markdown/prompt")
+    def section_markdown_prompt(
+        user_uid: str, course_id: str, section_id: str, payload: PromptPayload
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.markdown_prompt(
+                s,
+                user_uid,
+                course_id,
+                section_id,
+                payload.issue,
+                payload.regeneration_focus,
+            ),
+        )
+
+    @router.post(_RES + "/sections/{section_id}/markdown/validate")
+    def section_markdown_validate(
+        user_uid: str, course_id: str, section_id: str, payload: ValidateMarkdownPayload
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.validate_markdown(
+                s, user_uid, course_id, section_id, payload.raw_output
+            ),
+        )
+
+    @router.post(_RES + "/sections/{section_id}/video/context")
+    def section_video_context(user_uid: str, course_id: str, section_id: str) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.video_context(
+                s, user_uid, course_id, section_id
+            ),
+        )
+
+    @router.post("/videos/verify")
+    async def verify_video(payload: VerifyVideoPayload) -> dict:
+        return await resource_service.verify_video(payload.url)
+
+    @router.post(_RES + "/sections/{section_id}/video/compose")
+    async def section_video_compose(
+        user_uid: str, course_id: str, section_id: str, payload: ComposeVideoPayload
+    ) -> dict:
+        with Session(engine) as session:
+            _require_user(session, user_uid)
+            try:
+                return await resource_service.compose_video(
+                    session,
+                    user_uid,
+                    course_id,
+                    section_id,
+                    payload.videos,
+                    payload.unavailable_reason,
+                )
+            except resource_service.ResourceRequestError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    @router.post(_RES + "/sections/{section_id}/animation/prompt")
+    def section_animation_prompt(
+        user_uid: str, course_id: str, section_id: str, payload: PromptPayload
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.animation_prompt(
+                s,
+                user_uid,
+                course_id,
+                section_id,
+                payload.issue,
+                payload.previous_html,
+            ),
+        )
+
+    @router.post(_RES + "/sections/{section_id}/animation/validate")
+    def section_animation_validate(
+        user_uid: str,
+        course_id: str,
+        section_id: str,
+        payload: ValidateAnimationPayload,
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.validate_animations(
+                s,
+                user_uid,
+                course_id,
+                section_id,
+                payload.animations,
+                fallback=payload.fallback,
+            ),
+        )
+
+    @router.put(_RES + "/sections/{section_id}/resources")
+    def put_section_resources(
+        user_uid: str, course_id: str, section_id: str, payload: SectionResourcePayload
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.save_section_phase(
+                s,
+                user_uid,
+                course_id,
+                section_id,
+                payload.phase,
+                payload.value,
+                payload.failure,
+            ),
+        )
+
+    @router.get("/forest/chapters/{course_node_id}/{chapter_id}/material")
+    def forest_chapter_material(
+        course_node_id: str, chapter_id: str, user_uid: str, quiz_id: str | None = None
+    ) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: forest_ai_service.forest_material(
+                s, user_uid, course_node_id, chapter_id, quiz_id
+            ),
+        )
+
+    @router.get("/canopy/{user_uid}/report-context")
+    def canopy_report_context(user_uid: str) -> dict:
+        return _resource_call(
+            user_uid, lambda s: forest_ai_service.report_context(s, user_uid)
+        )
+
+    @router.post("/canopy/{user_uid}/report-evidence")
+    def canopy_report_evidence(user_uid: str, payload: ReportEvidencePayload) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: forest_ai_service.report_evidence(
+                s, user_uid, payload.tool, payload.evidence_id
+            ),
+        )
+
+    @router.post("/canopy/{user_uid}/report-validate")
+    def canopy_report_validate(user_uid: str, payload: ReportValidatePayload) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: forest_ai_service.report_validate(
+                s, user_uid, payload.narrative, payload.details
+            ),
+        )
+
+    @router.post("/students/{user_uid}/quiz-material")
+    def quiz_material(user_uid: str, payload: QuizMaterialPayload) -> dict:
+        from app.services.forest_service import read_forest_quiz_session
+
+        def _run(s: Session) -> dict:
+            quiz_session = read_forest_quiz_session(
+                s, user_uid, payload.course_node_id, payload.chapter_id
+            )
+            if quiz_session.progress.state == "locked":
+                raise HTTPException(status_code=403, detail="章节尚未解锁")
+            return forest_ai_service.quiz_generation_material(
+                s, user_uid, payload.course_node_id, quiz_session.chapter
+            )
+
+        return _resource_call(user_uid, _run)
+
+    return router

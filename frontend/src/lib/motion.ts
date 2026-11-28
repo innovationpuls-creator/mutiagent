@@ -11,20 +11,8 @@ export const whisperVariants: Variants = {
 	exit: { opacity: 0, transition: { duration: 0.2, ease: "easeOut" } },
 };
 
-export const breathingGlowVariants: Variants = {
-	animate: {
-		boxShadow: [
-			"0 0 0px 0px rgba(244, 199, 163, 0)" /* No glow */,
-			"0 0 16px 4px rgba(244, 199, 163, 0.4)" /* Soft pulse of --color-intent-active */,
-			"0 0 0px 0px rgba(244, 199, 163, 0)",
-		],
-		transition: {
-			duration: 4.2, // Matches var(--duration-breathe)
-			repeat: Infinity,
-			ease: "easeInOut",
-		},
-	},
-};
+/** 呼吸光晕：颜色来自 --shadow-glow-active，只做透明度动画，见 global.css 的 .breathing-glow */
+export const breathingGlowClassName = "breathing-glow";
 
 export const actionHintVariants: Variants = {
 	rest: {

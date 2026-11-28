@@ -1,4 +1,6 @@
 import { KeyRound, Pencil, Trash2 } from "lucide-react";
+import { Button } from "../../../components/ui/Button";
+import { StatusBadge } from "../../../components/ui/StatusBadge";
 import type { AuthRole, AuthUser } from "../../../types/auth";
 
 interface AccountTableProps {
@@ -55,8 +57,12 @@ export function AccountTable({
 	onDeleteAccount,
 }: AccountTableProps) {
 	return (
-		<section className="admin-table" aria-label="账号列表" aria-busy={busy}>
-			<div className="admin-table-row admin-table-head">
+		<section
+			className="data-table admin-table"
+			aria-label="账号列表"
+			aria-busy={busy}
+		>
+			<div className="data-table-row admin-table-row data-table-head">
 				<label className="admin-check-cell">
 					<input
 						checked={allVisibleSelected}
@@ -65,22 +71,19 @@ export function AccountTable({
 					/>
 					<span className="admin-visually-hidden">选择当前列表全部账号</span>
 				</label>
-				<span>用户名</span>
-				<span>登录标识</span>
+				<span>账号</span>
 				<span>角色</span>
-				<span>学校</span>
-				<span>专业</span>
-				<span>班级</span>
+				<span>学校 · 专业 · 班级</span>
 				<span>状态</span>
-				<span>登录方式</span>
-				<span>创建时间</span>
-				<span>最近登录</span>
-				<span>操作</span>
+				<span className="admin-col-secondary">登录方式</span>
+				<span className="admin-col-secondary">创建时间</span>
+				<span className="admin-col-secondary">最近登录</span>
+				<span className="data-table-sticky-end">操作</span>
 			</div>
 			{visibleAccounts.map((account) => {
 				const isSelf = currentUser?.uid === account.uid;
 				return (
-					<div className="admin-table-row" key={account.uid}>
+					<div className="data-table-row admin-table-row" key={account.uid}>
 						<label className="admin-check-cell">
 							<input
 								checked={selectedUids.has(account.uid)}
@@ -90,50 +93,68 @@ export function AccountTable({
 							/>
 						</label>
 						<span className="admin-user-name">
-							{account.username}
-							{isSelf ? <small>当前登录</small> : null}
+							<strong>
+								{account.username}
+								{isSelf ? <small>当前登录</small> : null}
+							</strong>
+							<span className="admin-cell-sub">{account.identifier}</span>
 						</span>
-						<span>{account.identifier}</span>
 						<span>{roleLabels[account.role]}</span>
-						<span>{account.school || "未填写"}</span>
-						<span>{account.major || "未填写"}</span>
-						<span>{account.class_name || "未填写"}</span>
+						<span className="admin-cell-stack">
+							<span>{account.school || "未填写学校"}</span>
+							<span className="admin-cell-sub">
+								{account.major || "未填写专业"} ·{" "}
+								{account.class_name || "未填写班级"}
+							</span>
+						</span>
 						<button
-							className={`admin-status ${account.is_active ? "is-active" : "is-disabled"}`}
+							className="admin-status-toggle"
 							type="button"
 							onClick={() => void toggleAccount(account)}
 							disabled={busy || (isSelf && account.is_active)}
 						>
-							{account.is_active ? "启用" : "停用"}
+							<StatusBadge
+								variant="pill"
+								tone={account.is_active ? "success" : "neutral"}
+								showDot={false}
+							>
+								{account.is_active ? "启用" : "停用"}
+							</StatusBadge>
 						</button>
-						<span>{providerLabels[account.provider] ?? account.provider}</span>
-						<span>{formatDate(account.created_at)}</span>
-						<span>{formatDate(account.last_login_at)}</span>
-						<span className="admin-row-actions">
-							<button
-								type="button"
+						<span className="admin-col-secondary">
+							{providerLabels[account.provider] ?? account.provider}
+						</span>
+						<span className="admin-cell-time admin-col-secondary">
+							{formatDate(account.created_at)}
+						</span>
+						<span className="admin-cell-time admin-col-secondary">
+							{formatDate(account.last_login_at)}
+						</span>
+						<span className="admin-row-actions data-table-sticky-end">
+							<Button
+								variant="icon"
+								size="sm"
 								onClick={() => openEditEditor(account)}
 								aria-label={`编辑 ${account.username}`}
 								disabled={busy}
-							>
-								<Pencil aria-hidden="true" />
-							</button>
-							<button
-								type="button"
+								icon={<Pencil aria-hidden="true" />}
+							/>
+							<Button
+								variant="icon"
+								size="sm"
 								onClick={() => onResetPassword(account)}
 								aria-label={`重置 ${account.username} 的密码`}
 								disabled={busy}
-							>
-								<KeyRound aria-hidden="true" />
-							</button>
-							<button
-								type="button"
+								icon={<KeyRound aria-hidden="true" />}
+							/>
+							<Button
+								variant="icon"
+								size="sm"
 								onClick={() => onDeleteAccount(account)}
 								aria-label={`删除 ${account.username}`}
 								disabled={busy || isSelf}
-							>
-								<Trash2 aria-hidden="true" />
-							</button>
+								icon={<Trash2 aria-hidden="true" />}
+							/>
 						</span>
 					</div>
 				);

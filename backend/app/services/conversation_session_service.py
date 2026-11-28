@@ -76,3 +76,24 @@ def append_messages(
     session.commit()
     session.refresh(row)
     return row
+
+
+def update_session_state(
+    session: Session, session_id: str, patch: dict
+) -> ConversationSession:
+    """Shallow-merge ``patch`` into ``session_state`` (``None`` deletes a key)."""
+    row = session.get(ConversationSession, session_id)
+    if row is None:
+        raise ValueError(f"Conversation session {session_id} not found")
+    merged = dict(row.session_state or {})
+    for key, value in patch.items():
+        if value is None:
+            merged.pop(key, None)
+        else:
+            merged[key] = value
+    row.session_state = merged
+    row.updated_at = datetime.now(timezone.utc)
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row

@@ -12,13 +12,10 @@ from app.core.security import create_get_current_user
 from app.database import run_db, session_factory_from_session
 from app.models import User
 from app.orchestration.agents.quiz import (
-    generate_quiz_questions,
-    grade_quiz_answers,
-    stream_forest_ai_response,
+    normalize_grading_result,
+    normalize_quiz_questions,
 )
-from app.orchestration.llm import get_worker_llm
 from app.schemas import (
-    ForestAiStreamRequest,
     ForestAttemptRead,
     ForestQuizAttemptCreateRequest,
     ForestQuizGenerateRequest,
@@ -26,6 +23,12 @@ from app.schemas import (
     ForestQuizSessionReadResponse,
     ForestSubmissionRead,
 )
+from app.services.ai_gateway_client import (
+    AiGatewayError,
+    AiGatewayUnavailableError,
+    acall_gateway_ai,
+)
+from app.services.forest_ai_service import quiz_generation_material
 from app.services.forest_service import (
     generate_or_read_quiz,
     read_forest_quiz_session,
@@ -40,43 +43,40 @@ from app.services.forest_submission_service import (
 SessionDependency = Callable[[], Generator[Session, None, None]]
 
 
-def _extract_knowledge_point_ids(chapter: dict) -> list[str]:
-    """从章节大纲数据中提取所有知识点 ID。"""
-    kp_ids: list[str] = []
-    kp_ids.extend(chapter.get("core_knowledge_point_ids") or [])
-    for hierarchy in chapter.get("knowledge_hierarchy") or []:
-        if isinstance(hierarchy, dict):
-            kp_ids.extend(hierarchy.get("knowledge_point_ids") or [])
-    key_kps = chapter.get("key_knowledge_points", [])
-    if isinstance(key_kps, list):
-        for kp in key_kps:
-            if isinstance(kp, str):
-                kp_ids.append(kp)
-            elif isinstance(kp, dict):
-                kp_id = kp.get("knowledge_point_id") or kp.get("id")
-                if kp_id:
-                    kp_ids.append(str(kp_id))
-    return list(dict.fromkeys(kp_ids))
+async def _gateway(path: str, body: dict) -> dict:
+    """Run one AI job on the student's own model; surface gateway errors faithfully."""
+    try:
+        return await acall_gateway_ai(path, body)
+    except AiGatewayError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+    except AiGatewayUnavailableError as exc:
+        raise HTTPException(
+            status_code=503, detail="AI 服务暂时不可用，请稍后重试"
+        ) from exc
+
+
+async def generate_quiz_questions(uid: str, material: dict) -> list[dict]:
+    generated = await _gateway(
+        "/internal/ai/quiz/generate", {"user_uid": uid, **material}
+    )
+    try:
+        return normalize_quiz_questions(generated.get("questions"))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502, detail="出题结果不合规，请稍后重试"
+        ) from exc
+
+
+async def grade_quiz_answers(uid: str, questions: list, answers: dict) -> dict:
+    result = await _gateway(
+        "/internal/ai/quiz/grade",
+        {"user_uid": uid, "questions": questions, "answers": answers},
+    )
+    return normalize_grading_result(result)
 
 
 def _sse(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-
-async def _stream_forest_ai_events(
-    payload: ForestAiStreamRequest,
-) -> AsyncGenerator[str, None]:
-    try:
-        async for chunk in stream_forest_ai_response(
-            get_worker_llm(),
-            message=payload.message,
-            context=payload.active_question_context.model_dump(),
-            image_attachment=payload.image_attachment,
-        ):
-            yield _sse("forest_ai_text_chunk", {"chunk": chunk})
-        yield _sse("forest_ai_completed", {"message": "completed"})
-    except Exception as exc:
-        yield _sse("forest_error", {"message": str(exc) or "Forest AI 暂时不可用"})
 
 
 def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  # noqa: C901
@@ -127,13 +127,14 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  #
         ):
             return quiz_session.quiz
 
-        questions = await generate_quiz_questions(
-            get_worker_llm(),
-            chapter_id=chapter_id,
-            chapter_title=str(quiz_session.chapter.get("title", "")),
-            chapter_context=json.dumps(quiz_session.chapter, ensure_ascii=False),
-            knowledge_point_ids=_extract_knowledge_point_ids(quiz_session.chapter),
+        material = await run_db(
+            factory,
+            quiz_generation_material,
+            current_user.uid,
+            course_node_id,
+            quiz_session.chapter,
         )
+        questions = await generate_quiz_questions(current_user.uid, material)
         return await run_db(
             factory,
             generate_or_read_quiz,
@@ -161,9 +162,7 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  #
         questions, version = await run_db(
             factory, prepare_submission, current_user.uid, quiz_id, payload
         )
-        grading = await grade_quiz_answers(
-            get_worker_llm(), questions=questions, answers=payload.answers
-        )
+        grading = await grade_quiz_answers(current_user.uid, questions, payload.answers)
         result = await run_db(
             factory,
             persist_submission,
@@ -216,7 +215,7 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  #
                     "status", {"phase": "grading", "message": "正在批改你的答案…"}
                 )
                 grading = await grade_quiz_answers(
-                    get_worker_llm(), questions=questions, answers=payload.answers
+                    current_user.uid, questions, payload.answers
                 )
                 yield _sse(
                     "status", {"phase": "analyzing", "message": "正在分析学习进度…"}
@@ -247,17 +246,6 @@ def create_forest_router(session_dependency: SessionDependency) -> APIRouter:  #
 
         return StreamingResponse(
             event_generator(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
-    @router.post("/ai/stream")
-    async def stream_forest_ai(
-        payload: ForestAiStreamRequest,
-        _: User = Depends(get_current_user),
-    ) -> StreamingResponse:
-        return StreamingResponse(
-            _stream_forest_ai_events(payload),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )

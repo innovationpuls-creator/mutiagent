@@ -19,8 +19,9 @@ def _production_settings(database_url: str):
             "APP_ENV": "production",
             "DATABASE_URL": database_url,
             "JWT_SECRET": "alembic-production-jwt-secret",
-            "LLM_API_KEY": "alembic-test-llm-api-key",
-            "LLM_MODEL": "alembic-test-model",
+            "INTERNAL_API_TOKEN": "test-production-internal-token",
+            "AI_GATEWAY_URL": "http://ai-gateway:8100",
+            "MODEL_SECRET_ENCRYPTION_KEY": "test-production-model-secret-key",
             "ALLOWED_ORIGINS": "https://onetree.chat",
         }
     )
@@ -41,7 +42,18 @@ def test_empty_schema_upgrades_to_alembic_head(tmp_path: Path) -> None:
     assert table_names == set(SQLModel.metadata.tables) | {"alembic_version"}
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0006_admin_program_drop_embed"
+        assert revision.scalar_one() == "0009_kb_job_triggered_by"
+        column = connection.execute(
+            text(
+                "SELECT is_nullable, column_default "
+                "FROM information_schema.columns "
+                "WHERE table_schema = current_schema() "
+                "AND table_name = 'conversationsession' "
+                "AND column_name = 'session_state'"
+            )
+        ).one()
+    assert column[0] == "NO"
+    assert "'{}'" in column[1]
 
 
 def test_alembic_prefers_database_url_environment(
@@ -63,7 +75,7 @@ def test_alembic_prefers_database_url_environment(
     engine = create_engine(database_url)
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0006_admin_program_drop_embed"
+        assert revision.scalar_one() == "0009_kb_job_triggered_by"
 
 
 def test_programmatic_alembic_config_precedes_database_url_environment(
@@ -85,7 +97,7 @@ def test_programmatic_alembic_config_precedes_database_url_environment(
     engine = create_engine(database_url)
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert revision.scalar_one() == "0006_admin_program_drop_embed"
+        assert revision.scalar_one() == "0009_kb_job_triggered_by"
 
 
 def test_ingestion_job_lease_migration_preserves_existing_job(

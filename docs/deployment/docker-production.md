@@ -11,6 +11,7 @@
 - 腾讯云安全组允许公网访问 `80/tcp` 和 `443/tcp`。
 - 本地 `backend/.env` 精确包含当前可用的 `DATABASE_URL`。
 - 本地 PostgreSQL 18 的 `pg_dump`、`pg_restore` 和 `psql` 可用。
+- 生产栈包含 `ai-gateway`（TypeScript/Pi，端口 8100，仅容器网络内可达）。Nginx 把 `/api/ai/`、`/api/chat/message`、`/api/forest/ai/stream` 等 AI 路径转发给它，`/internal/` 对公网封闭。`INTERNAL_API_TOKEN` 与 `MODEL_SECRET_ENCRYPTION_KEY` 由 bootstrap 生成，backend、worker、ai-gateway 必须共用同一份，缺失时后端生产配置校验会拒绝启动。平台不再持有全局 LLM 密钥，所有模型由用户在页面“模型配置”里自行填写；知识库与视频检索使用的联网搜索服务由 `WEB_SEARCH_BASE_URL`/`WEB_SEARCH_API_KEY` 可选配置，未配置时视频小节逐节降级为“暂无视频”。
 
 `onetree.chat` 和 `www.onetree.chat` 尚未完成 ICP 备案时，腾讯云会拦截域名 HTTP 请求。该状态不影响 IP HTTPS 部署，不要在此阶段执行域名证书签发。
 
@@ -24,7 +25,7 @@ cd /Users/torch/torch/opt/mutiagent
 ./deploy/bin/verify-bundle "$HOME/Desktop/onetree-migration.tar.gz"
 ```
 
-导出包包含当前数据库、`backend/.codex-artifacts/knowledge-base-uploads` 下的全部教材文件和 SHA-256 清单，不包含 LLM API Key、JWT 密钥或服务器数据库密码。
+导出包包含当前数据库、`backend/.codex-artifacts/knowledge-base-uploads` 下的全部教材文件和 SHA-256 清单，不包含 JWT 密钥或服务器数据库密码。
 
 ## 3. 上传迁移包
 
@@ -58,14 +59,12 @@ ls -lh /root/onetree-migration.tar.gz
 curl -fL --retry 5 --connect-timeout 10 https://raw.githubusercontent.com/innovationpuls-creator/mutiagent/main/deploy/bin/bootstrap -o /root/onetree-bootstrap && chmod 700 /root/onetree-bootstrap && /root/onetree-bootstrap
 ```
 
-脚本依次询问六项内容：
+脚本依次询问四项内容：
 
-1. `LLM API key`：实际使用的阿里百炼 API Key，输入时不回显。
-2. `LLM model`：实际使用且已经验证可用的模型标识符。
-3. `Let's Encrypt email`：证书到期通知邮箱。
-4. `Migration bundle path`：填写 `/root/onetree-migration.tar.gz`。
-5. `Smoke account`：填写用于部署检查的现有账号 `18771701100` 或 `18771701111`。
-6. `Smoke password`：上一步账号的真实密码，输入时不回显。
+1. `Let's Encrypt email`：证书到期通知邮箱。
+2. `Migration bundle path`：填写 `/root/onetree-migration.tar.gz`。
+3. `Smoke account`：填写用于部署检查的现有账号 `18771701100` 或 `18771701111`。
+4. `Smoke password`：上一步账号的真实密码，输入时不回显。
 
 数据库密码、JWT 密钥和维护检查 token 由脚本自动生成，不需要填写。生产配置保存到 `/opt/onetree/.env.production`，权限为 `0600`。
 
@@ -198,6 +197,15 @@ docker system df
 不要手工删除正在使用的 Docker volume。备份目录由发布脚本自动轮转为最近 3 份。
 
 ## 13. 常见故障定位
+
+AI 网关异常（对话、出题、报告无响应）：
+
+```bash
+docker compose --env-file /opt/onetree/.env.production -f /opt/onetree/deploy/compose.production.yml ps ai-gateway
+docker compose --env-file /opt/onetree/.env.production -f /opt/onetree/deploy/compose.production.yml logs --tail 200 ai-gateway
+```
+
+`/api/ai/health/live` 表示进程存活；`/api/ai/health/ready` 在后端不可达或内部令牌不一致时返回 503。
 
 Docker 未启动：
 

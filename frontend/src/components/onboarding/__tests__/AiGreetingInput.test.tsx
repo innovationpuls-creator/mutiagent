@@ -4216,3 +4216,115 @@ it("renders progress bar indicating the active collection stage", () => {
 	expect(screen.getByText("路径生成")).toBeTruthy();
 	expect(screen.getByText("持续更新")).toBeTruthy();
 });
+
+test("shows model guidance when the gateway answers MODEL_NOT_CONFIGURED (428)", async () => {
+	vi.stubGlobal("scrollTo", vi.fn());
+	stubLocalStorage({
+		"mutiagent-auth": JSON.stringify({
+			token: "token-1",
+			user: {
+				uid: "user-1",
+				username: "测试用户",
+				identifier: "user@example.com",
+				role: "student",
+				provider: "password",
+				is_active: true,
+				created_at: "2026-06-02T00:00:00Z",
+				last_login_at: null,
+			},
+		}),
+	});
+	window.history.replaceState({}, "", "/sprout");
+	const fetchMock = vi
+		.fn()
+		.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({
+				session_id: "session-1",
+				reply_text: "greeting",
+				profile: null,
+				year_learning_paths: null,
+				course_knowledge: null,
+			}),
+		})
+		.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					detail: "尚未配置可用的个人模型，请先前往「模型配置」完成设置",
+					error_code: "MODEL_NOT_CONFIGURED",
+					action: "open_model_settings",
+				}),
+				{ status: 428, headers: { "Content-Type": "application/json" } },
+			),
+		);
+	vi.stubGlobal("fetch", fetchMock);
+
+	renderWithRouter(<AiGreetingInput />);
+	const input = await screen.findByPlaceholderText("输入你的学习情况...");
+	fireEvent.change(input, { target: { value: "你好" } });
+	fireEvent.click(screen.getByLabelText("发送消息"));
+
+	const alert = await screen.findByText("请先配置你的个人 AI 模型");
+	expect(alert).toBeTruthy();
+	expect(
+		screen.getByRole("link", { name: "去配置模型" }).getAttribute("href"),
+	).toBe("/settings/models");
+});
+
+test("shows the failing provider when the gateway answers MODEL_OAUTH_EXPIRED", async () => {
+	vi.stubGlobal("scrollTo", vi.fn());
+	stubLocalStorage({
+		"mutiagent-auth": JSON.stringify({
+			token: "token-1",
+			user: {
+				uid: "user-1",
+				username: "测试用户",
+				identifier: "user@example.com",
+				role: "student",
+				provider: "password",
+				is_active: true,
+				created_at: "2026-06-02T00:00:00Z",
+				last_login_at: null,
+			},
+		}),
+	});
+	window.history.replaceState({}, "", "/sprout");
+	const fetchMock = vi
+		.fn()
+		.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({
+				session_id: "session-1",
+				reply_text: "greeting",
+				profile: null,
+				year_learning_paths: null,
+				course_knowledge: null,
+			}),
+		})
+		.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					detail: "模型授权已过期，请重新登录对应厂商",
+					error_code: "MODEL_OAUTH_EXPIRED",
+					provider: "anthropic",
+					action: "reauthorize_provider",
+				}),
+				{ status: 401, headers: { "Content-Type": "application/json" } },
+			),
+		);
+	vi.stubGlobal("fetch", fetchMock);
+
+	renderWithRouter(<AiGreetingInput />);
+	const input = await screen.findByPlaceholderText("输入你的学习情况...");
+	fireEvent.change(input, { target: { value: "你好" } });
+	fireEvent.click(screen.getByLabelText("发送消息"));
+
+	expect(await screen.findByText("「anthropic」的授权已失效")).toBeTruthy();
+	expect(
+		screen
+			.getByRole("link", { name: /重新登录 anthropic/ })
+			.getAttribute("href"),
+	).toBe("/settings/models?reauth=anthropic");
+	// MODEL_OAUTH_EXPIRED is not the legacy invalid-credential 401: the session stays logged in.
+	expect(window.localStorage.getItem("mutiagent-auth")).not.toBeNull();
+});

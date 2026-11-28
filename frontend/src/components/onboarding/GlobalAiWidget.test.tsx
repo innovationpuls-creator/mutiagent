@@ -66,6 +66,7 @@ vi.mock("framer-motion", async () => {
 		),
 		motion: {
 			div: MotionDiv,
+			button: actual.motion.button,
 		},
 		useReducedMotion: () => false,
 	};

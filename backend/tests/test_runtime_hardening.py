@@ -1,90 +1,19 @@
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from langchain_core.messages import HumanMessage
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.api.health import create_health_router
-from app.api.orchestration import (
-    _append_turn_with_user_fallback,
-    _append_user_message_safely,
-    _stream_error_message,
-)
 from app.services.admin_data_service import (
     get_data_overview,
     list_data_cohorts,
     list_data_programs,
 )
 from tests.postgres import postgresql_test_url
-
-
-def test_stream_non_http_exception_uses_safe_message(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "app.services.conversation_session_service.load_session",
-        lambda *_args: SimpleNamespace(user_uid="user-1"),
-    )
-
-    message = _stream_error_message(
-        None,  # type: ignore[arg-type]
-        "session-1",
-        "user-1",
-        RuntimeError("database password leaked"),
-    )
-
-    assert message == "对话请求失败，请稍后重试。"
-    assert "database password leaked" not in message
-
-
-def test_user_message_persistence_failure_is_logged(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    def raise_persistence_error(*_args, **_kwargs) -> None:
-        raise RuntimeError("write failed")
-
-    monkeypatch.setattr(
-        "app.services.conversation_session_service.append_messages",
-        raise_persistence_error,
-    )
-    caplog.set_level(logging.ERROR, logger="app.api.orchestration")
-
-    _append_user_message_safely(
-        None,  # type: ignore[arg-type]
-        "session-1",
-        HumanMessage(content="继续生成"),
-    )
-
-    assert "conversation_user_message_persistence_failed" in caplog.text
-
-
-def test_completed_turn_persistence_failure_is_logged(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    def raise_persistence_error(*_args, **_kwargs) -> None:
-        raise RuntimeError("write failed")
-
-    monkeypatch.setattr(
-        "app.services.conversation_session_service.append_messages",
-        raise_persistence_error,
-    )
-    caplog.set_level(logging.ERROR, logger="app.api.orchestration")
-
-    with pytest.raises(RuntimeError, match="write failed"):
-        _append_turn_with_user_fallback(
-            None,  # type: ignore[arg-type]
-            "session-1",
-            HumanMessage(content="继续生成"),
-            "已完成",
-        )
-
-    assert "conversation_turn_persistence_failed" in caplog.text
 
 
 class _Result:

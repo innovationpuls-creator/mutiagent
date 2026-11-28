@@ -7,6 +7,7 @@ import {
 	Route,
 	RouterProvider,
 	Routes,
+	ScrollRestoration,
 	useLocation,
 } from "react-router-dom";
 import { IcpFilingLink } from "./components/layout/IcpFilingLink";
@@ -58,6 +59,11 @@ const AdminKnowledgeBasePage = lazy(() =>
 const AdminProgramsPage = lazy(() =>
 	import("./pages/admin/AdminProgramsPage").then(
 		({ AdminProgramsPage: Component }) => ({ default: Component }),
+	),
+);
+const ModelConfigPage = lazy(() =>
+	import("./pages/settings/ModelConfigPage").then(
+		({ ModelConfigPage: Component }) => ({ default: Component }),
 	),
 );
 const BranchPage = lazy(() =>
@@ -145,6 +151,7 @@ function AnimatedRoutes() {
 		"/leaf",
 		"/forest",
 		"/canopy",
+		"/settings",
 		"/admin",
 	].some(
 		(path) =>
@@ -186,6 +193,7 @@ function AnimatedRoutes() {
 										path="/admin/knowledge-base"
 										element={<AdminKnowledgeBasePage />}
 									/>
+									<Route path="/admin/models" element={<ModelConfigPage />} />
 								</Route>
 							</Route>
 
@@ -207,6 +215,10 @@ function AnimatedRoutes() {
 										element={<ForestQuizPage />}
 									/>
 									<Route path="/canopy" element={<CanopyPage />} />
+									<Route
+										path="/settings/models"
+										element={<ModelConfigPage />}
+									/>
 								</Route>
 							</Route>
 						</Route>
@@ -225,6 +237,7 @@ function AppGlobalAiWidget() {
 		location.pathname === "/login" ||
 		location.pathname === "/forest" ||
 		location.pathname.startsWith("/forest/") ||
+		location.pathname.startsWith("/settings") ||
 		location.pathname.startsWith("/admin");
 	if (isHiddenPath) {
 		return null;
@@ -238,13 +251,16 @@ function AppGlobalAiWidget() {
 
 function AppFilingLink() {
 	const { pathname } = useLocation();
-	if (/^\/(sprout|branch|leaf|forest|canopy)(\/|$)/.test(pathname)) return null;
+	if (/^\/(sprout|branch|leaf|forest|canopy|settings)(\/|$)/.test(pathname))
+		return null;
 	return <IcpFilingLink />;
 }
 
 function AppContent() {
 	return (
 		<AiWidgetProvider>
+			{/* 新导航回到页面顶部，后退时恢复原位置；否则从长页面跳转会带着旧滚动位置进入新页面 */}
+			<ScrollRestoration />
 			<AnimatedRoutes />
 			<AppGlobalAiWidget />
 			<AppFilingLink />

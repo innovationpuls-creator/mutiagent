@@ -3,6 +3,9 @@ import { Link } from "react-router-dom";
 import { adminProgramApi } from "../api/adminProgram";
 import { fetchBranchOverview } from "../api/branch";
 import { fetchLeafCourse } from "../api/leaf";
+import { Button } from "../components/ui/Button";
+import { FeedbackState } from "../components/ui/FeedbackState";
+import { StatusBadge } from "../components/ui/StatusBadge";
 import { useAuth } from "../contexts/AuthContext";
 import {
 	mergeProgramCourses,
@@ -81,21 +84,34 @@ export function StudentCoursesPage({ mode }: { mode: "learn" | "quiz" }) {
 				</p>
 			</header>
 			{error && (
-				<div role="alert">
-					<p>{error}</p>
-					<button type="button" onClick={() => setRetry((n) => n + 1)}>
-						重新加载
-					</button>
-				</div>
+				<FeedbackState
+					variant="error"
+					title="加载失败"
+					description={error}
+					actions={
+						<Button
+							variant="secondary"
+							size="sm"
+							onClick={() => setRetry((n) => n + 1)}
+						>
+							重新加载
+						</Button>
+					}
+				/>
 			)}
 			{loading ? (
-				<p role="status">正在加载课程…</p>
+				<FeedbackState variant="loading" title="正在加载课程…" />
 			) : !courses.length ? (
-				<div>
-					<h2>还没有学习课程</h2>
-					<p>先完善学习画像，再规划学习路径。</p>
-					<Link to="/sprout">返回学习首页</Link>
-				</div>
+				<FeedbackState
+					variant="empty"
+					title="还没有学习课程"
+					description="先完善学习画像，再规划学习路径。"
+					actions={
+						<Link className="button button-secondary button-sm" to="/sprout">
+							返回学习首页
+						</Link>
+					}
+				/>
 			) : (
 				<div className="student-course-layout">
 					<ul className="student-course-list">
@@ -104,29 +120,39 @@ export function StudentCoursesPage({ mode }: { mode: "learn" | "quiz" }) {
 								<div>
 									<h2>{course.course_or_chapter_theme}</h2>
 									<p>{course.course_goal}</p>
-									<span>
+									<StatusBadge
+										tone={
+											course.status === "locked"
+												? "neutral"
+												: course.status === "completed"
+													? "success"
+													: "info"
+										}
+									>
 										{course.status === "locked"
 											? "尚未解锁"
 											: course.status === "completed"
 												? "已完成"
 												: "可学习"}
-									</span>
+									</StatusBadge>
 								</div>
 								{course.status !== "locked" &&
 									(mode === "learn" ? (
 										<Link
+											className="button button-secondary button-sm"
 											to={`/leaf/${encodeURIComponent(course.course_node_id)}`}
 										>
 											{course.status === "completed" ? "回顾课程" : "进入课程"}
 										</Link>
 									) : (
-										<button
-											type="button"
+										<Button
+											variant="secondary"
+											size="sm"
 											aria-pressed={courseId === course.course_node_id}
 											onClick={() => setCourseId(course.course_node_id)}
 										>
 											查看章节
-										</button>
+										</Button>
 									))}
 							</li>
 						))}
@@ -134,18 +160,24 @@ export function StudentCoursesPage({ mode }: { mode: "learn" | "quiz" }) {
 					{mode === "quiz" && courseId && (
 						<section className="student-chapters" aria-label="章节进度">
 							{!detail && !error ? (
-								<p role="status">正在加载章节…</p>
+								<FeedbackState variant="loading" title="正在加载章节…" />
 							) : (
 								detail &&
 								(detail.access_state === "locked" ? (
 									<p>{detail.locked_reason}</p>
 								) : !detail.chapter_progress?.length ? (
-									<div>
-										<p>这门课程还没有章节大纲。</p>
-										<Link to={`/leaf/${encodeURIComponent(courseId)}`}>
-											进入课程准备大纲
-										</Link>
-									</div>
+									<FeedbackState
+										variant="empty"
+										title="这门课程还没有章节大纲。"
+										actions={
+											<Link
+												className="button button-secondary button-sm"
+												to={`/leaf/${encodeURIComponent(courseId)}`}
+											>
+												进入课程准备大纲
+											</Link>
+										}
+									/>
 								) : (
 									<>
 										<h2>{detail.course.course_or_chapter_theme}</h2>
@@ -171,6 +203,7 @@ export function StudentCoursesPage({ mode }: { mode: "learn" | "quiz" }) {
 													</div>
 													{chapter.state !== "locked" && (
 														<Link
+															className="button button-secondary button-sm"
 															to={`/forest/${encodeURIComponent(courseId)}?chapter_id=${encodeURIComponent(chapter.chapter_id)}`}
 														>
 															{chapter.state === "passed"

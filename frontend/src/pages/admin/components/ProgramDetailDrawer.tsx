@@ -1,6 +1,10 @@
-import { motion, useReducedMotion } from "framer-motion";
-import { useRef } from "react";
-import { useDialogAccessibility } from "../../../components/ui/useDialogAccessibility";
+import { Button } from "../../../components/ui/Button";
+import { Drawer } from "../../../components/ui/Drawer";
+import {
+	SelectField,
+	TextAreaField,
+	TextField,
+} from "../../../components/ui/TextField";
 import type { BranchCourseNode } from "../../../types/branch";
 
 interface FieldProps {
@@ -11,28 +15,22 @@ interface FieldProps {
 export function GeneralFields({ course, onChange }: FieldProps) {
 	return (
 		<div className="form-section">
-			<div className="form-group">
-				<label htmlFor="course_theme">课程名称</label>
-				<input
-					id="course_theme"
-					type="text"
-					value={course.course_or_chapter_theme}
-					onChange={(e) => onChange("course_or_chapter_theme", e.target.value)}
-					placeholder="请输入课程名称"
-					className="drawer-input"
-				/>
-			</div>
-			<div className="form-group">
-				<label htmlFor="course_goal">课程目标</label>
-				<textarea
-					id="course_goal"
-					value={course.course_goal}
-					onChange={(e) => onChange("course_goal", e.target.value)}
-					placeholder="请输入课程目标"
-					className="drawer-textarea"
-					rows={3}
-				/>
-			</div>
+			<TextField
+				label="课程名称"
+				id="course_theme"
+				type="text"
+				value={course.course_or_chapter_theme}
+				onChange={(e) => onChange("course_or_chapter_theme", e.target.value)}
+				placeholder="请输入课程名称"
+			/>
+			<TextAreaField
+				label="课程目标"
+				id="course_goal"
+				value={course.course_goal}
+				onChange={(e) => onChange("course_goal", e.target.value)}
+				placeholder="请输入课程目标"
+				rows={3}
+			/>
 		</div>
 	);
 }
@@ -43,44 +41,37 @@ export function TimeFields({ course, onChange }: FieldProps) {
 		<div className="form-section">
 			<h3 className="section-title">时间编排</h3>
 			<div className="form-row">
-				<div className="form-group half">
-					<label htmlFor="semester_scope">建议学期</label>
-					<select
-						id="semester_scope"
-						value={time?.semester_scope ?? "1"}
-						onChange={(e) => onChange("semester_scope", e.target.value)}
-						className="drawer-select"
-					>
-						{[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
-							<option key={s} value={String(s)}>
-								学期 {s}
-							</option>
-						))}
-					</select>
-				</div>
-				<div className="form-group half">
-					<label htmlFor="duration">课程时长/学分</label>
-					<input
-						id="duration"
-						type="text"
-						value={time?.duration ?? ""}
-						onChange={(e) => onChange("duration", e.target.value)}
-						placeholder="如：64学时/4学分"
-						className="drawer-input"
-					/>
-				</div>
-			</div>
-			<div className="form-group">
-				<label htmlFor="pace_reason">开课原因（可选）</label>
-				<textarea
-					id="pace_reason"
-					value={time?.pace_reason ?? ""}
-					onChange={(e) => onChange("pace_reason", e.target.value)}
-					placeholder="例如：为后续数据结构奠定编程基础"
-					className="drawer-textarea"
-					rows={2}
+				<SelectField
+					label="建议学期"
+					id="semester_scope"
+					wrapperClassName="half"
+					value={time?.semester_scope ?? "1"}
+					onChange={(e) => onChange("semester_scope", e.target.value)}
+				>
+					{[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+						<option key={s} value={String(s)}>
+							学期 {s}
+						</option>
+					))}
+				</SelectField>
+				<TextField
+					label="课程时长/学分"
+					id="duration"
+					type="text"
+					wrapperClassName="half"
+					value={time?.duration ?? ""}
+					onChange={(e) => onChange("duration", e.target.value)}
+					placeholder="如：64学时/4学分"
 				/>
 			</div>
+			<TextAreaField
+				label="开课原因（可选）"
+				id="pace_reason"
+				value={time?.pace_reason ?? ""}
+				onChange={(e) => onChange("pace_reason", e.target.value)}
+				placeholder="例如：为后续数据结构奠定编程基础"
+				rows={2}
+			/>
 		</div>
 	);
 }
@@ -100,43 +91,32 @@ export function PointFields({ course, onChange }: FieldProps) {
 	return (
 		<div className="form-section">
 			<h3 className="section-title">课程要点</h3>
-			<div className="form-group">
-				<label htmlFor="key_points">核心要点 (每行一个)</label>
-				<textarea
-					id="key_points"
-					value={course.key_points?.join("\n") ?? ""}
-					onChange={(e) => handleArrayChange("key_points", e.target.value)}
-					placeholder="请输入核心要点，每行一个"
-					className="drawer-textarea"
-					rows={3}
-				/>
-			</div>
-			<div className="form-group">
-				<label htmlFor="difficult_points">难点说明 (每行一个)</label>
-				<textarea
-					id="difficult_points"
-					value={course.difficult_points?.join("\n") ?? ""}
-					onChange={(e) =>
-						handleArrayChange("difficult_points", e.target.value)
-					}
-					placeholder="请输入难点说明，每行一个"
-					className="drawer-textarea"
-					rows={3}
-				/>
-			</div>
-			<div className="form-group">
-				<label htmlFor="acceptance_criteria">验收标准 (每行一个)</label>
-				<textarea
-					id="acceptance_criteria"
-					value={course.acceptance_criteria?.join("\n") ?? ""}
-					onChange={(e) =>
-						handleArrayChange("acceptance_criteria", e.target.value)
-					}
-					placeholder="请输入验收标准，每行一个"
-					className="drawer-textarea"
-					rows={3}
-				/>
-			</div>
+			<TextAreaField
+				label="核心要点 (每行一个)"
+				id="key_points"
+				value={course.key_points?.join("\n") ?? ""}
+				onChange={(e) => handleArrayChange("key_points", e.target.value)}
+				placeholder="请输入核心要点，每行一个"
+				rows={3}
+			/>
+			<TextAreaField
+				label="难点说明 (每行一个)"
+				id="difficult_points"
+				value={course.difficult_points?.join("\n") ?? ""}
+				onChange={(e) => handleArrayChange("difficult_points", e.target.value)}
+				placeholder="请输入难点说明，每行一个"
+				rows={3}
+			/>
+			<TextAreaField
+				label="验收标准 (每行一个)"
+				id="acceptance_criteria"
+				value={course.acceptance_criteria?.join("\n") ?? ""}
+				onChange={(e) =>
+					handleArrayChange("acceptance_criteria", e.target.value)
+				}
+				placeholder="请输入验收标准，每行一个"
+				rows={3}
+			/>
 		</div>
 	);
 }
@@ -188,65 +168,27 @@ export function ProgramDetailDrawer({
 	onUpdateCourse,
 	onDeleteCourse,
 }: ProgramDetailDrawerProps) {
-	const reduceMotion = useReducedMotion();
-	const titleRef = useRef<HTMLHeadingElement>(null);
-	useDialogAccessibility({
-		isOpen: Boolean(course),
-		onClose,
-		initialFocusRef: titleRef,
-	});
-
-	if (!course) return null;
-
 	return (
-		<div className="drawer-overlay">
-			<motion.div
-				aria-labelledby="program-detail-drawer-title"
-				aria-modal="true"
-				className="detail-drawer"
-				role="dialog"
-				initial={reduceMotion ? { opacity: 0 } : { x: "100%" }}
-				animate={reduceMotion ? { opacity: 1 } : { x: 0 }}
-				exit={reduceMotion ? { opacity: 0 } : { x: "100%" }}
-				transition={
-					reduceMotion
-						? { duration: 0.12 }
-						: { duration: 0.42, ease: [0.33, 1, 0.68, 1] }
-				}
-			>
-				<div className="drawer-header">
-					<h2
-						className="drawer-title"
-						id="program-detail-drawer-title"
-						ref={titleRef}
-						tabIndex={-1}
+		<Drawer
+			isOpen={Boolean(course)}
+			onClose={onClose}
+			title="编辑课程大纲"
+			closeAriaLabel="关闭课程大纲抽屉"
+			headerActions={
+				course && onDeleteCourse ? (
+					<Button
+						variant="danger"
+						size="sm"
+						onClick={() => onDeleteCourse(course.course_node_id)}
 					>
-						编辑课程大纲
-					</h2>
-					<div className="drawer-header-actions">
-						{onDeleteCourse ? (
-							<button
-								type="button"
-								className="drawer-delete-btn"
-								onClick={() => onDeleteCourse(course.course_node_id)}
-							>
-								删除课程
-							</button>
-						) : null}
-						<button
-							type="button"
-							className="drawer-close-btn"
-							onClick={onClose}
-							aria-label="关闭课程大纲抽屉"
-						>
-							✕
-						</button>
-					</div>
-				</div>
-				<div className="drawer-body">
-					<DrawerForm course={course} onUpdateCourse={onUpdateCourse} />
-				</div>
-			</motion.div>
-		</div>
+						删除课程
+					</Button>
+				) : null
+			}
+		>
+			{course ? (
+				<DrawerForm course={course} onUpdateCourse={onUpdateCourse} />
+			) : null}
+		</Drawer>
 	);
 }

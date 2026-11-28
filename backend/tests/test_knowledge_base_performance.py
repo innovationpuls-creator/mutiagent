@@ -8,7 +8,7 @@ import threading
 import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
-from sqlalchemy import func, text
+from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, SQLModel, select
 
@@ -17,8 +17,7 @@ from app.api.health import create_health_router
 from app.core.observability import RequestIdMiddleware
 from app.core.security import configure_jwt, create_access_token
 from app.database import build_engine, create_session_dependency
-from app.models import KnowledgeBaseIngestionJob, KnowledgeGap, Textbook, User
-from app.schemas import KnowledgeBaseAgentRequest, KnowledgeBaseSourceResult
+from app.models import KnowledgeBaseIngestionJob, Textbook, User
 from app.services import knowledge_base_service as kb
 from tests.fixtures.knowledge_base import enabled_source
 from tests.postgres import postgresql_test_url
@@ -53,191 +52,6 @@ def http_app(engine, tmp_path, monkeypatch):
         "X-Request-ID": "kb-performance-upload",
     }
     return app, headers
-
-
-def test_factory_events_release_connections_and_preserve_payloads(engine, monkeypatch):
-    with Session(engine) as session:
-        session.add(enabled_source())
-        session.add(
-            Textbook(textbook_id="book", source_id="source-admitted", title="Topic")
-        )
-        session.add(KnowledgeGap(gap_id="gap", normalized_topic="Topic"))
-        session.commit()
-
-    def search(_query, limit=5):
-        return [
-            KnowledgeBaseSourceResult(
-                source_result_id="result",
-                title="Topic",
-                source_url="https://example.test/book.pdf",
-                source_type="pdf",
-                parseability_score=95,
-            )
-        ]
-
-    monkeypatch.setattr(kb, "search_real_textbook_sources", search)
-    actual = []
-    for item in kb.stream_knowledge_base_agent_events(lambda: Session(engine), "Topic"):
-        assert engine.pool.checkedout() == 0
-        actual.append(item)
-    with Session(engine) as session:
-        expected = list(kb.stream_knowledge_base_agent_events(session, "Topic"))
-    assert actual == expected
-    assert [item["event"] for item in actual] == [
-        "started",
-        "context_loaded",
-        "source_search_started",
-        "source_search_completed",
-        "duplicate_check_started",
-        "duplicate_check_completed",
-        "gap_search_started",
-        "gap_search_completed",
-        "reply_ready",
-        "completed",
-    ]
-    assert actual[-1]["payload"]["response"]["source_results"][0]["already_imported"]
-
-
-def test_direct_session_keeps_uncommitted_rows_and_caller_transaction(
-    engine, monkeypatch
-):
-    monkeypatch.setattr(
-        kb, "search_real_textbook_sources", lambda *_args, **_kwargs: []
-    )
-    with Session(engine) as session:
-        session.add(KnowledgeGap(gap_id="pending", normalized_topic="Topic"))
-        result = kb.run_knowledge_base_agent(session, "Topic")
-        assert result.gap_hits[0].gap_id == "pending"
-        assert session.in_transaction()
-        with Session(engine) as other:
-            assert other.get(KnowledgeGap, "pending") is None
-        session.rollback()
-    with Session(engine) as session:
-        assert session.get(KnowledgeGap, "pending") is None
-
-
-def test_empty_and_closed_streams_do_not_start_search_or_hold_connection(
-    engine, monkeypatch
-):
-    def unexpected(*_args, **_kwargs):
-        pytest.fail("empty or closed stream must not search")
-
-    monkeypatch.setattr(kb, "search_real_textbook_sources", unexpected)
-    empty = list(kb.stream_knowledge_base_agent_events(unexpected, " "))
-    assert [item["event"] for item in empty] == ["started", "completed"]
-    stream = kb.stream_knowledge_base_agent_events(lambda: Session(engine), "Topic")
-    assert next(stream)["event"] == "started"
-    assert next(stream)["event"] == "context_loaded"
-    assert next(stream)["event"] == "source_search_started"
-    stream.close()
-    assert engine.pool.checkedout() == 0
-
-
-def test_http_stream_closes_inner_generator(http_app, engine, monkeypatch):
-    closed = threading.Event()
-
-    def events(*_args):
-        try:
-            yield {"event": "started", "payload": {}}
-            yield {"event": "completed", "payload": {}}
-        finally:
-            closed.set()
-
-    monkeypatch.setattr(api, "stream_knowledge_base_agent_events", events)
-    app, _headers = http_app
-    route = next(r for r in app.routes if r.path.endswith("/agent/stream"))
-
-    async def exercise():
-        with Session(engine) as session:
-            response = route.endpoint(
-                KnowledgeBaseAgentRequest(message="Topic"), None, session
-            )
-        await anext(response.body_iterator)
-        await response.body_iterator.aclose()
-        assert closed.is_set()
-
-    asyncio.run(exercise())
-
-
-def test_http_query_failure_releases_connection_and_keeps_error_event(
-    http_app, engine, monkeypatch
-):
-    def fail(session):
-        session.execute(text("SELECT 1"))
-        raise ValueError("query failed")
-
-    monkeypatch.setattr(kb, "_knowledge_base_counts", fail)
-    app, headers = http_app
-
-    async def exercise():
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            response = await client.post(
-                "/api/admin/knowledge-base/agent/stream",
-                headers=headers,
-                json={"message": "Topic"},
-            )
-            assert response.status_code == 200
-            assert (
-                "event: error" in response.text
-                and '"recoverable": true' in response.text
-            )
-            assert engine.pool.checkedout() == 0
-            assert (await client.get("/api/health/ready")).status_code == 200
-
-    asyncio.run(exercise())
-
-
-@pytest.mark.parametrize("streaming", [False, True])
-def test_35_http_agents_release_connections_during_search(
-    http_app, engine, monkeypatch, streaming
-):
-    ready, release = threading.Event(), threading.Event()
-    lock = threading.Lock()
-    arrivals = 0
-
-    def search(_query, limit=5):
-        nonlocal arrivals
-        with lock:
-            arrivals += 1
-            if arrivals == 35:
-                ready.set()
-        assert release.wait(15)
-        return []
-
-    monkeypatch.setattr(kb, "search_real_textbook_sources", search)
-    app, headers = http_app
-
-    async def exercise():
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            path = "/api/admin/knowledge-base/agent" + ("/stream" if streaming else "")
-            tasks = [
-                asyncio.create_task(
-                    client.post(path, headers=headers, json={"message": "Topic"})
-                )
-                for _ in range(35)
-            ]
-            try:
-                assert await asyncio.to_thread(ready.wait, 10)
-                assert engine.pool.checkedout() == 0
-                assert (
-                    await asyncio.wait_for(client.get("/api/health/ready"), 2)
-                ).status_code == 200
-            finally:
-                release.set()
-                responses = await asyncio.gather(*tasks)
-            assert all(r.status_code == 200 for r in responses)
-            if streaming:
-                assert all(
-                    "event: completed" in r.text and "event: error" not in r.text
-                    for r in responses
-                )
-            assert engine.pool.checkedout() == 0
-
-    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize("cancel", [False, True])

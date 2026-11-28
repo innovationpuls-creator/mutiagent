@@ -24,6 +24,7 @@ export interface GraphEdge {
 interface OrganicCanvasProps {
 	nodes: GraphNode[];
 	edges: GraphEdge[];
+	onNodeSelect?: (nodeId: string) => void;
 }
 
 interface NodeSize {
@@ -31,7 +32,11 @@ interface NodeSize {
 	height: number;
 }
 
-export function OrganicCanvas({ nodes, edges }: OrganicCanvasProps) {
+export function OrganicCanvas({
+	nodes,
+	edges,
+	onNodeSelect,
+}: OrganicCanvasProps) {
 	// 1. First Pass: Store actual DOM sizes reported by ResizeObserver
 	const [nodeSizes, setNodeSizes] = useState<Record<string, NodeSize>>({});
 	const nodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -78,7 +83,14 @@ export function OrganicCanvas({ nodes, edges }: OrganicCanvasProps) {
 		if (nodes.some((n) => !nodeSizes[n.id])) return null;
 
 		const g = new dagre.graphlib.Graph();
-		g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 120, align: "UL" });
+		g.setGraph({
+			rankdir: "LR",
+			nodesep: 48,
+			ranksep: 96,
+			marginx: 32,
+			marginy: 32,
+			align: "UL",
+		});
 		g.setDefaultEdgeLabel(() => ({}));
 
 		nodes.forEach((node) => {
@@ -98,13 +110,30 @@ export function OrganicCanvas({ nodes, edges }: OrganicCanvasProps) {
 			return { ...node, x, y, width, height };
 		});
 
-		return { layoutNodes, layoutEdges: edges };
+		const graph = g.graph();
+		return {
+			layoutNodes,
+			layoutEdges: edges,
+			width: graph.width ?? 0,
+			height: graph.height ?? 0,
+		};
 	}, [nodes, edges, nodeSizes]);
 
 	return (
-		<div className="organic-canvas-root">
+		<div
+			className="organic-canvas-root"
+			style={layout ? { height: layout.height } : undefined}
+		>
 			{/* Underlying SVG Layer for Edges - pointer-events: none is in CSS */}
-			<svg className="organic-svg-layer" aria-hidden="true">
+			<svg
+				className="organic-svg-layer"
+				aria-hidden="true"
+				style={
+					layout
+						? { minWidth: layout.width, minHeight: layout.height }
+						: undefined
+				}
+			>
 				<defs>
 					{/* Subtle Glow Filter for Active Paths */}
 					<filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
@@ -143,7 +172,14 @@ export function OrganicCanvas({ nodes, edges }: OrganicCanvasProps) {
 			</svg>
 
 			{/* Foreground Layer for Nodes */}
-			<div className="organic-nodes-layer">
+			<div
+				className="organic-nodes-layer"
+				style={
+					layout
+						? { minWidth: layout.width, minHeight: layout.height }
+						: undefined
+				}
+			>
 				{nodes.map((node) => {
 					const layoutNode = layout?.layoutNodes.find((n) => n.id === node.id);
 
@@ -173,7 +209,18 @@ export function OrganicCanvas({ nodes, edges }: OrganicCanvasProps) {
 								opacity: 0,
 							}}
 						>
-							<NodeCard {...node} />
+							{onNodeSelect ? (
+								<button
+									type="button"
+									className="node-select"
+									aria-label={node.title}
+									onClick={() => onNodeSelect(node.id)}
+								>
+									<NodeCard {...node} />
+								</button>
+							) : (
+								<NodeCard {...node} />
+							)}
 						</motion.div>
 					);
 				})}

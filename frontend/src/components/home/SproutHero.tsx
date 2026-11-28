@@ -6,6 +6,8 @@ import { useAiWidget } from "../../contexts/AiWidgetContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { motionTokens } from "../../styles/motion-tokens";
 import type { ProfileDashboardData } from "../../types/profile";
+import { Button } from "../ui/Button";
+import { FeedbackState } from "../ui/FeedbackState";
 import { ProfileCard } from "./ProfileCard";
 import { ProfileDetailOverlay } from "./ProfileDetailOverlay";
 import { RecommendationCard } from "./RecommendationCard";
@@ -94,12 +96,16 @@ export function SproutHero() {
 	if (error) {
 		return (
 			<section className="sprout-hero">
-				<div className="hero-greeting-zone">
-					<p role="alert">{error}</p>
-					<button type="button" onClick={() => setRetry((n) => n + 1)}>
-						重新加载
-					</button>
-				</div>
+				<FeedbackState
+					variant="error"
+					title="学习概览暂时不可用"
+					description={error}
+					actions={
+						<Button variant="secondary" onClick={() => setRetry((n) => n + 1)}>
+							重新加载
+						</Button>
+					}
+				/>
 			</section>
 		);
 	}
@@ -177,26 +183,21 @@ export function SproutHero() {
 			{(!data.hasCompleteProfile || !canStartCurrentLearning) && (
 				<div className="hero-primary-actions">
 					{!data.hasCompleteProfile && (
-						<button
-							className="hero-primary-action"
-							type="button"
+						<Button
+							variant="primary"
 							onClick={() => setWidgetState("EXPANDED")}
 						>
 							完善学习画像
-						</button>
+						</Button>
 					)}
 					{!canStartCurrentLearning && data.hasCompleteProfile && (
-						<button
-							className="hero-primary-action"
-							type="button"
-							onClick={() => navigate("/branch")}
-						>
+						<Button variant="primary" onClick={() => navigate("/branch")}>
 							查看学习路径
-						</button>
+						</Button>
 					)}
-					<button type="button" onClick={() => setIsOverlayOpen(true)}>
+					<Button variant="secondary" onClick={() => setIsOverlayOpen(true)}>
 						查看学习画像
-					</button>
+					</Button>
 				</div>
 			)}
 			{/* ── 双卡区 ── */}
@@ -227,9 +228,9 @@ export function SproutHero() {
 
 			{data.hasCompleteProfile && canStartCurrentLearning && (
 				<div className="hero-primary-actions">
-					<button type="button" onClick={() => setIsOverlayOpen(true)}>
+					<Button variant="secondary" onClick={() => setIsOverlayOpen(true)}>
 						查看学习画像
-					</button>
+					</Button>
 				</div>
 			)}
 			{/* ── 底部推荐行 ── */}

@@ -7,8 +7,8 @@ from sqlmodel import Session
 
 from app.core.security import create_get_current_user
 from app.models import User, UserProfile
-from app.orchestration.agents.profile import is_complete_profile_data
 from app.orchestration.grade_contract import (
+    is_complete_profile_data,
     is_supported_current_grade,
     unsupported_current_grade_error,
 )

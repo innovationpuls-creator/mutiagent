@@ -9,7 +9,7 @@ export function BlankPage({ title }: BlankPageProps) {
 	const reduceMotion = useReducedMotion();
 
 	return (
-		<motion.main
+		<motion.div
 			className="home-page"
 			initial={reduceMotion ? false : { opacity: 0 }}
 			animate={reduceMotion ? undefined : { opacity: 1 }}
@@ -25,6 +25,6 @@ export function BlankPage({ title }: BlankPageProps) {
 			<section className="home-content">
 				<h2 style={{ opacity: 0, pointerEvents: "none" }}>{title}</h2>
 			</section>
-		</motion.main>
+		</motion.div>
 	);
 }

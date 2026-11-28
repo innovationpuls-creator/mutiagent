@@ -6,21 +6,6 @@ from datetime import datetime, timezone
 from app.orchestration.contracts import PhaseName
 
 
-def checkpoint_for_phase(outline: dict, section_id: str, phase: PhaseName) -> dict:
-    checkpoints = outline.get("section_resource_checkpoints")
-    if not isinstance(checkpoints, dict):
-        return {}
-    section_checkpoints = checkpoints.get(section_id)
-    if not isinstance(section_checkpoints, dict):
-        return {}
-    value = section_checkpoints.get(phase)
-    return value if isinstance(value, dict) else {}
-
-
-def section_phase_completed(outline: dict, section_id: str, phase: PhaseName) -> bool:
-    return checkpoint_for_phase(outline, section_id, phase).get("status") == "completed"
-
-
 def update_section_phase_checkpoint(
     outline: dict,
     *,

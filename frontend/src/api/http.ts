@@ -1,5 +1,30 @@
+export const API_ERROR_CODES = [
+	"AUTH_INVALID",
+	"ACCOUNT_DISABLED",
+	"MODEL_NOT_CONFIGURED",
+	"MODEL_OAUTH_EXPIRED",
+	"MODEL_CAPABILITY_MISMATCH",
+	"INTERNAL_SERVICE_UNAVAILABLE",
+] as const;
+
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
+
 export interface ApiErrorResponse {
 	detail?: string | { msg?: string }[];
+	error_code?: ApiErrorCode | string;
+	provider?: string;
+	action?: string;
+}
+
+export function parseApiErrorCode(value: unknown): ApiErrorCode | null {
+	return typeof value === "string" &&
+		(API_ERROR_CODES as readonly string[]).includes(value)
+		? (value as ApiErrorCode)
+		: null;
+}
+
+export function parseNonEmptyString(value: unknown): string | null {
+	return typeof value === "string" && value.trim() ? value : null;
 }
 
 export const AUTH_INVALID_EVENT = "mutiagent-auth-invalid";
@@ -15,6 +40,46 @@ export function getApiErrorDetail(
 	error: ApiErrorResponse | null,
 ): string | null {
 	return typeof error?.detail === "string" ? error.detail : null;
+}
+
+export function getApiErrorCode(
+	error: ApiErrorResponse | null,
+): ApiErrorCode | null {
+	return parseApiErrorCode(error?.error_code);
+}
+
+export function getApiErrorProvider(
+	error: ApiErrorResponse | null,
+): string | null {
+	return parseNonEmptyString(error?.provider);
+}
+
+export function getApiErrorAction(
+	error: ApiErrorResponse | null,
+): string | null {
+	return parseNonEmptyString(error?.action);
+}
+
+export class ApiRequestError extends Error {
+	status: number;
+	errorCode: ApiErrorCode | null;
+	provider: string | null;
+	action: string | null;
+	detail: string | null;
+
+	constructor(
+		message: string,
+		status: number,
+		error: ApiErrorResponse | null = null,
+	) {
+		super(message);
+		this.name = "ApiRequestError";
+		this.status = status;
+		this.errorCode = getApiErrorCode(error);
+		this.provider = getApiErrorProvider(error);
+		this.action = getApiErrorAction(error);
+		this.detail = getApiErrorDetail(error);
+	}
 }
 
 export function notifyAuthInvalidFromError(
@@ -41,11 +106,13 @@ function getBrowserApiBaseUrl(): string {
 		return "http://127.0.0.1:8000";
 	}
 
+	// Local dev: same-origin relative path so the Vite proxy splits
+	// /api/ai -> TS gateway (8100) and /api -> Python backend (8000).
 	if (
 		window.location.hostname === "127.0.0.1" ||
 		window.location.hostname === "localhost"
 	) {
-		return `${window.location.protocol}//${window.location.hostname}:8000`;
+		return "";
 	}
 
 	return window.location.origin;

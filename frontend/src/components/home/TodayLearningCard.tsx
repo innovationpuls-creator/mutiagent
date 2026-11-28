@@ -1,4 +1,5 @@
 import { motion, useReducedMotion } from "framer-motion";
+import { Play } from "lucide-react";
 import { motionTokens } from "../../styles/motion-tokens";
 import type { TodayLearning } from "../../types/profile";
 import {
@@ -9,6 +10,8 @@ import {
 	getSectionLabel,
 	getTopLevelSections,
 } from "../learning/courseKnowledgeHelpers";
+import { Button } from "../ui/Button";
+import { StatusBadge } from "../ui/StatusBadge";
 
 interface TodayLearningCardProps {
 	data: TodayLearning;
@@ -44,7 +47,9 @@ export function TodayLearningCard({
 				<div className="today-card-whisper-row">
 					<span className="today-card-whisper">今日推荐</span>
 					{outlineSectionCount > 0 && (
-						<span className="today-card-outline-tag">已生成课程大纲</span>
+						<StatusBadge variant="pill" surface="dark" tone="accent">
+							已生成课程大纲
+						</StatusBadge>
 					)}
 				</div>
 			</div>
@@ -94,29 +99,27 @@ export function TodayLearningCard({
 			<div className="today-card-footer">
 				<div className="today-card-actions">
 					{hasStartAction && (
-						<button
-							className="today-continue-btn"
-							type="button"
+						<Button
+							variant="secondary"
+							icon={<Play size={14} fill="currentColor" />}
 							aria-label="继续学习"
 							onClick={() => {
 								onStartLearning();
 							}}
 						>
-							<span className="today-play-icon" aria-hidden="true" />
-							<span>继续学习</span>
-						</button>
+							继续学习
+						</Button>
 					)}
 					{hasDetailAction && (
-						<button
-							className="today-detail-btn"
-							type="button"
+						<Button
+							variant="dark"
 							aria-label="打开今日学习详情"
 							onClick={() => {
 								onClick?.();
 							}}
 						>
 							查看详情
-						</button>
+						</Button>
 					)}
 				</div>
 				<span className="today-source-label">{data.source}</span>

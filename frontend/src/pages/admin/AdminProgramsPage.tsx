@@ -7,6 +7,10 @@ import type {
 	GraphNode,
 } from "../../components/graph/OrganicCanvas";
 import { OrganicCanvas } from "../../components/graph/OrganicCanvas";
+import { Button } from "../../components/ui/Button";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { FeedbackState } from "../../components/ui/FeedbackState";
+import { Tabs } from "../../components/ui/Tabs";
 import { useAuth } from "../../contexts/AuthContext";
 import type { BranchCourseNode } from "../../types/branch";
 import { ProgramDetailDrawer } from "./components/ProgramDetailDrawer";
@@ -222,6 +226,7 @@ export function AdminProgramsPage() {
 		className: "",
 	});
 	const [activeTab, setActiveTab] = useState<"editor" | "graph">("editor");
+	const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
 	useEffect(() => {
 		if (!user) return;
@@ -248,9 +253,9 @@ export function AdminProgramsPage() {
 				title: c.course_or_chapter_theme,
 				status,
 				agentMessage: `第 ${c.time_arrangement?.semester_scope ?? "?"} 学期`,
-				completedConcepts: c.key_points?.length || 0,
+				completedConcepts: c.key_points?.length ?? 0,
 				totalConcepts:
-					(c.key_points?.length || 0) + (c.difficult_points?.length || 0) || 5,
+					(c.key_points?.length ?? 0) + (c.difficult_points?.length ?? 0),
 			};
 		});
 
@@ -277,17 +282,6 @@ export function AdminProgramsPage() {
 
 		return { nodes, edges };
 	}, [courses, activeCourseId]);
-
-	const handleCanvasClick = (event: React.MouseEvent<HTMLElement>) => {
-		const target = event.target as HTMLElement;
-		const nodeWrapper = target.closest(".node-wrapper");
-		if (nodeWrapper) {
-			const nodeId = nodeWrapper.getAttribute("data-node-id");
-			if (nodeId) {
-				setActiveCourseId(nodeId);
-			}
-		}
-	};
 
 	const semesterStats = useMemo(() => {
 		const stats: SemesterStatItem[] = Array.from({ length: 8 }, (_, i) => ({
@@ -470,32 +464,32 @@ export function AdminProgramsPage() {
 	};
 
 	const handleReset = () => {
-		if (window.confirm("确定要清空当前培养方案吗？当前未发布修改将被覆盖。")) {
-			setCourses([]);
-			setActiveCourseId(null);
-			setPageState("empty");
-		}
+		setCourses([]);
+		setActiveCourseId(null);
+		setPageState("empty");
+		setResetConfirmOpen(false);
 	};
 
 	const renderContent = () => {
 		switch (pageState) {
 			case "error":
 				return (
-					<div className="error-panel">
-						<div className="error-icon">✕</div>
-						<h3 className="error-title">JSON 导入失败</h3>
-						<p className="error-message">{fileError}</p>
-						<button
-							type="button"
-							className="btn btn-secondary"
-							onClick={() => {
-								setFileError(null);
-								setPageState(courses.length > 0 ? "editor" : "empty");
-							}}
-						>
-							返回
-						</button>
-					</div>
+					<FeedbackState
+						variant="error"
+						title="JSON 导入失败"
+						description={fileError}
+						actions={
+							<Button
+								variant="secondary"
+								onClick={() => {
+									setFileError(null);
+									setPageState(courses.length > 0 ? "editor" : "empty");
+								}}
+							>
+								返回
+							</Button>
+						}
+					/>
 				);
 			case "editor":
 				if (activeTab === "graph") {
@@ -504,26 +498,23 @@ export function AdminProgramsPage() {
 							<div className="canvas-panel">
 								<div className="canvas-header">
 									<h3>方案依赖图谱</h3>
-									<p>培养方案中课程前置依赖与关系拓扑图</p>
+									<p>箭头指向后续课程；点击课程可编辑详情。</p>
 								</div>
-								<button
-									type="button"
-									className="canvas-wrapper"
-									onClick={handleCanvasClick}
-								>
+								<div className="canvas-wrapper">
 									<OrganicCanvas
 										nodes={graphData.nodes}
 										edges={graphData.edges}
+										onNodeSelect={setActiveCourseId}
 									/>
-								</button>
+								</div>
 							</div>
 							<div className="stats-distribution-panel">
 								<div className="distribution-card">
-									<h4>学期学分分布 (Credits per Semester)</h4>
+									<h4>学期学分分布</h4>
 									<SemesterBarChart data={semesterStats} type="credits" />
 								</div>
 								<div className="distribution-card">
-									<h4>学期课时分布 (Hours per Semester)</h4>
+									<h4>学期课时分布</h4>
 									<SemesterBarChart data={semesterStats} type="hours" />
 								</div>
 							</div>
@@ -550,27 +541,16 @@ export function AdminProgramsPage() {
 							结构的培养方案文件（.json，不超过 2MB）。
 						</p>
 						<div className="program-import-actions">
-							<button
-								type="button"
-								className="btn btn-primary"
-								onClick={handleAddCourse}
-							>
-								手动添加课程
-							</button>
-							<button
-								type="button"
-								className="btn btn-secondary"
+							<Button onClick={handleAddCourse}>手动添加课程</Button>
+							<Button
+								variant="secondary"
 								onClick={() => fileInputRef.current?.click()}
 							>
 								导入 JSON
-							</button>
-							<button
-								type="button"
-								className="btn btn-secondary"
-								onClick={handleDownloadTemplate}
-							>
+							</Button>
+							<Button variant="secondary" onClick={handleDownloadTemplate}>
 								下载 JSON 模板
-							</button>
+							</Button>
 						</div>
 					</div>
 				);
@@ -588,49 +568,39 @@ export function AdminProgramsPage() {
 				onChange={handleJsonFileChange}
 			/>
 
-			<header className="admin-header">
-				<div>
-					<p className="admin-kicker">curriculum</p>
+			<header className="page-header">
+				<div className="page-header-title">
 					<h1 id="admin-programs-title">人培方案</h1>
+					<p>
+						编排一个班四年的课程与先修关系；发布后，这个班的学生会按它生成学习路径。
+					</p>
 				</div>
-				<div className="admin-header-actions">
+				<div className="page-header-actions">
 					{courses.length > 0 && pageState === "editor" && (
 						<>
-							<button
-								type="button"
-								className="admin-secondary-action"
-								onClick={handleAddCourse}
-							>
+							<div className="program-file-actions">
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={() => fileInputRef.current?.click()}
+								>
+									导入 JSON
+								</Button>
+								<Button variant="ghost" size="sm" onClick={handleExportJson}>
+									导出 JSON
+								</Button>
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={() => setResetConfirmOpen(true)}
+								>
+									清空方案
+								</Button>
+							</div>
+							<Button variant="secondary" onClick={handleAddCourse}>
 								添加课程
-							</button>
-							<button
-								type="button"
-								className="admin-secondary-action"
-								onClick={() => fileInputRef.current?.click()}
-							>
-								导入 JSON
-							</button>
-							<button
-								type="button"
-								className="admin-secondary-action"
-								onClick={handleExportJson}
-							>
-								导出 JSON
-							</button>
-							<button
-								type="button"
-								className="admin-secondary-action"
-								onClick={handleReset}
-							>
-								清空方案
-							</button>
-							<button
-								type="button"
-								className="admin-primary-action"
-								onClick={() => void handleSave()}
-							>
-								保存并发布
-							</button>
+							</Button>
+							<Button onClick={() => void handleSave()}>保存并发布</Button>
 						</>
 					)}
 				</div>
@@ -643,27 +613,16 @@ export function AdminProgramsPage() {
 			/>
 
 			{courses.length > 0 && pageState === "editor" ? (
-				<div
-					className="program-nav-tabs"
-					role="tablist"
-					aria-label="人培方案视图"
-					style={{ alignSelf: "start" }}
-				>
-					<button
-						type="button"
-						className={`program-tab ${activeTab === "editor" ? "tab-active" : ""}`}
-						onClick={() => setActiveTab("editor")}
-					>
-						大纲对齐编辑
-					</button>
-					<button
-						type="button"
-						className={`program-tab ${activeTab === "graph" ? "tab-active" : ""}`}
-						onClick={() => setActiveTab("graph")}
-					>
-						方案依赖图谱
-					</button>
-				</div>
+				<Tabs
+					className="admin-page-tabs"
+					ariaLabel="人培方案视图"
+					value={activeTab}
+					onChange={setActiveTab}
+					items={[
+						{ value: "editor", label: "大纲对齐编辑" },
+						{ value: "graph", label: "方案依赖图谱" },
+					]}
+				/>
 			) : null}
 
 			{renderContent()}
@@ -686,6 +645,16 @@ export function AdminProgramsPage() {
 					/>
 				)}
 			</AnimatePresence>
+
+			<ConfirmDialog
+				isOpen={resetConfirmOpen}
+				title="清空当前培养方案？"
+				description="当前未发布的修改将被覆盖，此操作不可撤销。"
+				confirmLabel="确认清空"
+				destructive
+				onConfirm={handleReset}
+				onClose={() => setResetConfirmOpen(false)}
+			/>
 
 			<AnimatePresence>
 				{toastMessage && (

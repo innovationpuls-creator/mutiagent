@@ -79,7 +79,7 @@
 
 ## 4. Python 内部接口契约新增
 
-- `POST /internal/knowledge-base/textbook-context-for-intake`：按学习主题与学生目标摘要检索已发布教材目录摘要；无匹配时自动登记 `KnowledgeGap` 并返回 `gap_id`。
+- `GET /internal/knowledge-base/published-textbooks`（全部已发布教材的紧凑目录）、`GET /internal/knowledge-base/published-textbooks/{id}/outline`（小节 ID 与标题）、`POST /internal/knowledge-base/gaps`（登记知识缺口，同一主题去重并返回 `gap_id`）。教材与小节由模型自己判断选哪些，Python 不再做关键词匹配（此段为 M5 原设计，M9 后由 agent 工具取代原 `textbook-context-for-intake` 检索接口）。
 - `GET /internal/students/{user_uid}/protected-courses`：返回已有大纲或已开始/已完成学习的受保护课程标题及保护原因，供确定性风险检测使用。
 - `GET /internal/students/{user_uid}/learning-paths/progress-snapshots`：返回各年级既有学习进度快照。
 - `PUT /internal/students/{user_uid}/learning-paths/{grade_year}`：在单个数据库事务内保存新按年学习路径，并清空该年级旧的课程大纲。

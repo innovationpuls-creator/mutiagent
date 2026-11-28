@@ -1,122 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import copy
-import json
-import logging
 
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import ToolMessage
-from langchain_core.prompts import ChatPromptTemplate
-
-from app.orchestration.agents.learning_path_intake import latest_intake_from_state
-from app.orchestration.agents.models import (
-    LearningPathIntakeOutput,
-    LearningPathPlanOutput,
-)
-from app.orchestration.agents.profile import is_complete_profile_data
-from app.orchestration.agents.prompts import LEARNING_PATH_AGENT_SYSTEM_PROMPT
-from app.orchestration.agents.utils import (
-    extract_last_tool_call_args,
-    extract_last_tool_call_id,
-)
-from app.orchestration.grade_contract import (
-    grade_year_from_current_grade,
-    is_supported_current_grade,
-    unsupported_current_grade_error,
-)
-from app.orchestration.guards import require_confirmed_intake_for_learning_path
-from app.orchestration.prompt_budget import apply_prompt_budget
-from app.orchestration.state import OrchestrationState
-
-logger = logging.getLogger(__name__)
-
-DEFAULT_PATH_COMMANDS = (
-    "默认",
-    "直接",
-    "随便帮我填",
-    "不确定的你随便帮我填",
-    "帮我生成",
-)
 DEFAULT_TOPIC = "学习路径"
 MIN_LEARNING_PATH_COURSES = 4
 MAX_LEARNING_PATH_COURSES = 8
-LEARNING_PATH_STRUCTURED_TIMEOUT_SECONDS = 120.0
-LEARNING_PATH_RETRY_ERROR = "学习路径生成失败，请重试生成学习路径。"
-
-
-def _allows_default_path(text: str) -> bool:
-    return any(command in text for command in DEFAULT_PATH_COMMANDS)
-
-
-def _grade_year_from_profile(profile: dict) -> str:
-    confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
-    return grade_year_from_current_grade(confirmed.get("current_grade"))
-
-
-def _topic_from_profile(profile: dict) -> str:
-    confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
-    content_preference = confirmed.get("content_preference", [])
-    content_text = (
-        " ".join(str(item) for item in content_preference)
-        if isinstance(content_preference, list)
-        else ""
-    )
-    text_candidates = [
-        str(confirmed.get("short_term_goal", "")),
-        str(confirmed.get("long_term_goal", "")),
-        content_text,
-        str(profile.get("summary_text", "")) if isinstance(profile, dict) else "",
-        str(profile.get("text", "")) if isinstance(profile, dict) else "",
-    ]
-    combined = "\n".join(text_candidates).lower()
-    if "vibecoding" in combined:
-        return "vibecoding"
-    if "agent" in combined or "智能体" in combined:
-        return "AI Agent 开发与部署"
-    if "前端" in combined:
-        return "前端开发"
-    if "后端" in combined:
-        return "后端开发"
-    if "ai" in combined:
-        return "AI 应用开发"
-    return DEFAULT_TOPIC
-
-
-def _confirmed_intake_from_state(
-    state: OrchestrationState | dict,
-) -> tuple[dict | None, str]:
-    raw_intake = latest_intake_from_state(state)
-    if not isinstance(raw_intake, dict) or raw_intake.get("status") != "confirmed":
-        return None, "请先确认课程草案，再生成正式学习路径。"
-
-    try:
-        intake = LearningPathIntakeOutput.model_validate(raw_intake)
-    except Exception as exc:
-        logger.warning(
-            "LearningPathAgent confirmed intake validation failed: %s: %s",
-            type(exc).__name__,
-            exc,
-        )
-        return None, "课程草案不完整，请先重新生成并确认课程草案。"
-    return intake.model_dump(), ""
-
-
-def _intake_course_lines(intake: dict) -> list[str]:
-    courses = intake.get("courses", [])
-    if not isinstance(courses, list):
-        return []
-    lines: list[str] = []
-    for index, course in enumerate(courses, start=1):
-        if not isinstance(course, dict):
-            continue
-        title = str(course.get("title", "")).strip()
-        purpose = str(course.get("purpose", "")).strip()
-        if title and purpose:
-            lines.append(f"{index}. {title}：{purpose}")
-        elif title:
-            lines.append(f"{index}. {title}")
-    return lines
 
 
 def _validate_learning_path_contract(path_data: dict) -> str:
@@ -168,31 +56,6 @@ def _path_courses(path_data: dict, grade_year: str) -> list[dict]:
     if not isinstance(course_nodes, list):
         return []
     return [course for course in course_nodes if isinstance(course, dict)]
-
-
-def _persist_learning_path(
-    user_id: str, grade_year: str, learning_topic: str, path_dict: dict
-) -> None:
-    from sqlmodel import Session
-
-    from app.database import get_engine
-    from app.services.course_knowledge_service import (
-        delete_user_course_outlines_by_grade_year,
-    )
-    from app.services.learning_path_service import upsert_year_learning_path
-
-    try:
-        with Session(get_engine()) as db_session:
-            upsert_year_learning_path(
-                db_session, user_id, grade_year, learning_topic, path_dict, commit=False
-            )
-            delete_user_course_outlines_by_grade_year(
-                db_session, user_id, grade_year, commit=False
-            )
-            db_session.commit()
-        logger.info("LearningPath persisted for user %s, year %s", user_id, grade_year)
-    except Exception as exc:
-        logger.error("Failed to persist learning_path for user %s: %s", user_id, exc)
 
 
 def _time_arrangement(
@@ -377,21 +240,6 @@ def _current_course_from_node(
     }
 
 
-def _learning_path_response_text(path_data: dict) -> str:
-    current_learning_course = path_data.get("current_learning_course")
-    if not isinstance(current_learning_course, dict):
-        return "学习路径已生成。"
-
-    theme = current_learning_course.get("course_or_chapter_theme")
-    next_action = current_learning_course.get("next_action")
-    clauses = ["学习路径已生成"]
-    if isinstance(theme, str) and theme.strip():
-        clauses.append(f"当前建议先学习《{theme.strip()}》")
-    if isinstance(next_action, str) and next_action.strip():
-        clauses.append(f"下一步：{next_action.strip()}")
-    return "，".join(clauses) + "。"
-
-
 def _build_course_structure(
     *,
     course_node_id: str,
@@ -510,105 +358,6 @@ def _build_course_structure(
     return chapter_nodes, knowledge_points, knowledge_relations
 
 
-def _format_progress_snapshots(progress_snapshots: list[dict[str, object]]) -> str:
-    if not progress_snapshots:
-        return "已有学习路径完成度摘要：无历史数据。"
-
-    lines = ["已有学习路径完成度摘要："]
-    for snapshot in progress_snapshots:
-        grade_year = str(snapshot.get("grade_year", "")).strip()
-        total_courses = int(snapshot.get("total_courses", 0) or 0)
-        completed_courses = int(snapshot.get("completed_courses", 0) or 0)
-        line = f"{grade_year}：共 {total_courses} 门课程，已完成 {completed_courses} 门"
-
-        current_course_id = str(snapshot.get("current_course_id", "")).strip()
-        current_progress_state = str(snapshot.get("current_progress_state", "")).strip()
-        next_course_id = str(snapshot.get("next_course_id", "")).strip()
-        extras: list[str] = []
-        if current_course_id:
-            extras.append(f"当前课程 {current_course_id}")
-        if current_progress_state:
-            extras.append(f"当前状态 {current_progress_state}")
-        if next_course_id:
-            extras.append(f"下一门 {next_course_id}")
-        if extras:
-            line = f"{line}，{'，'.join(extras)}"
-        lines.append(line)
-    return "\n".join(lines)
-
-
-def _build_analysis_input(
-    profile: dict,
-    grade_year: str,
-    learning_topic: str,
-    requirements: str,
-    progress_snapshots: list[dict[str, object]],
-    intake: dict,
-) -> str:
-    require_confirmed_intake_for_learning_path({"learning_path_intake": intake})
-    intake_course_lines = "\n".join(_intake_course_lines(intake))
-    query = (
-        f"请为 {grade_year} 生成「{learning_topic}」的学习路径。\n\n"
-        "输出前先完成以下分析：\n"
-        "1. 判断用户当前阶段、目标导向、时间约束与关键短板。\n"
-        "2. 判断当前年级最应该先开始的课程，以及为什么先学它。\n"
-        "3. 判断课程之间的依赖、阶段拆分、实践闭环与验收标准。\n"
-        "4. 如果输入里已经有历史学习路径与完成度，必须在此基础上延续当前进度，"
-        "不要重新从第一门课开始。\n"
-        "5. 再把分析结果映射到轻量规划骨架，输出 4-8 门课程的 course_specs；"
-        "课程数量必须与已确认课程草案一致，课程顺序必须与已确认课程草案一致。"
-        "不要输出完整知识图谱或章节明细。\n\n"
-        "已确认课程草案是正式学习路径的边界，不能扩展到用户没有确认的方向：\n"
-        "课程标题和来源绑定必须来自已确认课程草案，模型不得替换教材来源。\n"
-        "resource_generation_contract 必须声明下游顺序："
-        "course_knowledge_agent -> section_markdown_agent -> "
-        "section_video_search_agent -> section_html_animation_agent。\n"
-        "路径课程的 source_outline_section_ids 必须传递给大纲智能体，"
-        "再由大纲小节传递给 Markdown、视频检索和 HTML 动画智能体。\n"
-        f"{json.dumps(intake, ensure_ascii=False, indent=2)}\n"
-        f"已确认课程顺序：\n{intake_course_lines}\n\n"
-        f"用户画像关键信息：{json.dumps(profile, ensure_ascii=False, indent=2)}\n"
-        f"当前目标年级：{grade_year}\n"
-        f"学习主题：{learning_topic}\n"
-        f"具体要求：{requirements or '无'}\n"
-        f"{_format_progress_snapshots(progress_snapshots)}"
-    )
-    budget = apply_prompt_budget(query, phase="path")
-    return (
-        f"{budget.text}\n\n"
-        f"prompt_budget_applied={str(budget.prompt_budget_applied).lower()}"
-    )
-
-
-def _course_spec(
-    *,
-    course_node_id: str,
-    theme: str,
-    semester_scope: str,
-    duration: str,
-    pace_reason: str,
-    goal: str,
-    stage_titles: list[str],
-    key_points: list[str],
-    difficult_points: list[str],
-    acceptance_criteria: list[str],
-    difficulty_level: str,
-) -> dict:
-    return {
-        "course_node_id": course_node_id,
-        "theme": theme,
-        "semester_scope": semester_scope,
-        "duration": duration,
-        "pace_reason": pace_reason,
-        "goal": goal,
-        "stage_titles": stage_titles,
-        "key_points": key_points,
-        "difficult_points": difficult_points,
-        "acceptance_criteria": acceptance_criteria,
-        "difficulty_level": difficulty_level,
-    }
-
-
 def _normalize_goal_type(value: str) -> str:
     normalized = value.strip()
     if normalized in {"考试", "课程学习", "项目实践", "能力提升", "就业准备", "其他"}:
@@ -680,207 +429,12 @@ def _normalize_grade_goal(
     return normalized
 
 
-def _grade_course_specs(
-    grade_year: str, topic: str, pace_reason: str
-) -> tuple[str, str, list[dict], list[dict]]:
-    if grade_year == "year_1":
-        specs = [
-            _course_spec(
-                course_node_id="year_1_course_1",
-                theme="编程与算法基础",
-                semester_scope="上学期",
-                duration="6 周",
-                pace_reason="先打稳编程语法与算法思维",
-                goal="完成 Python 基础语法、流程控制与基础算法训练",
-                stage_titles=["语法入门", "数据结构启蒙", "算法思维训练"],
-                key_points=["Python 基础语法", "流程控制", "算法思维"],
-                difficult_points=["抽象建模", "复杂度理解"],
-                acceptance_criteria=["能独立完成基础算法练习并解释思路"],
-                difficulty_level="基础",
-            ),
-            _course_spec(
-                course_node_id="year_1_course_2",
-                theme="数据结构与算法实战",
-                semester_scope="上学期",
-                duration="6 周",
-                pace_reason="把基础语法推进到可解决问题的水平",
-                goal="围绕常见题型掌握数组、链表、栈队列与搜索排序",
-                stage_titles=["线性结构实践", "搜索与排序", "题型拆解复盘"],
-                key_points=["数组与链表", "栈与队列", "搜索与排序"],
-                difficult_points=["边界条件分析", "调试思路"],
-                acceptance_criteria=["能独立完成一组结构化算法练习题"],
-                difficulty_level="基础",
-            ),
-            _course_spec(
-                course_node_id="year_1_course_3",
-                theme="Git 协作与调试基础",
-                semester_scope="下学期",
-                duration="4 周",
-                pace_reason="尽早建立工程协作与排错习惯",
-                goal="掌握 Git 基础协作、日志定位与常见调试方法",
-                stage_titles=["Git 提交流程", "日志与断点调试", "协作复盘"],
-                key_points=["Git 基础命令", "断点调试", "问题复盘"],
-                difficult_points=["冲突处理", "问题定位路径"],
-                acceptance_criteria=["能独立完成一次带日志的代码调试与提交协作"],
-                difficulty_level="基础",
-            ),
-        ]
-        return "大一", "夯实编程与工程基础", specs, []
+_GRADE_NAMES = {"year_1": "大一", "year_2": "大二", "year_3": "大三", "year_4": "大四"}
 
-    if grade_year == "year_2":
-        specs = [
-            _course_spec(
-                course_node_id="year_2_course_1",
-                theme="Web 前端与交互基础",
-                semester_scope="上学期",
-                duration="6 周",
-                pace_reason="先补足用户界面与交互表达能力",
-                goal="完成一个具备基础状态管理与交互逻辑的前端页面",
-                stage_titles=["组件拆分", "状态与事件", "交互联调"],
-                key_points=["组件设计", "状态管理", "交互联调"],
-                difficult_points=["状态同步", "页面调试"],
-                acceptance_criteria=["能独立完成一个有状态的交互页面"],
-                difficulty_level="基础",
-            ),
-            _course_spec(
-                course_node_id="year_2_course_2",
-                theme="后端接口与数据库建模",
-                semester_scope="上学期",
-                duration="6 周",
-                pace_reason="建立服务端接口与数据结构意识",
-                goal="掌握 REST 接口设计、数据库建模与基本持久化能力",
-                stage_titles=["接口设计", "数据库建模", "服务端联调"],
-                key_points=["REST 接口", "数据库建模", "ORM 基础"],
-                difficult_points=["关系设计", "数据一致性"],
-                acceptance_criteria=["能完成一个带数据库的后端接口服务"],
-                difficulty_level="基础",
-            ),
-            _course_spec(
-                course_node_id="year_2_course_3",
-                theme="全栈工程化与部署入门",
-                semester_scope="下学期",
-                duration="5 周",
-                pace_reason="把前后端能力收束为可运行项目",
-                goal="掌握环境配置、联调、部署与基础监控意识",
-                stage_titles=["环境配置", "全栈联调", "部署复盘"],
-                key_points=["环境配置", "全栈联调", "部署入门"],
-                difficult_points=["跨端排错", "环境一致性"],
-                acceptance_criteria=["能把一个全栈项目运行并部署到可访问环境"],
-                difficulty_level="基础",
-            ),
-        ]
-        relations = [
-            _knowledge_relation(
-                from_node_id="year_1_course_3",
-                to_node_id="year_2_course_1",
-                relation_type="prerequisite",
-                description="先具备基础协作与调试能力，再进入 Web 工程化主线。",
-            )
-        ]
-        return "大二", "建立全栈工程能力", specs, relations
 
-    if grade_year == "year_4":
-        specs = [
-            _course_spec(
-                course_node_id="year_4_course_1",
-                theme="就业级作品集与迭代优化",
-                semester_scope="上学期",
-                duration="6 周",
-                pace_reason="先把项目沉淀为可展示的就业级作品",
-                goal="完成作品集整理、性能优化和面试讲解准备",
-                stage_titles=["项目复盘", "优化迭代", "作品集整理"],
-                key_points=["项目复盘", "性能优化", "作品集包装"],
-                difficult_points=["方案取舍", "表达与复盘"],
-                acceptance_criteria=["形成可展示的就业级项目作品集"],
-                difficulty_level="中级",
-            ),
-            _course_spec(
-                course_node_id="year_4_course_2",
-                theme=f"{topic}综合项目孵化",
-                semester_scope="上学期",
-                duration="6 周",
-                pace_reason="把既有能力沉淀成完整毕业项目",
-                goal=f"围绕 {topic} 形成可展示的综合项目方案与技术路线",
-                stage_titles=["选题聚焦", "架构方案", "阶段演示"],
-                key_points=["选题定位", "架构取舍", "里程碑规划"],
-                difficult_points=["范围收敛", "方案表达"],
-                acceptance_criteria=["完成一个可演示的毕业项目方案与第一版实现"],
-                difficulty_level="中级",
-            ),
-            _course_spec(
-                course_node_id="year_4_course_3",
-                theme=f"{topic}求职展示与面试复盘",
-                semester_scope="下学期",
-                duration="4 周",
-                pace_reason="收束为求职表达与面试准备",
-                goal="完成项目讲解稿、问答清单与个人复盘素材",
-                stage_titles=["项目讲解", "问答清单", "面试复盘"],
-                key_points=["项目表达", "面试问答", "复盘能力"],
-                difficult_points=["重点取舍", "高压表达"],
-                acceptance_criteria=["能独立完成一次完整项目讲解与面试复盘"],
-                difficulty_level="中级",
-            ),
-        ]
-        relations = [
-            _knowledge_relation(
-                from_node_id="year_3_course_3",
-                to_node_id="year_4_course_1",
-                relation_type="prerequisite",
-                description="先完成项目级部署与监控实践，再沉淀毕业作品与求职表达。",
-            )
-        ]
-        return "大四", "沉淀就业级项目作品集", specs, relations
-
-    specs = [
-        _course_spec(
-            course_node_id="year_3_course_1",
-            theme=f"{topic}基础能力搭建",
-            semester_scope="上学期",
-            duration="6 周",
-            pace_reason=pace_reason,
-            goal=f"完成 {topic} 所需的核心接口、工具链与最小功能闭环",
-            stage_titles=["需求拆解", "接口接入", "最小闭环演示"],
-            key_points=["OpenAI-compatible API 调用", "Prompt 设计", "前后端联调"],
-            difficult_points=["异步调用稳定性", "错误处理与重试"],
-            acceptance_criteria=["完成一个可运行的 AI 功能模块并接入 Web 应用"],
-            difficulty_level="中级",
-        ),
-        _course_spec(
-            course_node_id="year_3_course_2",
-            theme=f"{topic}项目实战",
-            semester_scope="上学期",
-            duration="8 周",
-            pace_reason=pace_reason,
-            goal=f"围绕 {topic} 完成一个具备真实交互与部署能力的课程级项目",
-            stage_titles=["架构设计", "多智能体联调", "部署验收"],
-            key_points=["LangGraph 编排", "SSE 流式交互", "部署与监控"],
-            difficult_points=["多智能体状态管理", "线上稳定性"],
-            acceptance_criteria=["项目支持真实用户流程与部署演示"],
-            difficulty_level="中级",
-        ),
-        _course_spec(
-            course_node_id="year_3_course_3",
-            theme=f"{topic}工程化服务编排与部署监控",
-            semester_scope="下学期",
-            duration="6 周",
-            pace_reason=pace_reason,
-            goal=f"围绕 {topic} 补强工程化服务编排、部署与线上监控能力",
-            stage_titles=["服务编排", "部署方案", "监控复盘"],
-            key_points=["服务编排", "部署与发布", "监控告警"],
-            difficult_points=["状态一致性", "线上问题定位"],
-            acceptance_criteria=["完成一个支持基础监控与部署复盘的工程化项目版本"],
-            difficulty_level="中级",
-        ),
-    ]
-    relations = [
-        _knowledge_relation(
-            from_node_id="year_2_course_3",
-            to_node_id="year_3_course_1",
-            relation_type="prerequisite",
-            description="先具备全栈联调与部署入门能力，再进入 AI 功能闭环搭建。",
-        )
-    ]
-    return "大三", f"完成 {topic} 项目闭环", specs, relations
+def _grade_defaults(grade_year: str, topic: str) -> tuple[str, str]:
+    """Display name and fallback goal of a grade (the plan comes from the agent)."""
+    return _GRADE_NAMES.get(grade_year, grade_year), f"围绕{topic}完成本学年学习"
 
 
 def _build_learning_path_from_course_specs(
@@ -905,14 +459,9 @@ def _build_learning_path_from_course_specs(
     weaknesses = [item for item in weaknesses_text.split("、") if item]
     knowledge_foundation = str(confirmed.get("knowledge_foundation") or "")
     mastered_content = [knowledge_foundation] if knowledge_foundation else []
-    pace_reason = (
-        f"围绕{constraints}安排" if constraints else "根据后续补充的时间与约束调整"
-    )
     topic = learning_topic or DEFAULT_TOPIC
     resource_directions: list[dict] = []
-    grade_name, default_grade_goal, _default_specs, leading_relations = (
-        _grade_course_specs(grade_year, topic, pace_reason)
-    )
+    grade_name, default_grade_goal = _grade_defaults(grade_year, topic)
 
     def build_course_resources(
         course_node_id: str, theme: str, focus: list[str], difficulty_level: str
@@ -931,7 +480,7 @@ def _build_learning_path_from_course_specs(
         return [resource_id]
 
     grade_courses: list[dict] = []
-    global_relations = list(leading_relations)
+    global_relations: list[dict] = []
     ordered_node_ids: list[str] = []
     previous_course_id = ""
     for index, spec in enumerate(course_specs, start=1):
@@ -1072,42 +621,6 @@ def _build_learning_path_from_course_specs(
         "current_learning_courses": [current_learning_course],
         "current_learning_course": current_learning_course,
     }
-
-
-def _build_local_learning_path(
-    profile: dict,
-    *,
-    grade_year: str,
-    learning_topic: str,
-) -> dict:
-    raise ValueError(
-        "正式学习路径必须先有已确认课程草案并绑定教材来源，"
-        "不能使用本地兜底规格生成无绑定路径。"
-    )
-
-
-def _load_existing_year_learning_paths(state: OrchestrationState) -> dict[str, dict]:
-    existing_paths = state.get("year_learning_paths")
-    if isinstance(existing_paths, dict):
-        return existing_paths
-
-    user_id = str(state.get("user_id", "")).strip()
-    if not user_id:
-        return {}
-
-    from sqlmodel import Session
-
-    from app.database import get_engine
-    from app.services.learning_path_service import get_all_year_learning_paths
-
-    try:
-        with Session(get_engine()) as db_session:
-            return get_all_year_learning_paths(db_session, user_id)
-    except Exception as exc:
-        logger.warning(
-            "Failed to load existing learning paths for user %s: %s", user_id, exc
-        )
-        return {}
 
 
 def _progress_snapshot_for_grade(
@@ -1256,17 +769,8 @@ def _build_learning_path_from_plan(
         scoped_path = _scope_learning_path_to_grade_year(plan_data, grade_year)
         return _bind_confirmed_course_sources(scoped_path, grade_year, intake_courses)
 
-    confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
-    constraints = str(confirmed.get("constraints") or "")
-    pace_reason = (
-        f"围绕{constraints}安排" if constraints else "根据后续补充的时间与约束调整"
-    )
-    _grade_name, default_grade_goal, _default_specs, _leading_relations = (
-        _grade_course_specs(
-            grade_year,
-            learning_topic or DEFAULT_TOPIC,
-            pace_reason,
-        )
+    _grade_name, default_grade_goal = _grade_defaults(
+        grade_year, learning_topic or DEFAULT_TOPIC
     )
 
     raw_course_specs = plan_data.get("course_specs")
@@ -1369,155 +873,3 @@ def _build_learning_path_from_plan(
         course_specs=course_specs,
     )
     return _bind_confirmed_course_sources(path_dict, grade_year, intake_courses)
-
-
-async def run_learning_path_agent(
-    state: OrchestrationState, llm: BaseChatModel
-) -> dict:
-    """Generate a simplified learning path for a single grade year."""
-    tool_args = extract_last_tool_call_args(state)
-
-    profile = state.get("profile")
-    confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
-    current_grade = (
-        confirmed.get("current_grade") if isinstance(confirmed, dict) else ""
-    )
-    if (
-        isinstance(current_grade, str)
-        and current_grade.strip()
-        and not is_supported_current_grade(current_grade)
-    ):
-        return {
-            "error": unsupported_current_grade_error(current_grade),
-            "hard_error": True,
-        }
-    if not is_complete_profile_data(profile):
-        return {"error": "请先完成基础画像再生成学习路径。", "hard_error": True}
-
-    intake, intake_error = _confirmed_intake_from_state(state)
-    if intake_error:
-        return {"error": intake_error, "hard_error": True}
-
-    grade_year = str(intake.get("grade_year", "")).strip()
-    if not grade_year:
-        return {
-            "error": "课程草案中缺少可识别的年级，无法生成学习路径。",
-            "hard_error": True,
-        }
-
-    resolved_topic = str(intake.get("learning_topic", "")).strip()
-    if not resolved_topic:
-        return {
-            "error": "课程草案中缺少学习主题，无法生成学习路径。",
-            "hard_error": True,
-        }
-
-    existing_year_learning_paths = await asyncio.to_thread(
-        _load_existing_year_learning_paths, state
-    )
-    from app.services.learning_path_service import get_learning_path_progress_snapshots
-
-    progress_snapshots = get_learning_path_progress_snapshots(
-        existing_year_learning_paths
-    )
-    target_progress_snapshot = _progress_snapshot_for_grade(
-        progress_snapshots, grade_year
-    )
-
-    input_text = _build_analysis_input(
-        profile,
-        grade_year,
-        resolved_topic,
-        str(tool_args.get("specific_requirements", "")),
-        progress_snapshots,
-        intake,
-    )
-
-    try:
-        structured_llm = llm.with_structured_output(LearningPathPlanOutput)
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", LEARNING_PATH_AGENT_SYSTEM_PROMPT),
-                ("human", "{query}"),
-            ]
-        )
-        chain = prompt | structured_llm
-        result: LearningPathPlanOutput = await asyncio.wait_for(
-            chain.ainvoke({"query": input_text}),
-            timeout=LEARNING_PATH_STRUCTURED_TIMEOUT_SECONDS,
-        )
-    except Exception as exc:
-        logger.warning(
-            "LearningPathAgent structured output failed: %s: %s",
-            type(exc).__name__,
-            exc,
-        )
-        return {
-            "error": f"{LEARNING_PATH_RETRY_ERROR} ({type(exc).__name__}: {exc})",
-            "hard_error": True,
-        }
-
-    try:
-        path_dict = _build_learning_path_from_plan(
-            profile,
-            grade_year=grade_year,
-            learning_topic=resolved_topic,
-            plan_data=result.model_dump(),
-            intake_courses=intake.get("courses", []),
-        )
-    except Exception as exc:
-        logger.warning(
-            "LearningPathAgent plan expansion failed: %s: %s", type(exc).__name__, exc
-        )
-        return {
-            "error": f"{LEARNING_PATH_RETRY_ERROR} (plan: {type(exc).__name__}: {exc})",
-            "hard_error": True,
-        }
-    path_dict = _apply_existing_progress_to_path(
-        path_dict, grade_year, target_progress_snapshot
-    )
-    contract_error = _validate_learning_path_contract(path_dict)
-    if contract_error:
-        logger.warning(
-            "LearningPathAgent contract validation failed: %s", contract_error
-        )
-        return {
-            "error": f"{LEARNING_PATH_RETRY_ERROR} (contract: {contract_error})",
-            "hard_error": True,
-        }
-    await asyncio.to_thread(
-        _persist_learning_path, state["user_id"], grade_year, resolved_topic, path_dict
-    )
-
-    return {"year_learning_path": path_dict, "grade_year": grade_year}
-
-
-def create_learning_path_agent_node(llm: BaseChatModel):
-    async def learning_path_agent_node(state: OrchestrationState) -> dict:
-        agent_result = await run_learning_path_agent(state, llm)
-
-        tool_call_id = extract_last_tool_call_id(state)
-        tool_message = ToolMessage(
-            content=json.dumps(agent_result, ensure_ascii=False),
-            tool_call_id=tool_call_id or "unknown",
-        )
-
-        result = {"messages": [tool_message]}
-        if agent_result.get("year_learning_path") is not None:
-            merged_paths = dict(state.get("year_learning_paths") or {})
-            merged_paths[result_grade_year := agent_result.get("grade_year", "")] = (
-                agent_result["year_learning_path"]
-            )
-            result["year_learning_path"] = agent_result["year_learning_path"]
-            result["year_learning_paths"] = merged_paths
-            result["grade_year"] = result_grade_year
-            result["latest_grade_year"] = result_grade_year
-            result["course_knowledge"] = None
-            result["response"] = _learning_path_response_text(
-                agent_result["year_learning_path"]
-            )
-        if agent_result.get("error") is not None:
-            result["response"] = agent_result["error"]
-        return result
-
-    return learning_path_agent_node

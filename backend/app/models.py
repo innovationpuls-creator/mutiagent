@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, Column, Index, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Index, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -250,6 +250,12 @@ class ConversationSession(SQLModel, table=True):
     session_id: str = Field(primary_key=True)
     user_uid: str = Field(foreign_key="user.uid", index=True)
     messages: list = Field(default_factory=list, sa_column=Column(_jsonb))
+    # Explicit structured state (learning_path_intake, pending_leaf_regeneration,
+    # pending_profile_followup); legacy sessions keep these inside `messages`.
+    session_state: dict = Field(
+        default_factory=dict,
+        sa_column=Column(_jsonb, nullable=False, server_default=text("'{}'::jsonb")),
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -468,6 +474,7 @@ class KnowledgeBaseIngestionJob(SQLModel, table=True):
     lease_expires_at: datetime | None = Field(default=None)
     worker_id: str | None = Field(default=None, max_length=64)
     request_id: str | None = Field(default=None, max_length=128)
+    triggered_by_uid: str | None = Field(default=None, max_length=64)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: datetime | None = Field(default=None)
@@ -480,3 +487,115 @@ class WorkerHeartbeat(SQLModel, table=True):
     worker_name: str = Field(primary_key=True, max_length=64)
     worker_id: str = Field(max_length=64)
     last_heartbeat_at: datetime = Field(index=True)
+
+
+MODEL_AUTH_TYPE_VALUES = ("api_key", "oauth")
+MODEL_CONFIG_MODE_VALUES = ("simple", "advanced")
+
+
+class UserModelProvider(SQLModel, table=True):
+    """Per-user model provider credentials (secrets are application-encrypted)."""
+
+    __tablename__ = "user_model_provider"
+    __table_args__ = (
+        UniqueConstraint("user_uid", "provider_id", name="uq_user_model_provider"),
+        CheckConstraint(
+            _check_in_values("auth_type", MODEL_AUTH_TYPE_VALUES),
+            name="ck_user_model_provider_auth_type",
+        ),
+    )
+
+    id: str = Field(primary_key=True, max_length=32)
+    user_uid: str = Field(foreign_key="user.uid", index=True)
+    provider_id: str = Field(max_length=64)
+    display_name: str = Field(default="", max_length=128)
+    is_builtin: bool = Field(default=True)
+    protocol: str = Field(default="", max_length=32)
+    base_url: str = Field(default="", max_length=512)
+    headers_encrypted: str | None = Field(default=None)
+    auth_type: str = Field(default="api_key", max_length=16)
+    secret_encrypted: str | None = Field(default=None)
+    oauth_refresh_encrypted: str | None = Field(default=None)
+    oauth_expires_at: datetime | None = Field(default=None)
+    oauth_account_label: str | None = Field(default=None, max_length=128)
+    enabled: bool = Field(default=True)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class UserCustomModel(SQLModel, table=True):
+    """Per-user custom model declaration (capabilities, Pi compat, pricing)."""
+
+    __tablename__ = "user_custom_model"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_uid", "provider_id", "model_id", name="uq_user_custom_model"
+        ),
+    )
+
+    id: str = Field(primary_key=True, max_length=32)
+    user_uid: str = Field(foreign_key="user.uid", index=True)
+    provider_id: str = Field(max_length=64)
+    model_id: str = Field(max_length=128)
+    display_name: str = Field(default="", max_length=128)
+    context_window: int = Field(default=128000)
+    max_tokens: int = Field(default=8192)
+    supports_vision: bool = Field(default=False)
+    supports_tools: bool = Field(default=True)
+    supports_reasoning: bool = Field(default=False)
+    compat_config: dict = Field(default_factory=dict, sa_column=Column(_jsonb))
+    pricing: dict = Field(default_factory=dict, sa_column=Column(_jsonb))
+    enabled: bool = Field(default=True)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class UserModelPreferences(SQLModel, table=True):
+    """Per-user default models, thinking level and advanced slot bindings."""
+
+    __tablename__ = "user_model_preferences"
+    __table_args__ = (
+        CheckConstraint(
+            _check_in_values("config_mode", MODEL_CONFIG_MODE_VALUES),
+            name="ck_user_model_preferences_config_mode",
+        ),
+    )
+
+    user_uid: str = Field(foreign_key="user.uid", primary_key=True)
+    config_mode: str = Field(default="simple", max_length=16)
+    default_model_ref: dict | None = Field(
+        default=None, sa_column=Column(JSONB(none_as_null=True), nullable=True)
+    )
+    default_vision_model_ref: dict | None = Field(
+        default=None, sa_column=Column(JSONB(none_as_null=True), nullable=True)
+    )
+    default_thinking_level: str = Field(default="medium", max_length=16)
+    runtime_options: dict = Field(default_factory=dict, sa_column=Column(_jsonb))
+    slot_bindings: dict = Field(default_factory=dict, sa_column=Column(_jsonb))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class UserModelUsageLog(SQLModel, table=True):
+    """One row per model call, reported by the TS gateway."""
+
+    __tablename__ = "user_model_usage_log"
+    __table_args__ = (
+        Index("idx_user_model_usage_user_time", "user_uid", "created_at"),
+        Index("idx_user_model_usage_user_scene", "user_uid", "scene"),
+    )
+
+    usage_id: str = Field(primary_key=True, max_length=32)
+    user_uid: str = Field(foreign_key="user.uid")
+    request_id: str | None = Field(default=None, max_length=128)
+    scene: str = Field(max_length=64)
+    provider_id: str = Field(max_length=64)
+    model_id: str = Field(max_length=128)
+    thinking_level: str | None = Field(default=None, max_length=16)
+    input_tokens: int = Field(default=0)
+    output_tokens: int = Field(default=0)
+    cache_read_tokens: int = Field(default=0)
+    cache_write_tokens: int = Field(default=0)
+    reasoning_tokens: int = Field(default=0)
+    estimated_cost_usd: float = Field(default=0.0)
+    latency_ms: int = Field(default=0)
+    success: bool = Field(default=True)
+    error_code: str | None = Field(default=None, max_length=64)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

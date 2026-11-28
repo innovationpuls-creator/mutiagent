@@ -85,39 +85,8 @@
 	margin-bottom: var(--space-32);
 }
 
-.status-pill {
+.today-detail-status {
 	justify-self: start;
-	font-size: var(--text-caption);
-	font-weight: var(--font-weight-medium);
-	padding: var(--space-4) var(--space-12);
-	border-radius: var(--radius-full);
-	display: inline-flex;
-	align-items: center;
-	gap: var(--space-8);
-}
-
-.status-pill.status-in_progress {
-	color: var(--status-running);
-	background: oklch(78% 0.08 145 / 0.12);
-	box-shadow: inset 0 0 0 1px oklch(78% 0.08 145 / 0.25);
-}
-
-.status-pill.status-in_progress::before {
-	content: "";
-	display: block;
-	width: 6px;
-	height: 6px;
-	border-radius: 50%;
-	background: var(--status-running);
-	box-shadow: 0 0 8px var(--status-running);
-	animation: breathe var(--duration-breathe) var(--ease-breathe) infinite
-		alternate;
-}
-
-.status-pill.status-completed {
-	color: var(--status-neutral);
-	background: oklch(80% 0.04 250 / 0.12);
-	box-shadow: inset 0 0 0 1px oklch(80% 0.04 250 / 0.25);
 }
 
 .today-detail-hero h2 {
@@ -322,8 +291,8 @@
 	background: var(--material-dark-panel);
 }
 
-.today-detail-grade-courses {
-	padding-left: 0 !important;
+.today-detail-following .today-detail-grade-courses {
+	padding-left: 0;
 	list-style: none;
 }
 
@@ -353,8 +322,8 @@
 	line-height: 1.6;
 }
 
-.today-detail-empty {
-	color: var(--dark-text-muted) !important;
+.today-detail-panel .today-detail-empty {
+	color: var(--dark-text-muted);
 	font-style: italic;
 }
 
@@ -384,8 +353,5 @@
 	.today-detail-header button {
 		transition: opacity var(--duration-instant) ease;
 		transform: none;
-	}
-	.status-pill.status-in_progress::before {
-		animation: none;
 	}
 }

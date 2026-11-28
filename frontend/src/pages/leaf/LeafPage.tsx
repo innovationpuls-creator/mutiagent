@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { useParams, useSearchParams } from "react-router-dom";
 import { fetchLeafCourse } from "../../api/leaf";
+import { FeedbackState } from "../../components/ui/FeedbackState";
 import { useAiWidget } from "../../contexts/AiWidgetContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { motionTokens } from "../../styles/motion-tokens";
@@ -379,27 +380,24 @@ export function LeafPage() {
 	if (status === "loading" || status === "idle") {
 		return (
 			<section
-				className="leaf-page min-h-screen text-[var(--color-text-primary)] relative overflow-x-hidden flex items-center justify-center"
+				className="leaf-page leaf-page-centered"
 				aria-label="叶茂课程加载中"
 			>
 				<div className="leaf-ambient-sun" aria-hidden="true" />
 				<div className="leaf-paper-canvas" aria-hidden="true" />
-				<div className="text-center relative z-10">
-					<motion.div
-						animate={{ rotate: 360 }}
-						transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-						className="w-12 h-12 border-4 border-[var(--color-primary-soft)] border-t-[var(--color-primary)] rounded-full mx-auto mb-6"
-					/>
-					<span className="text-[var(--color-text-muted)] text-sm tracking-widest uppercase mb-2 block">
-						{"// loading"}
-					</span>
-					<h1 className="text-2xl font-medium text-[var(--color-secondary)] mb-2">
-						正在铺开这一页
-					</h1>
-					<p className="text-[var(--color-text-secondary)]">
-						课程内容正在从叶脉里慢慢展开。
-					</p>
-				</div>
+				<FeedbackState
+					className="relative z-10"
+					variant="loading"
+					title="正在铺开这一页"
+					description="课程内容正在从叶脉里慢慢展开。"
+					icon={
+						<motion.div
+							animate={{ rotate: 360 }}
+							transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+							className="leaf-loading-ring"
+						/>
+					}
+				/>
 			</section>
 		);
 	}
@@ -407,22 +405,17 @@ export function LeafPage() {
 	if (status === "error" || !response) {
 		return (
 			<section
-				className="leaf-page min-h-screen text-[var(--color-text-primary)] relative overflow-x-hidden flex items-center justify-center"
+				className="leaf-page leaf-page-centered"
 				aria-label="叶茂课程加载失败"
 			>
 				<div className="leaf-ambient-sun" aria-hidden="true" />
 				<div className="leaf-paper-canvas" aria-hidden="true" />
-				<div className="text-center relative z-10">
-					<span className="text-[var(--color-error)] text-sm tracking-widest uppercase mb-2 block">
-						{"// error"}
-					</span>
-					<h1 className="text-2xl font-medium text-[var(--color-secondary)] mb-2">
-						叶茂数据加载失败
-					</h1>
-					<p className="text-[var(--color-text-secondary)]">
-						{errorMessage ?? "请稍后再试。"}
-					</p>
-				</div>
+				<FeedbackState
+					className="relative z-10"
+					variant="error"
+					title="叶茂数据加载失败"
+					description={errorMessage ?? "请稍后再试。"}
+				/>
 			</section>
 		);
 	}
@@ -444,9 +437,9 @@ export function LeafPage() {
 									persistLeafMarkmapCollapsed(false);
 									setMarkmapCollapsed(false);
 								}}
-								className="fixed top-[104px] left-0 bg-[var(--glass-bg)] rounded-r-full py-4 pr-6 pl-4 shadow-[var(--shadow-md)] hover:pr-8 transition-[padding,color,background-color,border-color,text-decoration-color,fill,stroke] duration-300 cursor-pointer flex items-center z-50 group border border-l-0 border-[var(--glass-border)]"
+								className="leaf-markmap-expand"
 							>
-								<ChevronRight className="w-6 h-6 text-[var(--color-text-secondary)] group-hover:text-[var(--color-primary)] transition-colors" />
+								<ChevronRight aria-hidden="true" />
 							</motion.button>
 						)}
 					</AnimatePresence>,
@@ -456,7 +449,7 @@ export function LeafPage() {
 
 	return (
 		<section
-			className="leaf-page min-h-screen text-[var(--color-text-primary)] relative overflow-x-hidden flex"
+			className="leaf-page"
 			aria-label={`${response.course.course_or_chapter_theme}课程内容`}
 		>
 			<div className="leaf-ambient-sun" aria-hidden="true" />
@@ -482,7 +475,7 @@ export function LeafPage() {
 				)}
 			</AnimatePresence>
 
-			<main
+			<div
 				className={`leaf-page-main ${markmapCollapsed ? "leaf-page-main-collapsed" : "leaf-page-main-with-map"}`}
 			>
 				<div className="leaf-page-main-inner">
@@ -506,7 +499,7 @@ export function LeafPage() {
 						/>
 					</div>
 				</div>
-			</main>
+			</div>
 		</section>
 	);
 }

@@ -1,17 +1,14 @@
 """Regression contracts for database lifetime and bounded work."""
 
-import asyncio
 import threading
 from datetime import datetime, timezone
 
-import httpx
 import pytest
 from sqlalchemy import event
 from sqlmodel import Session, SQLModel
 
-from app.database import build_engine, get_engine
+from app.database import build_engine
 from app.models import KnowledgeBaseIngestionJob, KnowledgeGap, Textbook, User
-from app.services import knowledge_base_service as kb
 from app.workers.knowledge_base_worker import claim_next_ingestion_job
 from tests.postgres import postgresql_test_url
 
@@ -22,29 +19,6 @@ def engine(tmp_path):
     SQLModel.metadata.create_all(engine)
     yield engine
     engine.dispose()
-
-
-def test_search_published_textbooks_preserves_ranking(engine):
-    with Session(engine) as session:
-        for key, title, tags, published in (
-            ("title", "Python", [], True),
-            ("tags", "Other", ["Python", "Python", "Python"], True),
-            ("hidden", "Python", ["Python"] * 10, False),
-        ):
-            session.add(
-                Textbook(
-                    textbook_id=key,
-                    source_id="source",
-                    title=title,
-                    tags=tags,
-                    student_availability_status="published" if published else "draft",
-                )
-            )
-        session.commit()
-        assert [
-            row.textbook_id
-            for row in kb.search_published_textbooks(session, "python", 10)
-        ] == ["tags", "title"]
 
 
 def test_two_workers_claim_distinct_jobs_before_first_commit(engine):
@@ -103,78 +77,6 @@ def test_two_workers_claim_distinct_jobs_before_first_commit(engine):
     assert not errors
     assert not thread.is_alive()
     assert results[0].job_id != second.job_id
-
-
-def test_35_report_streams_release_connections_during_model_wait(tmp_path, monkeypatch):
-    from app.core.security import create_access_token
-    from app.main import create_app
-
-    app = create_app(database_url=postgresql_test_url(tmp_path, "report-concurrency"))
-    engine = get_engine()
-    with Session(engine) as session:
-        session.add(
-            User(uid="concurrent", username="Concurrent", identifier="concurrent")
-        )
-        session.commit()
-    token = create_access_token({"sub": "concurrent"})
-
-    async def exercise():
-        ready, release = asyncio.Event(), asyncio.Event()
-        arrivals = 0
-
-        class Model:
-            def with_structured_output(self, schema):
-                class Structured:
-                    async def ainvoke(self, _messages):
-                        nonlocal arrivals
-                        if schema.__name__ == "EvidenceSelection":
-                            arrivals += 1
-                            if arrivals == 35:
-                                ready.set()
-                            await release.wait()
-                            return {"requests": []}
-                        return {
-                            "overview": "等待建立学习记录",
-                            "strengths": [],
-                            "improvements": [],
-                            "actions": [],
-                        }
-
-                return Structured()
-
-        monkeypatch.setattr("app.api.branch.get_worker_llm", lambda: Model())
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            tasks = [
-                asyncio.create_task(
-                    client.post(
-                        "/api/branch/canopy/report/stream",
-                        headers={"Authorization": f"Bearer {token}"},
-                    )
-                )
-                for _ in range(35)
-            ]
-            try:
-                await asyncio.wait_for(ready.wait(), 15)
-                assert engine.pool.checkedout() == 0
-                health = await asyncio.wait_for(client.get("/api/health/ready"), 2)
-                assert health.status_code == 200
-            finally:
-                release.set()
-                responses = await asyncio.gather(*tasks)
-            assert all(
-                response.status_code == 200
-                and "report_completed" in response.text
-                and "report_error" not in response.text
-                for response in responses
-            )
-            assert engine.pool.checkedout() == 0
-
-    try:
-        asyncio.run(exercise())
-    finally:
-        engine.dispose()
 
 
 def test_current_upgrade_skips_jsonb_alter_and_unchanged_follow_counts(engine):
@@ -281,61 +183,3 @@ def test_report_counts_all_history_but_loads_recent_evidence(engine):
         assert quizzes[0].id == "quiz:quiz-39"
         assert quizzes[-1].id == "quiz:quiz-10"
         assert all("首次 40 分，最近 80 分" in item.detail for item in quizzes)
-
-
-def test_chat_releases_connection_and_persists_before_completion(engine, monkeypatch):
-    from app.api.orchestration import _stream_chat_events
-    from app.database import request_engine_context
-    from app.models import ConversationSession
-    from app.services.conversation_session_service import load_or_create_session
-
-    with Session(engine) as session:
-        session.add(User(uid="chat", username="Chat", identifier="chat"))
-        session.commit()
-        load_or_create_session(session, "chat-session", "chat")
-
-    async def fake_events(_state):
-        assert get_engine() is engine
-        assert engine.pool.checkedout() == 0
-        await asyncio.sleep(0.01)
-        yield {"event": "message_completed", "full_text": "回复"}
-        yield {"event": "session_completed", "session_id": "chat-session"}
-
-    monkeypatch.setattr(
-        "app.api.orchestration.stream_orchestration_events", fake_events
-    )
-
-    async def exercise():
-        previous = request_engine_context.get()
-        with Session(engine) as session:
-            async for message in _stream_chat_events(
-                "chat-session", "chat", "你好", session
-            ):
-                if "event: message_completed" in message:
-                    with Session(engine) as reader:
-                        row = reader.get(ConversationSession, "chat-session")
-                        assert [item["type"] for item in row.messages] == [
-                            "human",
-                            "ai",
-                        ]
-        assert request_engine_context.get() is previous
-        assert engine.pool.checkedout() == 0
-
-    asyncio.run(exercise())
-
-
-def test_chat_stream_can_be_closed_by_another_task(engine):
-    from app.api.orchestration import _stream_chat_events
-    from app.database import request_engine_context
-
-    async def exercise():
-        previous = request_engine_context.get()
-        with Session(engine) as session:
-            iterator = _stream_chat_events("unused", "unused", "你好", session)
-            assert "session_started" in await anext(iterator)
-            assert request_engine_context.get() is previous
-            await asyncio.create_task(iterator.aclose())
-            assert request_engine_context.get() is previous
-        assert engine.pool.checkedout() == 0
-
-    asyncio.run(exercise())

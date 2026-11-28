@@ -12,6 +12,7 @@ const adminRoutes = [
 		path: "/admin/knowledge-base",
 		hint: "教材来源与未覆盖待办",
 	},
+	{ label: "模型配置", path: "/admin/models", hint: "个人 AI 模型配置" },
 ];
 
 export function AdminLayout() {

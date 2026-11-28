@@ -7,7 +7,8 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ForestSubmissionError } from "../../api/forest";
 import { AuthProvider } from "../../contexts/AuthContext";
 import type {
 	ForestQuizSession,
@@ -31,6 +32,13 @@ vi.mock("../../api/forest", async () => ({
 		submitForestQuizAttemptStreamMock(...args),
 	streamForestAi: (...args: unknown[]) => streamForestAiMock(...args),
 }));
+
+beforeEach(() => {
+	fetchForestQuizSessionMock.mockReset();
+	generateForestQuizMock.mockReset();
+	submitForestQuizAttemptStreamMock.mockReset();
+	streamForestAiMock.mockReset();
+});
 
 afterEach(() => {
 	cleanup();
@@ -282,9 +290,7 @@ describe("ForestQuizPage", () => {
 
 		renderForest();
 
-		const textarea = await screen.findByPlaceholderText(
-			"自定义追问或手写演算草稿...",
-		);
+		const textarea = await screen.findByPlaceholderText("向 AI 助教追问…");
 		const penButton = screen.getByTitle("手写画板");
 		fireEvent.click(penButton);
 
@@ -318,5 +324,57 @@ describe("ForestQuizPage", () => {
 				screen.getByText("解析自定义问题：为什么这里的A是正确答案？"),
 			).toBeTruthy();
 		});
+	});
+
+	it("keeps the real rejection message when grading is refused before saving (428)", async () => {
+		fetchForestQuizSessionMock.mockResolvedValue(forestSession());
+		generateForestQuizMock.mockResolvedValue({
+			quiz_id: "quiz_1",
+			quiz_version: "a".repeat(64),
+			course_node_id: "year_3_course_2",
+			chapter_id: "1",
+			status: "ready",
+			generation_error: "",
+			created_at: "2026-06-09T00:00:00Z",
+			updated_at: "2026-06-09T00:00:00Z",
+			questions: [
+				{
+					question_id: "q1",
+					type: "single_choice",
+					prompt: "本章首要目标是什么？",
+					options: [{ option_id: "A", text: "确认边界" }],
+					starter_code: "",
+					image_prompt: "",
+					points: 100,
+				},
+			],
+		});
+		submitForestQuizAttemptStreamMock.mockImplementation(async () => {
+			throw new ForestSubmissionError(
+				"尚未配置可用的视觉模型，请先前往“模型配置”完成设置。",
+				428,
+			);
+		});
+
+		renderForest();
+		fireEvent.click(await screen.findByRole("button", { name: "生成测验" }));
+		await screen.findByRole("heading", {
+			name: "本章首要目标是什么？",
+			level: 2,
+		});
+		const option = screen.getByLabelText("确认边界") as HTMLInputElement;
+		// The answer fieldset stays disabled until the local draft finished loading.
+		await waitFor(() => expect(option.disabled).toBe(false), { timeout: 5000 });
+		fireEvent.click(option);
+		const submitButton = screen.getByRole("button", {
+			name: "提交测验",
+		}) as HTMLButtonElement;
+		await waitFor(() => expect(submitButton.disabled).toBe(false), {
+			timeout: 5000,
+		});
+		fireEvent.click(submitButton);
+
+		await screen.findByText(/尚未配置可用的视觉模型/);
+		expect(screen.queryByText(/尚未确认本次提交是否保存/)).toBeNull();
 	});
 });

@@ -1,5 +1,6 @@
 import styled from "styled-components";
 import type { AgentRunStep } from "../../types/chat";
+import { StatusBadge } from "../ui/StatusBadge";
 import { buildAgentCollaborationNodes } from "./agentCollaboration";
 
 interface AgentCollaborationPanelProps {
@@ -12,6 +13,14 @@ const STATUS_LABELS = {
 	success: "已完成",
 	error: "失败重试",
 	skipped: "已跳过",
+} as const;
+
+const STATUS_TONES = {
+	waiting: "neutral",
+	running: "success",
+	success: "success",
+	error: "error",
+	skipped: "neutral",
 } as const;
 
 function formatDuration(ms?: number): string {
@@ -44,8 +53,13 @@ export function AgentCollaborationPanel({
 						data-testid={`agent-column-${node.agent}`}
 					>
 						<div className="agent-topline">
-							<span className="status-dot" aria-hidden="true" />
-							<span className="status-label">{STATUS_LABELS[node.status]}</span>
+							<StatusBadge
+								surface="dark"
+								tone={STATUS_TONES[node.status]}
+								className="status-label"
+							>
+								{STATUS_LABELS[node.status]}
+							</StatusBadge>
 							{node.parallelGroup && (
 								<span className="parallel-label">{node.parallelGroup}</span>
 							)}
@@ -109,7 +123,7 @@ const Shell = styled.section`
     padding: var(--space-12);
     border: 1px solid var(--dark-border);
     border-radius: var(--radius-md);
-    background: var(--dark-surface-elevated);
+    background: var(--dark-surface-raised);
     display: flex;
     flex-direction: column;
     gap: var(--space-8);
@@ -122,26 +136,6 @@ const Shell = styled.section`
     gap: var(--space-8);
     color: var(--dark-text-muted);
     font-size: var(--text-caption);
-  }
-
-  .status-dot {
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 999px;
-    background: var(--dark-text-muted);
-    flex: 0 0 auto;
-  }
-
-  .agent-column[data-status='running'] .status-dot {
-    background: var(--status-running);
-  }
-
-  .agent-column[data-status='success'] .status-dot {
-    background: var(--status-running);
-  }
-
-  .agent-column[data-status='error'] .status-dot {
-    background: var(--status-error);
   }
 
   .parallel-label {

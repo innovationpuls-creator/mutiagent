@@ -5,7 +5,7 @@
 	left: 0;
 	width: 100vw;
 	height: 100vh;
-	background: var(--color-canvas-base);
+	background: var(--color-background);
 	z-index: 100;
 	display: flex;
 }
@@ -39,7 +39,7 @@
 	background: var(--glass-dark-bg);
 	backdrop-filter: var(--glass-blur);
 	-webkit-backdrop-filter: var(--glass-blur);
-	border-left: 1px solid rgba(255, 255, 255, 0.05);
+	border-left: 1px solid var(--dark-border);
 	display: flex;
 	flex-direction: column;
 }
@@ -47,7 +47,7 @@
 /* Header of Agent Hub */
 .agent-hub-header {
 	padding: var(--space-lg);
-	border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+	border-bottom: 1px solid var(--dark-border);
 	display: flex;
 	align-items: center;
 }
@@ -62,7 +62,7 @@
 
 .skeleton-line {
 	height: 1rem;
-	background: var(--color-canvas-surface);
+	background: var(--color-surface);
 	border-radius: var(--radius-sm);
 	width: 100%;
 	animation: wave-pulse 3s infinite ease-in-out;
@@ -93,7 +93,7 @@
 	top: var(--space-lg);
 	right: calc(40% + var(--space-lg));
 	z-index: 101;
-	background: var(--color-canvas-surface);
+	background: var(--color-surface);
 	border: none;
 	width: 40px;
 	height: 40px;

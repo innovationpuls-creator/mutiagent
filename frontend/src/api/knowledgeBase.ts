@@ -19,14 +19,30 @@ export type KnowledgeGapFindMaterialsResponse =
 	components["schemas"]["KnowledgeGapFindMaterialsResponse"];
 export type KnowledgeGapUploadResponse =
 	components["schemas"]["KnowledgeGapUploadResponse"];
-export type KnowledgeBaseAgentTextbookHit =
-	components["schemas"]["KnowledgeBaseAgentTextbookHit"];
-export type KnowledgeBaseAgentGapHit =
-	components["schemas"]["KnowledgeBaseAgentGapHit"];
-export type KnowledgeBaseAgentRequest =
-	components["schemas"]["KnowledgeBaseAgentRequest"];
-export type KnowledgeBaseAgentResponse =
-	components["schemas"]["KnowledgeBaseAgentResponse"];
+// The admin agent is served by the AI gateway (not in the Python OpenAPI), so its
+// final-response contract is declared here.
+export type KnowledgeBaseAgentTextbookHit = {
+	textbook_id: string;
+	title: string;
+	source_name: string;
+	student_availability_status: string;
+	score: number;
+	reason?: string;
+};
+export type KnowledgeBaseAgentGapHit = {
+	gap_id: string;
+	normalized_topic: string;
+	status: string;
+	reason?: string;
+};
+export type KnowledgeBaseAgentResponse = {
+	reply_text: string;
+	selected_textbook_id?: string | null;
+	selected_source_result_id?: string | null;
+	textbook_hits?: KnowledgeBaseAgentTextbookHit[];
+	gap_hits?: KnowledgeBaseAgentGapHit[];
+	source_results?: KnowledgeBaseSourceResult[];
+};
 export type KnowledgeBaseSourceConfirmResponse =
 	components["schemas"]["KnowledgeBaseSourceConfirmResponse"];
 export type KnowledgeBaseSourceResult =
@@ -283,11 +299,7 @@ export const adminKnowledgeBaseApi: AdminKnowledgeBaseApi = {
 		);
 	},
 	runAgent(token: string, message: string) {
-		return requestJson<KnowledgeBaseAgentResponse>(
-			token,
-			"/api/admin/knowledge-base/agent",
-			{ method: "POST", body: JSON.stringify({ message }) },
-		);
+		return streamAgent(token, message, () => {});
 	},
 	streamAgent,
 	confirmSourceResult(token: string, sourceResult: KnowledgeBaseSourceResult) {

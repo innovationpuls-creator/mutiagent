@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Generator
 from datetime import datetime, timezone
 
@@ -15,7 +14,6 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
@@ -37,8 +35,6 @@ from app.models import (
     UserYearLearningPath,
 )
 from app.schemas import (
-    KnowledgeBaseAgentRequest,
-    KnowledgeBaseAgentResponse,
     KnowledgeBaseIngestionJobRead,
     KnowledgeBaseSourceConfirmRequest,
     KnowledgeBaseSourceConfirmResponse,
@@ -68,8 +64,6 @@ from app.services.knowledge_base_service import (
     list_knowledge_sources,
     publish_textbook,
     queue_textbook_source_ingestion_for_textbook,
-    run_knowledge_base_agent,
-    stream_knowledge_base_agent_events,
     textbook_payload_covers_topic,
     upsert_structured_textbook,
 )
@@ -77,10 +71,6 @@ from app.services.knowledge_base_service import (
 SessionDependency = Callable[[], Generator[Session, None, None]]
 MAX_TEXTBOOK_UPLOAD_BYTES = 100 * 1024 * 1024
 TEXTBOOK_UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
-
-
-def _sse(event: str, payload: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 async def _read_textbook_upload(file: UploadFile) -> bytes:
@@ -118,6 +108,7 @@ def _create_uploaded_textbook_response(
     tags: list[str],
     file_name: str,
     file_bytes: bytes,
+    triggered_by_uid: str | None = None,
 ) -> KnowledgeBaseSourceConfirmResponse:
     textbook, job = create_uploaded_textbook(
         session,
@@ -127,6 +118,7 @@ def _create_uploaded_textbook_response(
         tags=tags,
         file_name=file_name,
         file_bytes=file_bytes,
+        triggered_by_uid=triggered_by_uid,
     )
     return KnowledgeBaseSourceConfirmResponse(
         textbook=TextbookRead.model_validate(textbook),
@@ -346,12 +338,12 @@ def _register_ingestion_job_routes(
     )
     def organize_admin_textbook(
         textbook_id: str,
-        _: User = Depends(require_admin),
+        admin: User = Depends(require_admin),
         session: Session = Depends(session_dependency),
     ) -> KnowledgeBaseIngestionJob:
         _get_textbook_or_404(session, textbook_id)
         try:
-            return create_knowledge_base_ingestion_job(session, textbook_id)
+            return create_knowledge_base_ingestion_job(session, textbook_id, admin.uid)
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -365,11 +357,13 @@ def _register_ingestion_job_routes(
     )
     def run_admin_textbook_organize(
         textbook_id: str,
-        _: User = Depends(require_admin),
+        admin: User = Depends(require_admin),
         session: Session = Depends(session_dependency),
     ) -> KnowledgeBaseIngestionJob:
         try:
-            return queue_textbook_source_ingestion_for_textbook(session, textbook_id)
+            return queue_textbook_source_ingestion_for_textbook(
+                session, textbook_id, admin.uid
+            )
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -412,54 +406,11 @@ def _register_ingestion_job_routes(
         return job
 
 
-def _register_agent_routes(
+def _register_agent_routes(  # noqa: C901
     router: APIRouter,
     session_dependency: SessionDependency,
     require_admin: Callable[..., User],
 ) -> None:
-    @router.post(
-        "/api/admin/knowledge-base/agent",
-        response_model=KnowledgeBaseAgentResponse,
-    )
-    def admin_knowledge_base_agent(
-        payload: KnowledgeBaseAgentRequest,
-        _: User = Depends(require_admin),
-        session: Session = Depends(session_dependency),
-    ) -> KnowledgeBaseAgentResponse:
-        return run_knowledge_base_agent(
-            session_factory_from_session(session), payload.message
-        )
-
-    @router.post("/api/admin/knowledge-base/agent/stream")
-    def stream_admin_knowledge_base_agent(
-        payload: KnowledgeBaseAgentRequest,
-        _: User = Depends(require_admin),
-        session: Session = Depends(session_dependency),
-    ) -> StreamingResponse:
-        factory = session_factory_from_session(session)
-
-        def event_stream() -> Generator[str, None, None]:
-            events = stream_knowledge_base_agent_events(factory, payload.message)
-            try:
-                for event in events:
-                    yield _sse(event["event"], event["payload"])
-            except Exception as exc:
-                yield _sse(
-                    "error",
-                    {
-                        "message": str(exc) or "知识库 Agent 处理失败。",
-                        "recoverable": True,
-                    },
-                )
-            finally:
-                events.close()
-
-        return StreamingResponse(
-            event_stream(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
     @router.post(
         "/api/admin/knowledge-base/source-results/confirm",
         response_model=KnowledgeBaseSourceConfirmResponse,
@@ -467,13 +418,14 @@ def _register_agent_routes(
     )
     def confirm_admin_source_result(
         payload: KnowledgeBaseSourceConfirmRequest,
-        _: User = Depends(require_admin),
+        admin: User = Depends(require_admin),
         session: Session = Depends(session_dependency),
     ) -> KnowledgeBaseSourceConfirmResponse:
         try:
             textbook, job = confirm_textbook_source_result(
                 session,
                 payload.source_result,
+                admin.uid,
             )
         except ValueError as exc:
             raise HTTPException(
@@ -496,7 +448,7 @@ def _register_agent_routes(
         description: str = Form(default=""),
         tags: str = Form(default=""),
         file: UploadFile = File(...),
-        _: User = Depends(require_admin),
+        admin: User = Depends(require_admin),
         session: Session = Depends(session_dependency),
     ) -> KnowledgeBaseSourceConfirmResponse:
         _validate_textbook_upload_size(file)
@@ -504,6 +456,7 @@ def _register_agent_routes(
             return await run_db(
                 session_factory_from_session(session),
                 _create_uploaded_textbook_response,
+                triggered_by_uid=admin.uid,
                 title=title,
                 language=language,
                 description=description,

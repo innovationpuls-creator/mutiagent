@@ -489,8 +489,8 @@ describe("AdminKnowledgeBasePage", () => {
 		});
 
 		// Check tabs are rendered
-		const chatTab = screen.getByRole("tab", { name: "💬 AI 智能助理" });
-		const browserTab = screen.getByRole("tab", { name: "📚 教材库浏览" });
+		const chatTab = screen.getByRole("tab", { name: "AI 智能助理" });
+		const browserTab = screen.getByRole("tab", { name: "教材库浏览" });
 		expect(chatTab).toBeTruthy();
 		expect(browserTab).toBeTruthy();
 

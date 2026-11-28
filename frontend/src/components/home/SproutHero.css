@@ -259,7 +259,7 @@
 	align-items: center;
 	justify-content: center;
 	font-size: var(--text-caption);
-	color: var(--color-text-inverse);
+	color: var(--color-on-primary);
 	flex-shrink: 0;
 }
 
@@ -376,15 +376,6 @@
 	gap: var(--space-12);
 }
 
-.today-card-outline-tag {
-	padding: var(--space-4) var(--space-8);
-	border-radius: var(--radius-full);
-	background: oklch(84% 0.12 63 / 0.18);
-	color: oklch(92% 0.025 75);
-	font-size: var(--text-caption);
-	letter-spacing: 0.03em;
-}
-
 .today-card-title {
 	font-family: var(--font-heading);
 	font-size: var(--text-h3);
@@ -403,43 +394,42 @@
 
 .today-card-outline-meta {
 	margin: var(--space-12) 0 0;
-	color: oklch(78% 0.025 78);
+	color: var(--dark-text-secondary);
 	font-size: var(--text-caption);
 	line-height: 1.7;
 }
 
+/* 大纲预览：不再是卡中卡，只用一条分割线与上文分开 */
 .today-card-outline-preview {
-	margin-top: var(--space-16);
-	padding: var(--space-16);
-	border: 1px solid oklch(100% 0 0 / 0.14);
-	border-radius: var(--radius-md);
-	background: oklch(24% 0.03 235 / 0.72);
+	margin-top: var(--space-20);
+	padding-top: var(--space-16);
+	border-top: 1px solid var(--dark-border);
 	display: grid;
 	gap: var(--space-12);
 }
 
 .today-card-outline-preview-head {
 	display: flex;
-	align-items: center;
+	align-items: baseline;
 	justify-content: space-between;
 	gap: var(--space-12);
 }
 
 .today-card-outline-preview-head strong {
-	color: oklch(92% 0.025 75);
+	color: var(--dark-text-primary);
 	font-family: var(--font-heading);
 	font-size: var(--text-body);
 	font-weight: var(--font-weight-medium);
 }
 
 .today-card-outline-preview-head span {
-	color: oklch(78% 0.025 78);
+	color: var(--dark-text-muted);
 	font-size: var(--text-caption);
 }
 
 .today-card-outline-summary {
 	margin: 0;
-	color: oklch(82% 0.02 75);
+	color: var(--dark-text-secondary);
 	font-size: var(--text-caption);
 	line-height: 1.7;
 }
@@ -453,24 +443,19 @@
 	display: grid;
 	grid-template-columns: auto 1fr;
 	gap: var(--space-12);
-	align-items: start;
+	align-items: baseline;
 }
 
 .today-card-outline-item > span {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	min-inline-size: calc(var(--space-24) + var(--space-8));
-	block-size: calc(var(--space-24) + var(--space-8));
-	border-radius: var(--radius-full);
-	background: oklch(84% 0.12 63 / 0.18);
-	color: oklch(92% 0.025 75);
+	min-inline-size: var(--space-24);
+	color: var(--dark-text-muted);
+	font-family: var(--font-mono);
 	font-size: var(--text-caption);
 }
 
 .today-card-outline-item strong {
 	display: block;
-	color: oklch(92% 0.025 75);
+	color: var(--dark-text-primary);
 	font-family: var(--font-heading);
 	font-size: var(--text-body-sm);
 	font-weight: var(--font-weight-medium);
@@ -478,7 +463,7 @@
 
 .today-card-outline-item p {
 	margin: var(--space-4) 0 0;
-	color: oklch(72% 0.02 235);
+	color: var(--dark-text-muted);
 	font-size: var(--text-caption);
 	line-height: 1.7;
 }
@@ -494,71 +479,6 @@
 	display: flex;
 	align-items: center;
 	gap: var(--space-12);
-}
-
-.today-play-btn {
-	width: 40px;
-	height: 40px;
-	border-radius: 50%;
-	background-color: oklch(92% 0.025 75);
-	border: none;
-	cursor: pointer;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	transition:
-		transform var(--duration-lazy-hover) var(--ease-lazy),
-		box-shadow var(--duration-lazy-hover) var(--ease-lazy);
-	box-shadow: 0 2px 12px oklch(16% 0.035 235 / 0.3);
-}
-
-.today-play-btn:hover {
-	transform: scale(1.08);
-	box-shadow: 0 4px 20px oklch(16% 0.035 235 / 0.4);
-}
-
-.today-play-btn:focus-visible {
-	outline: 2px solid var(--color-focus-ring);
-	outline-offset: 3px;
-}
-
-.today-detail-btn {
-	min-block-size: 40px;
-	border: 1px solid oklch(100% 0 0 / 0.14);
-	border-radius: var(--radius-full);
-	padding: 0 var(--space-16);
-	background: oklch(24% 0.03 235 / 0.72);
-	color: oklch(92% 0.025 75);
-	font-family: var(--font-body);
-	font-size: var(--text-caption);
-	cursor: pointer;
-	transition:
-		transform var(--duration-lazy-hover) var(--ease-lazy),
-		border-color var(--duration-lazy-hover) var(--ease-lazy),
-		opacity var(--duration-lazy-hover) var(--ease-lazy);
-}
-
-.today-detail-btn:hover {
-	transform: translateY(calc(var(--space-4) * -1));
-	border-color: oklch(100% 0 0 / 0.28);
-}
-
-.today-detail-btn:focus-visible {
-	outline: 2px solid var(--color-focus-ring);
-	outline-offset: 3px;
-}
-
-.today-play-icon {
-	width: 14px;
-	height: 14px;
-	/* CSS 三角形播放图标 */
-	border: none;
-	background: transparent;
-	display: block;
-	border-left: 12px solid oklch(25% 0.04 235);
-	border-top: 7px solid transparent;
-	border-bottom: 7px solid transparent;
-	margin-inline-start: 3px;
 }
 
 .today-source-label {
@@ -609,11 +529,6 @@
 
 @media (prefers-reduced-motion: reduce) {
 	.rec-card:hover {
-		transform: none;
-	}
-
-	.today-detail-btn:hover,
-	.today-play-btn:hover {
 		transform: none;
 	}
 }
@@ -711,7 +626,7 @@
 		inline-size: 100%;
 	}
 
-	.today-detail-btn {
+	.today-card-actions .button {
 		flex: 1;
 	}
 
@@ -742,18 +657,6 @@
 	gap: var(--space-12);
 	margin-block: var(--space-24);
 }
-.hero-primary-actions button {
-	padding: var(--space-12) var(--space-24);
-	border: 0;
-	border-radius: var(--radius-md);
-	background: var(--color-surface);
-	color: var(--color-text-primary);
-	min-block-size: var(--space-48);
-}
-.hero-primary-actions .hero-primary-action {
-	background: var(--color-intent-active);
-	color: var(--color-text-primary);
-}
 .hero-cards-row > :last-child {
 	order: -1;
 }
@@ -768,18 +671,4 @@
 	.hero-recs-row {
 		grid-template-columns: minmax(0, 1fr);
 	}
-}
-
-.today-continue-btn {
-	display: inline-flex;
-	align-items: center;
-	gap: var(--space-12);
-	padding: var(--space-12) var(--space-24);
-	min-block-size: var(--space-48);
-	border: 0;
-	border-radius: var(--radius-md);
-	color: var(--color-text-primary);
-	background: var(--color-surface-raised);
-	font: inherit;
-	cursor: pointer;
 }

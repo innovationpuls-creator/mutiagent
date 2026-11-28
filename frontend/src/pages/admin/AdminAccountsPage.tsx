@@ -7,6 +7,7 @@ import {
 	type AdminImportResult,
 	adminApi as defaultAdminApi,
 } from "../../api/admin";
+import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../contexts/AuthContext";
 import type { AuthRole, AuthUser } from "../../types/auth";
 import { type AccountDraft, AccountDrawer } from "./components/AccountDrawer";
@@ -465,30 +466,27 @@ export function AdminAccountsPage({
 
 	return (
 		<>
-			<header className="admin-header">
-				<div>
-					<p className="admin-kicker">backstage</p>
+			<header className="page-header">
+				<div className="page-header-title">
 					<h1 id="admin-title">账号管理</h1>
 				</div>
-				<div className="admin-header-actions">
-					<button
-						className="admin-secondary-action"
-						type="button"
+				<div className="page-header-actions">
+					<Button
+						variant="secondary"
+						icon={<Download aria-hidden="true" />}
 						onClick={() => void exportCsv()}
 						disabled={busy}
 					>
-						<Download aria-hidden="true" />
-						<span>导出 CSV</span>
-					</button>
-					<button
-						className="admin-secondary-action"
-						type="button"
+						导出 CSV
+					</Button>
+					<Button
+						variant="secondary"
+						icon={<FileUp aria-hidden="true" />}
 						onClick={() => importInputRef.current?.click()}
 						disabled={busy}
 					>
-						<FileUp aria-hidden="true" />
-						<span>导入 CSV</span>
-					</button>
+						导入 CSV
+					</Button>
 					<input
 						ref={importInputRef}
 						className="admin-file-input"
@@ -496,15 +494,13 @@ export function AdminAccountsPage({
 						accept=".csv,text/csv"
 						onChange={(event) => void importCsv(event)}
 					/>
-					<button
-						className="admin-primary-action"
-						type="button"
+					<Button
+						icon={<Plus aria-hidden="true" />}
 						onClick={openCreateEditor}
 						disabled={busy}
 					>
-						<Plus aria-hidden="true" />
-						<span>新增账号</span>
-					</button>
+						新增账号
+					</Button>
 				</div>
 			</header>
 
@@ -551,20 +547,22 @@ export function AdminAccountsPage({
 					<span className="admin-batch-count">
 						已选 {selectedAccounts.length} 个账号
 					</span>
-					<button
-						type="button"
+					<Button
+						variant="secondary"
+						size="sm"
 						onClick={() => void runBatch("activate")}
 						disabled={busy}
 					>
 						批量启用
-					</button>
-					<button
-						type="button"
+					</Button>
+					<Button
+						variant="secondary"
+						size="sm"
 						onClick={() => void runBatch("deactivate")}
 						disabled={busy || selectedHasSelf}
 					>
 						批量停用
-					</button>
+					</Button>
 					<label className="admin-batch-role">
 						<span>改为</span>
 						<select
@@ -575,28 +573,29 @@ export function AdminAccountsPage({
 							<option value="admin">管理员</option>
 						</select>
 					</label>
-					<button
-						type="button"
+					<Button
+						variant="secondary"
+						size="sm"
 						onClick={() => void runBatch("set_role", batchRole)}
 						disabled={busy || (selectedHasSelf && batchRole !== "admin")}
 					>
 						批量改角色
-					</button>
-					<button
-						className="admin-danger-action"
-						type="button"
+					</Button>
+					<Button
+						variant="danger"
+						size="sm"
 						onClick={requestBatchDelete}
 						disabled={busy || selectedHasSelf}
 					>
 						批量删除
-					</button>
-					<button
-						className="admin-clear-action"
-						type="button"
+					</Button>
+					<Button
+						variant="ghost"
+						size="sm"
 						onClick={() => setSelectedUids(new Set<string>())}
 					>
 						清空选择
-					</button>
+					</Button>
 				</section>
 			) : null}
 
@@ -621,13 +620,13 @@ export function AdminAccountsPage({
 							))}
 						</ul>
 					) : null}
-					<button
-						type="button"
+					<Button
+						variant="icon"
+						size="sm"
 						onClick={() => setImportResult(null)}
 						aria-label="关闭导入结果"
-					>
-						<X aria-hidden="true" />
-					</button>
+						icon={<X aria-hidden="true" />}
+					/>
 				</section>
 			) : null}
 

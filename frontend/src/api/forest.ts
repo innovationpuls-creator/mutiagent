@@ -8,12 +8,20 @@ import type {
 	ForestSubmitStreamDonePayload,
 	ForestSubmitStreamEvent,
 } from "../types/forest";
-import { API_BASE_URL, notifyAuthInvalidFromError, readApiError } from "./http";
+import {
+	API_BASE_URL,
+	getApiErrorCode,
+	getApiErrorProvider,
+	notifyAuthInvalidFromError,
+	readApiError,
+} from "./http";
 
 export class ForestSubmissionError extends Error {
 	constructor(
 		message: string,
 		public status: number,
+		public errorCode: string | null = null,
+		public provider: string | null = null,
 	) {
 		super(message);
 	}
@@ -71,6 +79,8 @@ async function readForestError(
 	return new ForestSubmissionError(
 		(typeof error?.detail === "string" ? error.detail : null) ?? fallback,
 		response.status,
+		getApiErrorCode(error),
+		getApiErrorProvider(error),
 	);
 }
 
@@ -151,8 +161,7 @@ export async function streamForestAi(
 			image_attachment: imageAttachment || undefined,
 		}),
 	});
-	if (!response.ok)
-		throw await readForestError(response, "Forest AI 暂时不可用");
+	if (!response.ok) throw await readForestError(response, "AI 助教暂时不可用");
 	const reader = response.body?.getReader();
 	if (!reader) return;
 	const decoder = new TextDecoder();
@@ -173,7 +182,7 @@ export async function streamForestAi(
 			if (!eventLine || !dataLine) continue;
 			const event = requireString(
 				eventLine.slice("event: ".length),
-				"Forest AI 事件格式不正确",
+				"AI 助教返回的数据格式不正确",
 			);
 			const data = JSON.parse(dataLine.slice("data: ".length)) as Record<
 				string,

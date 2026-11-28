@@ -1,50 +1,46 @@
 # Backend 技术文档
 
-> 本文是当前源码快照。最后全面核对：2026-11-26。代码、测试和配置变更后应同步更新本文。
+> 本文是当前源码快照。最后全面核对：2026-11-27。代码、测试和配置变更后应同步更新本文。
 
-当前后端使用 FastAPI + LangGraph + LangChain，采用无 checkpoint 的单轮 StateGraph 编排。每轮请求从数据库加载画像、按年学习路径、课程大纲、资源状态和会话消息。知识库教材整理是独立的数据库任务 worker。
+系统由两个服务组成：**Python 后端**（FastAPI，本文主角）是数据核心，负责认证、持久化、确定性契约校验和 `/internal/*` 数据接口；**TypeScript AI 网关**（`ai-gateway/`，Hono + LangGraph.js + Pi `Agent`，端口 8100）负责全部模型编排与 SSE，详见 [Agent 逻辑](agent逻辑.md) 与 [TS/Pi 重构设计](ts-pi-agent-redesign.md)。Python 后端**不再依赖** LangChain / LangGraph；模型凭据按用户保存，由网关按场景解析。知识库教材整理是独立的数据库任务 worker。
 
 ## 启动
 
 ```bash
 cd backend
 uv run uvicorn app.main:app --reload --port 8000
+
+cd ai-gateway
+npm install && npm run dev   # 默认 127.0.0.1:8100
 ```
 
 ## 技术栈
 
 | 层级 | 技术 | 用途 |
 |---|---|---|
-| Web 框架 | FastAPI | REST API + SSE 流式 |
-| Agent 编排 | LangGraph | 单轮 StateGraph 编排，无 checkpoint |
-| LLM 调用 | LangChain + langchain-openai | ChatModel、tool calling、structured output |
+| Web 框架 | FastAPI | REST API（含 `/internal/*` 内部接口） |
+| AI 编排 | TypeScript 网关：Hono + `@langchain/langgraph` + Pi `Agent` | 对话图、工具调用、SSE、出题/批改、成长报告、知识库 AI |
+| Python→网关 | `app/services/ai_gateway_client.py` | 带 `X-Internal-Token` 的 `/internal/ai/*` 调用与错误映射 |
 | 数据库 | PostgreSQL 18 + psycopg2 | 生产存储与独立隔离 schema 测试 |
 | ORM | SQLModel | 模型定义、Session 管理 |
 | JSON 存储 | PostgreSQL JSONB | 画像、路径、课程大纲、会话消息 |
-| 认证 | python-jose + bcrypt | Bearer token 认证 |
-| LLM 接入 | OpenAI-compatible API | 当前：阿里百炼 Qwen3.5+ |
+| 认证 | python-jose + bcrypt | Bearer token 认证（网关复用同一 `JWT_SECRET` 验签） |
+| 模型接入 | 用户自带模型（OpenAI 兼容 / OAuth 订阅等），按场景绑定 | 凭据用 `MODEL_SECRET_ENCRYPTION_KEY` 加密保存 |
+| 视频检索 | 阿里云 DashScope（Bilibili 搜索） | 唯一保留的 Python 侧模型调用，平台密钥可选，缺失则视频降级 |
 
 ## 架构总览
 
 ```text
-用户消息
-  -> POST /api/chat/message
-  -> 从 DB 加载 ConversationSession.messages + UserProfile + UserYearLearningPath + UserCourseKnowledgeOutline
-  -> 构建 OrchestrationState
-  -> LangGraph 单次执行
-       supervisor
-         -> profile_agent
-         -> learning_path_intake_agent
-         -> learning_path_agent
-         -> course_knowledge_agent
-         -> section_markdown_agent
-         -> section_video_search_agent
-         -> section_html_animation_agent
-       资源阶段按 plan 顺序衔接，最终由确定性 compose 完成
-  -> SSE 输出过程事件
-  -> 追加本轮消息到 ConversationSession
-  -> 持久化完成后输出 message_completed / session_completed
+浏览器 --JWT--> Nginx
+  /api/ai/*  /api/chat/message  /api/forest/ai/stream  /api/branch/canopy/report/stream  -> ai-gateway:8100
+  其余 /api/*                                                                              -> backend:8000
+  /internal/*                                                                              -> 404（仅容器网络内可达）
+
+ai-gateway --X-Internal-Token--> backend /internal/*   （上下文、校验、保存、锁）
+backend    --X-Internal-Token--> ai-gateway /internal/ai/*   （出题、批改、KB 翻译/搜书）
 ```
+
+一轮对话：网关校验 JWT → 从 `/internal/chat/sessions/{id}/context` 读取会话/画像/路径/大纲 → `StateGraph` 单次执行（`entry → supervisor → 各 Agent → finalize`）→ SSE 输出 → `/internal/chat/sessions/{id}/turn` 落库 → 输出 `message_completed` / `session_completed`。
 
 ### 数据库操作与模型等待
 
@@ -58,31 +54,21 @@ Agent 的同步数据库 helper 整段在线程中执行。聊天只在推进 SS
 
 教材检索通过 `search_published_textbooks` 按标题、标签和关键词匹配已发布教材；教材切片使用标题偏移索引，MarkItDown 在转换时导入。历史性能边界见 [性能报告](backend-performance-profile.md)。
 
-## Agent 系统
+## AI 能力划分
 
-### Supervisor 与 Worker
+模型编排全部在网关，Python 只提供确定性部分：
 
-- 文件：`backend/app/orchestration/agents/supervisor.py`
-- 实现：Supervisor LLM + tool calling；硬规则在 `rule_engine.py` 和路由函数中执行。
-- 决策：LLM 负责大部分调度，`rule_engine.py` 负责硬性守卫。
-- 关键守卫：
-  - 没有完成画像时，禁止调用路径 Agent 和课程大纲 Agent。
-  - 有画像但没有按年路径时，禁止调用课程大纲 Agent。
-  - 用户明确开始课程时，可强制调用课程大纲 Agent。
+| 能力 | 网关 | Python 内部接口（`/internal/...`） |
+|---|---|---|
+| 画像采集 | `profileAgent` | `chat/sessions/*`、`students/{uid}/profile` |
+| 课程草案与按年路径 | `intakeAgent`、`pathAgent` | 草案契约校验、路径装配（`learning-paths/{grade_year}/assemble`）与保存 |
+| 课程大纲 | `outlineAgent`（只命名） | 骨架与超 8000 字拆节、合规检查、带指纹原子保存（`course-outlines/*`） |
+| 小节多模态资源 | `resourceAgent` | `courses/.../chapters/*/generation-prepare|finish`、`sections/*/markdown|video|animation`、`resources`（章节锁与检查点） |
+| 测验出题 / 批改 | `ai/quiz.ts` | `students/{uid}/quiz-material`；forest 路由经 `acall_gateway_ai` 调用网关 |
+| Forest AI / 成长报告 | `ai/forestAi.ts`、`ai/growthReport.ts` | `forest/chapters/.../material`、`canopy/{uid}/report-context|report-evidence|report-validate` |
+| 知识库搜书 / 外文翻译 | `ai/kb.ts` | 由 `knowledge_base_service` 调用网关，使用管理员本人模型 |
 
-当前 LangGraph Worker：每个 Worker 按自身契约维护独立的 LangChain Chain；结构化输出 Worker 使用 Pydantic 模型。
-
-| Agent | 文件 | 作用 | 主要结果 |
-|---|---|---|---|
-| `profile_agent` | `agents/profile.py` | 从对话构建或更新画像 | `userprofile.profile_data` |
-| `learning_path_intake_agent` | `agents/learning_path_intake.py` | 收集课程草案需求并确认 | 编排状态中的课程草案 |
-| `learning_path_agent` | `agents/learning_path.py` | 生成或刷新按年学习路径 | `useryearlearningpath.path_data` |
-| `course_knowledge_agent` | `agents/course_knowledge.py` | 生成课程章节大纲 | `usercourseknowledgeoutline.outline_data` |
-| `section_markdown_agent` | `agents/course_resources/markdown.py` | 生成小节教学文档 | 资源计划中的 Markdown |
-| `section_video_search_agent` | `agents/course_resources/video.py` | 校验并选择视频资源 | 资源计划中的视频 |
-| `section_html_animation_agent` | `agents/course_resources/animation.py` | 生成并校验 HTML 动画 | 资源计划中的动画 |
-
-资源编排入口为 `agents/course_resources/main.py`。其阶段名为 `markdown`、`video`、`animation`、`compose`；`compose` 使用确定性逻辑合并资源结果，不是独立 LLM Worker。
+`backend/app/orchestration/` 现仅保留不含模型调用的纯契约/校验工具（见 [Agent 逻辑 §7](agent逻辑.md)）。
 
 ### 知识库后台 Worker
 
@@ -90,7 +76,7 @@ Agent 的同步数据库 helper 整段在线程中执行。聊天只在推进 SS
 
 ## 数据库模型
 
-项目包含以下核心 SQLModel 数据库表（当前共 20 张表，字段与迁移以 `backend/app/models.py` 及 `backend/migrations/versions/` 为准；详见 [数据库表结构文档](../database/数据库表结构.md)）：
+项目包含以下核心 SQLModel 数据库表（当前共 24 张表，字段与迁移以 `backend/app/models.py` 及 `backend/migrations/versions/` 为准；详见 [数据库表结构文档](../database/数据库表结构.md)）：
 
 1. **User** (`user`)：用户账户及基本属性（角色：`student` / `admin`）。
 2. **CultivationProgram** (`cultivationprogram`)：通用培养方案大纲模板。
@@ -112,8 +98,12 @@ Agent 的同步数据库 helper 整段在线程中执行。聊天只在推进 SS
 18. **KnowledgeGapNotice** (`knowledgegapnotice`)：知识缺口补全后生成的学生通知。
 19. **KnowledgeBaseIngestionJob** (`knowledgebaseingestionjob`)：知识库后台整理任务（租约、重试、状态）。
 20. **WorkerHeartbeat** (`workerheartbeat`)：后台 Worker 存活心跳记录。
+21. **UserModelProvider** (`user_model_provider`)：用户的模型提供商配置（凭据加密保存）。
+22. **UserCustomModel** (`user_custom_model`)：用户自定义模型及其能力声明。
+23. **UserModelPreferences** (`user_model_preferences`)：用户的简单/高级模型绑定与快速切换。
+24. **UserModelUsageLog** (`user_model_usage_log`)：个人模型用量记录（用量看板数据源）。
 
-生产环境通过 Alembic 迁移（`0001_production_baseline` ~ `0006_admin_program_drop_embed`）管理结构演进；开发与测试初始化时 `init_db` 会创建当前模型并由 `schema_upgrades.py` 兼容历史结构（如将旧 `teacher` 角色规范为 `admin`、将 `cultivationprogram.teacher_uid` 迁移为 `admin_uid`、清理已废弃的 `textbook.embedding` 列、删除旧 `useragentconversation`/`userlearningpath`、升级 JSON 为 JSONB 等）。
+生产环境通过 Alembic 迁移（`0001_production_baseline` ~ `0009_kb_job_triggered_by`）管理结构演进；开发与测试初始化时 `init_db` 会创建当前模型并由 `schema_upgrades.py` 兼容历史结构（如将旧 `teacher` 角色规范为 `admin`、将 `cultivationprogram.teacher_uid` 迁移为 `admin_uid`、清理已废弃的 `textbook.embedding` 列、删除旧 `useragentconversation`/`userlearningpath`、升级 JSON 为 JSONB 等）。
 
 ## API 分组
 
@@ -125,17 +115,21 @@ Agent 的同步数据库 helper 整段在线程中执行。聊天只在推进 SS
 * `POST /oauth/mock` — Mock OAuth 登录（仅非生产环境启用）
 * `GET /me` — 获取当前用户信息
 
-### 2. Chat 编排端点 (`/api/chat`)
-* `POST /start` — 启动 AI 对话
-* `POST /message` — 发送消息 (SSE 流式事件)
-* `GET /sessions/{session_id}` — 获取会话消息历史
+### 2. Chat 端点 (`/api/chat`)
+* `POST /start` — 启动 AI 对话（Python）
+* `GET /sessions/{session_id}` — 获取会话消息历史（Python）
+* `POST /message` — 发送消息 (SSE 流式事件)，**由 AI 网关提供**，Nginx 路由到 `ai-gateway`
+
+### 2b. 个人模型配置 (`/api/model-config`) 与 AI 网关 (`/api/ai/*`)
+* Python：`GET /api/model-config`、`PUT/DELETE /providers/{id}`、`PUT /custom-models`、`PUT /preferences`、`PATCH /quick-switch`、`GET /usage`（用量看板）
+* 网关：`GET /api/ai/models/catalog`、`POST /api/ai/models/probe|scene-check`、`/api/ai/oauth/{provider}/start|complete|status`、`GET /api/ai/health/live|ready`
 
 ### 3. 业务模块端点 (`/api/*`)
 * **画像大盘**：`GET /api/profile/dashboard`
 * **学习路径**：`GET /api/learning-path/me`
-* **繁枝与成长**：`GET /api/branch/canopy`、`GET /api/branch/overview`、`POST /api/branch/canopy/report/stream` (SSE 成长报告)
+* **繁枝与成长**：`GET /api/branch/canopy`、`GET /api/branch/overview`、`POST /api/branch/canopy/report/stream` (SSE 成长报告，网关提供)
 * **展叶大纲**：`GET /api/leaf/courses/{course_node_id}`
-* **测验森林**：`GET /api/forest/courses/.../quiz`、`POST /api/forest/courses/.../quiz/generate`、`POST /api/forest/quizzes/{quiz_id}/attempts`、`POST /api/forest/quizzes/{quiz_id}/attempts/stream` (SSE 流式批改)、`GET /api/forest/quizzes/{quiz_id}/submissions/{client_submission_id}` (提交恢复查询)、`POST /api/forest/ai/stream` (AI 答疑)
+* **测验森林**：`GET /api/forest/courses/.../quiz`、`POST /api/forest/courses/.../quiz/generate`、`POST /api/forest/quizzes/{quiz_id}/attempts`、`POST /api/forest/quizzes/{quiz_id}/attempts/stream` (SSE 流式批改)、`GET /api/forest/quizzes/{quiz_id}/submissions/{client_submission_id}` (提交恢复查询)、`POST /api/forest/ai/stream` (AI 答疑，网关提供)
 * **培养方案（学生与管理端）**：`GET /api/student/matched-program`、`GET/PUT /api/admin/program`、`POST /api/admin/program/publish`
 * **系统管理**：`/api/admin/accounts*`（账号管理与 CSV 导入导出）及 `/api/admin/data*`（学情监控与清理）
 * **教材知识库**：`/api/admin/knowledge-base/*`（管理端来源准入、教材管理/上传/解析/发布、Agent 流式检索、缺口管理、扩展资源）及 `/api/knowledge-base/gaps/{gap_id}/follow`、`/api/knowledge-base/notices*`（学生端缺口关注与提醒）
@@ -147,18 +141,28 @@ Agent 的同步数据库 helper 整段在线程中执行。聊天只在推进 SS
 
 ## 环境变量
 
+后端（生产启动前会校验，缺失即拒绝启动）：
+
 ```bash
-LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM_API_KEY=sk-xxx
-LLM_MODEL=qwen3.5-plus-2026-04-20
+APP_ENV=production
 DATABASE_URL=postgresql://mutiagent:mutiagent@localhost:5432/mutiagent
+JWT_SECRET=...                    # 网关使用同一值验签
+ALLOWED_ORIGINS=https://onetree.chat
+INTERNAL_API_TOKEN=...            # 与网关共享，不能是默认值
+AI_GATEWAY_URL=http://ai-gateway:8100
+MODEL_SECRET_ENCRYPTION_KEY=...   # 用户模型凭据的加密主密钥，生成后不可随意更换
 ```
+
+网关：`APP_ENV`、`JWT_SECRET`、`INTERNAL_API_TOKEN`、`PYTHON_BACKEND_URL`、`ALLOWED_ORIGINS`、`PORT`（默认 8100）、`HOST`、`BACKEND_TIMEOUT_MS`、`SSE_HEARTBEAT_MS`。
 
 ## 验证
 
 ```bash
 cd backend
-uv run pytest -q
+uv run pytest -q && uv run ruff check app tests
+
+cd ../ai-gateway
+npm run typecheck && npm run lint && npm test
 
 cd ../frontend
 npm test

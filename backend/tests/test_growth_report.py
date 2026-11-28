@@ -1,8 +1,5 @@
-import asyncio
-import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,14 +18,13 @@ from app.models import (
     UserYearLearningPath,
 )
 from app.report_schemas import EvidenceRequest, ReportNarrative
+from app.services.forest_ai_service import report_evidence, report_validate
 from app.services.growth_report_context import (
     build_report_context,
     read_report_evidence,
 )
 from app.services.growth_report_service import (
     _validate_numbers,
-    generate_narrative,
-    stream_growth_report,
     validate_narrative,
 )
 from tests.postgres import postgresql_test_url
@@ -244,78 +240,6 @@ def test_rejects_invalid_report_links(report_db, change):
         )
 
 
-def test_stream_and_authenticated_endpoint(report_db):
-    _, _, client, token = report_db
-    endpoint = "/api/branch/canopy/report/stream"
-    assert client.post(endpoint).status_code == 401
-    model = ModelDouble(
-        [
-            {"requests": [{"tool": "read_quiz", "evidence_id": "quiz:quiz-own"}]},
-            narrative(),
-        ]
-    )
-    with patch("app.api.branch.get_worker_llm", return_value=model):
-        response = client.post(endpoint, headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    frames = response.text.strip().split("\n\n")
-    assert [frame.splitlines()[0] for frame in frames] == [
-        "event: report_stage",
-        "event: report_stage",
-        "event: report_stage",
-        "event: report_completed",
-    ]
-    result = json.loads(frames[-1].split("data: ")[1])
-    assert result["stats"]["attempts"] == 2
-    assert len(result["evidence"]) == 2
-    assert "循环边界" in str(model.prompts[-1])
-
-
-def test_model_failure_is_error_not_fake_report(report_db):
-    session, uid, _, _ = report_db
-
-    async def collect():
-        return [
-            event
-            async for event in stream_growth_report(
-                session,
-                uid,
-                ModelDouble([RuntimeError("private model config")]),
-            )
-        ]
-
-    events = asyncio.run(collect())
-    assert "report_error" in events[-1]
-    assert "private model config" not in events[-1]
-    assert not any("report_completed" in event for event in events)
-
-
-def test_no_learning_records_returns_honest_empty_report(report_db):
-    session, _, client, _ = report_db
-    _, uid = _register(client, "empty-report@example.com")
-    output = {
-        "overview": "尚无学习记录，学习表现待测验验证。",
-        "strengths": [],
-        "improvements": [],
-        "actions": [],
-    }
-
-    async def collect():
-        return [
-            event
-            async for event in stream_growth_report(
-                session,
-                uid,
-                ModelDouble([{"requests": []}, output]),
-            )
-        ]
-
-    events = asyncio.run(collect())
-    assert "report_completed" in events[-1]
-    assert "尚无测验作答记录" in events[-1]
-    assert build_report_context(session, uid).stats.attempts == 0
-
-
 def test_numeric_check_distinguishes_observations_from_proposed_exercises():
     output = narrative()
     output["actions"][0]["check"] = "完成5道练习，测试输入0和1。"
@@ -325,24 +249,41 @@ def test_numeric_check_distinguishes_observations_from_proposed_exercises():
         _validate_numbers(ReportNarrative.model_validate(output), '{"attempts": 2}')
 
 
-def test_invalid_model_reference_is_repaired_once(report_db):
+def test_report_validate_accepts_a_grounded_narrative(report_db):
+    session, uid, _, _ = report_db
+    result = report_validate(session, uid, narrative(), {})
+    assert result["ok"] is True
+    assert result["report"]["stats"]["attempts"] == 2
+    assert len(result["report"]["evidence"]) == 2
+
+
+def test_report_validate_explains_bad_references(report_db):
     session, uid, _, _ = report_db
     invalid = narrative()
     invalid["strengths"][0]["evidence_ids"] = ["]quiz:quiz-own"]
-    model = ModelDouble([invalid, narrative()])
-    report = asyncio.run(
-        generate_narrative(model, build_report_context(session, uid), {})
-    )
-    assert report.stats.attempts == 2
-    assert len(model.prompts) == 2
-    assert "]quiz:quiz-own" in str(model.prompts[-1])
+    result = report_validate(session, uid, invalid, {})
+    assert result["ok"] is False
+    assert "允许的证据 ID" in result["issue"]
+    unknown = narrative()
+    unknown["actions"][0]["course_id"] = "unknown-course"
+    assert report_validate(session, uid, unknown, {})["ok"] is False
 
 
-def test_invalid_model_reference_stops_after_one_repair(report_db):
+def test_report_validate_without_attempts_rejects_strengths(report_db):
+    session, _, client, _ = report_db
+    _, uid = _register(client, "empty-report@example.com")
+    empty = {
+        "overview": "尚无学习记录，学习表现待测验验证。",
+        "strengths": [],
+        "improvements": [],
+        "actions": [],
+    }
+    assert report_validate(session, uid, empty, {})["ok"] is True
+    assert report_validate(session, uid, narrative(), {})["ok"] is False
+
+
+def test_report_evidence_is_limited_to_the_catalog(report_db):
     session, uid, _, _ = report_db
-    invalid = narrative()
-    invalid["actions"][0]["course_id"] = "unknown-course"
-    model = ModelDouble([invalid, invalid])
-    with pytest.raises(ValueError):
-        asyncio.run(generate_narrative(model, build_report_context(session, uid), {}))
-    assert len(model.prompts) == 2
+    ok = report_evidence(session, uid, "read_quiz", "quiz:quiz-own")
+    assert ok["ok"] is True and "循环边界" in ok["text"]
+    assert report_evidence(session, uid, "read_quiz", "quiz:quiz-secret")["ok"] is False

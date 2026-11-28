@@ -1,6 +1,6 @@
 # OneTree 项目现状
 
-> 源码核对日期：2026-11-26。本文用于新成员快速建立仓库地图；具体字段和行为以代码、测试和生成的 OpenAPI 为准。
+> 源码核对日期：2026-11-27。本文用于新成员快速建立仓库地图；具体字段和行为以代码、测试和生成的 OpenAPI 为准。
 
 ## 产品闭环
 
@@ -27,38 +27,42 @@ flowchart LR
 | `frontend/src/App.tsx` | 路由、角色门禁、页面宿主 | `/login`、学生端和管理端路由 |
 | `frontend/src/api/` | 前端 API 客户端 | 认证、路径、课程、测验、知识库等模块 |
 | `backend/app/main.py` | FastAPI 应用装配 | 路由、CORS、请求 ID、数据库初始化 |
-| `backend/app/api/` | HTTP/SSE 路由 | 按认证、路径、课程、Forest、管理端拆分 |
+| `backend/app/api/` | HTTP 路由与 `/internal/*` 内部接口 | 按认证、路径、课程、Forest、管理端、模型配置拆分；`internal.py` 供网关调用 |
 | `backend/app/services/` | 业务服务和持久化协调 | 知识库、画像、路径、课程、测验 |
-| `backend/app/orchestration/` | LangGraph 单轮编排 | Supervisor、7 个 Worker、规则、事件和恢复 |
+| `ai-gateway/` | TypeScript AI 网关（Hono + LangGraph.js + Pi） | 对话图、各 Agent、出题批改、Forest AI、成长报告、知识库 AI、个人模型配置与用量 |
+| `backend/app/orchestration/` | 纯契约/校验工具（无模型调用） | 画像完整性、大纲骨架与教材绑定、小节资源校验、Bilibili 搜索与校验 |
 | `backend/app/workers/` | 独立后台任务 | 教材知识库整理任务 |
 | `backend/app/models.py` | SQLModel 数据模型 | PostgreSQL 18 生产与独立隔离 schema 测试 |
 | `deploy/` | 生产运行面 | Docker Compose、Nginx、迁移、备份、证书、smoke |
 
 ## Agent 编排
 
-当前 LangGraph Worker 的确定标识符如下：
+AI 编排由 `ai-gateway/` 承担，Python 后端是数据核心（详见 [Agent 逻辑](backend/agent逻辑.md)）。对话图节点为：`entry`、`supervisor`、`profile_agent`、`intake_agent`、`learning_path_agent`、`outline_agent`、`resource_agent`、`finalize`。
 
-`profile_agent`、`learning_path_intake_agent`、`learning_path_agent`、`course_knowledge_agent`、`section_markdown_agent`、`section_video_search_agent`、`section_html_animation_agent`。
+课程资源链路由 `resource_agent` 驱动，按 `markdown`、`video`/`animation`（并行）、`compose` 阶段按小节生成并写入检查点，支持续跑；视频逐小节平稳降级，重新生成需显式侧重点，同一章同时只允许一次生成。视频阶段包含 URL/来源校验；动画阶段包含 HTML 结构校验；资源结果通过质量契约后才进入组合结果。SSE 事件由 `ai-gateway/src/chat/routes.ts` 暴露，Nginx 将 `/api/chat/message` 等路由转发到网关。
 
-课程资源链路由 `course_resource_plan` 驱动，按 `markdown`、`video`、`animation`、`compose` 阶段生成。视频阶段包含 URL/来源校验；动画阶段包含 HTML 结构校验；资源结果通过质量契约后才进入组合结果。SSE 事件由 `backend/app/orchestration/graph.py` 暴露给聊天 API。
+模型由**用户个人配置**（`/api/model-config`），按场景绑定，未配置时对话与 AI 功能被拦截并引导配置；用量写入 `user_model_usage_log` 并在看板展示。
 
-知识库整理不在上述 LangGraph 图内。它由 `python -m app.workers` 消费 `KnowledgeBaseIngestionJob`，使用租约、心跳和重试处理长任务。
+知识库整理不在上述对话图内。它由 `python -m app.workers` 消费 `KnowledgeBaseIngestionJob`，使用租约、心跳和重试处理长任务；其中的 AI 搜书与外文翻译使用触发整理的管理员的个人模型。
 
 ## 页面与接口入口
 
-成森页支持手动生成累计 AI 成长报告：后端汇总真实学习记录，模型按需读取只读证据并生成结构化总结，页面支持来源展开、课程跳转和重新生成。该流程复用 Worker 模型，不新增 LangGraph Worker 或报告数据表。接口与统计口径见 [成长报告接口](api-specs/API-成长报告.md)。
+成森页支持手动生成累计 AI 成长报告：后端汇总真实学习记录，模型按需读取只读证据并生成结构化总结，页面支持来源展开、课程跳转和重新生成。该流程由 AI 网关运行（`POST /api/branch/canopy/report/stream`），不新增报告数据表。接口与统计口径见 [成长报告接口](api-specs/API-成长报告.md)。
 
 学生端页面路由定义在 `frontend/src/App.tsx`：`/sprout`、`/branch`、`/leaf`、`/leaf/:courseNodeId`、`/forest`、`/forest/:courseNodeId`、`/canopy`。管理端路由包括 `/admin/programs`、`/admin/accounts`、`/admin/data` 和 `/admin/knowledge-base`。
 
-后端路由由 `backend/app/main.py` 装配，按 `auth`、`orchestration`、`profile`、`learning_path`、`branch`（含成长报告流式接口）、`leaf`、`forest`、`student`、`admin`（含 `/api/admin/program*` 培养方案维护端点）、`admin_data`、`knowledge_base` 和 `health` 分组。字段示例以 `docs/api-specs/` 与 `frontend/openapi.json` 为准。
+后端路由由 `backend/app/main.py` 装配，按 `auth`、`orchestration`（仅 `/api/chat/start` 与会话状态）、`model_config`、`internal`（仅容器内网）、`profile`、`learning_path`、`branch`（含成长报告流式接口）、`leaf`、`forest`、`student`、`admin`（含 `/api/admin/program*` 培养方案维护端点）、`admin_data`、`knowledge_base` 和 `health` 分组。字段示例以 `docs/api-specs/` 与 `frontend/openapi.json` 为准。
 
 ## 本地开发与验证
 
-后端需要 PostgreSQL、`uv` 和 OpenAI-compatible LLM 配置；前端需要 Node.js 和 npm。
+后端需要 PostgreSQL 与 `uv`；AI 网关与前端需要 Node.js 22+ 和 npm。模型由用户在应用内配置，无需全局 LLM 密钥（知识库与视频检索可选使用 `WEB_SEARCH_*` 联网搜索服务）。
 
 ```bash
 cd backend
 uv run uvicorn app.main:app --reload --port 8000
+
+cd ai-gateway
+npm install && npm run dev   # 127.0.0.1:8100，Vite 开发代理已转发 /api/ai、/api/chat/message 等
 
 cd frontend
 npm install
@@ -68,7 +72,8 @@ npm run dev
 常用验证：
 
 ```bash
-cd backend && uv run pytest -q
+cd backend && uv run pytest -q && uv run ruff check app tests
+cd ai-gateway && npm run typecheck && npm run lint && npm test
 cd frontend && npm test && npm run build
 cd frontend && npm run e2e
 ```
@@ -78,7 +83,7 @@ cd frontend && npm run e2e
 ## 文档维护
 
 - 修改 API schema 后在 `frontend/` 运行 `npm run gen:api`，并检查 `frontend/openapi.json` 与 `frontend/src/types/api.ts`。
-- 修改编排节点、事件或资源契约时同步更新 [`docs/backend/backend-tech-stack.md`](backend/backend-tech-stack.md) 和 [`docs/backend/agent逻辑.md`](backend/agent逻辑.md)。
+- 修改网关对话图、工具、事件或资源契约时同步更新 [`docs/backend/backend-tech-stack.md`](backend/backend-tech-stack.md) 和 [`docs/backend/agent逻辑.md`](backend/agent逻辑.md)。
 - 修改数据库模型或迁移时同步更新 [`docs/database/数据库表结构.md`](database/数据库表结构.md)。
 
 

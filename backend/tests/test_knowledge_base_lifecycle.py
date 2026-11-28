@@ -1,34 +1,27 @@
 from __future__ import annotations
 
-import asyncio
-import json
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.database import build_engine, init_db, set_engine
+from app.database import build_engine
 from app.main import create_app
 from app.models import (
     KnowledgeBaseIngestionJob,
     KnowledgeSource,
     Textbook,
     TextbookSectionContent,
-    User,
     UserCourseKnowledgeOutline,
     UserYearLearningPath,
-)
-from app.orchestration.agents.course_knowledge import run_course_knowledge_agent
-from app.orchestration.agents.course_resources.markdown import (
-    run_section_markdown_agent,
 )
 from app.schema_upgrades import run_schema_upgrades
 from app.services.knowledge_base_service import (
     create_knowledge_source,
-    get_published_textbook_context_for_topic,
+    list_published_textbooks,
     publish_textbook,
+    published_textbook_outline,
     upsert_structured_textbook,
 )
 from tests.postgres import postgresql_test_url
@@ -233,10 +226,9 @@ def test_unpublished_textbook_is_removed_from_new_recommendations(
         session.add(textbook)
         session.commit()
 
-        context = get_published_textbook_context_for_topic(session, "矩阵")
+        catalog = list_published_textbooks(session)
 
-    assert context["textbooks"] == []
-    assert context["gap_id"] is not None
+    assert catalog["textbooks"] == []
 
 
 def test_published_textbook_keeps_source_trace_after_source_is_disabled(
@@ -254,22 +246,16 @@ def test_published_textbook_keeps_source_trace_after_source_is_disabled(
         session.add(source)
         session.commit()
 
-        context = get_published_textbook_context_for_topic(session, "矩阵")
+        catalog = list_published_textbooks(session)
         stored_textbook = session.get(Textbook, textbook.textbook_id)
 
     assert stored_textbook is not None
     assert stored_textbook.student_availability_status == "published"
     assert stored_textbook.source_id == "source-lifecycle"
-    assert context["textbooks"] == [
-        {
-            "textbook_id": "textbook-lifecycle",
-            "title": "矩阵专题",
-            "source_id": "source-lifecycle",
-            "tags": ["矩阵"],
-            "description": "覆盖矩阵乘法",
-            "outline_summary": [{"section_id": "1.1", "title": "矩阵乘法"}],
-        }
+    assert [item["textbook_id"] for item in catalog["textbooks"]] == [
+        "textbook-lifecycle"
     ]
+    assert catalog["textbooks"][0]["title"] == "矩阵专题"
 
 
 def test_publish_textbook_sets_published_state_and_timestamp(tmp_path: Path) -> None:
@@ -319,78 +305,6 @@ def test_unpublish_textbook_route_sets_unpublished_state_and_timestamp(
     assert body["student_availability_status"] == "unpublished"
     assert body["unpublished_at"] is not None
     assert body["published_at"] is not None
-
-
-def test_course_outline_generation_blocks_unpublished_source_textbook(
-    tmp_path: Path,
-) -> None:
-    engine = build_engine(postgresql_test_url(tmp_path, "course-outline-unpublished"))
-    set_engine(engine)
-    init_db(engine, seed_users=False)
-
-    with Session(engine) as session:
-        textbook = _publish_textbook(session)
-        textbook.student_availability_status = "unpublished"
-        session.add(textbook)
-        session.add(
-            User(uid="user-1", username="学生", identifier="student@example.com")
-        )
-        session.commit()
-
-    class RecordingLlm:
-        pass
-
-    class OutlineChain:
-        async def ainvoke(self, _payload):
-            return type(
-                "Output",
-                (),
-                {"content": json.dumps(_outline(), ensure_ascii=False)},
-            )()
-
-    class OutlinePrompt:
-        def __or__(self, _other):
-            return OutlineChain()
-
-    class PromptFactory:
-        @staticmethod
-        def from_messages(_messages):
-            return OutlinePrompt()
-
-    import app.orchestration.agents.course_knowledge as module
-
-    original_factory = module.ChatPromptTemplate
-    module.ChatPromptTemplate = PromptFactory
-    try:
-        result = asyncio.run(
-            run_course_knowledge_agent(
-                {
-                    "user_id": "user-1",
-                    "profile": _profile(),
-                    "year_learning_paths": _year_paths(),
-                    "messages": [
-                        AIMessage(
-                            content="",
-                            tool_calls=[
-                                {
-                                    "name": "course_knowledge_agent",
-                                    "args": {"course_id": "year_3_course_1"},
-                                    "id": "force-course-knowledge",
-                                }
-                            ],
-                        )
-                    ],
-                },
-                RecordingLlm(),
-            )
-        )
-    finally:
-        module.ChatPromptTemplate = original_factory
-
-    assert result == {"error": "教材未发布。", "hard_error": True}
-    with Session(engine) as session:
-        row = session.get(UserCourseKnowledgeOutline, ("user-1", "year_3_course_1"))
-    assert row is None
 
 
 def test_leaf_keeps_existing_outline_and_markdown_after_unpublish(
@@ -461,75 +375,6 @@ def test_leaf_keeps_existing_outline_and_markdown_after_unpublish(
     assert body["section_composed_markdowns"]["1.1"]["markdown"].startswith(
         "# 学习目标"
     )
-
-
-def test_markdown_regeneration_blocks_unpublished_source_textbook(
-    tmp_path: Path,
-) -> None:
-    engine = build_engine(postgresql_test_url(tmp_path, "markdown-unpublished"))
-    set_engine(engine)
-    init_db(engine, seed_users=False)
-
-    with Session(engine) as session:
-        textbook = _publish_textbook(session)
-        textbook.student_availability_status = "unpublished"
-        session.add(textbook)
-        session.add(
-            User(uid="user-1", username="学生", identifier="student@example.com")
-        )
-        session.add(
-            UserCourseKnowledgeOutline(
-                user_uid="user-1",
-                course_id="year_3_course_1",
-                grade_year="year_3",
-                course_name="矩阵专题",
-                outline_data=_outline(),
-            )
-        )
-        session.commit()
-
-    class RecordingLlm:
-        pass
-
-    class MarkdownChain:
-        async def ainvoke(self, _payload):
-            return "正文"
-
-    class MarkdownPrompt:
-        def __or__(self, _other):
-            return MarkdownChain()
-
-    class PromptFactory:
-        @staticmethod
-        def from_messages(_messages):
-            return MarkdownPrompt()
-
-    import app.orchestration.agents.course_resources as module
-
-    original_factory = module.ChatPromptTemplate
-    module.ChatPromptTemplate = PromptFactory
-    try:
-        result = asyncio.run(
-            run_section_markdown_agent(
-                {
-                    "user_id": "user-1",
-                    "course_knowledge": _outline(),
-                    "profile": _profile(),
-                    "year_learning_paths": _year_paths(),
-                    "messages": [],
-                },
-                RecordingLlm(),
-                {
-                    "course_id": "year_3_course_1",
-                    "section_id": "1",
-                    "scope": "chapter_sections",
-                },
-            )
-        )
-    finally:
-        module.ChatPromptTemplate = original_factory
-
-    assert result == {"error": "教材未发布。", "hard_error": True}
 
 
 def test_delete_archives_published_and_unpublished_but_removes_unbound_draft(
@@ -613,3 +458,40 @@ def test_delete_archives_published_and_unpublished_but_removes_unbound_draft(
         unpublished = session.get(Textbook, "textbook-unpublished-delete")
         assert unpublished is not None
         assert unpublished.student_availability_status == "archived"
+
+
+def test_catalog_and_outline_are_paged_and_filterable(tmp_path: Path) -> None:
+    engine = _knowledge_engine(tmp_path)
+    run_schema_upgrades(engine)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        for index in range(7):
+            session.add(
+                Textbook(
+                    textbook_id=f"tb-{index}",
+                    source_id="source",
+                    title="Operating Systems" if index % 2 else f"Book {index}",
+                    tags=["os"] if index % 2 else [],
+                    outline={
+                        "sections": [
+                            {"section_id": f"tb-{index}-s{n}", "title": f"S{n}"}
+                            for n in range(5)
+                        ]
+                    },
+                    student_availability_status="published",
+                )
+            )
+        session.commit()
+
+        first = list_published_textbooks(session, limit=3)
+        second = list_published_textbooks(session, offset=3, limit=3)
+        filtered = list_published_textbooks(session, query="operating")
+        outline = published_textbook_outline(session, "tb-1", offset=2, limit=2)
+
+    assert first["total"] == 7 and len(first["textbooks"]) == 3
+    assert [b["textbook_id"] for b in second["textbooks"]] == ["tb-3", "tb-4", "tb-5"]
+    assert filtered["total"] == 3
+    assert {b["textbook_id"] for b in filtered["textbooks"]} == {"tb-1", "tb-3", "tb-5"}
+    assert [s["section_id"] for s in outline["sections"]] == ["tb-1-s2", "tb-1-s3"]
+    assert outline["total"] == 5

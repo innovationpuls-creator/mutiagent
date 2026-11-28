@@ -158,6 +158,33 @@ case "$url" in
             printf '{"status":"ok","database":"connected","knowledge_base_worker":"connected"}\n'
         fi
         ;;
+    "https://${PUBLIC_IPV4}/api/ai/health/live")
+        [[ "$connect_to" == "$expected_https_connect" ]] || exit 111
+        printf 'ai-live\n' >> "$CURL_LOG"
+        if [[ "$FAIL_STEP" == "ai-live" ]]; then
+            printf '{"status":"error"}\n'
+        else
+            printf '{"status":"ok"}\n'
+        fi
+        ;;
+    "https://${PUBLIC_IPV4}/api/ai/health/ready")
+        [[ "$connect_to" == "$expected_https_connect" ]] || exit 112
+        printf 'ai-ready\n' >> "$CURL_LOG"
+        if [[ "$FAIL_STEP" == "ai-ready" ]]; then
+            printf '{"status":"error","backend":"unavailable"}\n'
+        else
+            printf '{"status":"ok","backend":"connected"}\n'
+        fi
+        ;;
+    "https://${PUBLIC_IPV4}/internal/health")
+        [[ "$connect_to" == "$expected_https_connect" ]] || exit 113
+        printf 'internal\n' >> "$CURL_LOG"
+        if [[ "$FAIL_STEP" == "internal" ]]; then
+            printf '200'
+        else
+            printf '404'
+        fi
+        ;;
     "https://${PUBLIC_IPV4}/api/auth/login")
         [[ "$connect_to" == "$expected_https_connect" ]] || exit 98
         [[ -f "$data_file" ]] || exit 99
@@ -280,7 +307,7 @@ from pathlib import Path
 
 calls = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
 assert Counter(calls) == Counter(
-    ["tls", "redirect", "live", "ready", "deep", "home", "login", "me"]
+    ["tls", "redirect", "live", "ready", "deep", "ai-live", "ai-ready", "internal", "home", "login", "me"]
 )
 PY
 
@@ -294,11 +321,11 @@ from pathlib import Path
 
 calls = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
 assert Counter(calls) == Counter(
-    ["public-domain", "tls", "redirect", "live", "ready", "deep", "home", "login", "me"]
+    ["public-domain", "tls", "redirect", "live", "ready", "deep", "ai-live", "ai-ready", "internal", "home", "login", "me"]
 )
 PY
 
-for fail_step in tls redirect live ready deep home login me; do
+for fail_step in tls redirect live ready deep ai-live ai-ready internal home login me; do
     run_smoke production-ip "$fail_step" nonzero
 done
 run_smoke production public-domain nonzero

@@ -120,8 +120,9 @@ def test_production_startup_does_not_create_demo_user(tmp_path: Path) -> None:
             "APP_ENV": "production",
             "DATABASE_URL": database_url,
             "JWT_SECRET": "production-no-demo-jwt-secret",
-            "LLM_API_KEY": "production-no-demo-llm-api-key",
-            "LLM_MODEL": "production-no-demo-llm-model",
+            "INTERNAL_API_TOKEN": "test-production-internal-token",
+            "AI_GATEWAY_URL": "http://ai-gateway:8100",
+            "MODEL_SECRET_ENCRYPTION_KEY": "test-production-model-secret-key",
             "ALLOWED_ORIGINS": "https://onetree.chat",
         }
     )
@@ -143,8 +144,9 @@ def test_production_does_not_expose_mock_oauth(tmp_path: Path) -> None:
             "APP_ENV": "production",
             "DATABASE_URL": database_url,
             "JWT_SECRET": "production-no-mock-oauth-jwt-secret",
-            "LLM_API_KEY": "production-no-mock-oauth-llm-api-key",
-            "LLM_MODEL": "production-no-mock-oauth-llm-model",
+            "INTERNAL_API_TOKEN": "test-production-internal-token",
+            "AI_GATEWAY_URL": "http://ai-gateway:8100",
+            "MODEL_SECRET_ENCRYPTION_KEY": "test-production-model-secret-key",
             "ALLOWED_ORIGINS": "https://onetree.chat",
         }
     )
