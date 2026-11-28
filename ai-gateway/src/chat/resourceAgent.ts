@@ -4,6 +4,8 @@ import type { BackendClient, ResourcePhase, ResourceSectionInfo } from "../backe
 import { BackendBusinessError, GatewayError } from "../errors.js";
 import type { AgentStreamHandle } from "../models/runtime.js";
 import { runAgent } from "./agentRunner.js";
+import { runVideoAgent } from "./videoAgent.js";
+import type { WebConfig } from "../tools/web.js";
 import { mapWithConcurrency } from "./outlineAgent.js";
 import type { Emit } from "./types.js";
 
@@ -85,6 +87,7 @@ export interface ResourceAgentInput {
 	mode: "generate" | "regenerate";
 	regenerationFocus: string;
 	concurrency?: number;
+	web: WebConfig;
 	signal?: AbortSignal;
 	emit: Emit;
 	now?: () => number;
@@ -191,7 +194,15 @@ export async function runResourceAgent(input: ResourceAgentInput): Promise<Resou
 	}
 
 	async function videoStage(section: ResourceSectionInfo): Promise<{ unavailable: boolean }> {
-		const result = await backend.searchSectionVideo(userUid, courseId, section.section_id);
+		const result = await runVideoAgent({
+			handle: input.handle,
+			backend,
+			web: input.web,
+			userUid,
+			courseId,
+			sectionId: section.section_id,
+			signal: input.signal,
+		});
 		await backend.saveSectionResource(userUid, courseId, section.section_id, { phase: "video", value: result.value });
 		return { unavailable: result.status === "unavailable" };
 	}

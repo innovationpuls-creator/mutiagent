@@ -5,8 +5,8 @@ x-app-environment: &app-environment
   INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
   MODEL_SECRET_ENCRYPTION_KEY: ${MODEL_SECRET_ENCRYPTION_KEY:?MODEL_SECRET_ENCRYPTION_KEY is required}
   AI_GATEWAY_URL: http://ai-gateway:8100
-  # Platform key for the optional Bilibili video search only; per-user model
-  # credentials live encrypted in the database and are used by the gateway.
+  # LLM_* is no longer read by the backend (video search moved to a gateway agent);
+  # kept only because bootstrap still collects it. Remove together with bootstrap.
   LLM_BASE_URL: ${LLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
   LLM_API_KEY: ${LLM_API_KEY:-}
   LLM_MODEL: ${LLM_MODEL:-}
@@ -19,7 +19,7 @@ x-gateway-environment: &gateway-environment
   INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
   PYTHON_BACKEND_URL: http://backend:8000
   ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
-  # Optional platform web search/fetch for agent tools (DeepSeek-compatible API).
+  # Optional platform web search/fetch for agent tools: KB agent, video search (DeepSeek-compatible API).
   WEB_SEARCH_BASE_URL: ${WEB_SEARCH_BASE_URL:-}
   WEB_SEARCH_API_KEY: ${WEB_SEARCH_API_KEY:-}
 

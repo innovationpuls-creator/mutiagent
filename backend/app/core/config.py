@@ -4,7 +4,6 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-DEFAULT_LLM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_JWT_SECRET = "mutiagent-dev-secret-key-change-in-production"
 DEFAULT_INTERNAL_API_TOKEN = "mutiagent-dev-internal-token-change-in-production"
 DEFAULT_AI_GATEWAY_URL = "http://127.0.0.1:8100"
@@ -16,9 +15,6 @@ class AppSettings:
     app_env: str
     database_url: str | None
     jwt_secret: str | None
-    llm_base_url: str
-    llm_api_key: str | None
-    llm_model: str | None
     allowed_origins: tuple[str, ...]
     internal_api_token: str | None = None
     model_secret_encryption_key: str | None = None
@@ -35,17 +31,11 @@ def load_settings(environ: Mapping[str, str] | None = None) -> AppSettings:
     app_env = values.get("APP_ENV", "development").strip().lower()
     database_url = _optional_value(values, "DATABASE_URL")
     jwt_secret = _optional_value(values, "JWT_SECRET")
-    llm_api_key = _optional_value(values, "LLM_API_KEY")
-    llm_model = _optional_value(values, "LLM_MODEL")
     allowed_origins = _parse_allowed_origins(values.get("ALLOWED_ORIGINS", ""))
     settings = AppSettings(
         app_env=app_env,
         database_url=database_url,
         jwt_secret=jwt_secret,
-        llm_base_url=values.get("LLM_BASE_URL", DEFAULT_LLM_BASE_URL).strip()
-        or DEFAULT_LLM_BASE_URL,
-        llm_api_key=llm_api_key,
-        llm_model=llm_model,
         allowed_origins=allowed_origins,
         internal_api_token=_optional_value(values, "INTERNAL_API_TOKEN"),
         model_secret_encryption_key=_optional_value(
@@ -72,8 +62,7 @@ def _parse_allowed_origins(raw_value: str) -> tuple[str, ...]:
 
 def _validate_production_settings(settings: AppSettings) -> None:
     # Model credentials are per-user now (stored encrypted and used by the AI
-    # gateway); LLM_API_KEY / LLM_MODEL only feed the optional platform video
-    # search and are no longer required.
+    # gateway); the backend holds no platform model key.
     required_values = {
         "DATABASE_URL": settings.database_url,
         "JWT_SECRET": settings.jwt_secret,

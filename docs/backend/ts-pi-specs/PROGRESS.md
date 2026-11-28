@@ -417,4 +417,11 @@
 - 路由：Vite 代理与两份 Nginx 模板新增该 SSE 路径；`deploy/compose.production.yml` 把 `WEB_SEARCH_*` 透传给网关；前端 `KnowledgeBaseAgentResponse` 改为手写类型（该接口不在 Python OpenAPI 中），`gen:api` 已重生成。
 - **验证**：Python `uv run pytest` 506 passed、ruff 干净；网关 133 passed；前端 322 passed（顺带修了上一提交里一个依赖草稿加载时序的偶发失败用例）；真实验证——terra（中等思考）+ DeepSeek 搜索，管理员问“知识库有什么”不触发搜索；问“找两本操作系统教材”时模型自行搜索约 19 步、读取多个页面、提交校验，最终展示 2 个通过校验的来源并给出推荐与未收录原因。
 - **环境注意**：本机 TUN 代理把公网域名解析成 `198.18.0.0/15`，Python 的 SSRF 校验正确地拒绝它们；走查时仅在验收用的外部启动脚本里放行该网段，**仓库代码未改**。部署机若 DNS 正常不受影响。
-- **未验证/遗留**：`deploy/tests/test_nginx_config.sh` 已加新路径断言，但本轮未重跑 Docker 容器测试；视频检索仍是旧的 DashScope 固定流水线，下一步按同一范式改造。
+- **未验证/遗留**：`deploy/tests/test_nginx_config.sh` 已加新路径断言，但本轮未重跑 Docker 容器测试。
+
+### 视频检索 agent（已完成）
+- **新**：章节资源的视频阶段改为网关 `videoAgent.ts`：模型自己想搜索词、`web_search`/`web_fetch` 找候选、`verify_video` 读取真实标题与简介判断是否切题，最后 `submit_videos(brief_id+url)`；Python 对每个 URL **重新校验**并拼出存储块，不合格时把问题回给模型原地修正（最多 2 次），找不到就如实 `unavailable`（原有逐小节降级不变）。Python 新增内部接口 `POST …/video/context`、`POST /internal/videos/verify`、`POST …/video/compose`。
+- **删**：旧 `video/search` 接口、`aliyun_bilibili_search.py`（DashScope 绑定）、`video.py` 里约 600 行的停用词/同义词/子词表与查询生成启发式、`dashscope` 依赖（`uv.lock` 同步瘦身）、后端 `LLM_*` 配置字段。视频检索现在只依赖 `WEB_SEARCH_*`，不再需要阿里云 Key。
+- **验证**：Python 495 passed（比 506 少是删了旧检索的单测），ruff 干净；网关 135 passed（新增“搜索→校验→提交→被拒后修正”与“无搜索服务如实放弃仍能拼装”）；前端 322 passed；`gen:api` 无漂移。真实验证：terra + DeepSeek 搜索 + 真实 Bilibili 校验，对“时间复杂度与大O记号”约 10 秒选出一个真实视频（标题匹配）；第一次因后端未重启而校验接口 404，模型据此如实返回 unavailable、没有编造。
+- **未做/遗留**：`deploy/bin/bootstrap` 仍交互收集 `LLM_API_KEY/LLM_MODEL`，`compose.production.yml` 也仍透传——它们已没有读取方，但 `test_bootstrap.sh` 与之强绑定，本轮未动，待单独清理；`deploy/tests` 的 Docker 测试本轮未重跑。
+- **其余仍偏“死板”的候选（未动）**：`course_knowledge.py`/`learning_path.py` 里用字符串匹配给课程挑教材与组装路径、`markdown.py` 的 `_LOW_QUALITY_MARKERS` 低质量词黑名单、`profileContract.ts` 的 `DEFAULT_FILL_MARKERS`（判断“用户是否在敷衍默认值”）。

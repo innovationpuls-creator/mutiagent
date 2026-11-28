@@ -90,6 +90,10 @@ export interface FakeResources {
 	/** Sections whose model animation fails validation but whose template works. */
 	animationNeedsTemplate: Set<string>;
 	videoMode: "available" | "unavailable" | "throws";
+	videoVerifies: string[];
+	videoComposes: Array<{ videos: Array<{ brief_id: string; url: string }>; unavailable_reason?: string }>;
+	/** Issues returned (in order) by composeVideo before it starts accepting. */
+	videoComposeIssue: string[] | null;
 	videoDelayMs: number;
 	videoSpans: Array<{ sectionId: string; start: number; end: number }>;
 	animationSpans: Array<{ sectionId: string; start: number; end: number }>;
@@ -151,6 +155,9 @@ export function fakeBackend(): FakeBackend {
 			animationBroken: new Set(),
 			animationNeedsTemplate: new Set(),
 			videoMode: "available",
+			videoVerifies: [],
+			videoComposes: [],
+			videoComposeIssue: null,
 			videoDelayMs: 40,
 			videoSpans: [],
 			animationSpans: [],
@@ -186,14 +193,26 @@ export function fakeBackend(): FakeBackend {
 			if (!raw.includes("## 学习目标")) return { ok: false, issue: "缺少“学习目标”标题。" };
 			return { ok: true, value: { section_id: sectionId, markdown: raw } };
 		},
-		async searchSectionVideo(_uid, _course, sectionId) {
+		async getVideoContext(_uid, _course, sectionId) {
 			const r = backend.resource;
 			const start = Date.now();
 			await new Promise((resolve) => setTimeout(resolve, r.videoDelayMs));
 			r.videoSpans.push({ sectionId, start, end: Date.now() });
 			if (r.videoMode === "throws") throw new BackendBusinessError(502, "视频源不可用");
-			if (r.videoMode === "unavailable") return { status: "unavailable", value: { section_id: sectionId, status: "unavailable", videos: [] } };
-			return { status: "available", value: { section_id: sectionId, status: "available", videos: [{ url: "https://example.test/v" }] } };
+			return { section: { title: sectionId }, video_briefs: [{ video_id: "v1", title: "示例", purpose: "讲清概念" }] };
+		},
+		async verifyVideo(url) {
+			backend.resource.videoVerifies.push(url);
+			return { ok: true, url, title: "时间复杂度入门讲解", text: "讲解" };
+		},
+		async composeVideo(_uid, _course, sectionId, body) {
+			const r = backend.resource;
+			r.videoComposes.push(body);
+			if (r.videoComposeIssue) return { ok: false, issue: r.videoComposeIssue.shift() ?? "" } as never;
+			if (body.videos.length === 0 || r.videoMode === "unavailable") {
+				return { ok: true, status: "unavailable", value: { section_id: sectionId, status: "unavailable", videos: [] } };
+			}
+			return { ok: true, status: "available", value: { section_id: sectionId, status: "available", videos: body.videos } };
 		},
 		async getAnimationPrompt(_uid, _course, _sectionId) {
 			return { needed: true, system_prompt: "你是 HTML 动画智能体。", query: "请生成动画。" };

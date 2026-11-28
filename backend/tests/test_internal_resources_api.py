@@ -4,7 +4,7 @@ import pytest
 
 from app.core.config import DEFAULT_INTERNAL_API_TOKEN
 from app.database import DEMO_USER_UID
-from app.orchestration.agents.course_resources import video as video_mod
+from app.orchestration.agents.course_resources import bilibili as bilibili_mod
 from app.services import course_generation_status_service as lock_service
 from tests.test_internal_outline_api import (  # noqa: F401
     _compose,
@@ -185,17 +185,12 @@ def test_section_resources_merge_per_section_and_compose(outlined) -> None:
     assert _save(client, course_id, second, "markdown", docs[second]).status_code == 200
 
     # video: nothing found -> graceful degradation, saved as "unavailable" (AC-4).
-    async def none_found(*_args, **_kwargs):
-        return []
-
-    original = video_mod._find_verified_video_from_search
-    video_mod._find_verified_video_from_search = none_found
-    try:
-        found = client.post(
-            _section_url(course_id, first, "video/search"), headers=INTERNAL
-        ).json()
-    finally:
-        video_mod._find_verified_video_from_search = original
+    found = client.post(
+        _section_url(course_id, first, "video/compose"),
+        headers=INTERNAL,
+        json={"videos": [], "unavailable_reason": "搜索没有结果"},
+    ).json()
+    assert "搜索没有结果" in found["value"]["failure_reason"]
     assert found["status"] == "unavailable"
     assert _save(client, course_id, first, "video", found["value"]).status_code == 200
 
@@ -279,17 +274,10 @@ def test_failed_phase_records_a_retryable_error_and_keeps_other_phases(
 def test_video_found_is_saved_as_available_and_composed(outlined, monkeypatch) -> None:
     """AC-4 (found path): a verified Bilibili hit becomes an `available` video block."""
 
-    class _Source:
-        url = "https://www.bilibili.com/video/BV1xx411c7mD"
-
-    async def fake_search(*_args, **_kwargs):
-        return [_Source()]
-
     async def fake_verify(_url):
-        return {"status": "ok", "title": "时间复杂度入门讲解"}
+        return {"status": "ok", "title": "时间复杂度入门讲解", "text": "讲解"}
 
-    monkeypatch.setattr(video_mod, "_search_aliyun_bilibili_sources", fake_search)
-    monkeypatch.setattr(video_mod, "_verify_bilibili_video_metadata", fake_verify)
+    monkeypatch.setattr(bilibili_mod, "_verify_bilibili_video_metadata", fake_verify)
 
     client, course_id, leaves = outlined
     sid = leaves[0]
@@ -299,8 +287,27 @@ def test_video_found_is_saved_as_available_and_composed(outlined, monkeypatch) -
         json={"raw_output": GOOD_MARKDOWN},
     ).json()["value"]
     _save(client, course_id, sid, "markdown", doc).raise_for_status()
+    context = client.post(
+        _section_url(course_id, sid, "video/context"), headers=INTERNAL
+    ).json()
+    brief_id = context["video_briefs"][0]["video_id"]
+    bad = client.post(
+        _section_url(course_id, sid, "video/compose"),
+        headers=INTERNAL,
+        json={"videos": [{"brief_id": brief_id, "url": "https://example.com/x"}]},
+    ).json()
+    assert bad["ok"] is False and "Bilibili" in bad["issue"]
     found = client.post(
-        _section_url(course_id, sid, "video/search"), headers=INTERNAL
+        _section_url(course_id, sid, "video/compose"),
+        headers=INTERNAL,
+        json={
+            "videos": [
+                {
+                    "brief_id": brief_id,
+                    "url": "https://www.bilibili.com/video/BV1xx411c7mD",
+                }
+            ]
+        },
     ).json()
     assert found["status"] == "available", found
     assert found["value"]["videos"][0]["url"].startswith("https://www.bilibili.com/")

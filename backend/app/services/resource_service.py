@@ -1,10 +1,10 @@
 """Internal helpers for the TS gateway's section resource pipeline (M7).
 
-The model only writes the Markdown document and the HTML animation. Gating, the
-chapter lock, prompts built from the textbook evidence pack, every quality check, the
-external video search, the deterministic animation fallback, the placeholder
-composition and the per-section atomic persistence stay here and are exposed through
-narrow internal endpoints.
+The model writes the Markdown document and the HTML animation, and the video agent
+searches for videos. Gating, the chapter lock, prompts built from the textbook
+evidence pack, every quality check, video verification, the deterministic animation
+fallback, the placeholder composition and the per-section atomic persistence stay
+here and are exposed through narrow internal endpoints.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from sqlmodel import Session, select
 
 from app.models import ChapterWeakness, UserProfile
 from app.orchestration.agents.course_resources import animation as animation_mod
+from app.orchestration.agents.course_resources import bilibili as bilibili_mod
 from app.orchestration.agents.course_resources import common as common_mod
 from app.orchestration.agents.course_resources import main as resource_main
 from app.orchestration.agents.course_resources import markdown as markdown_mod
@@ -264,57 +265,101 @@ def validate_markdown(
     }
 
 
-async def search_section_video(
+def video_context(
     session: Session, user_uid: str, course_id: str, section_id: str
 ) -> dict:
-    """Verified video search; "nothing found" degrades gracefully instead of raising."""
+    """Section + video briefs for the gateway's video agent (it searches by itself)."""
     outline = _load(session, user_uid, course_id)
     section = _section(outline, section_id)
     stored = (outline.get("section_markdowns") or {}).get(section_id)
     briefs = stored.get("video_briefs") if isinstance(stored, dict) else None
-    query = " | ".join(video_mod._video_search_queries(briefs, section, outline)[:3])
-    videos: list[dict] = []
-    issue = "视频资源为空或未绑定 brief。"
-    for _attempt in range(2):
-        try:
-            found = await video_mod._find_verified_video_from_search(
-                briefs, section, outline
-            )
-        except Exception as exc:  # noqa: BLE001 - external search must never fail the section
-            logger.warning("Verified video search failed for %s: %s", section_id, exc)
-            issue = f"视频检索失败：{type(exc).__name__}"
-            continue
-        if not found:
-            continue
-        videos = video_mod._normalize_videos(found, briefs)
-        issue = video_mod._native_video_quality_issue(videos, briefs) or ""
-        if not issue:
-            break
+    return video_mod._video_context(briefs, section, outline)
+
+
+async def verify_video(url: str) -> dict:
+    """Is this a real public Bilibili video? Returns metadata for the agent."""
+    url = (url or "").strip().removesuffix("/")
+    if not bilibili_mod._bilibili_bvid_from_url(url):
+        return {
+            "ok": False,
+            "reason": "不是精确的 Bilibili 视频页地址（需要 /video/BV…）。",
+        }
+    metadata = await bilibili_mod._verify_bilibili_video_metadata(url)
+    if metadata.get("status") != "ok" or not metadata.get("title"):
+        return {"ok": False, "reason": metadata.get("reason") or "视频无法校验。"}
+    return {
+        "ok": True,
+        "url": url,
+        "title": metadata["title"],
+        "text": str(metadata.get("text") or "")[:600],
+    }
+
+
+async def compose_video(
+    session: Session,
+    user_uid: str,
+    course_id: str,
+    section_id: str,
+    videos: list[dict],
+    unavailable_reason: str = "",
+) -> dict:
+    """Turn the agent's picks into the stored video block, re-verifying every URL.
+
+    ``{"ok": False, "issue": ...}`` lets the agent repair its submission; a finished
+    block is ``{"ok": True, "status": "available" | "unavailable", "value": ...}``.
+    """
+    outline = _load(session, user_uid, course_id)
+    section = _section(outline, section_id)
+    stored = (outline.get("section_markdowns") or {}).get(section_id)
+    briefs = stored.get("video_briefs") if isinstance(stored, dict) else None
     base = {
         "user_id": user_uid,
         "section_id": section_id,
         "parent_section_id": section.get("parent_section_id"),
         "title": common_mod._section_title(outline, section),
-        "query": query,
+        "query": "",
         "generated_at": common_mod._now_iso(),
     }
-    if issue:
+    if not videos:
+        reason = unavailable_reason.strip() or "视频资源为空或未绑定 brief。"
         return {
+            "ok": True,
             "status": "unavailable",
             "value": {
                 **base,
                 "status": "unavailable",
-                "failure_reason": f"未找到合格视频：{issue}",
+                "failure_reason": f"未找到合格视频：{reason}",
                 "videos": [],
             },
         }
+    checked = []
+    for video in videos:
+        verdict = await verify_video(str(video.get("url") or ""))
+        if not verdict["ok"]:
+            return {
+                "ok": False,
+                "issue": f"{video.get('url')}：{verdict['reason']}",
+            }
+        checked.append(
+            {
+                "brief_id": video.get("brief_id"),
+                "title": verdict["title"],
+                "url": verdict["url"],
+                "source": "Bilibili",
+            }
+        )
+    normalized = video_mod._normalize_videos(checked, briefs)
+    issue = video_mod._native_video_quality_issue(normalized, briefs)
+    if issue:
+        return {"ok": False, "issue": issue}
     return {
+        "ok": True,
         "status": "available",
         "value": {
             **base,
             "status": "available",
             "failure_reason": "",
-            "videos": videos,
+            "videos": normalized,
         },
     }
 

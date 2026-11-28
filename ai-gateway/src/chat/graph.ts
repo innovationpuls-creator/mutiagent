@@ -8,6 +8,7 @@ import { type IntakeDraft, readIntake } from "./intakeContract.js";
 import { runIntakeAgent } from "./intakeAgent.js";
 import { runOutlineAgent } from "./outlineAgent.js";
 import { runPathAgent } from "./pathAgent.js";
+import type { WebConfig } from "../tools/web.js";
 import { parseLeafResourceRequest, readPendingRegeneration, runResourceAgent } from "./resourceAgent.js";
 import { runProfileAgent } from "./profileAgent.js";
 import { isCompleteProfile } from "./profileContract.js";
@@ -21,6 +22,8 @@ export interface ChatGraphDeps {
 	backend: BackendClient;
 	runtime: ModelRuntime;
 	logger: Logger;
+	/** Platform web search/fetch for agent tools; absent = tools report it is unavailable. */
+	web?: WebConfig;
 	userUid: string;
 	sessionId: string;
 	query: string;
@@ -375,6 +378,7 @@ export function buildChatGraph(deps: ChatGraphDeps) {
 			chapterRef: request.chapterRef,
 			mode: request.mode,
 			regenerationFocus: request.focus,
+			web: deps.web ?? {},
 			signal: deps.signal,
 			emit,
 		});

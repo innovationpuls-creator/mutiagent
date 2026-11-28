@@ -88,6 +88,7 @@ export function createApp({ config, backend, logSink = stdoutSink, builtinOverri
 			runtime: modelRuntime,
 			logger,
 			heartbeatMs: config.sseHeartbeatMs,
+			web: { baseUrl: config.webSearchBaseUrl, apiKey: config.webSearchApiKey },
 		}),
 	);
 

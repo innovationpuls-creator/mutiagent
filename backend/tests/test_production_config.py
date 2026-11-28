@@ -79,12 +79,11 @@ def test_production_rejects_default_internal_api_token() -> None:
         load_settings(environ)
 
 
-def test_production_no_longer_requires_platform_llm_credentials() -> None:
+def test_production_does_not_need_platform_llm_credentials() -> None:
     environ = valid_production_environ()
     assert "LLM_API_KEY" not in environ and "LLM_MODEL" not in environ
 
     settings = load_settings(environ)
 
-    assert settings.llm_api_key is None
     assert settings.internal_api_token == "test-production-internal-token"
     assert settings.ai_gateway_url == "http://ai-gateway:8100"

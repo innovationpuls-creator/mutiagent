@@ -28,6 +28,11 @@ function scriptModel(opts: { badMarkdownFirst?: number; markdown?: (sid: string)
 		if (names.includes("submit_section_animations")) {
 			return { tool: "submit_section_animations", args: { animations: [{ animation_id: "anim_1", title: "演示", html: HTML }] } };
 		}
+		if (names.includes("submit_videos")) {
+			return h.backend.resource.videoMode === "unavailable"
+				? { tool: "submit_videos", args: { videos: [], unavailable_reason: "没有合适的视频" } }
+				: { tool: "submit_videos", args: { videos: [{ brief_id: "v1", url: "https://www.bilibili.com/video/BV1xx411c7mD" }] } };
+		}
 		if (names.includes("delegate_course_resources")) {
 			return { tool: "delegate_course_resources", args: { chapter_section_id: "1", reason: "生成章节内容" } };
 		}
@@ -266,5 +271,59 @@ describe("AC-6 chapter lock", () => {
 		expect(completed(res)).toBe("只能为当前课程生成教学内容。");
 		expect(res.frames.some((f) => f.event === "error")).toBe(false);
 		expect(h.backend.resource.finishes).toHaveLength(0);
+	});
+});
+
+describe("video agent (the model searches; the backend verifies)", () => {
+	const web = { webSearchBaseUrl: "https://search.test", webSearchApiKey: "k" };
+
+	it("searches, verifies, submits; a rejected submission is repaired in place", async () => {
+		const { createApp } = await import("../src/app.js");
+		const { testConfig } = await import("./helpers.js");
+		const { vi } = await import("vitest");
+		const realFetch = globalThis.fetch;
+		vi.stubGlobal("fetch", async (input: any, init?: any) => {
+			const url = String(input?.url ?? input);
+			if (!url.startsWith("https://search.test")) return realFetch(input, init);
+			return new Response(JSON.stringify({ results: [{ title: "时间复杂度", url: "https://www.bilibili.com/video/BV1xx411c7mD", summary: "讲解" }] }), { status: 200 });
+		});
+		try {
+			setup("rv1");
+			h.app = createApp({ config: testConfig(web), backend: h.backend, logSink: () => {} });
+			h.backend.resource.sections = ["1.1"];
+			h.backend.resource.videoComposeIssue = ["视频资源未完整绑定 brief。"];
+			h.primary.respond = (body) => {
+				const names = (body.tools ?? []).map((t: any) => t.function.name as string);
+				const sent = JSON.stringify(body.messages);
+				if (names.includes("submit_videos")) {
+					if (!sent.includes("web_search")) return { tool: "web_search", args: { query: "时间复杂度 site:bilibili.com/video" } };
+					if (!sent.includes("时间复杂度入门讲解")) return { tool: "verify_video", args: { url: "https://www.bilibili.com/video/BV1xx411c7mD" } };
+					if (!sent.includes("提交未通过")) return { tool: "submit_videos", args: { videos: [{ brief_id: "wrong", url: "https://www.bilibili.com/video/BV1xx411c7mD" }] } };
+					h.backend.resource.videoComposeIssue = null;
+					return { tool: "submit_videos", args: { videos: [{ brief_id: "v1", url: "https://www.bilibili.com/video/BV1xx411c7mD" }] } };
+				}
+				if (names.includes("submit_section_markdown")) return { tool: "submit_section_markdown", args: { markdown: DOC } };
+				if (names.includes("submit_section_animations")) return { tool: "submit_section_animations", args: { animations: [{ animation_id: "anim_1", title: "演示", html: HTML }] } };
+				return { text: "ok" };
+			};
+			const res = await h.send("rv1", BUTTON());
+			expect(completed(res)).toBe("本章教学内容已生成。");
+			expect(h.backend.resource.videoVerifies).toEqual(["https://www.bilibili.com/video/BV1xx411c7mD"]);
+			expect(h.backend.resource.videoComposes).toHaveLength(2);
+			const saved = h.backend.resource.saves.find((s) => s.phase === "video");
+			expect(saved).toBeTruthy();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("without a search service the agent gives up honestly and the section still composes", async () => {
+		setup("rv2");
+		scriptModel();
+		h.backend.resource.videoMode = "unavailable";
+		h.backend.resource.sections = ["1.1"];
+		const res = await h.send("rv2", BUTTON());
+		expect(completed(res)).toBe("本章教学内容已生成。");
+		expect(h.backend.resource.videoComposes[0]!.videos).toEqual([]);
 	});
 });

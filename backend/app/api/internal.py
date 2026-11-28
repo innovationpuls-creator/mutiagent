@@ -43,6 +43,15 @@ class TextbookContextPayload(BaseModel):
     student_goal_summary: str = Field(default="", max_length=4000)
 
 
+class VerifyVideoPayload(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
+
+
+class ComposeVideoPayload(BaseModel):
+    videos: list[dict] = Field(default_factory=list, max_length=10)
+    unavailable_reason: str = Field(default="", max_length=500)
+
+
 class VerifySourcePayload(BaseModel):
     candidate: dict
 
@@ -450,15 +459,33 @@ def create_internal_router(engine: Engine, internal_token: str | None) -> APIRou
             ),
         )
 
-    @router.post(_RES + "/sections/{section_id}/video/search")
-    async def section_video_search(
-        user_uid: str, course_id: str, section_id: str
+    @router.post(_RES + "/sections/{section_id}/video/context")
+    def section_video_context(user_uid: str, course_id: str, section_id: str) -> dict:
+        return _resource_call(
+            user_uid,
+            lambda s: resource_service.video_context(
+                s, user_uid, course_id, section_id
+            ),
+        )
+
+    @router.post("/videos/verify")
+    async def verify_video(payload: VerifyVideoPayload) -> dict:
+        return await resource_service.verify_video(payload.url)
+
+    @router.post(_RES + "/sections/{section_id}/video/compose")
+    async def section_video_compose(
+        user_uid: str, course_id: str, section_id: str, payload: ComposeVideoPayload
     ) -> dict:
         with Session(engine) as session:
             _require_user(session, user_uid)
             try:
-                return await resource_service.search_section_video(
-                    session, user_uid, course_id, section_id
+                return await resource_service.compose_video(
+                    session,
+                    user_uid,
+                    course_id,
+                    section_id,
+                    payload.videos,
+                    payload.unavailable_reason,
                 )
             except resource_service.ResourceRequestError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from None

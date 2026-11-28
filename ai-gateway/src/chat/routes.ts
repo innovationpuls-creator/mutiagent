@@ -1,3 +1,4 @@
+import type { WebConfig } from "../tools/web.js";
 import { Hono } from "hono";
 import { type AuthVariables, jwtAuth } from "../auth.js";
 import type { BackendClient } from "../backendClient.js";
@@ -21,6 +22,7 @@ export interface ChatRouteDeps {
 	runtime: ModelRuntime;
 	logger: Logger;
 	heartbeatMs: number;
+	web?: WebConfig;
 }
 
 interface ChatBody {
@@ -69,6 +71,7 @@ export function chatRoutes(deps: ChatRouteDeps) {
 					backend: deps.backend,
 					runtime: deps.runtime,
 					logger: deps.logger,
+					web: deps.web,
 					userUid,
 					sessionId: body.session_id,
 					query: body.message,

@@ -237,11 +237,20 @@ export interface BackendClient {
 		sectionId: string,
 		rawOutput: string,
 	): Promise<{ ok: true; value: Record<string, unknown> } | { ok: false; issue: string }>;
-	searchSectionVideo(
+	/** Section + video briefs; the video agent decides how to search. */
+	getVideoContext(userUid: string, courseId: string, sectionId: string): Promise<Record<string, unknown>>;
+	/** Is this a real public Bilibili video? Metadata for the agent to judge relevance. */
+	verifyVideo(url: string): Promise<{ ok: boolean; reason?: string; url?: string; title?: string; text?: string }>;
+	/** Re-verifies every picked URL and builds the stored block; `ok:false` lets the agent repair. */
+	composeVideo(
 		userUid: string,
 		courseId: string,
 		sectionId: string,
-	): Promise<{ status: "available" | "unavailable"; value: Record<string, unknown> }>;
+		body: { videos: Array<{ brief_id: string; url: string }>; unavailable_reason?: string },
+	): Promise<
+		| { ok: true; status: "available" | "unavailable"; value: Record<string, unknown> }
+		| { ok: false; issue: string }
+	>;
 	getAnimationPrompt(
 		userUid: string,
 		courseId: string,
@@ -476,9 +485,13 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 				body: { raw_output: rawOutput },
 				timeoutMs: 30_000,
 			}),
-		searchSectionVideo: (userUid, courseId, sectionId) =>
-			request(`${sectionBase(userUid, courseId, sectionId)}/video/search`, {
+		getVideoContext: (userUid, courseId, sectionId) =>
+			request(`${sectionBase(userUid, courseId, sectionId)}/video/context`, { method: "POST", body: {} }),
+		verifyVideo: (url) => request("/internal/videos/verify", { method: "POST", body: { url }, timeoutMs: 30_000 }),
+		composeVideo: (userUid, courseId, sectionId, body) =>
+			request(`${sectionBase(userUid, courseId, sectionId)}/video/compose`, {
 				method: "POST",
+				body,
 				timeoutMs: 120_000,
 			}),
 		getAnimationPrompt: (userUid, courseId, sectionId) =>

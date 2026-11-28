@@ -444,9 +444,6 @@ def test_missing_encryption_key_in_production_fails_closed(tmp_path: Path) -> No
         app_env="production",
         database_url=url,
         jwt_secret="prod-secret",
-        llm_base_url="http://x",
-        llm_api_key="k",
-        llm_model="m",
         allowed_origins=("https://x.test",),
         internal_api_token="tok",
     )
