@@ -10,8 +10,9 @@ from app.schema_upgrades import run_schema_upgrades
 from app.services.knowledge_base_service import (
     TextbookSectionContent,
     create_knowledge_source,
-    get_published_textbook_context_for_topic,
+    list_published_textbooks,
     publish_textbook,
+    published_textbook_outline,
     upsert_structured_textbook,
 )
 from tests.postgres import postgresql_test_url
@@ -107,7 +108,7 @@ def _draft_textbook() -> Textbook:
     )
 
 
-def test_published_textbook_context_excludes_draft_textbooks(db_session: Session):
+def test_catalog_excludes_draft_textbooks(db_session: Session):
     create_knowledge_source(db_session, _source())
     published_draft = _published_textbook()
     published_section = _published_section()
@@ -121,28 +122,20 @@ def test_published_textbook_context_excludes_draft_textbooks(db_session: Session
     db_session.add(draft)
     db_session.commit()
 
-    context = get_published_textbook_context_for_topic(db_session, "矩阵")
+    catalog = list_published_textbooks(db_session)
 
     assert published.student_availability_status == "published"
-    assert context["gap_id"] is None
-    assert context["textbooks"]
-    assert all(
-        item["textbook_id"] != draft.textbook_id for item in context["textbooks"]
-    )
-    assert all(
-        item["textbook_id"] == published.textbook_id for item in context["textbooks"]
-    )
+    assert [item["textbook_id"] for item in catalog] == [published.textbook_id]
+    with pytest.raises(ValueError):
+        published_textbook_outline(db_session, draft.textbook_id)
 
 
-def test_missing_published_textbook_creates_gap(db_session: Session):
+def test_catalog_is_empty_without_published_textbooks(db_session: Session):
     create_knowledge_source(db_session, _source())
     db_session.add(_draft_textbook())
     db_session.commit()
 
-    context = get_published_textbook_context_for_topic(db_session, "矩阵")
-
-    assert context["textbooks"] == []
-    assert context["gap_id"] is not None
+    assert list_published_textbooks(db_session) == []
 
 
 def test_learning_path_intake_ignores_unconfirmed_source_results(
@@ -157,11 +150,4 @@ def test_learning_path_intake_ignores_unconfirmed_source_results(
     with Session(engine) as session:
         session.add(_source())
         session.commit()
-        context = get_published_textbook_context_for_topic(
-            session,
-            "数据结构",
-            "我想学习数据结构",
-        )
-
-    assert context["textbooks"] == []
-    assert context["gap_id"] is not None
+        assert list_published_textbooks(session) == []

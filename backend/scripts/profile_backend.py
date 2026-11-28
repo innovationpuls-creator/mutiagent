@@ -252,9 +252,7 @@ def main():  # noqa: C901
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--size", type=int, default=1000)
-    parser.add_argument(
-        "--cases", default="init,search,parser,statistics,auth,worker,sse"
-    )
+    parser.add_argument("--cases", default="init,parser,statistics,auth,worker,sse")
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     os.environ["DATABASE_URL"] = args.database_url
@@ -307,18 +305,6 @@ def main():  # noqa: C901
         else:
             SQLModel.metadata.create_all(engine)
         populate(engine, args.size)
-        if "search" in selected:
-            from app.services import knowledge_base_service as kb
-
-            def search():
-                with Session(engine) as session:
-                    return [
-                        row.textbook_id
-                        for row in kb.search_published_textbooks(session, "Python", 15)
-                    ]
-
-            record("search", search)
-            cases["search"]["result"] = len(search())
         if "parser" in selected:
             from app.services.document_parser_service import (
                 convert_textbook_source_to_markdown,

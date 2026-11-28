@@ -137,14 +137,18 @@ export interface LearningOverview {
 	next_step_text: string;
 }
 
-export interface TextbookContext {
-	textbooks: Array<{
-		textbook_id: string;
-		title: string;
-		description?: string;
-		outline_summary: Array<{ section_id: string; title: string }>;
-	}>;
-	gap_id: string | null;
+export interface PublishedTextbook {
+	textbook_id: string;
+	title: string;
+	tags: string[];
+	description?: string;
+	section_count: number;
+}
+
+export interface TextbookOutline {
+	textbook_id: string;
+	title: string;
+	sections: Array<{ section_id: string; title: string }>;
 }
 
 export interface ProtectedCourse {
@@ -187,7 +191,12 @@ export interface BackendClient {
 	/** Deterministic gate for an agent-proposed textbook source (public, reachable, parseable). */
 	verifyTextbookSource(candidate: Record<string, unknown>): Promise<TextbookSourceVerdict>;
 	/** Published textbook outlines for a topic; registers a KnowledgeGap when none match. */
-	getTextbookContext(learningTopic: string, studentGoalSummary: string): Promise<TextbookContext>;
+	/** Every published textbook, compact; the intake agent chooses from it itself. */
+	listPublishedTextbooks(): Promise<PublishedTextbook[]>;
+	/** Section ids of one published textbook (404 BackendBusinessError when unknown or unpublished). */
+	getTextbookOutline(textbookId: string): Promise<TextbookOutline>;
+	/** Record a topic the library cannot serve; returns the gap id. */
+	registerKnowledgeGap(topic: string, studentGoalSummary: string): Promise<string>;
 	getProtectedCourses(userUid: string): Promise<ProtectedCourse[]>;
 	getProgressSnapshots(userUid: string): Promise<RawProgressSnapshot[]>;
 	/** Expand the model's lightweight plan into the v2 contract; 422 BackendBusinessError if unusable. */
@@ -419,11 +428,17 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 				body: { candidate },
 				timeoutMs: 90000,
 			}),
-		getTextbookContext: (learningTopic, studentGoalSummary) =>
-			request<TextbookContext>("/internal/knowledge-base/textbook-context-for-intake", {
-				method: "POST",
-				body: { learning_topic: learningTopic, student_goal_summary: studentGoalSummary },
-			}),
+		listPublishedTextbooks: async () =>
+			(await request<{ textbooks: PublishedTextbook[] }>("/internal/knowledge-base/published-textbooks")).textbooks,
+		getTextbookOutline: (textbookId) =>
+			request<TextbookOutline>(`/internal/knowledge-base/published-textbooks/${encodeURIComponent(textbookId)}/outline`),
+		registerKnowledgeGap: async (topic, studentGoalSummary) =>
+			(
+				await request<{ gap_id: string }>("/internal/knowledge-base/gaps", {
+					method: "POST",
+					body: { topic, student_goal_summary: studentGoalSummary },
+				})
+			).gap_id,
 		getProtectedCourses: async (userUid) =>
 			(
 				await request<{ courses: ProtectedCourse[] }>(

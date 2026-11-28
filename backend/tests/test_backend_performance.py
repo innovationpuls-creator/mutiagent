@@ -9,7 +9,6 @@ from sqlmodel import Session, SQLModel
 
 from app.database import build_engine
 from app.models import KnowledgeBaseIngestionJob, KnowledgeGap, Textbook, User
-from app.services import knowledge_base_service as kb
 from app.workers.knowledge_base_worker import claim_next_ingestion_job
 from tests.postgres import postgresql_test_url
 
@@ -20,29 +19,6 @@ def engine(tmp_path):
     SQLModel.metadata.create_all(engine)
     yield engine
     engine.dispose()
-
-
-def test_search_published_textbooks_preserves_ranking(engine):
-    with Session(engine) as session:
-        for key, title, tags, published in (
-            ("title", "Python", [], True),
-            ("tags", "Other", ["Python", "Python", "Python"], True),
-            ("hidden", "Python", ["Python"] * 10, False),
-        ):
-            session.add(
-                Textbook(
-                    textbook_id=key,
-                    source_id="source",
-                    title=title,
-                    tags=tags,
-                    student_availability_status="published" if published else "draft",
-                )
-            )
-        session.commit()
-        assert [
-            row.textbook_id
-            for row in kb.search_published_textbooks(session, "python", 10)
-        ] == ["tags", "title"]
 
 
 def test_two_workers_claim_distinct_jobs_before_first_commit(engine):

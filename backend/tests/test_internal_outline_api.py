@@ -331,3 +331,18 @@ def test_unpublished_textbook_blocks_before_anything_else(ctx) -> None:
     assert "教材当前不可用" in res.json()["detail"]
     # The whole-year request fails the same way instead of half-working.
     assert _context(client, ALL).status_code == 422
+
+
+def test_course_without_a_binding_is_refused_not_guessed(ctx) -> None:
+    """No keyword matching picks a textbook for a course: the binding is explicit."""
+    client, engine, path = ctx
+    for node in path["grade_plans"]["year_3"]["course_nodes"]:
+        node["source_outline_section_ids"] = []
+    client.put(
+        f"/internal/students/{DEMO_USER_UID}/learning-paths/year_3",
+        headers=INTERNAL,
+        json={"learning_topic": "数据结构", "path_data": path},
+    ).raise_for_status()
+    res = _context(client, "")
+    assert res.status_code == 422
+    assert "没有绑定教材小节" in res.json()["detail"]

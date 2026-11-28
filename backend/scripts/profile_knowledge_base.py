@@ -56,10 +56,6 @@ def application(engine):
     return app, headers
 
 
-
-
-
-
 async def upload(app, headers, payload):
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://benchmark"

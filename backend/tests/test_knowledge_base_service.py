@@ -37,13 +37,14 @@ from app.services.knowledge_base_service import (
     create_or_update_knowledge_gap,
     delete_knowledge_source,
     follow_knowledge_gap,
-    get_published_textbook_context_for_topic,
     get_textbook_evidence_pack,
     is_source_admitted_for_primary_textbook,
     list_admitted_knowledge_sources,
     list_extension_resources_for_sections,
     list_knowledge_sources,
+    list_published_textbooks,
     publish_textbook,
+    published_textbook_outline,
     update_knowledge_source,
     upsert_structured_textbook,
 )
@@ -303,28 +304,6 @@ def test_verified_candidates_are_marked_imported_in_one_query(
         "textbook-imported-by-title",
         None,
     ]
-
-
-def test_search_published_textbooks_matches_title(
-    tmp_path: Path,
-) -> None:
-    engine = _knowledge_engine(tmp_path)
-    run_schema_upgrades(engine)
-    SQLModel.metadata.create_all(engine)
-
-    textbook = _textbook(textbook_id="textbook-match", title="FastAPI 高性能开发")
-    textbook.student_availability_status = "published"
-
-    with Session(engine) as session:
-        session.add(textbook)
-        session.commit()
-
-        results = knowledge_base_service.search_published_textbooks(
-            session, "FastAPI", 10
-        )
-
-    assert results
-    assert results[0].title == "FastAPI 高性能开发"
 
 
 def test_schema_upgrades_create_knowledge_base_tables(tmp_path: Path) -> None:
@@ -1741,7 +1720,7 @@ def test_publish_textbook_rolls_back_when_notice_creation_fails(
         assert stored_textbook.published_at is None
 
 
-def test_context_only_returns_published_summary_and_creates_gap(
+def test_catalog_only_lists_published_textbooks_and_their_outline(
     tmp_path: Path,
 ) -> None:
     engine = _knowledge_engine(tmp_path)
@@ -1800,123 +1779,42 @@ def test_context_only_returns_published_summary_and_creates_gap(
             ],
         )
 
-        context = get_published_textbook_context_for_topic(
-            session,
-            "矩阵",
-            student_goal_summary="希望复习矩阵计算",
-        )
+        listed = list_published_textbooks(session)
 
-        assert context == {
-            "textbooks": [
-                {
-                    "textbook_id": "textbook-published",
-                    "title": "线性代数",
-                    "source_id": "source-admitted",
-                    "tags": ["矩阵", "向量空间"],
-                    "description": "覆盖矩阵和向量空间",
-                    "outline_summary": [
-                        {"section_id": "1", "title": "矩阵"},
-                        {"section_id": "1.1", "title": "矩阵乘法"},
-                    ],
-                }
-            ],
-            "gap_id": None,
-        }
-        assert "content_zh" not in str(context)
+        assert listed == [
+            {
+                "textbook_id": "textbook-published",
+                "title": "线性代数",
+                "tags": ["矩阵", "向量空间"],
+                "description": "覆盖矩阵和向量空间",
+                "section_count": 2,
+            }
+        ]
+        assert "content_zh" not in str(listed)
 
-        missing_context = get_published_textbook_context_for_topic(
-            session,
-            "概率论",
-            student_goal_summary="希望学习概率基础",
-        )
-
-        assert missing_context["textbooks"] == []
-        gap = session.get(KnowledgeGap, missing_context["gap_id"])
-        assert gap is not None
-        assert gap.normalized_topic == "概率论"
-        assert gap.student_goal_summaries == ["希望学习概率基础"]
+        outline = published_textbook_outline(session, "textbook-published")
+        assert outline["sections"] == [
+            {"section_id": "1", "title": "矩阵"},
+            {"section_id": "1.1", "title": "矩阵乘法"},
+        ]
+        assert "content_zh" not in str(outline)
+        with pytest.raises(ValueError):
+            published_textbook_outline(session, "textbook-draft")
+        with pytest.raises(ValueError):
+            published_textbook_outline(session, "textbook-missing")
 
 
-def test_context_includes_published_textbook_matched_by_description_or_outline(
-    tmp_path: Path,
-) -> None:
+def test_gap_normalizes_whitespace_topic(tmp_path: Path) -> None:
     engine = _knowledge_engine(tmp_path)
     run_schema_upgrades(engine)
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as session:
-        create_knowledge_source(session, _admitted_source())
-        upsert_structured_textbook(
-            session,
-            _textbook(
-                textbook_id="textbook-description-outline",
-                title="计算机科学导论",
-                description="包含复杂度分析和递归思维。",
-                tags=["计算机科学"],
-                outline={
-                    "sections": [
-                        {
-                            "section_id": "1",
-                            "title": "基础概念",
-                            "children": [{"section_id": "1.1", "title": "图遍历算法"}],
-                        }
-                    ]
-                },
-                outline_review_status="approved",
-            ),
-            [
-                _section(
-                    textbook_id="textbook-description-outline",
-                    section_content_id="section-description-outline",
-                    section_id="1.1",
-                    title="图遍历算法",
-                    content_zh="图遍历正文",
-                )
-            ],
-        )
-        publish_textbook(session, "textbook-description-outline")
+        spaced = create_or_update_knowledge_gap(session, " 概率论 ", "第一次触发")
+        trimmed = create_or_update_knowledge_gap(session, "概率论", "第二次触发")
 
-        description_context = get_published_textbook_context_for_topic(
-            session,
-            "复杂度分析",
-            student_goal_summary="希望学习复杂度",
-        )
-        outline_context = get_published_textbook_context_for_topic(
-            session,
-            "图遍历算法",
-            student_goal_summary="希望学习图遍历",
-        )
-
-        assert [
-            textbook["textbook_id"] for textbook in description_context["textbooks"]
-        ] == ["textbook-description-outline"]
-        assert description_context["gap_id"] is None
-        assert [
-            textbook["textbook_id"] for textbook in outline_context["textbooks"]
-        ] == ["textbook-description-outline"]
-        assert outline_context["gap_id"] is None
-        assert session.exec(select(KnowledgeGap)).all() == []
-
-
-def test_context_gap_normalizes_whitespace_topic(tmp_path: Path) -> None:
-    engine = _knowledge_engine(tmp_path)
-    run_schema_upgrades(engine)
-    SQLModel.metadata.create_all(engine)
-
-    with Session(engine) as session:
-        spaced_context = get_published_textbook_context_for_topic(
-            session,
-            " 概率论 ",
-            student_goal_summary="第一次触发",
-        )
-        trimmed_context = get_published_textbook_context_for_topic(
-            session,
-            "概率论",
-            student_goal_summary="第二次触发",
-        )
-
-        assert spaced_context["gap_id"] == trimmed_context["gap_id"]
-        gap = session.get(KnowledgeGap, spaced_context["gap_id"])
+        assert spaced.gap_id == trimmed.gap_id
+        gap = session.get(KnowledgeGap, spaced.gap_id)
         assert gap is not None
         assert gap.normalized_topic == "概率论"
         assert gap.trigger_count == 2

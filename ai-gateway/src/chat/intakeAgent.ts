@@ -1,17 +1,18 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { arr, obj, opt, str } from "@earendil-works/pi-schema";
-import type { BackendClient, ChatContext, TextbookContext } from "../backendClient.js";
+import type { BackendClient, ChatContext, TextbookOutline } from "../backendClient.js";
+import { BackendBusinessError } from "../errors.js";
 import type { AgentStreamHandle } from "../models/runtime.js";
 import { runAgent } from "./agentRunner.js";
 import {
 	type IntakeDraft,
 	buildDraft,
 	catalogOf,
-	catalogText,
 	detectRisks,
 	draftResponseText,
 	intakeStatusOf,
 	noTextbookText,
+	outlineText,
 	readIntake,
 	riskCancelledText,
 	validateDraftCourses,
@@ -50,11 +51,13 @@ const COURSE_SCHEMA = obj({
 
 const PROPOSE_SCHEMA = obj({
 	learning_topic: str(),
-	search_topic: opt(str()),
-	courses: opt(arr(COURSE_SCHEMA)),
+	courses: arr(COURSE_SCHEMA),
 	recommendation_reasons: opt(arr(str())),
 	user_modification_summary: opt(str()),
 });
+
+const OUTLINE_SCHEMA = obj({ textbook_id: str() });
+const MISSING_SCHEMA = obj({ topic: str() });
 
 const EMPTY = obj({});
 
@@ -63,7 +66,7 @@ function text(value: string, extra: Partial<AgentToolResult<unknown>> = {}): Age
 }
 
 export function toolNamesForStatus(status: ReturnType<typeof intakeStatusOf>): string[] {
-	const names = ["propose_or_revise_draft"];
+	const names = ["list_textbooks", "get_textbook_outline", "report_missing_textbook", "propose_or_revise_draft"];
 	if (status === "draft" || status === "confirmed") names.push("confirm_draft");
 	if (status === "risk_pending") names.push("confirm_draft", "cancel_risk_revision");
 	return names;
@@ -81,9 +84,9 @@ export function buildIntakePrompt(input: {
 		"你是 OneTree 的「课程草案智能体」。你根据学生画像，从知识库已发布教材中规划 4-8 门课程的草案，并处理学生对草案的确认、修改、取消与追问。",
 		`当前草案状态：${status}（none=还没有草案；draft=待确认；risk_pending=修改会替换/删除已开始或已有大纲的课程，需要二次确认；confirmed=已确认）。`,
 		"可用工具由当前状态决定，规则：",
-		"1. 学生想要生成/调整课程（首次规划、增删换课、换主题）：调用 propose_or_revise_draft。先只传 learning_topic（和需要时的 search_topic）获取教材目录；拿到目录后，再次调用并带上完整的 courses。",
-		"2. courses 里每门课的 source_textbook_id 与 source_outline_section_ids 必须逐字复制目录里出现的 ID（每门课 1-7 个小节），课程顺序就是学习先后顺序，purpose 要说明教材小节覆盖的具体学习边界。不允许编造教材或小节。",
-		"3. 修改草案时 courses 要给出修改后的完整列表；没改动的课程保持原绑定不变。search_topic 用于检索新增方向的教材，缺省等于 learning_topic。",
+		"1. 学生想要生成/调整课程（首次规划、增删换课、换主题）：先用 list_textbooks 看知识库里有哪些已发布教材，自己判断哪些相关（教材可能是英文标题，别靠字面匹配），再用 get_textbook_outline 查看相关教材的小节目录，最后调用 propose_or_revise_draft 提交完整草案。",
+		"2. courses 里每门课的 source_textbook_id 与 source_outline_section_ids 必须逐字复制你查看过的目录里出现的 ID（每门课 1-7 个小节，需连续），课程顺序就是学习先后顺序，purpose 要说明教材小节覆盖的具体学习边界。不允许编造教材或小节。",
+		"3. 知识库里确实没有适合该方向的教材时，调用 report_missing_textbook 登记缺口（不要硬凑不相关的教材）。修改草案时 courses 要给出修改后的完整列表；没改动的课程保持原绑定不变。",
 		"4. 学生明确同意当前草案（或在风险提示后明确同意覆盖）：调用 confirm_draft。",
 		"5. 仅 risk_pending 时：学生反悔、想保留原路径：调用 cancel_risk_revision。",
 		"6. 学生只是追问（某门课难不难、为什么这样排、前置要求等）：直接用文字回答，不调用任何工具，不改动草案。",
@@ -103,48 +106,88 @@ export async function runIntakeAgent(input: IntakeAgentInput): Promise<IntakeOut
 	const intake = readIntake(context.session_state.learning_path_intake);
 	const status = intakeStatusOf(intake);
 	const existingCourses = intake?.courses ?? [];
-	const lookups: TextbookContext[] = [];
+	const outlines = new Map<string, TextbookOutline>();
 	let outcome: IntakeOutcome | undefined;
 	let failures = 0;
+
+	const listTextbooks: AgentTool<any> = {
+		name: "list_textbooks",
+		label: "查看已发布教材",
+		description: "列出知识库里所有已发布教材（id、标题、标签、简介、小节数）。由你判断哪些与学习方向相关。",
+		parameters: EMPTY,
+		async execute() {
+			input.emitProgress("正在查看知识库已发布教材");
+			const textbooks = await backend.listPublishedTextbooks();
+			if (textbooks.length === 0) return text("知识库里还没有任何已发布教材。");
+			return text(
+				textbooks
+					.map((t) =>
+						[
+							`${t.textbook_id}｜${t.title}（${t.section_count} 个小节）`,
+							t.tags.length > 0 ? `标签：${t.tags.join("、")}` : "",
+							t.description ? `简介：${t.description}` : "",
+						]
+							.filter(Boolean)
+							.join("｜"),
+					)
+					.join("\n"),
+			);
+		},
+	};
+
+	const getOutline: AgentTool<any> = {
+		name: "get_textbook_outline",
+		label: "查看教材目录",
+		description: "查看一本已发布教材的全部小节 ID 与标题；草案里引用的小节 ID 必须来自这里。",
+		parameters: OUTLINE_SCHEMA,
+		async execute(_id, params: any) {
+			const textbookId = String(params?.textbook_id ?? "").trim();
+			if (!textbookId) return text("缺少 textbook_id。", { isError: true });
+			try {
+				const outline = await backend.getTextbookOutline(textbookId);
+				outlines.set(outline.textbook_id, outline);
+				return text(outlineText(outline));
+			} catch (error) {
+				if (error instanceof BackendBusinessError && error.status === 404) {
+					return text(`教材 ${textbookId} 不存在或未发布，请先用 list_textbooks 查看可用教材。`, { isError: true });
+				}
+				throw error;
+			}
+		},
+	};
+
+	const reportMissing: AgentTool<any> = {
+		name: "report_missing_textbook",
+		label: "登记教材缺口",
+		description: "知识库里没有适合该学习方向的已发布教材时调用：登记知识缺口交给管理员补充，并告知学生。",
+		parameters: MISSING_SCHEMA,
+		async execute(_id, params: any) {
+			const topic = String(params?.topic ?? "").trim();
+			if (!topic) return text("缺少 topic。", { isError: true });
+			const gapId = await backend.registerKnowledgeGap(
+				topic,
+				[input.userText, String(context.profile?.summary_text ?? "")].filter(Boolean).join("\n"),
+			);
+			outcome = { kind: "no_textbook", topic, gapId, text: noTextbookText(topic, intake !== null) };
+			return text(`已登记知识缺口「${topic}」（gap_id=${gapId}）。`, { terminate: true });
+		},
+	};
 
 	const propose: AgentTool<any> = {
 		name: "propose_or_revise_draft",
 		label: "生成/修改课程草案",
-		description:
-			"首次生成课程草案，或按学生意见增删换课/换主题修订草案。第一次调用只传 learning_topic 获取教材目录；之后带完整 courses 提交。",
+		description: "提交完整的课程草案（4-8 门课，每门绑定已查看过目录的教材小节）。系统会校验来源绑定，未通过会返回具体错误。",
 		parameters: PROPOSE_SCHEMA,
 		async execute(_id, params: any) {
 			const topic = String(params?.learning_topic ?? "").trim();
-			const searchTopic = String(params?.search_topic ?? "").trim() || topic;
 			if (!topic) return text("缺少 learning_topic。", { isError: true });
-
-			const looked = lookups.length === 0 || !params?.courses;
-			if (looked) {
-				input.emitProgress(`正在检索「${searchTopic}」的已发布教材目录`);
-				const result = await backend.getTextbookContext(
-					searchTopic,
-					[input.userText, String(input.context.profile?.summary_text ?? "")].filter(Boolean).join("\n"),
-				);
-				if (result.textbooks.length === 0) {
-					outcome = {
-						kind: "no_textbook",
-						topic: searchTopic,
-						gapId: result.gap_id,
-						text: noTextbookText(searchTopic, intake !== null),
-					};
-					return text(`知识库暂无「${searchTopic}」的已发布教材（gap_id=${result.gap_id}），已登记待办。`, {
-						terminate: true,
-					});
-				}
-				lookups.push(result);
-				if (!params?.courses) {
-					return text(
-						`已发布教材目录如下，请只使用这些教材与小节 ID 组织 4-8 门课程，然后再次调用并带上 courses：\n\n${catalogText(result)}`,
-					);
-				}
+			if (outlines.size === 0 && existingCourses.length === 0) {
+				return text("还没有查看任何教材目录。请先用 list_textbooks / get_textbook_outline 选出教材与小节，再提交草案。", {
+					isError: true,
+				});
 			}
 
-			const { courses, errors } = validateDraftCourses(params.courses, catalogOf(...lookups), existingCourses);
+			const { courses, errors } = validateDraftCourses(params.courses, catalogOf([...outlines.values()]), existingCourses);
 			if (errors.length > 0) {
 				failures += 1;
 				if (failures > MAX_INTAKE_CORRECTIONS) {
@@ -156,7 +199,7 @@ export async function runIntakeAgent(input: IntakeAgentInput): Promise<IntakeOut
 			const risks = detectRisks(courses, await backend.getProtectedCourses(input.userUid));
 			const draft = buildDraft({
 				profile: context.profile,
-				learningTopic: intake && !params?.learning_topic ? intake.learning_topic : topic,
+				learningTopic: topic,
 				courses,
 				reasons: Array.isArray(params.recommendation_reasons)
 					? params.recommendation_reasons.map((r: unknown) => String(r).trim()).filter(Boolean)
@@ -198,6 +241,9 @@ export async function runIntakeAgent(input: IntakeAgentInput): Promise<IntakeOut
 	};
 
 	const registry: Record<string, AgentTool<any>> = {
+		list_textbooks: listTextbooks,
+		get_textbook_outline: getOutline,
+		report_missing_textbook: reportMissing,
 		propose_or_revise_draft: propose,
 		confirm_draft: confirm,
 		cancel_risk_revision: cancel,

@@ -19,7 +19,7 @@ from app.models import (
 from app.schema_upgrades import run_schema_upgrades
 from app.services.knowledge_base_service import (
     create_knowledge_source,
-    get_published_textbook_context_for_topic,
+    list_published_textbooks,
     publish_textbook,
     upsert_structured_textbook,
 )
@@ -225,10 +225,9 @@ def test_unpublished_textbook_is_removed_from_new_recommendations(
         session.add(textbook)
         session.commit()
 
-        context = get_published_textbook_context_for_topic(session, "矩阵")
+        catalog = list_published_textbooks(session)
 
-    assert context["textbooks"] == []
-    assert context["gap_id"] is not None
+    assert catalog == []
 
 
 def test_published_textbook_keeps_source_trace_after_source_is_disabled(
@@ -246,22 +245,14 @@ def test_published_textbook_keeps_source_trace_after_source_is_disabled(
         session.add(source)
         session.commit()
 
-        context = get_published_textbook_context_for_topic(session, "矩阵")
+        catalog = list_published_textbooks(session)
         stored_textbook = session.get(Textbook, textbook.textbook_id)
 
     assert stored_textbook is not None
     assert stored_textbook.student_availability_status == "published"
     assert stored_textbook.source_id == "source-lifecycle"
-    assert context["textbooks"] == [
-        {
-            "textbook_id": "textbook-lifecycle",
-            "title": "矩阵专题",
-            "source_id": "source-lifecycle",
-            "tags": ["矩阵"],
-            "description": "覆盖矩阵乘法",
-            "outline_summary": [{"section_id": "1.1", "title": "矩阵乘法"}],
-        }
-    ]
+    assert [item["textbook_id"] for item in catalog] == ["textbook-lifecycle"]
+    assert catalog[0]["title"] == "矩阵专题"
 
 
 def test_publish_textbook_sets_published_state_and_timestamp(tmp_path: Path) -> None:

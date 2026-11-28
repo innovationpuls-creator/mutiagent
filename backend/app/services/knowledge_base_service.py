@@ -881,31 +881,35 @@ def publish_textbook(session: Session, textbook_id: str) -> Textbook:
     return textbook
 
 
-def get_published_textbook_context_for_topic(
-    session: Session, topic: str, student_goal_summary: str = ""
-) -> dict:
-    matched = search_published_textbooks(session, topic, limit=15)
-    matched_by_id = {textbook.textbook_id: textbook for textbook in matched}
-    published_textbooks = session.exec(
+def list_published_textbooks(session: Session) -> list[dict]:
+    """Every student-visible textbook, compact, for the intake agent to pick from."""
+    textbooks = session.exec(
         select(Textbook)
         .where(Textbook.student_availability_status == "published")
         .order_by(Textbook.textbook_id)
     ).all()
-    for textbook in published_textbooks:
-        if textbook.textbook_id in matched_by_id:
-            continue
-        if _textbook_covers_topic(textbook, topic):
-            matched.append(textbook)
-            matched_by_id[textbook.textbook_id] = textbook
-
-    if matched:
-        return {
-            "textbooks": [_textbook_context_row(textbook) for textbook in matched],
-            "gap_id": None,
+    return [
+        {
+            "textbook_id": textbook.textbook_id,
+            "title": textbook.title,
+            "tags": [tag for tag in textbook.tags if isinstance(tag, str)],
+            "description": textbook.description,
+            "section_count": len(_outline_summary(textbook.outline)),
         }
+        for textbook in textbooks
+    ]
 
-    gap = create_or_update_knowledge_gap(session, topic, student_goal_summary)
-    return {"textbooks": [], "gap_id": gap.gap_id}
+
+def published_textbook_outline(session: Session, textbook_id: str) -> dict:
+    """Section ids and titles of one published textbook (what a course may bind)."""
+    textbook = session.get(Textbook, textbook_id)
+    if textbook is None or textbook.student_availability_status != "published":
+        raise ValueError("教材不存在或未发布。")
+    return {
+        "textbook_id": textbook.textbook_id,
+        "title": textbook.title,
+        "sections": _outline_summary(textbook.outline),
+    }
 
 
 def _slice_evidence(texts: list[str], char_range: tuple[int, int] | None) -> list[str]:
@@ -1277,17 +1281,6 @@ def _reject_duplicate_section_ids(section_ids: list[str]) -> None:
         raise ValueError("教材小节重复。")
 
 
-def _textbook_context_row(textbook: Textbook) -> dict:
-    return {
-        "textbook_id": textbook.textbook_id,
-        "title": textbook.title,
-        "source_id": textbook.source_id,
-        "tags": textbook.tags,
-        "description": textbook.description,
-        "outline_summary": _outline_summary(textbook.outline),
-    }
-
-
 def _textbook_covers_topic(textbook: Textbook, topic: str) -> bool:
     normalized_topic = topic.strip()
     if not normalized_topic:
@@ -1396,37 +1389,6 @@ def _source_textbook_ids(value: object) -> list[str]:
 
     collect(value)
     return list(dict.fromkeys(textbook_ids))
-
-
-def search_published_textbooks(
-    session: Session, query: str, limit: int = 15
-) -> list[Textbook]:
-    """Match published textbooks by title and tags."""
-    stmt = select(Textbook.textbook_id, Textbook.title, Textbook.tags).where(
-        Textbook.student_availability_status == "published"
-    )
-    all_tbs = session.exec(stmt).all()
-
-    scored = []
-    normalized_query = query.lower()
-    for textbook_id, title, tags in all_tbs:
-        score = 0
-        if normalized_query in title.lower():
-            score += 10
-        if tags:
-            for tag in tags:
-                if normalized_query in tag.lower():
-                    score += 5
-        if score > 0:
-            scored.append((score, textbook_id))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-    ids = [item[1] for item in scored[:limit]]
-    if not ids:
-        return []
-    rows = session.exec(select(Textbook).where(Textbook.textbook_id.in_(ids))).all()
-    by_id = {row.textbook_id: row for row in rows}
-    return [by_id[textbook_id] for textbook_id in ids if textbook_id in by_id]
 
 
 def search_admin_textbooks(

@@ -14,7 +14,6 @@ from sqlmodel import Session
 from app.database import build_engine, init_db, set_engine
 from app.models import User
 from app.orchestration.agents.course_knowledge import (
-    _fill_course_source_binding_from_textbook,
     _select_course_for_outline,
 )
 from app.orchestration.agents.models import (
@@ -689,95 +688,3 @@ def test_upsert_outline_clears_section_generated_assets_when_content_plan_change
     assert "section_composed_markdowns" not in row.outline_data
     assert "section_video_links" not in row.outline_data
     assert "section_html_animations" not in row.outline_data
-
-
-def test_course_source_binding_reselects_when_existing_section_exceeds_limit(
-    tmp_path: Path,
-) -> None:
-    engine = build_engine(postgresql_test_url(tmp_path, "course-source-reselect"))
-    set_engine(engine)
-    init_db(engine, seed_users=False)
-    with Session(engine) as session:
-        session.add(enabled_source())
-        ods_book = published_textbook(
-            textbook_id="textbook-ods-python",
-            title="Open Data Structures (Python Edition)",
-        )
-        ods_book.description = (
-            "Data structures, mathematical background and model of computation."
-        )
-        ods_book.tags = ["数据结构", "算法", "Python"]
-        session.add(ods_book)
-        rows = [
-            (
-                "sec_1_1",
-                "1.1 The Need for Efficiency",
-                "Efficiency and algorithm choice affect running time.",
-                655,
-            ),
-            (
-                "sec_1_8",
-                "1.2 Interfaces",
-                "Interfaces describe operations.",
-                1324,
-            ),
-            (
-                "sec_1_13",
-                "1.3 Mathematical Background",
-                "Mathematical notation prepares analysis.",
-                479,
-            ),
-            (
-                "sec_1_16",
-                "1.3.3 Asymptotic Notation",
-                "Big-O, Big-Omega and Big-Theta describe asymptotic complexity.",
-                9477,
-            ),
-            (
-                "sec_1_18",
-                "1.4 The Model of Computation",
-                "The model of computation defines primitive operations.",
-                3536,
-            ),
-        ]
-        for index, (section_id, title, content_text, content_chars) in enumerate(
-            rows,
-            start=1,
-        ):
-            session.add(
-                section(
-                    textbook_id="textbook-ods-python",
-                    section_content_id=f"ods-{section_id}",
-                    section_id=section_id,
-                    title=title,
-                    content_zh=content_text,
-                    order_index=index,
-                    content_char_count=content_chars,
-                )
-            )
-        session.commit()
-
-        course = {
-            "course_node_id": "year_3_course_1",
-            "course_or_chapter_theme": "计算模型与复杂度分析基础",
-            "course_goal": "掌握 Big-O、Big-Omega、Big-Theta 的定义与区别，能准确计算简单代码片段的渐近复杂度。",
-            "key_points": ["数学背景", "算法效率", "计算模型", "时间复杂度"],
-            "source_textbook_id": "textbook-ods-python",
-            "source_textbook_title": "Open Data Structures (Python Edition)",
-            "source_outline_section_ids": [
-                "sec_1_1",
-                "sec_1_8",
-                "sec_1_13",
-                "sec_1_16",
-                "sec_1_18",
-            ],
-        }
-
-        _fill_course_source_binding_from_textbook(session, course)
-
-    assert course["source_outline_section_ids"] == [
-        "sec_1_1",
-        "sec_1_8",
-        "sec_1_13",
-        "sec_1_18",
-    ]

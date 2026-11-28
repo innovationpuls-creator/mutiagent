@@ -38,8 +38,8 @@ class StudentProfilePayload(BaseModel):
     profile_data: dict
 
 
-class TextbookContextPayload(BaseModel):
-    learning_topic: str = Field(min_length=1, max_length=200)
+class KnowledgeGapPayload(BaseModel):
+    topic: str = Field(min_length=1, max_length=200)
     student_goal_summary: str = Field(default="", max_length=4000)
 
 
@@ -287,12 +287,27 @@ def create_internal_router(engine: Engine, internal_token: str | None) -> APIRou
             overview = chat_service.build_learning_overview(session, user_uid)
         return JSONResponse(content=jsonable_encoder(overview))
 
-    @router.post("/knowledge-base/textbook-context-for-intake")
-    def textbook_context_for_intake(payload: TextbookContextPayload) -> dict:
+    @router.get("/knowledge-base/published-textbooks")
+    def published_textbooks() -> dict:
         with Session(engine) as session:
-            return path_service.textbook_context_for_intake(
-                session, payload.learning_topic, payload.student_goal_summary
+            return {"textbooks": kb_service.list_published_textbooks(session)}
+
+    @router.get("/knowledge-base/published-textbooks/{textbook_id}/outline")
+    def published_textbook_outline(textbook_id: str) -> dict:
+        with Session(engine) as session:
+            try:
+                return kb_service.published_textbook_outline(session, textbook_id)
+            except ValueError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from None
+
+    @router.post("/knowledge-base/gaps")
+    def register_knowledge_gap(payload: KnowledgeGapPayload) -> dict:
+        """Record a topic the library cannot serve yet, for the admin to-do list."""
+        with Session(engine) as session:
+            gap = kb_service.create_or_update_knowledge_gap(
+                session, payload.topic, payload.student_goal_summary
             )
+            return {"gap_id": gap.gap_id}
 
     @router.get("/knowledge-base/overview")
     def knowledge_base_overview() -> dict:

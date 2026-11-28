@@ -238,11 +238,13 @@ def source_context(session: Session, user_uid: str, course_ref: str) -> dict:
     courses_out: list[dict] = []
     for original in picked:
         course = copy.deepcopy(original)
-        legacy._fill_course_source_binding_from_textbook(session, course)
         textbook_id = legacy._clean_text(course.get("source_textbook_id"))
         section_ids = legacy._string_list(course.get("source_outline_section_ids"))
         if not textbook_id or not section_ids:
-            raise OutlineSourceError("课程缺少已发布教材绑定。")
+            raise OutlineSourceError(
+                f"课程《{legacy._clean_text(course.get('course_or_chapter_theme'))}》"
+                "没有绑定教材小节，请重新生成学习路径草案后再生成大纲。"
+            )
         try:
             require_student_visible_textbooks(session, textbook_id)
         except ValueError:

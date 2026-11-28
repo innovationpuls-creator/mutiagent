@@ -2,23 +2,29 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { catalogOf, detectRisks, validateDraftCourses } from "../src/chat/intakeContract.js";
 import { toolNamesForStatus } from "../src/chat/intakeAgent.js";
 import { validatePlan } from "../src/chat/pathAgent.js";
-import type { TextbookContext } from "../src/backendClient.js";
+import type { PublishedTextbook, TextbookOutline } from "../src/backendClient.js";
 import { CHAT_USER, baseContext, completeProfile, setupChatHarness } from "./chatHarness.js";
 
 const h = setupChatHarness();
 beforeEach(() => h.reset());
 
 const TITLES = ["数据结构入门", "线性结构实践", "树与递归", "查找排序与哈希"];
-const TEXTBOOKS: TextbookContext = {
-	gap_id: null,
-	textbooks: [
-		{
-			textbook_id: "tb-ds",
-			title: "数据结构教材",
-			outline_summary: Array.from({ length: 8 }, (_, i) => ({ section_id: `tb-ds-s${i + 1}`, title: `小节 ${i + 1}` })),
-		},
-	],
+const CATALOG: PublishedTextbook[] = [
+	{ textbook_id: "tb-ds", title: "数据结构教材", tags: ["数据结构"], section_count: 8 },
+];
+const DS_OUTLINE: TextbookOutline = {
+	textbook_id: "tb-ds",
+	title: "数据结构教材",
+	sections: Array.from({ length: 8 }, (_, i) => ({ section_id: `tb-ds-s${i + 1}`, title: `小节 ${i + 1}` })),
 };
+const stockLibrary = () => {
+	h.backend.textbooks = CATALOG;
+	h.backend.textbookOutlines.set("tb-ds", DS_OUTLINE);
+};
+const browse = [
+	{ tool: "list_textbooks", args: {} },
+	{ tool: "get_textbook_outline", args: { textbook_id: "tb-ds" } },
+] as const;
 
 const course = (index: number, sections = [`tb-ds-s${index + 1}`]) => ({
 	title: TITLES[index]!,
@@ -83,6 +89,7 @@ const plan = (themes = TITLES) => ({
 });
 
 const patchOf = (index = 0) => h.backend.turns[index]?.turn.session_state_patch;
+const savedIntake = (index = 0): any => (patchOf(index) as Record<string, unknown> | null | undefined)?.learning_path_intake;
 
 describe("AC-1 draft Q&A does not trigger anything", () => {
 	it("answers from the draft, keeps status draft, never reaches the path node", async () => {
@@ -94,17 +101,24 @@ describe("AC-1 draft Q&A does not trigger anything", () => {
 		expect(patchOf()).toBeNull();
 		expect(h.backend.assembled).toHaveLength(0);
 		expect(h.backend.savedPaths).toHaveLength(0);
-		// Tools by state: draft offers propose + confirm only (no cancel).
-		expect(h.toolNames(h.primary, 1)).toEqual(["confirm_draft", "propose_or_revise_draft"]);
+		// Tools by state: draft offers the catalog tools, propose and confirm (no cancel).
+		expect(h.toolNames(h.primary, 1)).toEqual([
+			"confirm_draft",
+			"get_textbook_outline",
+			"list_textbooks",
+			"propose_or_revise_draft",
+			"report_missing_textbook",
+		]);
 		// The supervisor knows a draft exists and must route to the draft agent.
 		const supervisorPrompt = h.primary.requests[0]!.body.messages[0].content as string;
 		expect(supervisorPrompt).toContain("课程草案（状态 draft）");
 	});
 
 	it("tool availability follows the state machine (pure)", () => {
-		expect(toolNamesForStatus("none")).toEqual(["propose_or_revise_draft"]);
-		expect(toolNamesForStatus("draft")).toEqual(["propose_or_revise_draft", "confirm_draft"]);
-		expect(toolNamesForStatus("risk_pending")).toEqual(["propose_or_revise_draft", "confirm_draft", "cancel_risk_revision"]);
+		const lookup = ["list_textbooks", "get_textbook_outline", "report_missing_textbook", "propose_or_revise_draft"];
+		expect(toolNamesForStatus("none")).toEqual(lookup);
+		expect(toolNamesForStatus("draft")).toEqual([...lookup, "confirm_draft"]);
+		expect(toolNamesForStatus("risk_pending")).toEqual([...lookup, "confirm_draft", "cancel_risk_revision"]);
 	});
 });
 
@@ -113,24 +127,24 @@ describe("AC-2 source binding validation and in-turn self-correction", () => {
 		ctx("s2");
 		const forged = toolCourses();
 		forged[1] = course(1, ["tb-ds-s99"]);
-		h.backend.textbooks = TEXTBOOKS;
+		stockLibrary();
 		h.primary.queue.push(
 			delegate,
-			{ tool: "propose_or_revise_draft", args: { learning_topic: "数据结构" } },
+			...browse,
 			{ tool: "propose_or_revise_draft", args: { learning_topic: "数据结构", courses: forged } },
 			{ tool: "propose_or_revise_draft", args: { learning_topic: "数据结构", courses: toolCourses() } },
 		);
 		const res = await h.send("s2", "帮我规划数据结构学习路径");
 		expect(res.frames.some((f) => f.event === "error")).toBe(false);
 		// The validator's concrete complaint was fed back to the model.
-		const feedback = JSON.stringify(h.primary.requests[3]!.body.messages);
+		const feedback = JSON.stringify(h.primary.requests[4]!.body.messages);
 		expect(feedback).toContain("tb-ds-s99");
 		expect(feedback).toContain("不存在的小节");
 		const saved = patchOf()?.learning_path_intake as any;
 		expect(saved.status).toBe("draft");
 		expect(saved.courses[1].source_outline_section_ids).toEqual(["tb-ds-s2"]);
 		expect(saved.courses.every((c: any) => c.source_textbook_title === "数据结构教材")).toBe(true);
-		expect(h.backend.textbookLookups).toEqual(["数据结构"]);
+		expect(h.backend.textbookLookups).toEqual(["list", "outline:tb-ds"]);
 		expect(res.frames.find((f) => f.event === "message_completed")?.data.full_text).toContain("课程草稿：");
 	});
 
@@ -138,16 +152,30 @@ describe("AC-2 source binding validation and in-turn self-correction", () => {
 		ctx("s2b");
 		const forged = toolCourses();
 		forged[0] = course(0, ["nope"]);
-		h.backend.textbooks = TEXTBOOKS;
+		stockLibrary();
 		const bad = { tool: "propose_or_revise_draft", args: { learning_topic: "数据结构", courses: forged } } as const;
-		h.primary.queue.push(delegate, { tool: "propose_or_revise_draft", args: { learning_topic: "数据结构" } }, bad, bad, bad);
+		h.primary.queue.push(delegate, ...browse, bad, bad, bad);
 		const res = await h.send("s2b", "规划数据结构");
 		expect(patchOf()).toBeNull();
 		expect(res.frames.find((f) => f.event === "message_completed")?.data.full_text).toContain("课程草案生成失败");
 	});
 
+	it("refuses a draft proposed without having looked at any textbook outline", async () => {
+		ctx("s2c");
+		stockLibrary();
+		h.primary.queue.push(
+			delegate,
+			{ tool: "propose_or_revise_draft", args: { learning_topic: "数据结构", courses: toolCourses() } },
+			...browse,
+			{ tool: "propose_or_revise_draft", args: { learning_topic: "数据结构", courses: toolCourses() } },
+		);
+		await h.send("s2c", "规划数据结构");
+		expect(JSON.stringify(h.primary.requests[2]!.body.messages)).toContain("还没有查看任何教材目录");
+		expect(savedIntake()?.status).toBe("draft");
+	});
+
 	it("validator unit: count, unknown textbook, unchanged existing binding is trusted", () => {
-		const catalog = catalogOf(TEXTBOOKS);
+		const catalog = catalogOf([DS_OUTLINE]);
 		expect(validateDraftCourses(toolCourses().slice(0, 3), catalog, []).errors.join()).toContain("4-8");
 		const alien = toolCourses();
 		alien[0] = { ...course(0), source_textbook_id: "tb-ghost" };
@@ -163,27 +191,46 @@ describe("AC-2 source binding validation and in-turn self-correction", () => {
 describe("AC-3 knowledge gap keeps the existing draft", () => {
 	it("records the gap, leaves the draft untouched and says so", async () => {
 		ctx("s3", { learning_path_intake: intake("draft") });
-		h.backend.textbooks = { textbooks: [], gap_id: "gap-quantum" };
-		h.primary.queue.push(delegate, {
-			tool: "propose_or_revise_draft",
-			args: { learning_topic: "数据结构", search_topic: "量子力学" },
-		});
+		stockLibrary();
+		h.primary.queue.push(
+			delegate,
+			{ tool: "list_textbooks", args: {} },
+			{ tool: "report_missing_textbook", args: { topic: "量子力学" } },
+		);
 		const res = await h.send("s3", "把第 3 门换成量子力学");
-		expect(h.backend.textbookLookups).toEqual(["量子力学"]);
+		expect(h.backend.gaps.map((g) => g.topic)).toEqual(["量子力学"]);
 		expect(patchOf()).toBeNull();
 		const text = res.frames.find((f) => f.event === "message_completed")?.data.full_text as string;
 		expect(text).toContain("暂无覆盖「量子力学」的已发布教材");
 		expect(text).toContain("原有的课程草稿已为你保留");
-		expect(res.frames.find((f) => f.data.update_type === "knowledge_gap_recorded")?.data.gap_id).toBe("gap-quantum");
+		expect(res.frames.find((f) => f.data.update_type === "knowledge_gap_recorded")?.data.gap_id).toBe("gap-1");
 	});
 
 	it("first-time planning with no textbook guides to another direction", async () => {
 		ctx("s3b");
-		h.backend.textbooks = { textbooks: [], gap_id: "gap-2" };
-		h.primary.queue.push(delegate, { tool: "propose_or_revise_draft", args: { learning_topic: "量子力学" } });
+		h.primary.queue.push(
+			delegate,
+			{ tool: "list_textbooks", args: {} },
+			{ tool: "report_missing_textbook", args: { topic: "量子力学" } },
+		);
 		const res = await h.send("s3b", "我想学量子力学");
 		expect(res.frames.find((f) => f.event === "message_completed")?.data.full_text).toContain("换一个学习方向");
 		expect(patchOf()).toBeNull();
+	});
+
+	it("unknown textbook ids are answered as an error the model can read, not a crash", async () => {
+		ctx("s3c");
+		stockLibrary();
+		h.primary.queue.push(
+			delegate,
+			{ tool: "get_textbook_outline", args: { textbook_id: "tb-ghost" } },
+			...browse,
+			{ tool: "propose_or_revise_draft", args: { learning_topic: "数据结构", courses: toolCourses() } },
+		);
+		const res = await h.send("s3c", "规划数据结构");
+		expect(res.frames.some((f) => f.event === "error")).toBe(false);
+		expect(JSON.stringify(h.primary.requests[2]!.body.messages)).toContain("不存在或未发布");
+		expect(savedIntake()?.status).toBe("draft");
 	});
 });
 
@@ -192,11 +239,12 @@ describe("AC-4 risk second confirmation and rollback", () => {
 
 	it("a draft that drops a started course becomes risk_pending; cancel rolls back; confirm proceeds", async () => {
 		h.backend.protectedCourses = protectedOs;
-		h.backend.textbooks = TEXTBOOKS;
+		stockLibrary();
 		// Turn 1: modification that does not include 操作系统.
 		ctx("s4", { learning_path_intake: intake("draft") });
 		h.primary.queue.push(
 			delegate,
+			...browse,
 			{ tool: "propose_or_revise_draft", args: { learning_topic: "数据结构", courses: toolCourses(), user_modification_summary: "删掉操作系统" } },
 		);
 		const t1 = await h.send("s4", "把操作系统删掉");
@@ -210,7 +258,14 @@ describe("AC-4 risk second confirmation and rollback", () => {
 		ctx("s4", { learning_path_intake: risky });
 		h.primary.queue.push(delegate, { tool: "cancel_risk_revision", args: {} });
 		await h.send("s4", "算了先不改");
-		expect(h.toolNames(h.primary, 3)).toEqual(["cancel_risk_revision", "confirm_draft", "propose_or_revise_draft"]);
+		expect(h.toolNames(h.primary, 5)).toEqual([
+			"cancel_risk_revision",
+			"confirm_draft",
+			"get_textbook_outline",
+			"list_textbooks",
+			"propose_or_revise_draft",
+			"report_missing_textbook",
+		]);
 		const rolled = patchOf(1)?.learning_path_intake as any;
 		expect(rolled.status).toBe("draft");
 		expect(rolled.risk_warnings).toEqual([]);

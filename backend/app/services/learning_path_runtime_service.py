@@ -13,9 +13,6 @@ from app.models import UserCourseKnowledgeOutline
 from app.services.course_knowledge_service import (
     delete_user_course_outlines_by_grade_year,
 )
-from app.services.knowledge_base_service import (
-    get_published_textbook_context_for_topic,
-)
 from app.services.learning_path_service import (
     get_all_year_learning_paths,
     get_learning_path_progress_snapshots,
@@ -23,15 +20,6 @@ from app.services.learning_path_service import (
 )
 
 STARTED_STATES = {"in_progress", "completed"}
-
-
-def textbook_context_for_intake(
-    session: Session, learning_topic: str, student_goal_summary: str
-) -> dict:
-    """Published textbook outlines for a topic; registers a KnowledgeGap if none."""
-    return get_published_textbook_context_for_topic(
-        session, learning_topic, student_goal_summary=student_goal_summary
-    )
 
 
 def _started_titles(path: object) -> list[str]:

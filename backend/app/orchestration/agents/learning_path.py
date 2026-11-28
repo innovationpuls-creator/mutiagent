@@ -358,35 +358,6 @@ def _build_course_structure(
     return chapter_nodes, knowledge_points, knowledge_relations
 
 
-def _course_spec(
-    *,
-    course_node_id: str,
-    theme: str,
-    semester_scope: str,
-    duration: str,
-    pace_reason: str,
-    goal: str,
-    stage_titles: list[str],
-    key_points: list[str],
-    difficult_points: list[str],
-    acceptance_criteria: list[str],
-    difficulty_level: str,
-) -> dict:
-    return {
-        "course_node_id": course_node_id,
-        "theme": theme,
-        "semester_scope": semester_scope,
-        "duration": duration,
-        "pace_reason": pace_reason,
-        "goal": goal,
-        "stage_titles": stage_titles,
-        "key_points": key_points,
-        "difficult_points": difficult_points,
-        "acceptance_criteria": acceptance_criteria,
-        "difficulty_level": difficulty_level,
-    }
-
-
 def _normalize_goal_type(value: str) -> str:
     normalized = value.strip()
     if normalized in {"考试", "课程学习", "项目实践", "能力提升", "就业准备", "其他"}:
@@ -458,207 +429,12 @@ def _normalize_grade_goal(
     return normalized
 
 
-def _grade_course_specs(
-    grade_year: str, topic: str, pace_reason: str
-) -> tuple[str, str, list[dict], list[dict]]:
-    if grade_year == "year_1":
-        specs = [
-            _course_spec(
-                course_node_id="year_1_course_1",
-                theme="编程与算法基础",
-                semester_scope="上学期",
-                duration="6 周",
-                pace_reason="先打稳编程语法与算法思维",
-                goal="完成 Python 基础语法、流程控制与基础算法训练",
-                stage_titles=["语法入门", "数据结构启蒙", "算法思维训练"],
-                key_points=["Python 基础语法", "流程控制", "算法思维"],
-                difficult_points=["抽象建模", "复杂度理解"],
-                acceptance_criteria=["能独立完成基础算法练习并解释思路"],
-                difficulty_level="基础",
-            ),
-            _course_spec(
-                course_node_id="year_1_course_2",
-                theme="数据结构与算法实战",
-                semester_scope="上学期",
-                duration="6 周",
-                pace_reason="把基础语法推进到可解决问题的水平",
-                goal="围绕常见题型掌握数组、链表、栈队列与搜索排序",
-                stage_titles=["线性结构实践", "搜索与排序", "题型拆解复盘"],
-                key_points=["数组与链表", "栈与队列", "搜索与排序"],
-                difficult_points=["边界条件分析", "调试思路"],
-                acceptance_criteria=["能独立完成一组结构化算法练习题"],
-                difficulty_level="基础",
-            ),
-            _course_spec(
-                course_node_id="year_1_course_3",
-                theme="Git 协作与调试基础",
-                semester_scope="下学期",
-                duration="4 周",
-                pace_reason="尽早建立工程协作与排错习惯",
-                goal="掌握 Git 基础协作、日志定位与常见调试方法",
-                stage_titles=["Git 提交流程", "日志与断点调试", "协作复盘"],
-                key_points=["Git 基础命令", "断点调试", "问题复盘"],
-                difficult_points=["冲突处理", "问题定位路径"],
-                acceptance_criteria=["能独立完成一次带日志的代码调试与提交协作"],
-                difficulty_level="基础",
-            ),
-        ]
-        return "大一", "夯实编程与工程基础", specs, []
+_GRADE_NAMES = {"year_1": "大一", "year_2": "大二", "year_3": "大三", "year_4": "大四"}
 
-    if grade_year == "year_2":
-        specs = [
-            _course_spec(
-                course_node_id="year_2_course_1",
-                theme="Web 前端与交互基础",
-                semester_scope="上学期",
-                duration="6 周",
-                pace_reason="先补足用户界面与交互表达能力",
-                goal="完成一个具备基础状态管理与交互逻辑的前端页面",
-                stage_titles=["组件拆分", "状态与事件", "交互联调"],
-                key_points=["组件设计", "状态管理", "交互联调"],
-                difficult_points=["状态同步", "页面调试"],
-                acceptance_criteria=["能独立完成一个有状态的交互页面"],
-                difficulty_level="基础",
-            ),
-            _course_spec(
-                course_node_id="year_2_course_2",
-                theme="后端接口与数据库建模",
-                semester_scope="上学期",
-                duration="6 周",
-                pace_reason="建立服务端接口与数据结构意识",
-                goal="掌握 REST 接口设计、数据库建模与基本持久化能力",
-                stage_titles=["接口设计", "数据库建模", "服务端联调"],
-                key_points=["REST 接口", "数据库建模", "ORM 基础"],
-                difficult_points=["关系设计", "数据一致性"],
-                acceptance_criteria=["能完成一个带数据库的后端接口服务"],
-                difficulty_level="基础",
-            ),
-            _course_spec(
-                course_node_id="year_2_course_3",
-                theme="全栈工程化与部署入门",
-                semester_scope="下学期",
-                duration="5 周",
-                pace_reason="把前后端能力收束为可运行项目",
-                goal="掌握环境配置、联调、部署与基础监控意识",
-                stage_titles=["环境配置", "全栈联调", "部署复盘"],
-                key_points=["环境配置", "全栈联调", "部署入门"],
-                difficult_points=["跨端排错", "环境一致性"],
-                acceptance_criteria=["能把一个全栈项目运行并部署到可访问环境"],
-                difficulty_level="基础",
-            ),
-        ]
-        relations = [
-            _knowledge_relation(
-                from_node_id="year_1_course_3",
-                to_node_id="year_2_course_1",
-                relation_type="prerequisite",
-                description="先具备基础协作与调试能力，再进入 Web 工程化主线。",
-            )
-        ]
-        return "大二", "建立全栈工程能力", specs, relations
 
-    if grade_year == "year_4":
-        specs = [
-            _course_spec(
-                course_node_id="year_4_course_1",
-                theme="就业级作品集与迭代优化",
-                semester_scope="上学期",
-                duration="6 周",
-                pace_reason="先把项目沉淀为可展示的就业级作品",
-                goal="完成作品集整理、性能优化和面试讲解准备",
-                stage_titles=["项目复盘", "优化迭代", "作品集整理"],
-                key_points=["项目复盘", "性能优化", "作品集包装"],
-                difficult_points=["方案取舍", "表达与复盘"],
-                acceptance_criteria=["形成可展示的就业级项目作品集"],
-                difficulty_level="中级",
-            ),
-            _course_spec(
-                course_node_id="year_4_course_2",
-                theme=f"{topic}综合项目孵化",
-                semester_scope="上学期",
-                duration="6 周",
-                pace_reason="把既有能力沉淀成完整毕业项目",
-                goal=f"围绕 {topic} 形成可展示的综合项目方案与技术路线",
-                stage_titles=["选题聚焦", "架构方案", "阶段演示"],
-                key_points=["选题定位", "架构取舍", "里程碑规划"],
-                difficult_points=["范围收敛", "方案表达"],
-                acceptance_criteria=["完成一个可演示的毕业项目方案与第一版实现"],
-                difficulty_level="中级",
-            ),
-            _course_spec(
-                course_node_id="year_4_course_3",
-                theme=f"{topic}求职展示与面试复盘",
-                semester_scope="下学期",
-                duration="4 周",
-                pace_reason="收束为求职表达与面试准备",
-                goal="完成项目讲解稿、问答清单与个人复盘素材",
-                stage_titles=["项目讲解", "问答清单", "面试复盘"],
-                key_points=["项目表达", "面试问答", "复盘能力"],
-                difficult_points=["重点取舍", "高压表达"],
-                acceptance_criteria=["能独立完成一次完整项目讲解与面试复盘"],
-                difficulty_level="中级",
-            ),
-        ]
-        relations = [
-            _knowledge_relation(
-                from_node_id="year_3_course_3",
-                to_node_id="year_4_course_1",
-                relation_type="prerequisite",
-                description="先完成项目级部署与监控实践，再沉淀毕业作品与求职表达。",
-            )
-        ]
-        return "大四", "沉淀就业级项目作品集", specs, relations
-
-    specs = [
-        _course_spec(
-            course_node_id="year_3_course_1",
-            theme=f"{topic}基础能力搭建",
-            semester_scope="上学期",
-            duration="6 周",
-            pace_reason=pace_reason,
-            goal=f"完成 {topic} 所需的核心接口、工具链与最小功能闭环",
-            stage_titles=["需求拆解", "接口接入", "最小闭环演示"],
-            key_points=["OpenAI-compatible API 调用", "Prompt 设计", "前后端联调"],
-            difficult_points=["异步调用稳定性", "错误处理与重试"],
-            acceptance_criteria=["完成一个可运行的 AI 功能模块并接入 Web 应用"],
-            difficulty_level="中级",
-        ),
-        _course_spec(
-            course_node_id="year_3_course_2",
-            theme=f"{topic}项目实战",
-            semester_scope="上学期",
-            duration="8 周",
-            pace_reason=pace_reason,
-            goal=f"围绕 {topic} 完成一个具备真实交互与部署能力的课程级项目",
-            stage_titles=["架构设计", "多智能体联调", "部署验收"],
-            key_points=["LangGraph 编排", "SSE 流式交互", "部署与监控"],
-            difficult_points=["多智能体状态管理", "线上稳定性"],
-            acceptance_criteria=["项目支持真实用户流程与部署演示"],
-            difficulty_level="中级",
-        ),
-        _course_spec(
-            course_node_id="year_3_course_3",
-            theme=f"{topic}工程化服务编排与部署监控",
-            semester_scope="下学期",
-            duration="6 周",
-            pace_reason=pace_reason,
-            goal=f"围绕 {topic} 补强工程化服务编排、部署与线上监控能力",
-            stage_titles=["服务编排", "部署方案", "监控复盘"],
-            key_points=["服务编排", "部署与发布", "监控告警"],
-            difficult_points=["状态一致性", "线上问题定位"],
-            acceptance_criteria=["完成一个支持基础监控与部署复盘的工程化项目版本"],
-            difficulty_level="中级",
-        ),
-    ]
-    relations = [
-        _knowledge_relation(
-            from_node_id="year_2_course_3",
-            to_node_id="year_3_course_1",
-            relation_type="prerequisite",
-            description="先具备全栈联调与部署入门能力，再进入 AI 功能闭环搭建。",
-        )
-    ]
-    return "大三", f"完成 {topic} 项目闭环", specs, relations
+def _grade_defaults(grade_year: str, topic: str) -> tuple[str, str]:
+    """Display name and fallback goal of a grade (the plan comes from the agent)."""
+    return _GRADE_NAMES.get(grade_year, grade_year), f"围绕{topic}完成本学年学习"
 
 
 def _build_learning_path_from_course_specs(
@@ -683,14 +459,9 @@ def _build_learning_path_from_course_specs(
     weaknesses = [item for item in weaknesses_text.split("、") if item]
     knowledge_foundation = str(confirmed.get("knowledge_foundation") or "")
     mastered_content = [knowledge_foundation] if knowledge_foundation else []
-    pace_reason = (
-        f"围绕{constraints}安排" if constraints else "根据后续补充的时间与约束调整"
-    )
     topic = learning_topic or DEFAULT_TOPIC
     resource_directions: list[dict] = []
-    grade_name, default_grade_goal, _default_specs, leading_relations = (
-        _grade_course_specs(grade_year, topic, pace_reason)
-    )
+    grade_name, default_grade_goal = _grade_defaults(grade_year, topic)
 
     def build_course_resources(
         course_node_id: str, theme: str, focus: list[str], difficulty_level: str
@@ -709,7 +480,7 @@ def _build_learning_path_from_course_specs(
         return [resource_id]
 
     grade_courses: list[dict] = []
-    global_relations = list(leading_relations)
+    global_relations: list[dict] = []
     ordered_node_ids: list[str] = []
     previous_course_id = ""
     for index, spec in enumerate(course_specs, start=1):
@@ -998,17 +769,8 @@ def _build_learning_path_from_plan(
         scoped_path = _scope_learning_path_to_grade_year(plan_data, grade_year)
         return _bind_confirmed_course_sources(scoped_path, grade_year, intake_courses)
 
-    confirmed = profile.get("confirmed_info", {}) if isinstance(profile, dict) else {}
-    constraints = str(confirmed.get("constraints") or "")
-    pace_reason = (
-        f"围绕{constraints}安排" if constraints else "根据后续补充的时间与约束调整"
-    )
-    _grade_name, default_grade_goal, _default_specs, _leading_relations = (
-        _grade_course_specs(
-            grade_year,
-            learning_topic or DEFAULT_TOPIC,
-            pace_reason,
-        )
+    _grade_name, default_grade_goal = _grade_defaults(
+        grade_year, learning_topic or DEFAULT_TOPIC
     )
 
     raw_course_specs = plan_data.get("course_specs")

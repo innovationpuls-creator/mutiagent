@@ -9,7 +9,8 @@ import type {
 	ResourcePrepare,
 	ResourceSectionInfo,
 	RawProgressSnapshot,
-	TextbookContext,
+	PublishedTextbook,
+	TextbookOutline,
 	TurnPayload,
 	UsageReport,
 	UserAuthStatus,
@@ -42,8 +43,11 @@ export interface FakeBackend extends BackendClient {
 	profiles: Array<{ userUid: string; profile: Record<string, unknown> }>;
 	overviews: Map<string, LearningOverview>;
 	order: string[];
-	textbooks: TextbookContext;
+	textbooks: PublishedTextbook[];
+	textbookOutlines: Map<string, TextbookOutline>;
+	/** Every textbook-catalog call in order: "list", "outline:<id>". */
 	textbookLookups: string[];
+	gaps: Array<{ topic: string; summary: string; gapId: string }>;
 	protectedCourses: ProtectedCourse[];
 	snapshots: RawProgressSnapshot[];
 	/** When set, assemble answers 422 with this detail (once per entry). */
@@ -115,8 +119,10 @@ export function fakeBackend(): FakeBackend {
 		profiles: [],
 		overviews: new Map(),
 		order: [],
-		textbooks: { textbooks: [], gap_id: null },
+		textbooks: [],
+		textbookOutlines: new Map(),
 		textbookLookups: [],
+		gaps: [],
 		protectedCourses: [],
 		snapshots: [],
 		assembleFailures: [],
@@ -314,10 +320,21 @@ export function fakeBackend(): FakeBackend {
 				},
 			};
 		},
-		async getTextbookContext(topic) {
-			backend.textbookLookups.push(topic);
+		async listPublishedTextbooks() {
+			backend.textbookLookups.push("list");
 			backend.order.push("textbooks");
 			return structuredClone(backend.textbooks);
+		},
+		async getTextbookOutline(textbookId) {
+			backend.textbookLookups.push(`outline:${textbookId}`);
+			const outline = backend.textbookOutlines.get(textbookId);
+			if (!outline) throw new BackendBusinessError(404, "教材不存在或未发布。");
+			return structuredClone(outline);
+		},
+		async registerKnowledgeGap(topic, summary) {
+			const gapId = `gap-${backend.gaps.length + 1}`;
+			backend.gaps.push({ topic, summary, gapId });
+			return gapId;
 		},
 		async getProtectedCourses() {
 			return structuredClone(backend.protectedCourses);

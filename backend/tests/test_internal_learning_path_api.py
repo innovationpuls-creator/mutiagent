@@ -47,13 +47,7 @@ def _plan_for(intake: dict) -> dict:
 
 def test_new_endpoints_require_token(ctx) -> None:
     client, _ = ctx
-    assert (
-        client.post(
-            "/internal/knowledge-base/textbook-context-for-intake",
-            json={"learning_topic": "量子力学"},
-        ).status_code
-        == 401
-    )
+    assert client.get("/internal/knowledge-base/published-textbooks").status_code == 401
     assert (
         client.get(f"/internal/students/{DEMO_USER_UID}/protected-courses").status_code
         == 401
@@ -66,20 +60,31 @@ def test_new_endpoints_require_token(ctx) -> None:
     )
 
 
-def test_textbook_context_registers_gap_when_nothing_matches(ctx) -> None:
+def test_catalog_is_empty_and_gap_registration_is_idempotent(ctx) -> None:
     client, engine = ctx
-    res = client.post(
-        "/internal/knowledge-base/textbook-context-for-intake",
-        headers=INTERNAL,
-        json={"learning_topic": "量子力学", "student_goal_summary": "想学量子"},
+    listed = client.get(
+        "/internal/knowledge-base/published-textbooks", headers=INTERNAL
     )
-    assert res.status_code == 200
-    body = res.json()
-    assert body["textbooks"] == []
-    assert body["gap_id"]
+    assert listed.status_code == 200
+    assert listed.json() == {"textbooks": []}
+    missing = client.get(
+        "/internal/knowledge-base/published-textbooks/ghost/outline", headers=INTERNAL
+    )
+    assert missing.status_code == 404
+
+    first = client.post(
+        "/internal/knowledge-base/gaps",
+        headers=INTERNAL,
+        json={"topic": "量子力学", "student_goal_summary": "想学量子"},
+    )
+    again = client.post(
+        "/internal/knowledge-base/gaps", headers=INTERNAL, json={"topic": "量子力学"}
+    )
+    assert first.status_code == 200
+    assert again.json()["gap_id"] == first.json()["gap_id"]
     with Session(engine) as session:
         gaps = session.exec(select(KnowledgeGap)).all()
-        assert [g.gap_id for g in gaps] == [body["gap_id"]]
+        assert [g.gap_id for g in gaps] == [first.json()["gap_id"]]
 
 
 def test_assemble_save_and_progress_continuation(ctx) -> None:

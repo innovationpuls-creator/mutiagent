@@ -1,4 +1,4 @@
-import type { ProtectedCourse, TextbookContext } from "../backendClient.js";
+import type { ProtectedCourse, TextbookOutline } from "../backendClient.js";
 import { gradeYearFromCurrentGrade } from "./profileContract.js";
 
 export const MIN_COURSES = 4;
@@ -54,16 +54,14 @@ export interface DraftToolCourse {
 /** section ids per textbook that a course may legally cite. */
 export type SectionCatalog = Map<string, { title: string; sectionIds: Set<string> }>;
 
-export function catalogOf(...contexts: TextbookContext[]): SectionCatalog {
+export function catalogOf(outlines: TextbookOutline[]): SectionCatalog {
 	const catalog: SectionCatalog = new Map();
-	for (const context of contexts) {
-		for (const textbook of context.textbooks) {
-			const entry = catalog.get(textbook.textbook_id) ?? { title: textbook.title, sectionIds: new Set<string>() };
-			for (const section of textbook.outline_summary) {
-				if (section.section_id && section.title) entry.sectionIds.add(section.section_id);
-			}
-			catalog.set(textbook.textbook_id, entry);
+	for (const outline of outlines) {
+		const entry = catalog.get(outline.textbook_id) ?? { title: outline.title, sectionIds: new Set<string>() };
+		for (const section of outline.sections) {
+			if (section.section_id && section.title) entry.sectionIds.add(section.section_id);
 		}
+		catalog.set(outline.textbook_id, entry);
 	}
 	return catalog;
 }
@@ -134,7 +132,7 @@ export function validateDraftCourses(
 			course.source_textbook_title =
 				existing.find((old) => old.source_textbook_id === textbookId)?.source_textbook_title ?? "";
 		} else {
-			errors.push(`${label}《${title}》引用了不存在的教材 ID「${textbookId}」，只能使用目录中出现过的教材。`);
+			errors.push(`${label}《${title}》引用了不存在的教材 ID「${textbookId}」，只能使用你已用 get_textbook_outline 查看过的已发布教材。`);
 		}
 		courses.push(course);
 	});
@@ -205,11 +203,7 @@ export function noTextbookText(topic: string, hasDraft: boolean): string {
 		: `知识库暂无覆盖「${topic}」的已发布教材，已加入管理员待办。你可以换一个学习方向，或者等教材补充后再来规划。`;
 }
 
-export function catalogText(context: TextbookContext): string {
-	return context.textbooks
-		.map((textbook) => {
-			const sections = textbook.outline_summary.map((section) => `  - ${section.section_id}｜${section.title}`).join("\n");
-			return `教材 ${textbook.textbook_id}｜${textbook.title}\n${sections}`;
-		})
-		.join("\n\n");
+export function outlineText(outline: TextbookOutline): string {
+	const sections = outline.sections.map((section) => `- ${section.section_id}｜${section.title}`).join("\n");
+	return `教材 ${outline.textbook_id}｜${outline.title}\n${sections}`;
 }
