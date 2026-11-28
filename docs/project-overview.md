@@ -55,7 +55,7 @@ AI 编排由 `ai-gateway/` 承担，Python 后端是数据核心（详见 [Agent
 
 ## 本地开发与验证
 
-后端需要 PostgreSQL 与 `uv`；AI 网关与前端需要 Node.js 22+ 和 npm。模型由用户在应用内配置，无需全局 LLM 密钥（仅视频检索可选使用平台 `LLM_API_KEY`）。
+后端需要 PostgreSQL 与 `uv`；AI 网关与前端需要 Node.js 22+ 和 npm。模型由用户在应用内配置，无需全局 LLM 密钥（知识库与视频检索可选使用 `WEB_SEARCH_*` 联网搜索服务）。
 
 ```bash
 cd backend

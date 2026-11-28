@@ -436,3 +436,8 @@
 - **删**：`course_resources` 的 `_LOW_QUALITY_MARKERS`（已不存在的旧兜底文案串）与 `markdown.py` 里的“预习/导读/先浏览”关键词拒绝（会误杀正常教学文字，教学文档要求仍在提示词里，结构性检查——必备标题、标题粘连、步骤讲解支架、检查标准条数——保留）；网关 `DEFAULT_FILL_MARKERS` 关键词表与 `allowsDefaultFill`。
 - **新**：画像 agent 的 `use_defaults` 改为由模型判断学生是否要求按默认补全，并必须在 `defaults_quote` 里逐字引用学生本轮原话；程序只核对该引用确实出现在本轮消息里（`quotesStudent`），不再列词。
 - **验证**：Python 491 passed、ruff 干净；网关 137 passed、tsc/biome 干净（新增“引用必须真在消息里”单测）。**未用真实模型验证**该画像默认分支；未重跑 Docker 部署测试。
+
+### 清理 bootstrap 里的 LLM_*（已完成）
+- **删**：`deploy/bin/bootstrap` 不再询问/写入/导出 `LLM_API_KEY`、`LLM_MODEL`、`LLM_BASE_URL`（交互项从 6 个减为 4 个）；`compose.production.yml`、`compose.ci.yml`、`env.production.example`、README、部署/技术栈文档同步；`test_bootstrap.sh` 等测试移除对应输入与断言，并新增“backend 环境里不再有 `LLM_API_KEY`”。`migration_manifest.py` 的禁止导出名单保留 `LLM_API_KEY`（仅是防御）。
+- **验证**（本机 Docker 实跑）：`test_bootstrap`、`test_compose_config`、`test_deploy_rollback`、`test_nginx_config`（含 nginx 容器 `nginx -t` 与上一轮新增的网关路径断言）、`test_smoke`、`test_deployment_docs` 全过；后端 `test_production_config` 过。至此此前“Docker 部署测试未重跑”的遗留已补齐。
+- **注意**：已部署机器的 `/opt/onetree/.env.production` 里残留的 `LLM_*` 无害（compose 不再读取）；新机器 bootstrap 不再询问。

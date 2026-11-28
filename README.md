@@ -221,12 +221,9 @@ cd backend
 cp .env.example .env
 ```
 
-编辑 `backend/.env`，填写模型服务配置：
+编辑 `backend/.env`，填写数据库连接（对话等模型由用户在应用内“模型配置”里填写，无需全局密钥）：
 
 ```dotenv
-LLM_BASE_URL=
-LLM_API_KEY=
-LLM_MODEL=
 DATABASE_URL=postgresql://mutiagent:mutiagent@localhost:5432/mutiagent
 ```
 
@@ -262,7 +259,7 @@ npm run dev
 
 - **找不到 `psql`**：确认 PostgreSQL 已安装并加入 PATH。Homebrew 安装后可运行 `export PATH="$(brew --prefix postgresql@18)/bin:$PATH"`。
 - **数据库连接失败**：检查 PostgreSQL 服务是否启动，以及 `.env` 中的数据库账号、密码、库名是否一致。
-- **模型调用失败**：检查 `LLM_BASE_URL`、`LLM_API_KEY` 与 `LLM_MODEL`，确认对应服务与模型可用。
+- **模型调用失败**：在应用内“模型配置”里用“测试连接”检查该模型与 Key 是否可用。
 - **知识库整理任务未推进**：确认已经在 `backend/` 启动 `uv run python -m app.workers`。
 
 </details>

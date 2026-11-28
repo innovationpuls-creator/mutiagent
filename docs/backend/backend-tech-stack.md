@@ -151,10 +151,6 @@ ALLOWED_ORIGINS=https://onetree.chat
 INTERNAL_API_TOKEN=...            # 与网关共享，不能是默认值
 AI_GATEWAY_URL=http://ai-gateway:8100
 MODEL_SECRET_ENCRYPTION_KEY=...   # 用户模型凭据的加密主密钥，生成后不可随意更换
-# 可选：平台 Bilibili 视频搜索（DashScope）；未配置则视频降级
-LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM_API_KEY=sk-xxx
-LLM_MODEL=qwen3.5-plus-2026-04-20
 ```
 
 网关：`APP_ENV`、`JWT_SECRET`、`INTERNAL_API_TOKEN`、`PYTHON_BACKEND_URL`、`ALLOWED_ORIGINS`、`PORT`（默认 8100）、`HOST`、`BACKEND_TIMEOUT_MS`、`SSE_HEARTBEAT_MS`。

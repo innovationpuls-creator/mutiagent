@@ -228,7 +228,6 @@ SWAPFILE="$SYSTEM_ROOT/swapfile"
 JOURNALD_FILE="$SYSTEM_ROOT/etc/systemd/journald.conf.d/onetree.conf"
 SYSTEMD_DIR="$SYSTEM_ROOT/etc/systemd/system"
 BUNDLE_FILE="$TEMP_DIR/onetree-migration.tar"
-LLM_API_KEY_INPUT="llm-\$key # secret"
 SMOKE_PASSWORD_INPUT="smoke-\$pass # secret"
 
 mkdir -p \
@@ -520,8 +519,6 @@ grep -qx 'systemctl enable --now docker' "$PREINSTALLED_COMMAND_LOG" || \
 
 OUTPUT_FILE="$TEMP_DIR/bootstrap-output.log"
 if ! printf '%s\n' \
-  "$LLM_API_KEY_INPUT" \
-  'qwen3.5-plus' \
   'ops@example.com' \
   "$BUNDLE_FILE" \
   '18771701100' \
@@ -554,7 +551,6 @@ fi
 python3 - \
   "$ENV_FILE" \
   "$OUTPUT_FILE" \
-  "$LLM_API_KEY_INPUT" \
   "$SMOKE_PASSWORD_INPUT" <<'PY'
 from pathlib import Path
 import os
@@ -586,9 +582,6 @@ expected_keys = {
     "JWT_SECRET",
     "INTERNAL_API_TOKEN",
     "MODEL_SECRET_ENCRYPTION_KEY",
-    "LLM_BASE_URL",
-    "LLM_API_KEY",
-    "LLM_MODEL",
     "ALLOWED_ORIGINS",
     "PUBLIC_IPV4",
     "MAINTENANCE_BYPASS_TOKEN",
@@ -607,21 +600,15 @@ expected_keys = {
 }
 assert set(entries) == expected_keys, entries
 assert entries["APP_ENV"] == "production"
-assert entries["LLM_BASE_URL"] == (
-    "https://dashscope.aliyuncs.com/compatible-mode/v1"
-)
 assert entries["PUBLIC_IPV4"] == "203.0.113.10"
 assert entries["ALLOWED_ORIGINS"] == (
     "https://onetree.chat,https://www.onetree.chat,https://203.0.113.10"
 )
 assert entries["NGINX_CONFIG_MODE"] == "production-ip"
 assert entries["VITE_ICP_BEIAN_NUMBER"] == "粤ICP备2026100568号-1"
-assert entries["LLM_API_KEY"] == sys.argv[3]
-assert entries["LLM_MODEL"] == "qwen3.5-plus"
 assert entries["LETSENCRYPT_EMAIL"] == "ops@example.com"
 assert entries["SMOKE_ACCOUNT"] == "18771701100"
-assert entries["SMOKE_PASSWORD"] == sys.argv[4]
-assert raw_entries["LLM_API_KEY"].startswith("'")
+assert entries["SMOKE_PASSWORD"] == sys.argv[3]
 assert raw_entries["SMOKE_PASSWORD"].startswith("'")
 assert entries["DEBIAN_MIRROR"] == "https://mirrors.cloud.tencent.com/debian"
 assert entries["DEBIAN_SECURITY_MIRROR"] == (
@@ -663,7 +650,6 @@ assert entries["TARGET_DATABASE_URL"] == (
 )
 
 for secret in (
-    entries["LLM_API_KEY"],
     entries["SMOKE_PASSWORD"],
     *generated_values,
 ):
@@ -682,9 +668,6 @@ env \
   -u INTERNAL_API_TOKEN \
   -u JWT_SECRET \
   -u MODEL_SECRET_ENCRYPTION_KEY \
-  -u LLM_API_KEY \
-  -u LLM_BASE_URL \
-  -u LLM_MODEL \
   -u MAINTENANCE_BYPASS_TOKEN \
   -u NGINX_CONFIG_MODE \
   -u NPM_REGISTRY \
@@ -710,9 +693,6 @@ env \
   -u INTERNAL_API_TOKEN \
   -u JWT_SECRET \
   -u MODEL_SECRET_ENCRYPTION_KEY \
-  -u LLM_API_KEY \
-  -u LLM_BASE_URL \
-  -u LLM_MODEL \
   -u MAINTENANCE_BYPASS_TOKEN \
   -u NGINX_CONFIG_MODE \
   -u NPM_REGISTRY \
@@ -733,7 +713,6 @@ env \
 python3 - \
   "$COMPOSE_CONFIG" \
   "$COMPOSE_ENVIRONMENT" \
-  "$LLM_API_KEY_INPUT" \
   "$SMOKE_PASSWORD_INPUT" <<'PY'
 import json
 from pathlib import Path
@@ -742,8 +721,8 @@ import sys
 services = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["services"]
 backend_environment = services["backend"]["environment"]
 smoke_environment = services["smoke"]["environment"]
-assert backend_environment["LLM_API_KEY"].replace("$$", "$") == sys.argv[3]
-assert smoke_environment["SMOKE_PASSWORD"].replace("$$", "$") == sys.argv[4]
+assert "LLM_API_KEY" not in backend_environment
+assert smoke_environment["SMOKE_PASSWORD"].replace("$$", "$") == sys.argv[3]
 PY
 
 python3 - \
@@ -983,8 +962,6 @@ PARTIAL_OUTPUT_FILE="$TEMP_DIR/partial-output.log"
 : > "$PARTIAL_COMMAND_LOG"
 rm -f "$INSTALL_ROOT/bin/deploy"
 if ! printf '%s\n' \
-  "$LLM_API_KEY_INPUT" \
-  'qwen3.5-plus' \
   'ops@example.com' \
   "$BUNDLE_FILE" \
   '18771701100' \
@@ -1070,16 +1047,13 @@ import sys
 script = Path(sys.argv[1]).read_text(encoding="utf-8")
 assert "set -x" not in script
 assert "down -v" not in script
-assert re.search(r"read\s+-r\s+-s[^\n]*LLM_API_KEY", script), script
 assert re.search(r"read\s+-r\s+-s[^\n]*SMOKE_PASSWORD", script), script
 interactive_fields = re.findall(
     r"(?m)^\s*IFS= read -r(?: -s)? "
-    r"(LLM_API_KEY|LLM_MODEL|LETSENCRYPT_EMAIL|BUNDLE_PATH|SMOKE_ACCOUNT|SMOKE_PASSWORD)$",
+    r"(LETSENCRYPT_EMAIL|BUNDLE_PATH|SMOKE_ACCOUNT|SMOKE_PASSWORD)$",
     script,
 )
 assert interactive_fields == [
-    "LLM_API_KEY",
-    "LLM_MODEL",
     "LETSENCRYPT_EMAIL",
     "BUNDLE_PATH",
     "SMOKE_ACCOUNT",

@@ -581,7 +581,7 @@ if grep -ERn --include='*.sh' --include='deploy' --include='rollback' \
 fi
 
 if grep -ERn --include='*.sh' --include='deploy' --include='rollback' \
-  '(echo|printf)[^\n]*(DATABASE_URL|TARGET_DATABASE_URL|JWT_SECRET|LLM_API_KEY|SMOKE_PASSWORD)' \
+  '(echo|printf)[^\n]*(DATABASE_URL|TARGET_DATABASE_URL|JWT_SECRET|SMOKE_PASSWORD)' \
   "$REPO_ROOT/deploy/bin" "$REPO_ROOT/deploy/lib" > "$TMP_DIR/secret-echo"; then
   fail "secret echo found: $(<"$TMP_DIR/secret-echo")"
 fi

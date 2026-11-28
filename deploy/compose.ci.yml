@@ -2,9 +2,6 @@ x-ci-app-environment: &ci-app-environment
   APP_ENV: production
   DATABASE_URL: postgresql://onetree_app:compose-test-app-password@postgres:5432/onetree
   JWT_SECRET: compose-test-jwt-secret
-  LLM_BASE_URL: https://example.test/source
-  LLM_API_KEY: compose-test-llm-api-key
-  LLM_MODEL: compose-test-llm-model
   ALLOWED_ORIGINS: http://nginx
   INTERNAL_API_TOKEN: compose-test-internal-token
   MODEL_SECRET_ENCRYPTION_KEY: compose-test-model-secret-key

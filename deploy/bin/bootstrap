@@ -17,7 +17,6 @@ ONETREE_SYSTEMD_UNIT_DIR="${ONETREE_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 
 REPOSITORY_URL="https://github.com/innovationpuls-creator/mutiagent.git"
 REPOSITORY_BRANCH="main"
-LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
 VITE_ICP_BEIAN_NUMBER="粤ICP备2026100568号-1"
 DOCKER_OFFICIAL_REPOSITORY="https://download.docker.com/linux/ubuntu"
 DOCKER_TENCENT_REPOSITORY="https://mirrors.cloud.tencent.com/docker-ce/linux/ubuntu"
@@ -435,11 +434,6 @@ PY
 }
 
 collect_inputs() {
-  printf 'LLM API key: ' >&2
-  IFS= read -r -s LLM_API_KEY
-  printf '\n' >&2
-  printf 'LLM model: ' >&2
-  IFS= read -r LLM_MODEL
   printf 'Let\x27s Encrypt email: ' >&2
   IFS= read -r LETSENCRYPT_EMAIL
   printf 'Migration bundle path: ' >&2
@@ -450,14 +444,10 @@ collect_inputs() {
   IFS= read -r -s SMOKE_PASSWORD
   printf '\n' >&2
 
-  require_nonempty_input LLM_API_KEY "$LLM_API_KEY"
-  require_nonempty_input LLM_MODEL "$LLM_MODEL"
   require_nonempty_input LETSENCRYPT_EMAIL "$LETSENCRYPT_EMAIL"
   require_nonempty_input BUNDLE_PATH "$BUNDLE_PATH"
   require_nonempty_input SMOKE_ACCOUNT "$SMOKE_ACCOUNT"
   require_nonempty_input SMOKE_PASSWORD "$SMOKE_PASSWORD"
-  validate_env_literal_input LLM_API_KEY "$LLM_API_KEY"
-  validate_env_literal_input LLM_MODEL "$LLM_MODEL"
   validate_env_literal_input LETSENCRYPT_EMAIL "$LETSENCRYPT_EMAIL"
   validate_env_literal_input SMOKE_ACCOUNT "$SMOKE_ACCOUNT"
   validate_env_literal_input SMOKE_PASSWORD "$SMOKE_PASSWORD"
@@ -543,9 +533,6 @@ write_production_env() {
     printf 'JWT_SECRET=%s\n' "$JWT_SECRET"
     printf 'INTERNAL_API_TOKEN=%s\n' "$INTERNAL_API_TOKEN"
     printf 'MODEL_SECRET_ENCRYPTION_KEY=%s\n' "$MODEL_SECRET_ENCRYPTION_KEY"
-    printf 'LLM_BASE_URL=%s\n' "$LLM_BASE_URL"
-    write_literal_env_entry LLM_API_KEY "$LLM_API_KEY"
-    write_literal_env_entry LLM_MODEL "$LLM_MODEL"
     printf 'ALLOWED_ORIGINS=%s\n' "$ALLOWED_ORIGINS"
     printf 'PUBLIC_IPV4=%s\n' "$PUBLIC_IPV4"
     printf 'MAINTENANCE_BYPASS_TOKEN=%s\n' "$MAINTENANCE_BYPASS_TOKEN"
@@ -575,9 +562,6 @@ export_production_environment() {
     INTERNAL_API_TOKEN \
     JWT_SECRET \
     LETSENCRYPT_EMAIL \
-    LLM_API_KEY \
-    LLM_BASE_URL \
-    LLM_MODEL \
     MAINTENANCE_BYPASS_TOKEN \
     MODEL_SECRET_ENCRYPTION_KEY \
     NGINX_CONFIG_MODE \
