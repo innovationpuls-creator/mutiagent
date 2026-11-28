@@ -188,6 +188,38 @@ describe("AC-2 source binding validation and in-turn self-correction", () => {
 	});
 });
 
+describe("large libraries are browsed in pages, never dumped", () => {
+	it("pages the catalog and a big outline; a section seen on page 2 is citable", async () => {
+		ctx("s2d");
+		h.backend.textbooks = [
+			...Array.from({ length: 59 }, (_, i) => ({ textbook_id: `tb-f${i}`, title: `Filler ${i}`, tags: [], section_count: 1 })),
+			{ textbook_id: "tb-big", title: "Big Data Structures", tags: ["数据结构"], section_count: 130 },
+		];
+		h.backend.textbookOutlines.set("tb-big", {
+			textbook_id: "tb-big",
+			title: "Big Data Structures",
+			sections: Array.from({ length: 130 }, (_, i) => ({ section_id: `big-${i + 1}`, title: `S${i + 1}` })),
+		});
+		const big = (n: number) => ({ ...course(0), source_textbook_id: "tb-big", source_outline_section_ids: [`big-${n}`] });
+		const courses = [big(1), big(2), big(125), big(126)].map((c, i) => ({ ...c, title: TITLES[i]! }));
+		h.primary.queue.push(
+			delegate,
+			{ tool: "list_textbooks", args: {} },
+			{ tool: "list_textbooks", args: { offset: 50 } },
+			{ tool: "get_textbook_outline", args: { textbook_id: "tb-big" } },
+			{ tool: "get_textbook_outline", args: { textbook_id: "tb-big", offset: 120 } },
+			{ tool: "propose_or_revise_draft", args: { learning_topic: "数据结构", courses } },
+		);
+		await h.send("s2d", "规划数据结构");
+		const seen = JSON.stringify(h.primary.requests.map((r) => r.body.messages));
+		expect(seen).toContain("用 offset=50 继续翻页");
+		expect(seen).toContain("已全部显示");
+		expect(seen).toContain("用 offset=120 继续");
+		expect(h.backend.textbookLookups).toEqual(["list", "list@50", "outline:tb-big", "outline:tb-big@120"]);
+		expect(savedIntake()?.courses.map((c: any) => c.source_outline_section_ids[0])).toEqual(["big-1", "big-2", "big-125", "big-126"]);
+	});
+});
+
 describe("AC-3 knowledge gap keeps the existing draft", () => {
 	it("records the gap, leaves the draft untouched and says so", async () => {
 		ctx("s3", { learning_path_intake: intake("draft") });

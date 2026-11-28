@@ -320,16 +320,20 @@ export function fakeBackend(): FakeBackend {
 				},
 			};
 		},
-		async listPublishedTextbooks() {
-			backend.textbookLookups.push("list");
+		async listPublishedTextbooks(page = {}) {
+			backend.textbookLookups.push(page.offset ? `list@${page.offset}` : "list");
 			backend.order.push("textbooks");
-			return structuredClone(backend.textbooks);
+			const needle = (page.query ?? "").toLowerCase();
+			const rows = backend.textbooks.filter((t) => !needle || `${t.title} ${t.tags.join(" ")}`.toLowerCase().includes(needle));
+			const offset = page.offset ?? 0;
+			return structuredClone({ textbooks: rows.slice(offset, offset + (page.limit ?? 50)), total: rows.length, offset });
 		},
-		async getTextbookOutline(textbookId) {
-			backend.textbookLookups.push(`outline:${textbookId}`);
+		async getTextbookOutline(textbookId, page = {}) {
+			backend.textbookLookups.push(page.offset ? `outline:${textbookId}@${page.offset}` : `outline:${textbookId}`);
 			const outline = backend.textbookOutlines.get(textbookId);
 			if (!outline) throw new BackendBusinessError(404, "教材不存在或未发布。");
-			return structuredClone(outline);
+			const offset = page.offset ?? 0;
+			return structuredClone({ ...outline, sections: outline.sections.slice(offset, offset + (page.limit ?? 120)), total: outline.sections.length, offset });
 		},
 		async registerKnowledgeGap(topic, summary) {
 			const gapId = `gap-${backend.gaps.length + 1}`;

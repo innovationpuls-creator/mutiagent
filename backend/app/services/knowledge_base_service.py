@@ -881,14 +881,21 @@ def publish_textbook(session: Session, textbook_id: str) -> Textbook:
     return textbook
 
 
-def list_published_textbooks(session: Session) -> list[dict]:
-    """Every student-visible textbook, compact, for the intake agent to pick from."""
+def list_published_textbooks(
+    session: Session, query: str = "", offset: int = 0, limit: int = 50
+) -> dict:
+    """Student-visible textbooks, compact and paged, for the intake agent to pick from.
+
+    ``query`` is only a convenience filter (case-insensitive substring over title,
+    tags and description); the agent decides relevance itself.
+    """
     textbooks = session.exec(
         select(Textbook)
         .where(Textbook.student_availability_status == "published")
         .order_by(Textbook.textbook_id)
     ).all()
-    return [
+    needle = query.strip().lower()
+    rows = [
         {
             "textbook_id": textbook.textbook_id,
             "title": textbook.title,
@@ -898,17 +905,36 @@ def list_published_textbooks(session: Session) -> list[dict]:
         }
         for textbook in textbooks
     ]
+    if needle:
+        rows = [
+            row
+            for row in rows
+            if needle
+            in " ".join([row["title"], row["description"] or "", *row["tags"]]).lower()
+        ]
+    start = max(0, offset)
+    return {
+        "textbooks": rows[start : start + max(1, limit)],
+        "total": len(rows),
+        "offset": start,
+    }
 
 
-def published_textbook_outline(session: Session, textbook_id: str) -> dict:
+def published_textbook_outline(
+    session: Session, textbook_id: str, offset: int = 0, limit: int = 120
+) -> dict:
     """Section ids and titles of one published textbook (what a course may bind)."""
     textbook = session.get(Textbook, textbook_id)
     if textbook is None or textbook.student_availability_status != "published":
         raise ValueError("教材不存在或未发布。")
+    sections = _outline_summary(textbook.outline)
+    start = max(0, offset)
     return {
         "textbook_id": textbook.textbook_id,
         "title": textbook.title,
-        "sections": _outline_summary(textbook.outline),
+        "sections": sections[start : start + max(1, limit)],
+        "total": len(sections),
+        "offset": start,
     }
 
 

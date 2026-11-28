@@ -145,10 +145,19 @@ export interface PublishedTextbook {
 	section_count: number;
 }
 
+export interface PublishedTextbookPage {
+	textbooks: PublishedTextbook[];
+	total: number;
+	offset: number;
+}
+
 export interface TextbookOutline {
 	textbook_id: string;
 	title: string;
 	sections: Array<{ section_id: string; title: string }>;
+	/** Sections in the whole textbook; `sections` may be one page of them. */
+	total?: number;
+	offset?: number;
 }
 
 export interface ProtectedCourse {
@@ -192,9 +201,9 @@ export interface BackendClient {
 	verifyTextbookSource(candidate: Record<string, unknown>): Promise<TextbookSourceVerdict>;
 	/** Published textbook outlines for a topic; registers a KnowledgeGap when none match. */
 	/** Every published textbook, compact; the intake agent chooses from it itself. */
-	listPublishedTextbooks(): Promise<PublishedTextbook[]>;
+	listPublishedTextbooks(page?: { query?: string; offset?: number; limit?: number }): Promise<PublishedTextbookPage>;
 	/** Section ids of one published textbook (404 BackendBusinessError when unknown or unpublished). */
-	getTextbookOutline(textbookId: string): Promise<TextbookOutline>;
+	getTextbookOutline(textbookId: string, page?: { offset?: number; limit?: number }): Promise<TextbookOutline>;
 	/** Record a topic the library cannot serve; returns the gap id. */
 	registerKnowledgeGap(topic: string, studentGoalSummary: string): Promise<string>;
 	getProtectedCourses(userUid: string): Promise<ProtectedCourse[]>;
@@ -428,10 +437,21 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 				body: { candidate },
 				timeoutMs: 90000,
 			}),
-		listPublishedTextbooks: async () =>
-			(await request<{ textbooks: PublishedTextbook[] }>("/internal/knowledge-base/published-textbooks")).textbooks,
-		getTextbookOutline: (textbookId) =>
-			request<TextbookOutline>(`/internal/knowledge-base/published-textbooks/${encodeURIComponent(textbookId)}/outline`),
+		listPublishedTextbooks: (page = {}) =>
+			request<PublishedTextbookPage>(
+				`/internal/knowledge-base/published-textbooks?${new URLSearchParams({
+					query: page.query ?? "",
+					offset: String(page.offset ?? 0),
+					limit: String(page.limit ?? 50),
+				})}`,
+			),
+		getTextbookOutline: (textbookId, page = {}) =>
+			request<TextbookOutline>(
+				`/internal/knowledge-base/published-textbooks/${encodeURIComponent(textbookId)}/outline?${new URLSearchParams({
+					offset: String(page.offset ?? 0),
+					limit: String(page.limit ?? 120),
+				})}`,
+			),
 		registerKnowledgeGap: async (topic, studentGoalSummary) =>
 			(
 				await request<{ gap_id: string }>("/internal/knowledge-base/gaps", {

@@ -1,5 +1,5 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import { arr, obj, opt, str } from "@earendil-works/pi-schema";
+import { arr, int, obj, opt, str } from "@earendil-works/pi-schema";
 import type { BackendClient, ChatContext, TextbookOutline } from "../backendClient.js";
 import { BackendBusinessError } from "../errors.js";
 import type { AgentStreamHandle } from "../models/runtime.js";
@@ -56,7 +56,11 @@ const PROPOSE_SCHEMA = obj({
 	user_modification_summary: opt(str()),
 });
 
-const OUTLINE_SCHEMA = obj({ textbook_id: str() });
+/** Page sizes the model sees; large libraries are browsed, never dumped. */
+const LIST_PAGE = 50;
+const OUTLINE_PAGE = 120;
+const LIST_SCHEMA = obj({ query: opt(str()), offset: opt(int()) });
+const OUTLINE_SCHEMA = obj({ textbook_id: str(), offset: opt(int()) });
 const MISSING_SCHEMA = obj({ topic: str() });
 
 const EMPTY = obj({});
@@ -113,40 +117,49 @@ export async function runIntakeAgent(input: IntakeAgentInput): Promise<IntakeOut
 	const listTextbooks: AgentTool<any> = {
 		name: "list_textbooks",
 		label: "查看已发布教材",
-		description: "列出知识库里所有已发布教材（id、标题、标签、简介、小节数）。由你判断哪些与学习方向相关。",
-		parameters: EMPTY,
-		async execute() {
+		description:
+			"分页列出知识库里的已发布教材（id、标题、标签、简介、小节数）。由你判断哪些与学习方向相关；query 只是可选的关键词过滤（教材可能是英文标题，过滤没命中不代表没有，可不带 query 翻页浏览）。",
+		parameters: LIST_SCHEMA,
+		async execute(_id, params: any) {
 			input.emitProgress("正在查看知识库已发布教材");
-			const textbooks = await backend.listPublishedTextbooks();
-			if (textbooks.length === 0) return text("知识库里还没有任何已发布教材。");
-			return text(
-				textbooks
-					.map((t) =>
-						[
-							`${t.textbook_id}｜${t.title}（${t.section_count} 个小节）`,
-							t.tags.length > 0 ? `标签：${t.tags.join("、")}` : "",
-							t.description ? `简介：${t.description}` : "",
-						]
-							.filter(Boolean)
-							.join("｜"),
-					)
-					.join("\n"),
+			const offset = Math.max(0, Math.trunc(params?.offset ?? 0));
+			const page = await backend.listPublishedTextbooks({ query: String(params?.query ?? ""), offset, limit: LIST_PAGE });
+			if (page.total === 0) return text(params?.query ? `没有教材命中「${params.query}」（可不带 query 浏览全部）。` : "知识库里还没有任何已发布教材。");
+			const lines = page.textbooks.map((t) =>
+				[
+					`${t.textbook_id}｜${t.title}（${t.section_count} 个小节）`,
+					t.tags.length > 0 ? `标签：${t.tags.join("、")}` : "",
+					t.description ? `简介：${t.description}` : "",
+				]
+					.filter(Boolean)
+					.join("｜"),
 			);
+			const end = offset + page.textbooks.length;
+			const more = end < page.total ? `\n（共 ${page.total} 本，已显示 ${offset + 1}-${end}；用 offset=${end} 继续翻页）` : `\n（共 ${page.total} 本，已全部显示）`;
+			return text(lines.join("\n") + more);
 		},
 	};
 
 	const getOutline: AgentTool<any> = {
 		name: "get_textbook_outline",
 		label: "查看教材目录",
-		description: "查看一本已发布教材的全部小节 ID 与标题；草案里引用的小节 ID 必须来自这里。",
+		description: "查看一本已发布教材的小节 ID 与标题（大书分页，用 offset 继续）；草案里引用的小节 ID 必须来自你看过的目录。",
 		parameters: OUTLINE_SCHEMA,
 		async execute(_id, params: any) {
 			const textbookId = String(params?.textbook_id ?? "").trim();
 			if (!textbookId) return text("缺少 textbook_id。", { isError: true });
+			const offset = Math.max(0, Math.trunc(params?.offset ?? 0));
 			try {
-				const outline = await backend.getTextbookOutline(textbookId);
-				outlines.set(outline.textbook_id, outline);
-				return text(outlineText(outline));
+				const page = await backend.getTextbookOutline(textbookId, { offset, limit: OUTLINE_PAGE });
+				// Pages of one textbook accumulate: every section the model has seen is citable.
+				const seen = outlines.get(page.textbook_id);
+				const known = new Map((seen?.sections ?? []).map((section) => [section.section_id, section]));
+				for (const section of page.sections) known.set(section.section_id, section);
+				outlines.set(page.textbook_id, { ...page, sections: [...known.values()] });
+				const total = page.total ?? page.sections.length;
+				const end = offset + page.sections.length;
+				const tail = end < total ? `\n（共 ${total} 个小节，已显示 ${offset + 1}-${end}；用 offset=${end} 继续）` : "";
+				return text(outlineText(page) + tail);
 			} catch (error) {
 				if (error instanceof BackendBusinessError && error.status === 404) {
 					return text(`教材 ${textbookId} 不存在或未发布，请先用 list_textbooks 查看可用教材。`, { isError: true });
@@ -191,7 +204,7 @@ export async function runIntakeAgent(input: IntakeAgentInput): Promise<IntakeOut
 			if (errors.length > 0) {
 				failures += 1;
 				if (failures > MAX_INTAKE_CORRECTIONS) {
-					outcome = { kind: "failed", text: INTAKE_FAILED_TEXT, corrections: failures - 1 };
+					outcome = { kind: "failed", text: `${INTAKE_FAILED_TEXT}\n最后一次校验未通过的原因：${errors[0]}`, corrections: failures - 1 };
 					return text("多次校验仍未通过，已停止。", { terminate: true, isError: true });
 				}
 				return text(`课程草案校验未通过，请逐项修正后重新提交：\n- ${errors.join("\n- ")}`, { isError: true });

@@ -60,6 +60,8 @@ export interface AgentStreamHandle {
 		options?: SimpleStreamOptions,
 	) => AssistantMessageEventStream;
 	resolved: ResolvedScene;
+	/** False when the user marked the chosen custom model as unable to call tools. */
+	supportsTools: boolean;
 	/** Set when the last attempt of a stream failed; lets the caller raise a typed error. */
 	lastFailure?: { kind: FailureKind; code: string; provider: string; message: string };
 }
@@ -229,7 +231,15 @@ export class ModelRuntime {
 		if (!first) throw upstreamModelError("没有可用的模型");
 		const hasFallback = usable.length > 1;
 
-		const handle: AgentStreamHandle = { model: first.model, streamFn: undefined as never, resolved };
+		const custom = entry.config.custom_models.find(
+			(row) => row.provider_id === first.ref.provider_id && row.model_id === first.ref.model_id,
+		);
+		const handle: AgentStreamHandle = {
+			model: first.model,
+			streamFn: undefined as never,
+			resolved,
+			supportsTools: custom ? custom.supports_tools : true,
+		};
 		const streamFn: AgentStreamHandle["streamFn"] = (_model, context, options) => {
 			const outer = createAssistantMessageEventStream();
 			void (async () => {

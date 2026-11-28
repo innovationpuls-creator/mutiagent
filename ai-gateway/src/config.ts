@@ -20,6 +20,8 @@ export interface GatewayConfig {
 	/** Optional platform web search/fetch service used by agent tools. */
 	webSearchBaseUrl?: string;
 	webSearchApiKey?: string;
+	/** Web search/fetch calls one user may make per rolling 24h. */
+	webSearchDailyLimitPerUser: number;
 }
 
 export class ConfigError extends Error {
@@ -103,5 +105,6 @@ export function loadConfig(
 		sseHeartbeatMs: positiveInt(env, "SSE_HEARTBEAT_MS", 15000),
 		webSearchBaseUrl: optional(env, "WEB_SEARCH_BASE_URL"),
 		webSearchApiKey: optional(env, "WEB_SEARCH_API_KEY"),
+		webSearchDailyLimitPerUser: positiveInt(env, "WEB_SEARCH_DAILY_LIMIT_PER_USER", 200),
 	};
 }

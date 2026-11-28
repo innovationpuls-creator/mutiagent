@@ -288,6 +288,21 @@ describe("AC-6 persistence order and failures", () => {
 		expect(h.primary.requests).toHaveLength(0);
 	});
 
+	it("a model marked as unable to call tools is refused with a clear, actionable error", async () => {
+		const config = h.backend.runtimeConfigs.get(CHAT_USER)!;
+		h.backend.runtimeConfigs.set(CHAT_USER, {
+			...config,
+			custom_models: config.custom_models.map((row) => ({ ...row, supports_tools: false })),
+		});
+		h.backend.contexts.set(`${CHAT_USER}:s-nt`, baseContext("s-nt"));
+		h.primary.queue.push(delegateProfile);
+		const res = await h.send("s-nt", "我大三");
+		const error = res.frames.find((f) => f.event === "error");
+		expect(error?.data).toMatchObject({ error_code: "MODEL_CAPABILITY_MISMATCH" });
+		expect(String(error?.data.message)).toContain("不支持工具调用");
+		expect(names(res.frames)).not.toContain("message_completed");
+	});
+
 	it("a failing model keeps the user's message and reports an error event", async () => {
 		h.backend.contexts.set(`${CHAT_USER}:s-m`, baseContext("s-m"));
 		h.primary.script.push(400);

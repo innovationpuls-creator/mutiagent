@@ -125,7 +125,9 @@ def test_catalog_excludes_draft_textbooks(db_session: Session):
     catalog = list_published_textbooks(db_session)
 
     assert published.student_availability_status == "published"
-    assert [item["textbook_id"] for item in catalog] == [published.textbook_id]
+    assert [item["textbook_id"] for item in catalog["textbooks"]] == [
+        published.textbook_id
+    ]
     with pytest.raises(ValueError):
         published_textbook_outline(db_session, draft.textbook_id)
 
@@ -135,7 +137,7 @@ def test_catalog_is_empty_without_published_textbooks(db_session: Session):
     db_session.add(_draft_textbook())
     db_session.commit()
 
-    assert list_published_textbooks(db_session) == []
+    assert list_published_textbooks(db_session)["textbooks"] == []
 
 
 def test_learning_path_intake_ignores_unconfirmed_source_results(
@@ -150,4 +152,4 @@ def test_learning_path_intake_ignores_unconfirmed_source_results(
     with Session(engine) as session:
         session.add(_source())
         session.commit()
-        assert list_published_textbooks(session) == []
+        assert list_published_textbooks(session)["textbooks"] == []

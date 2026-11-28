@@ -1781,7 +1781,8 @@ def test_catalog_only_lists_published_textbooks_and_their_outline(
 
         listed = list_published_textbooks(session)
 
-        assert listed == [
+        assert listed["total"] == 1
+        assert listed["textbooks"] == [
             {
                 "textbook_id": "textbook-published",
                 "title": "线性代数",
@@ -1793,6 +1794,7 @@ def test_catalog_only_lists_published_textbooks_and_their_outline(
         assert "content_zh" not in str(listed)
 
         outline = published_textbook_outline(session, "textbook-published")
+        assert outline["total"] == 2
         assert outline["sections"] == [
             {"section_id": "1", "title": "矩阵"},
             {"section_id": "1.1", "title": "矩阵乘法"},

@@ -94,7 +94,6 @@ def main() -> int:
 
     os.environ.update(
         DATABASE_URL=args.database_url,
-        LLM_API_KEY="offline-profile",
         LLM_BASE_URL="http://127.0.0.1:1/v1",
         LLM_MODEL="offline-profile",
         LANGSMITH_TRACING="false",

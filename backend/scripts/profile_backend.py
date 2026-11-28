@@ -21,11 +21,6 @@ from pathlib import Path
 from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-os.environ.update(
-    LLM_API_KEY="offline-unused",
-    LLM_BASE_URL="http://127.0.0.1:1/v1",
-    LLM_MODEL="offline-unused",
-)
 
 from sqlalchemy import event, text  # noqa: E402
 from sqlalchemy.engine import make_url  # noqa: E402

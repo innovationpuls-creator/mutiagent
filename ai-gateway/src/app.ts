@@ -10,6 +10,8 @@ import { aiStreamRoutes, internalAiRoutes } from "./ai/routes.js";
 import { OAuthSessions } from "./models/oauth.js";
 import { internalModelRoutes, modelRoutes } from "./models/routes.js";
 import { ModelRuntime } from "./models/runtime.js";
+import type { WebConfig } from "./tools/web.js";
+import { WebUsageLimiter } from "./tools/webLimiter.js";
 import type { Provider } from "@earendil-works/pi-ai";
 import {
 	type LogSink,
@@ -79,6 +81,31 @@ export function createApp({ config, backend, logSink = stdoutSink, builtinOverri
 		modelRoutes({ jwtSecret: config.jwtSecret, backend, runtime: modelRuntime, oauth, builtinOverride }),
 	);
 
+	// One quota shared by every agent that searches; every call is also logged as usage.
+	const web: WebConfig = {
+		baseUrl: config.webSearchBaseUrl,
+		apiKey: config.webSearchApiKey,
+		limiter: new WebUsageLimiter(),
+		dailyLimit: config.webSearchDailyLimitPerUser,
+		onCall: (userUid, info) => {
+			void backend
+				.postModelUsage(userUid, {
+					scene: "web_search",
+					provider_id: "web",
+					model_id: info.kind,
+					input_tokens: 0,
+					output_tokens: 0,
+					cache_read_tokens: 0,
+					cache_write_tokens: 0,
+					reasoning_tokens: 0,
+					estimated_cost_usd: 0,
+					latency_ms: info.latencyMs,
+					success: info.success,
+				})
+				.catch(() => logger.warn(`web_usage_report_failed kind=${info.kind}`));
+		},
+	};
+
 	// Takes over POST /api/chat/message from Python (M4); /start and /sessions stay there.
 	app.route(
 		"/api/chat",
@@ -88,7 +115,7 @@ export function createApp({ config, backend, logSink = stdoutSink, builtinOverri
 			runtime: modelRuntime,
 			logger,
 			heartbeatMs: config.sseHeartbeatMs,
-			web: { baseUrl: config.webSearchBaseUrl, apiKey: config.webSearchApiKey },
+			web,
 		}),
 	);
 
@@ -101,7 +128,7 @@ export function createApp({ config, backend, logSink = stdoutSink, builtinOverri
 			runtime: modelRuntime,
 			logger,
 			heartbeatMs: config.sseHeartbeatMs,
-			web: { baseUrl: config.webSearchBaseUrl, apiKey: config.webSearchApiKey },
+			web,
 		}),
 	);
 

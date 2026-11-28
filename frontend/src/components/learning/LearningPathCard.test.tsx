@@ -204,4 +204,23 @@ describe("LearningPathCard", () => {
 		render(<LearningPathCard path={pathWithCurrent} />);
 		expect(screen.getByText("大三课程路径")).toBeTruthy();
 	});
+	it("renders when agent-authored relations are empty", () => {
+		const emptied: LearningPathResult = {
+			...path,
+			knowledge_graph: { ...path.knowledge_graph, global_relations: [] },
+			grade_plans: {
+				...path.grade_plans,
+				year_1: {
+					...path.grade_plans.year_1,
+					course_nodes: path.grade_plans.year_1.course_nodes.map((node) => ({
+						...node,
+						knowledge_relations: [],
+					})),
+				},
+			},
+		};
+		render(<LearningPathCard path={emptied} />);
+		expect(screen.getAllByText("多学年课程路径").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("程序设计基础").length).toBeGreaterThan(0);
+	});
 });

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hmac
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -288,15 +288,21 @@ def create_internal_router(engine: Engine, internal_token: str | None) -> APIRou
         return JSONResponse(content=jsonable_encoder(overview))
 
     @router.get("/knowledge-base/published-textbooks")
-    def published_textbooks() -> dict:
+    def published_textbooks(
+        query: str = "", offset: int = 0, limit: int = Query(50, ge=1, le=200)
+    ) -> dict:
         with Session(engine) as session:
-            return {"textbooks": kb_service.list_published_textbooks(session)}
+            return kb_service.list_published_textbooks(session, query, offset, limit)
 
     @router.get("/knowledge-base/published-textbooks/{textbook_id}/outline")
-    def published_textbook_outline(textbook_id: str) -> dict:
+    def published_textbook_outline(
+        textbook_id: str, offset: int = 0, limit: int = Query(120, ge=1, le=500)
+    ) -> dict:
         with Session(engine) as session:
             try:
-                return kb_service.published_textbook_outline(session, textbook_id)
+                return kb_service.published_textbook_outline(
+                    session, textbook_id, offset, limit
+                )
             except ValueError as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from None
 

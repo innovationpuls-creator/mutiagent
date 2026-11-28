@@ -1,7 +1,7 @@
 import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, UserMessage } from "@earendil-works/pi-ai";
 import type { HistoryMessage } from "../backendClient.js";
-import { modelOAuthExpired, upstreamModelError } from "../errors.js";
+import { modelCapabilityMismatch, modelOAuthExpired, upstreamModelError } from "../errors.js";
 import type { AgentStreamHandle } from "../models/runtime.js";
 
 const MAX_HISTORY_MESSAGES = 24;
@@ -96,6 +96,10 @@ function assertNoModelFailure(handle: AgentStreamHandle, messages: AgentMessage[
 }
 
 export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
+	// Every agent works through tools; failing fast beats looping on a model that cannot call them.
+	if (input.tools.length > 0 && input.handle.supportsTools === false) {
+		throw modelCapabilityMismatch(`当前模型（${(input.handle.model as { id?: string }).id ?? "未知"}）在“模型配置”里被标记为不支持工具调用，而这项功能需要工具调用。请换一个支持工具调用的模型。`);
+	}
 	let turns = 0;
 	const agent = new Agent({
 		initialState: {

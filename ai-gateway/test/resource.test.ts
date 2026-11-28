@@ -325,5 +325,8 @@ describe("video agent (the model searches; the backend verifies)", () => {
 		const res = await h.send("rv2", BUTTON());
 		expect(completed(res)).toBe("本章教学内容已生成。");
 		expect(h.backend.resource.videoComposes[0]!.videos).toEqual([]);
+		// Nothing to search with: the video agent never asked the model anything.
+		const asked = h.primary.requests.some((r) => (r.body.tools ?? []).some((t: any) => t.function.name === "submit_videos"));
+		expect(asked).toBe(false);
 	});
 });

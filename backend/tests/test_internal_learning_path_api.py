@@ -66,7 +66,8 @@ def test_catalog_is_empty_and_gap_registration_is_idempotent(ctx) -> None:
         "/internal/knowledge-base/published-textbooks", headers=INTERNAL
     )
     assert listed.status_code == 200
-    assert listed.json() == {"textbooks": []}
+    assert listed.json()["textbooks"] == []
+    assert listed.json()["total"] == 0
     missing = client.get(
         "/internal/knowledge-base/published-textbooks/ghost/outline", headers=INTERNAL
     )
