@@ -15,7 +15,7 @@ import {
 	SECONDARY_DEFAULTS,
 	SECONDARY_KEYS,
 	UNKNOWN_VALUE,
-	allowsDefaultFill,
+	quotesStudent,
 	buildBasicProfile,
 	buildCollectingProfile,
 	draftFromProfile,
@@ -93,7 +93,6 @@ function keyList(raw: unknown): ConfirmedKey[] {
 
 export function buildProfileSystemPrompt(input: {
 	draft: ConfirmedInfo;
-	defaultsAllowed: boolean;
 	pendingFollowup: unknown;
 	weaknessNote: string;
 }): string {
@@ -109,11 +108,7 @@ export function buildProfileSystemPrompt(input: {
 		`3. 核心字段（${CORE_KEYS.join("、")}）必须来自学生的真实表达；次要字段（${SECONDARY_KEYS.join("、")}）学生未提及时可以合理推断，但必须在 defaulted_fields 中列出。`,
 		"4. 年级只支持：大一、大二、大三、大四（写成这四个词之一）。研究生、大五、高中等不在范围内——不要保存这类年级，改调 ask_profile_question 礼貌说明并请学生确认本科年级。",
 		"5. 追问尽量针对缺口最大的核心字段；对有标准选项的字段，把 field 设为该字段名，系统会提供标准选项，不要自己编选项。",
-		`6. 只有学生明确要求“按默认/快速生成/不用问了”时，才可将 use_defaults 设为 true；${
-			input.defaultsAllowed
-				? "本轮学生【已经】提出了这样的要求，可以对缺失字段使用默认值（并在 defaulted_fields 中列出）。"
-				: "本轮学生【没有】提出这样的要求，use_defaults 必须为 false。"
-		}`,
+		"6. 只有学生在【本轮消息】里明确表示“不想再回答、请你按默认/自行补全”时，才可将 use_defaults 设为 true，并把学生原话中表达这一意思的片段逐字复制到 defaults_quote（系统会核对它确实出现在本轮消息里）；学生只是回答问题或提到“默认”这个词作他用时不要使用。使用默认值时，缺失字段需在 defaulted_fields 中列出。",
 		"7. 工具返回错误时，按错误原因修正后重试；无法修正就改为向学生追问。",
 		"8. 回复语言：简体中文，语气友好简洁。",
 		"",
@@ -128,7 +123,7 @@ export function buildProfileSystemPrompt(input: {
 }
 
 export async function runProfileAgent(input: ProfileAgentInput): Promise<ProfileOutcome> {
-	const defaultsAllowed = allowsDefaultFill(input.userText);
+	const defaultsAllowed = (quote: unknown) => quotesStudent(input.userText, quote);
 	let draft = draftFromProfile(input.existingProfile);
 	let outcome: ProfileOutcome | undefined;
 	let corrections = 0;
@@ -203,6 +198,7 @@ export async function runProfileAgent(input: ProfileAgentInput): Promise<Profile
 			confirmed_info: obj(EDITABLE_PARTIAL),
 			summary_text: str(),
 			use_defaults: opt(bool()),
+			defaults_quote: opt(str()),
 			defaulted_fields: opt(arr(str())),
 		}),
 		async execute(_id, params: any): Promise<AgentToolResult<unknown>> {
@@ -219,10 +215,13 @@ export async function runProfileAgent(input: ProfileAgentInput): Promise<Profile
 					`current_grade「${confirmed.current_grade || "空"}」不在支持范围（只支持 大一、大二、大三、大四）。请调用 ask_profile_question 向学生确认本科年级，不要保存。`,
 				);
 			}
-			if (params.use_defaults === true && !defaultsAllowed) {
-				return fail("学生本轮没有要求使用默认值，use_defaults 必须为 false。请改为追问缺失字段。");
+			const wantsDefaults = params.use_defaults === true;
+			if (wantsDefaults && !defaultsAllowed(params.defaults_quote)) {
+				return fail(
+					"use_defaults 需要学生在本轮消息里明确要求按默认补全，并在 defaults_quote 里逐字引用那句原话；找不到这样的原话，use_defaults 必须为 false。请改为追问缺失字段。",
+				);
 			}
-			const useDefaults = params.use_defaults === true && defaultsAllowed;
+			const useDefaults = wantsDefaults;
 			const coreDefaulted = defaulted.filter((key) => CORE_KEYS.includes(key));
 			if (coreDefaulted.length > 0 && !useDefaults) {
 				return fail(
@@ -276,7 +275,6 @@ export async function runProfileAgent(input: ProfileAgentInput): Promise<Profile
 		handle: input.handle,
 		systemPrompt: buildProfileSystemPrompt({
 			draft,
-			defaultsAllowed,
 			pendingFollowup: input.pendingFollowup,
 			weaknessNote: weaknessNote(input.existingProfile),
 		}),

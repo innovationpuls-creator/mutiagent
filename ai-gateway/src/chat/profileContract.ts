@@ -75,29 +75,13 @@ export function unsupportedGradeMessage(grade: unknown): string {
 	return `${head} 如果你想继续生成学习路径，请先告诉我对应的本科年级（大一到大四）。`;
 }
 
-const DEFAULT_FILL_MARKERS = [
-	"随便帮我填",
-	"不确定的你随便帮我填",
-	"直接生成",
-	"你直接生成",
-	"帮我直接生成",
-	"不用问了",
-	"不用再问了",
-	"不需要这么详细",
-	"跳过",
-	"先跳过",
-	"不用这么详细",
-	"快速生成",
-	"直接帮我生成",
-];
-const DEFAULT_FILL_CONTEXT = ["画像", "补全", "填", "生成"];
-
-/** The student explicitly asked the system to fill unknown fields with defaults. */
-export function allowsDefaultFill(text: string): boolean {
-	const normalized = text.trim();
-	if (!normalized) return false;
-	if (DEFAULT_FILL_MARKERS.some((marker) => normalized.includes(marker))) return true;
-	return normalized.includes("默认") && DEFAULT_FILL_CONTEXT.some((marker) => normalized.includes(marker));
+/**
+ * The model judges whether the student asked for defaults; code only proves the
+ * quote it cites is really in the student's message (no keyword list).
+ */
+export function quotesStudent(userText: string, quote: unknown): boolean {
+	const cited = typeof quote === "string" ? quote.trim() : "";
+	return cited.length >= 2 && userText.includes(cited);
 }
 
 export interface ProfileOption {

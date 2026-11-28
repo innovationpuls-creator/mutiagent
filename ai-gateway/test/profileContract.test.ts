@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	CONFIRMED_KEYS,
-	allowsDefaultFill,
+	quotesStudent,
 	buildBasicProfile,
 	buildCollectingProfile,
 	emptyConfirmedInfo,
@@ -52,11 +52,12 @@ describe("profile contract builders", () => {
 		for (const bad of ["研二", "大五", "高三", "", undefined]) expect(isSupportedGrade(bad)).toBe(false);
 	});
 
-	it("default-fill detection mirrors the old marker list", () => {
-		expect(allowsDefaultFill("直接按默认帮我生成画像")).toBe(true);
-		expect(allowsDefaultFill("快速生成")).toBe(true);
-		expect(allowsDefaultFill("我喜欢默认主题")).toBe(false);
-		expect(allowsDefaultFill("我大三软件工程")).toBe(false);
+	it("a default-fill quote must really be in the student's message", () => {
+		expect(quotesStudent("直接按默认帮我生成画像", "按默认帮我生成")).toBe(true);
+		expect(quotesStudent("你们看着办吧，我不想答了", "你们看着办吧")).toBe(true);
+		expect(quotesStudent("我大三软件工程", "按默认补全")).toBe(false);
+		expect(quotesStudent("我大三软件工程", "")).toBe(false);
+		expect(quotesStudent("我大三软件工程", undefined)).toBe(false);
 	});
 
 	it("merging never erases data with empty/unknown values", () => {

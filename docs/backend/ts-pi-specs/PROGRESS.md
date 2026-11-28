@@ -424,10 +424,15 @@
 - **删**：旧 `video/search` 接口、`aliyun_bilibili_search.py`（DashScope 绑定）、`video.py` 里约 600 行的停用词/同义词/子词表与查询生成启发式、`dashscope` 依赖（`uv.lock` 同步瘦身）、后端 `LLM_*` 配置字段。视频检索现在只依赖 `WEB_SEARCH_*`，不再需要阿里云 Key。
 - **验证**：Python 495 passed（比 506 少是删了旧检索的单测），ruff 干净；网关 135 passed（新增“搜索→校验→提交→被拒后修正”与“无搜索服务如实放弃仍能拼装”）；前端 322 passed；`gen:api` 无漂移。真实验证：terra + DeepSeek 搜索 + 真实 Bilibili 校验，对“时间复杂度与大O记号”约 10 秒选出一个真实视频（标题匹配）；第一次因后端未重启而校验接口 404，模型据此如实返回 unavailable、没有编造。
 - **未做/遗留**：`deploy/bin/bootstrap` 仍交互收集 `LLM_API_KEY/LLM_MODEL`，`compose.production.yml` 也仍透传——它们已没有读取方，但 `test_bootstrap.sh` 与之强绑定，本轮未动，待单独清理；`deploy/tests` 的 Docker 测试本轮未重跑。
-- **其余仍偏“死板”的候选（未动）**：（`course_knowledge.py`/`learning_path.py` 一项已在下一节完成）`markdown.py` 的 `_LOW_QUALITY_MARKERS` 低质量词黑名单、`profileContract.ts` 的 `DEFAULT_FILL_MARKERS`（判断“用户是否在敷衍默认值”）。
+- **其余仍偏“死板”的候选（未动）**：（均已完成）（判断“用户是否在敷衍默认值”）。
 
 ### 教材匹配与学习路径（已完成）
 - **新**：课程草案 agent（`intakeAgent.ts`）不再靠 Python 子串检索：新增工具 `list_textbooks`（全部已发布教材的 id/标题/标签/简介/小节数）、`get_textbook_outline`（小节 ID 与标题）、`report_missing_textbook`（登记知识缺口并告知学生），模型自己判断“操作系统”该用哪本英文标题教材，再 `propose_or_revise_draft` 一次提交完整草案；来源绑定校验（教材/小节必须是它查看过的目录里的）仍由程序确定性完成，未查看目录就提交会被拒回。Python 新增 `GET /internal/knowledge-base/published-textbooks`、`…/{id}/outline`、`POST /internal/knowledge-base/gaps`。
 - **删**：`search_published_textbooks`、`get_published_textbook_context_for_topic`（子串打分）、旧 `textbook-context-for-intake` 接口；`course_knowledge.py` 里中英关键词映射表 `_SOURCE_TERM_RULES`、按词频给教材/小节打分的“推断绑定”整套（约 250 行，含与 M6 自动拆分相矛盾的“超 8000 字小节被丢弃”修补）——课程没有教材小节绑定时现在如实报错“请重新生成学习路径草案”，不再猜；`learning_path.py` 里 `_grade_course_specs` 的四个学年硬编码示例课程、`_course_spec`，以及其中指向学生并不存在的节点的“先具备全栈联调与部署入门能力…”之类固定前置边（改为只留学年名与兜底目标的 `_grade_defaults`）。
 - **验证**：Python 491 passed（删了旧检索/推断的单测，新增目录接口、缺口登记、无绑定拒绝单测），ruff 干净；网关 137 passed、tsc/biome 干净（新增“未查目录就提交被拒”“未知教材 ID 作为工具错误回给模型”）；真实模型走查（terra 中等思考）：库内三本英文标题教材（OSTEP/Open Data Structures/Organic Chemistry），学生说“我想系统学习操作系统”，agent 先列教材、取 OSTEP 目录，一次提交通过校验，产出 6 门课、每门绑定 2-3 个连续小节，理由与画像（每周 6-10 小时、缺少底层知识）对应；原子串检索对“操作系统”匹配不到英文标题教材。
-- **未验证/遗留**：登记缺口的真实模型分支只有单测覆盖；`deploy/tests` Docker 测试仍未重跑；`markdown.py` 与 `profileContract.ts` 两项仍未动。
+- **未验证/遗留**：登记缺口的真实模型分支只有单测覆盖；`deploy/tests` Docker 测试仍未重跑；`markdown.py` 与 `profileContract.ts` 两项已在下一节完成。
+
+### 质量黑名单与“敷衍默认值”词表（已完成）
+- **删**：`course_resources` 的 `_LOW_QUALITY_MARKERS`（已不存在的旧兜底文案串）与 `markdown.py` 里的“预习/导读/先浏览”关键词拒绝（会误杀正常教学文字，教学文档要求仍在提示词里，结构性检查——必备标题、标题粘连、步骤讲解支架、检查标准条数——保留）；网关 `DEFAULT_FILL_MARKERS` 关键词表与 `allowsDefaultFill`。
+- **新**：画像 agent 的 `use_defaults` 改为由模型判断学生是否要求按默认补全，并必须在 `defaults_quote` 里逐字引用学生本轮原话；程序只核对该引用确实出现在本轮消息里（`quotesStudent`），不再列词。
+- **验证**：Python 491 passed、ruff 干净；网关 137 passed、tsc/biome 干净（新增“引用必须真在消息里”单测）。**未用真实模型验证**该画像默认分支；未重跑 Docker 部署测试。

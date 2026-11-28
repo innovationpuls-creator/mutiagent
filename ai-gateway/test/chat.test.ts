@@ -173,6 +173,7 @@ describe("AC-2/3/4 profile collection", () => {
 				confirmed_info: { ...rest, content_preference: [], strengths: "", weaknesses: "" },
 				summary_text: "大三软件工程，按默认生成。",
 				use_defaults: true,
+				defaults_quote: "按默认帮我生成",
 			},
 		});
 		const res = await h.send("s-d", "直接按默认帮我生成画像");
@@ -190,11 +191,11 @@ describe("AC-2/3/4 profile collection", () => {
 		h.backend.contexts.set(`${CHAT_USER}:s-d2`, baseContext("s-d2"));
 		h.primary.queue.push(
 			delegateProfile,
-			{ tool: "save_student_profile", args: { confirmed_info: { current_grade: "大三", major: "软件工程" }, summary_text: "x", use_defaults: true } },
+			{ tool: "save_student_profile", args: { confirmed_info: { current_grade: "大三", major: "软件工程" }, summary_text: "x", use_defaults: true, defaults_quote: "按默认补全" } },
 			{ tool: "ask_profile_question", args: { partial_confirmed: {}, question_md: "你的近期目标是？", field: "short_term_goal" } },
 		);
 		await h.send("s-d2", "我大三软件工程");
-		expect(JSON.stringify(h.primary.requests.at(-1)!.body.messages)).toContain("use_defaults 必须为 false");
+		expect(JSON.stringify(h.primary.requests.at(-1)!.body.messages)).toContain("defaults_quote");
 		const saved = h.backend.profiles[0]!.profile as any;
 		expect(saved.type).toBe("collecting");
 	});

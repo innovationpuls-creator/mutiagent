@@ -66,15 +66,6 @@ _REQUIRED_MARKDOWN_HEADING_TITLES = (
     "检查标准",
 )
 
-_LOW_QUALITY_MARKERS = (
-    "Key Concept",
-    "This section explores foundational concepts",
-    "视频资源暂时不可用",
-    "动画暂时不可用",
-    "Lesson Quiz",
-    "Question 1 of 3",
-)
-
 _DISALLOWED_ANIMATION_COLOR_PATTERN = re.compile(
     r"(#[0-9A-Fa-f]{3,8}\b|\brgba?\s*\(|\bhsla?\s*\()"
 )
